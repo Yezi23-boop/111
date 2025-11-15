@@ -1,0 +1,39 @@
+# ESP-IDF 构建输出
+build/
+sdkconfig.old
+
+# 组件管理器下载的依赖项（不应提交到版本控制）
+managed_components/
+dependencies.lock
+# IDE 和编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统生成的文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+*.log
+
+# Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C/C++ 编译产物
+*.o
+*.a
+*.so
+*.exe
+*.out
