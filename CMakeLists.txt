@@ -8,3 +8,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes -Wno-unused-function")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(111)
+
+# 将WAV文件打包到SPIFFS分区(需要传入目录,不是单个文件)
+spiffs_create_partition_image(audio ${CMAKE_SOURCE_DIR}/audio_data FLASH_IN_PROJECT)

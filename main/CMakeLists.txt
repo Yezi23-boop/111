@@ -21,6 +21,8 @@ idf_component_register(
     esp_http_client         
     get_time
     sd_card
+    audio_codec
+    chmorgan__esp-audio-player  # 音频播放器 (MP3/WAV)
     nvs_flash              # NVS存储管理
     esp_wifi               # WiFi功能
     esp_event              # 事件系统
@@ -31,4 +33,5 @@ idf_component_register(
     json                   # JSON数据解析
     driver                 # 硬件驱动 (GPIO, SPI等)
     freertos               # FreeRTOS系统
+    spiffs
 )

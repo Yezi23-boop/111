@@ -14,6 +14,7 @@ dependencies:
   #   # `public` flag doesn't have an effect dependencies of the `main` component.
   #   # All dependencies of `main` are public by default.
   #   public: true
-  espressif/esp_lcd_touch_ft5x06: ^1.0.7
   kodediy/esp_lcd_co5300: ^1.0.2
-  lvgl/lvgl: "9.2.2" # 锁定使用9.2.x版本系列
+  lvgl/lvgl: 9.2.2   # 锁定使用9.2.x版本系列
+  espressif/esp_codec_dev: ^1.5.2
+  chmorgan/esp-audio-player: ^1.0.7

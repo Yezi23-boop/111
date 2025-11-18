@@ -50,14 +50,14 @@ void app_main(void)
     {
         ESP_LOGI("MAIN", "WiFi connected successfully, starting HTTP request...");
         // 先创建lvgl任务，确保LVGL端口初始化完成
-        xTaskCreatePinnedToCore(lvgl_task, "lvgl_task", 1024 * 20, NULL, 10, &lvgl_task_handle, 1);
+        xTaskCreatePinnedToCore(lvgl_task, "lvgl_task", 1024 * 10, NULL, 5, &lvgl_task_handle, 1);
 
         // 延迟一段时间，确保LVGL初始化完成
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         // 创建时间和天气更新任务
-        // 增加栈大小到4KB，避免SNTP和LVGL操作导致的栈溢出
-        xTaskCreatePinnedToCore(time_and_weather, "time", 1024 * 4, NULL, 6, &lvgl_time_handle, 0);
+        // 增加栈大小到10KB，避免SNTP和LVGL操作导致的栈溢出
+        xTaskCreatePinnedToCore(time_and_weather, "time", 1024 * 10, NULL, 6, &lvgl_time_handle, 0);
 
         // printf_esp32_task_stack_stats(lvgl_time_handle, 1024 * 4, "time");
         // printf_esp32_task_stack_stats(lvgl_task_handle, 1024 * 4, "lvgl_task");

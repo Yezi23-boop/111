@@ -22,10 +22,9 @@
 #include "lv_port.h"
 #include "lv_port_config.h"
 #include "co5300_panel.h"
-#include "co5300_panel_defaults.h"  // 增量改动：包含TE信号配置宏定义
+#include "co5300_panel_defaults.h" // 增量改动：包含TE信号配置宏定义
 #include "touch_ft5x06.h"
 #include "esp_lcd_panel_ops.h"
-#include "esp_lcd_touch.h"
 #include "esp_check.h"
 #include <inttypes.h>
 #include <string.h>
@@ -37,7 +36,7 @@ static lv_display_t *s_display = NULL; // LVGL显示对象
 
 // 新增：底层原生句柄（从 co5300_panel / ft5x06 获取）
 static esp_lcd_panel_handle_t s_panel = NULL;
-static esp_lcd_touch_handle_t s_touch = NULL;
+static void *s_touch = NULL;
 // 新增：保存上一次有效触摸坐标，避免“松开时坐标归零”导致UI跳变
 static int16_t s_last_x = 0;
 static int16_t s_last_y = 0;
@@ -47,11 +46,12 @@ static bool s_byte_swap_enabled = LV_PORT_BYTE_SWAP_ENABLE;
 
 #if CO5300_PANEL_USE_TE_SIGNAL
 /* ========== 帧同步状态管理 ========== */
-typedef struct {
-    bool frame_start;           // 是否为帧起始（首个area）
-    uint32_t flush_count;       // 本帧已刷新的area计数
-    uint32_t te_sync_count;     // TE同步成功计数
-    uint32_t te_timeout_count;  // TE超时计数
+typedef struct
+{
+    bool frame_start;          // 是否为帧起始（首个area）
+    uint32_t flush_count;      // 本帧已刷新的area计数
+    uint32_t te_sync_count;    // TE同步成功计数
+    uint32_t te_timeout_count; // TE超时计数
 } frame_sync_ctx_t;
 
 static frame_sync_ctx_t s_frame_ctx = {
@@ -80,10 +80,9 @@ void lv_port_touch_init(void);
 // Tick定时器
 void lv_port_tick_init(void);
 
-
 void lv_port_disp_init_small(void)
 {
-    const size_t disp_buf_size = LCD_WIDTH *  LV_PORT_FIXED_CHUNK_LINES1; // 小缓冲策略：1/6屏幕大小
+    const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES1; // 小缓冲策略：1/6屏幕大小
 
     ESP_LOGI(TAG,
              "Small buffer size: %zu pixels (%.1f KB each)",
@@ -106,19 +105,19 @@ void lv_port_disp_init_small(void)
 
     // LVGL 9.2 新API：创建显示对象并设置参数
     s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
-    
+
     // 设置颜色格式为RGB565（16位色深）
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
-    
+
     // 设置刷新回调函数
     lv_display_set_flush_cb(s_display, lv_port_disp_flush);
-    
+
     // 设置显示缓冲区：使用lv_display_set_buffers API，缓冲区大小以字节为单位
-    lv_display_set_buffers(s_display, disp1, disp2, 
-                           disp_buf_size * sizeof(lv_color_t), 
+    lv_display_set_buffers(s_display, disp1, disp2,
+                           disp_buf_size * sizeof(lv_color_t),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-    ESP_LOGI(TAG, "LVGL 9.2 显示驱动初始化完成 (RGB565格式%s字节交换)", 
+    ESP_LOGI(TAG, "LVGL 9.2 显示驱动初始化完成 (RGB565格式%s字节交换)",
              LV_PORT_BYTE_SWAP_ENABLE ? "启用" : "禁用");
 }
 
@@ -140,18 +139,20 @@ void lv_port_disp_init_single(void)
     // lv_color_t *disp_buf = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
 
     // if (!disp_buf)
-      lv_color_t * disp_buf1 = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_32BIT | MALLOC_CAP_SPIRAM);
-      lv_color_t * disp_buf2 = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_32BIT | MALLOC_CAP_SPIRAM);
-        
-    if (!disp_buf1) {
+    lv_color_t *disp_buf1 = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_32BIT | MALLOC_CAP_SPIRAM);
+    lv_color_t *disp_buf2 = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_32BIT | MALLOC_CAP_SPIRAM);
+
+    if (!disp_buf1)
+    {
         ESP_LOGE(TAG, "单缓存1分配失败");
         return;
     }
-    if (!disp_buf2) {
+    if (!disp_buf2)
+    {
         ESP_LOGE(TAG, "单缓存2分配失败");
         return;
     }
-        
+
     ESP_LOGI(TAG,
              "Single Buffer1: %s, Buffer2: %s",
              esp_ptr_external_ram(disp_buf1) ? "PSRAM" : "Internal",
@@ -159,7 +160,7 @@ void lv_port_disp_init_single(void)
 
     // LVGL 9.2 新API：创建显示对象并设置参数
     s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
-    
+
     // 设置颜色格式为RGB565（16位色深）
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
 
@@ -167,11 +168,11 @@ void lv_port_disp_init_single(void)
     lv_display_set_flush_cb(s_display, lv_port_disp_flush);
 
     // 设置单缓存：第二个缓冲区设为NULL，使用单缓存模式
-    lv_display_set_buffers(s_display, disp_buf1, disp_buf2, 
-                           disp_buf_size * sizeof(lv_color_t), 
+    lv_display_set_buffers(s_display, disp_buf1, disp_buf2,
+                           disp_buf_size * sizeof(lv_color_t),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-    ESP_LOGI(TAG, "LVGL 9.2 单缓存显示驱动初始化完成 (RGB565格式%s字节交换)", 
+    ESP_LOGI(TAG, "LVGL 9.2 单缓存显示驱动初始化完成 (RGB565格式%s字节交换)",
              LV_PORT_BYTE_SWAP_ENABLE ? "启用" : "禁用");
 }
 
@@ -187,12 +188,15 @@ void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
 
 #if LV_PORT_CHUNKED_TRANSFER_ENABLE
     uint32_t area_height = area->y2 - area->y1 + 1;
-    
+
     // 简单判断：如果区域高度大于固定块大小，就进行分块传输
-    if (area_height > LV_PORT_FIXED_CHUNK_LINES) {
+    if (area_height > LV_PORT_FIXED_CHUNK_LINES)
+    {
         // 分块传输大区域
         ret = lv_port_flush_area_chunked_simple(disp, area, px_map);
-    } else {
+    }
+    else
+    {
         // 直接传输小区域
         ret = lv_port_flush_area_with_sync(disp, area, px_map);
     }
@@ -203,22 +207,24 @@ void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
 
     // LVGL 9.2 API要求：必须调用此函数通知LVGL刷新完成
     lv_display_flush_ready(disp);
-    
+
 #if CO5300_PANEL_USE_TE_SIGNAL
     // 帧结束标记：flush_ready后重置为帧起始状态
     s_frame_ctx.frame_start = true;
     s_frame_ctx.flush_count = 0;
-    
+
     // 每100帧输出一次统计（调试用）
     static uint32_t frame_counter = 0;
-    if (++frame_counter >= 100) {
+    if (++frame_counter >= 100)
+    {
         frame_counter = 0;
-        ESP_LOGI(TAG, "TE Stats - Sync: %lu, Timeout: %lu", 
+        ESP_LOGI(TAG, "TE Stats - Sync: %lu, Timeout: %lu",
                  s_frame_ctx.te_sync_count, s_frame_ctx.te_timeout_count);
     }
 #endif
-    
-    if (ret != ESP_OK) {
+
+    if (ret != ESP_OK)
+    {
         ESP_LOGW(TAG, "Display flush failed: %s", esp_err_to_name(ret));
     }
 }
@@ -234,32 +240,37 @@ static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_
 {
 #if CO5300_PANEL_USE_TE_SIGNAL
     // 帧首等TE优化：只在帧的第一个area时等待TE信号
-    if (s_frame_ctx.frame_start) {
+    if (s_frame_ctx.frame_start)
+    {
         ESP_LOGV(TAG, "Frame start, waiting for TE signal...");
-        
+
         esp_err_t te_ret = co5300_panel_wait_te_signal(100);
-        if (te_ret == ESP_OK) {
+        if (te_ret == ESP_OK)
+        {
             s_frame_ctx.te_sync_count++;
             ESP_LOGV(TAG, "TE sync OK");
-        } else {
+        }
+        else
+        {
             s_frame_ctx.te_timeout_count++;
             ESP_LOGD(TAG, "TE timeout (frame start)");
         }
-        
+
         // 标记帧已开始，后续area不再等待TE
         s_frame_ctx.frame_start = false;
     }
-    
+
     s_frame_ctx.flush_count++;
-    ESP_LOGV(TAG, "Flush area #%lu (x1:%" PRId32 ", y1:%" PRId32 ", x2:%" PRId32 ", y2:%" PRId32 ")", 
+    ESP_LOGV(TAG, "Flush area #%lu (x1:%" PRId32 ", y1:%" PRId32 ", x2:%" PRId32 ", y2:%" PRId32 ")",
              s_frame_ctx.flush_count, area->x1, area->y1, area->x2, area->y2);
 #endif
 
     // 计算像素数量用于字节交换和DMA同步
     uint32_t pixel_count = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
-    
+
     // 根据配置进行字节交换
-    if (s_byte_swap_enabled) {
+    if (s_byte_swap_enabled)
+    {
         lv_draw_sw_rgb565_swap(px_map, pixel_count);
     }
 
@@ -281,33 +292,32 @@ static esp_err_t lv_port_flush_area_chunked_simple(lv_display_t *disp, const lv_
     uint32_t area_height = area->y2 - area->y1 + 1;
     uint32_t bytes_per_line = area_width * sizeof(uint16_t);
     uint32_t chunk_lines = LV_PORT_FIXED_CHUNK_LINES;
-    
+
     ESP_LOGD(TAG, "Chunked transfer: %lux%lu area, %lu lines per chunk", area_width, area_height, chunk_lines);
-    
-    for (uint32_t y_offset = 0; y_offset < area_height; y_offset += chunk_lines) {
-        uint32_t current_chunk_lines = (y_offset + chunk_lines > area_height) ? 
-                                       (area_height - y_offset) : chunk_lines;
-        
+
+    for (uint32_t y_offset = 0; y_offset < area_height; y_offset += chunk_lines)
+    {
+        uint32_t current_chunk_lines = (y_offset + chunk_lines > area_height) ? (area_height - y_offset) : chunk_lines;
+
         // 构造当前块的区域
         lv_area_t chunk_area = {
             .x1 = area->x1,
             .y1 = area->y1 + y_offset,
             .x2 = area->x2,
-            .y2 = area->y1 + y_offset + current_chunk_lines - 1
-        };
-        
+            .y2 = area->y1 + y_offset + current_chunk_lines - 1};
+
         // 计算当前块的像素数据指针
         uint8_t *chunk_px_map = px_map + (y_offset * bytes_per_line);
-        
+
         // 传输当前块
         esp_err_t ret = lv_port_flush_area_with_sync(disp, &chunk_area, chunk_px_map);
-        if (ret != ESP_OK) {
+        if (ret != ESP_OK)
+        {
             ESP_LOGE(TAG, "Chunk transfer failed at y_offset %lu", y_offset);
             return ret;
         }
-
     }
-    
+
     return ESP_OK;
 }
 
@@ -324,22 +334,21 @@ static void lv_port_indev_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
     (void)indev; // 当前实现中未使用indev参数
 
-    // 更新触摸数据
-    esp_lcd_touch_read_data(s_touch);
-
     uint16_t x[1] = {0}, y[1] = {0};
-    uint16_t strength[1] = {0};
     uint8_t point_num = 0;
-    bool touched = esp_lcd_touch_get_coordinates(s_touch, x, y, strength, &point_num, 1);
+    esp_err_t ret = touch_ft5x06_read_points(x, y, &point_num, 1);
 
-    if (touched && point_num > 0) {
+    if (ret == ESP_OK && point_num > 0)
+    {
         // 记录并上报本次有效坐标
         s_last_x = x[0];
         s_last_y = y[0];
         data->point.x = s_last_x;
         data->point.y = s_last_y;
         data->state = LV_INDEV_STATE_PRESSED;
-    } else {
+    }
+    else
+    {
         // 无触摸/读取失败：保持最近一次有效坐标，状态为“未按下”
         data->point.x = s_last_x;
         data->point.y = s_last_y;
@@ -355,13 +364,13 @@ void lv_port_indev_init(void)
 {
     // LVGL 9.2 新API：创建输入设备对象
     lv_indev_t *indev = lv_indev_create();
-    
+
     // 设置输入设备类型为指针(触摸)
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-    
+
     // 设置读取回调函数
     lv_indev_set_read_cb(indev, lv_port_indev_read);
-    
+
     ESP_LOGI(TAG, "LVGL 9.2 输入设备初始化完成");
 }
 
@@ -382,12 +391,15 @@ void lv_port_panel_init(void)
         if (co5300_panel_get_raw(&io, &panel) == ESP_OK)
         {
             s_panel = (esp_lcd_panel_handle_t)panel;
-                // 设置显示偏移 - 向右偏移20像素
+            // 设置显示偏移 - 向右偏移20像素
             ESP_LOGI(TAG, "设置显示向右偏移20像素");
             esp_err_t ret = esp_lcd_panel_set_gap(s_panel, 23, 0);
-            if (ret != ESP_OK) {
+            if (ret != ESP_OK)
+            {
                 ESP_LOGE(TAG, "设置显示偏移失败: %s", esp_err_to_name(ret));
-            } else {
+            }
+            else
+            {
                 ESP_LOGI(TAG, "CO5300 面板初始化完成");
             }
         }
@@ -418,11 +430,13 @@ void lv_port_touch_init(void)
         else
         {
             ESP_LOGE(TAG, "获取触摸句柄失败");
+            s_touch = NULL;
         }
     }
     else
     {
         ESP_LOGE(TAG, "FT5x06 触摸初始化失败");
+        s_touch = NULL;
     }
 }
 
@@ -468,13 +482,13 @@ void lv_port_tick_init(void)
 /* ========== LVGL移植层主初始化函数 ========== */
 
 /**
- * @brief LVGL移植层总初始化函数 
+ * @brief LVGL移植层总初始化函数
  */
 void lv_port_init_small(void)
 {
-    lv_init();                 // 初始化LVGL库
-    lv_port_panel_init();      // 初始化显示硬件
-    lv_port_touch_init();      // 初始化触摸硬件
+    lv_init();            // 初始化LVGL库
+    lv_port_panel_init(); // 初始化显示硬件
+    lv_port_touch_init(); // 初始化触摸硬件
     if (LV_PORT_FIXED_CHUNK_LINES23)
     {
         lv_port_disp_init_small(); // 初始化显示驱动(小缓冲)
@@ -484,6 +498,6 @@ void lv_port_init_small(void)
         lv_port_disp_init_single(); // 初始化显示驱动(单缓冲)
     }
 
-    lv_port_indev_init();      // 初始化输入设备驱动
-    lv_port_tick_init();       // 初始化定时器
-} 
+    lv_port_indev_init(); // 初始化输入设备驱动
+    lv_port_tick_init();  // 初始化定时器
+}

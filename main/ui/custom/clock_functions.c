@@ -36,13 +36,14 @@ void update_digital_clock(int hour, int minute, int second)
     {
         return; // 参数超出范围，不执行更新（错误保护）
     }
-
+    lv_lock();
     // 更新时钟显示（UI层）
     if (lv_obj_is_valid(guider_ui.screen_main_digital_clock_1))
     {
         lv_label_set_text_fmt(guider_ui.screen_main_digital_clock_1, "%02d:%02d",
                               hour, minute);
     }
+    lv_unlock();
 }
 
 /**
