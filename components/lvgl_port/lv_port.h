@@ -13,7 +13,6 @@
 #include "esp_err.h"
 
 // 初始化函数
-void lv_port_init_small(void);        // 小缓冲配置（双缓存）
-void lv_port_disp_init_single(void);  // 单缓存配置
+void lv_port_init_small(void); // 片内
 
 #endif

@@ -82,14 +82,13 @@ void lv_port_tick_init(void);
 
 void lv_port_disp_init_small(void)
 {
-    const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES1; // 小缓冲策略：1/6屏幕大小
+    const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES1;
 
     ESP_LOGI(TAG,
              "Small buffer size: %zu pixels (%.1f KB each)",
              disp_buf_size,
              (disp_buf_size * sizeof(lv_color_t)) / 1024.0f);
 
-    // 分配显示缓冲区：优先使用内部RAM，回退到PSRAM
     lv_color_t *disp1 = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
     lv_color_t *disp2 = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
 
@@ -115,30 +114,17 @@ void lv_port_disp_init_small(void)
     // 设置显示缓冲区：使用lv_display_set_buffers API，缓冲区大小以字节为单位
     lv_display_set_buffers(s_display, disp1, disp2,
                            disp_buf_size * sizeof(lv_color_t),
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
-
-    ESP_LOGI(TAG, "LVGL 9.2 显示驱动初始化完成 (RGB565格式%s字节交换)",
-             LV_PORT_BYTE_SWAP_ENABLE ? "启用" : "禁用");
+                           0);
 }
 
-/**
- * @brief LVGL显示驱动初始化函数 - 单缓存配置
- * @details 使用单缓存策略，减少内存占用，适用于内存受限的应用场景
- */
-void lv_port_disp_init_single(void)
+void lv_port_disp_init_single(void) // 片外ram
 {
-    // 单缓存策略：使用较小的缓冲区大小，减少内存占用
-    const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES2; // 单缓存策略：1/12屏幕大小
+    const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES2;
 
     ESP_LOGI(TAG,
              "Single buffer size: %zu pixels (%.1f KB)",
              disp_buf_size,
              (disp_buf_size * sizeof(lv_color_t)) / 1024.0f);
-
-    // // 分配单个显示缓冲区：优先使用内部RAM，回退到PSRAM
-    // lv_color_t *disp_buf = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-
-    // if (!disp_buf)
     lv_color_t *disp_buf1 = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_32BIT | MALLOC_CAP_SPIRAM);
     lv_color_t *disp_buf2 = heap_caps_malloc(disp_buf_size * sizeof(lv_color_t), MALLOC_CAP_32BIT | MALLOC_CAP_SPIRAM);
 
@@ -167,7 +153,6 @@ void lv_port_disp_init_single(void)
     // 设置刷新回调函数
     lv_display_set_flush_cb(s_display, lv_port_disp_flush);
 
-    // 设置单缓存：第二个缓冲区设为NULL，使用单缓存模式
     lv_display_set_buffers(s_display, disp_buf1, disp_buf2,
                            disp_buf_size * sizeof(lv_color_t),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -491,11 +476,11 @@ void lv_port_init_small(void)
     lv_port_touch_init(); // 初始化触摸硬件
     if (LV_PORT_FIXED_CHUNK_LINES23)
     {
-        lv_port_disp_init_small(); // 初始化显示驱动(小缓冲)
+        lv_port_disp_init_small(); // 片内ram
     }
     else
     {
-        lv_port_disp_init_single(); // 初始化显示驱动(单缓冲)
+        lv_port_disp_init_single(); // 片外ram
     }
 
     lv_port_indev_init(); // 初始化输入设备驱动

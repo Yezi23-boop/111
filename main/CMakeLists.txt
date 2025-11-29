@@ -22,6 +22,7 @@ idf_component_register(
     get_time
     sd_card
     audio_codec
+    mp3_player             # 新增本地组件
     chmorgan__esp-audio-player  # 音频播放器 (MP3/WAV)
     nvs_flash              # NVS存储管理
     esp_wifi               # WiFi功能

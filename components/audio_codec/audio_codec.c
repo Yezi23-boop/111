@@ -2,10 +2,10 @@
 #include <string.h> // 字符串操作函数
 
 // 自定义头文件
-#include "audio_codec.h"            // 音频编解码器接口定义
-#include "i2c_manager.h"            // I2C总线管理器
-#include "esp_log.h"                // ESP-IDF日志输出
-#include "driver/gpio.h"            // GPIO驱动
+#include "audio_codec.h" // 音频编解码器接口定义
+#include "i2c_manager.h" // I2C总线管理器
+#include "esp_log.h"     // ESP-IDF日志输出
+#include "driver/gpio.h" // GPIO驱动
 #include "driver/i2c.h"
 #include "driver/i2s_std.h"         // I2S标准驱动
 #include "esp_codec_dev.h"          // ESP编解码设备高层API
@@ -65,8 +65,8 @@ static esp_err_t audio_i2s_init(void)
         return ret; // 失败则返回错误码
     }
 
-    // 配置 TX 标准模式(播放通道,Philips I2S格式)
-    i2s_std_config_t tx_std_cfg = {
+    // 统一配置 I2S 标准模式 (TX/RX 共用配置)
+    i2s_std_config_t std_cfg = {
         .clk_cfg = {
             .sample_rate_hz = AUDIO_DEFAULT_SAMPLE_RATE, // 48kHz采样率
             .clk_src = I2S_CLK_SRC_DEFAULT,              // 使用默认时钟源
@@ -81,8 +81,8 @@ static esp_err_t audio_i2s_init(void)
             .mclk = AUDIO_I2S_MCLK_GPIO,   // 主时钟引脚(GPIO16)
             .bclk = AUDIO_I2S_SCLK_GPIO,   // 位时钟引脚(GPIO41)
             .ws = AUDIO_I2S_LRCK_GPIO,     // 字选择/左右声道时钟(GPIO45)
-            .dout = AUDIO_I2S_ASDOUT_GPIO, // 数据输出引脚(GPIO42)
-            .din = GPIO_NUM_NC,            // 数据输入未连接
+            .dout = AUDIO_I2S_ASDOUT_GPIO, // TX数据输出引脚(GPIO42)
+            .din = AUDIO_I2S_DSDIN_GPIO,   // RX数据输入引脚(GPIO40)
             .invert_flags = {
                 // 信号反转标志
                 .mclk_inv = false, // MCLK不反转
@@ -93,42 +93,15 @@ static esp_err_t audio_i2s_init(void)
     };
 
     // 初始化TX通道为标准模式
-    ret = i2s_channel_init_std_mode(s_i2s_tx_handle, &tx_std_cfg);
+    ret = i2s_channel_init_std_mode(s_i2s_tx_handle, &std_cfg);
     if (ret != ESP_OK)
     { // 检查初始化是否成功
         ESP_LOGE(TAG, "Failed to init I2S TX standard mode: %s", esp_err_to_name(ret));
         return ret; // 失败则返回错误码
     }
 
-    // 配置 RX 标准模式(录音通道,复用TX的时钟信号)
-    i2s_std_config_t rx_std_cfg = {
-        .clk_cfg = {
-            .sample_rate_hz = AUDIO_DEFAULT_SAMPLE_RATE, // 48kHz采样率
-            .clk_src = I2S_CLK_SRC_DEFAULT,              // 使用默认时钟源
-            .mclk_multiple = I2S_MCLK_MULTIPLE_256,      // MCLK = 256 * 48kHz = 12.288MHz
-        },
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG( // Philips标准插槽配置
-            I2S_DATA_BIT_WIDTH_16BIT,                    // 16位数据宽度
-            I2S_SLOT_MODE_STEREO                         // 立体声模式(双麦克风)
-            ),
-        .gpio_cfg = {
-            // GPIO引脚配置
-            .mclk = GPIO_NUM_NC,         // MCLK由TX提供
-            .bclk = AUDIO_I2S_SCLK_GPIO, // 复用TX的位时钟(GPIO41)
-            .ws = AUDIO_I2S_LRCK_GPIO,   // 复用TX的字选择时钟(GPIO45)
-            .dout = GPIO_NUM_NC,         // 数据输出未连接
-            .din = AUDIO_I2S_DSDIN_GPIO, // 数据输入引脚(GPIO40)
-            .invert_flags = {
-                // 信号反转标志
-                .mclk_inv = false, // MCLK不反转
-                .bclk_inv = false, // BCLK不反转
-                .ws_inv = false,   // WS不反转
-            },
-        },
-    };
-
-    // 初始化RX通道为标准模式
-    ret = i2s_channel_init_std_mode(s_i2s_rx_handle, &rx_std_cfg);
+    // 初始化RX通道为标准模式 (复用相同配置)
+    ret = i2s_channel_init_std_mode(s_i2s_rx_handle, &std_cfg);
     if (ret != ESP_OK)
     { // 检查初始化是否成功
         ESP_LOGE(TAG, "Failed to init I2S RX standard mode: %s", esp_err_to_name(ret));
@@ -161,7 +134,7 @@ static esp_err_t audio_pa_init(void)
         return ret; // 失败则返回错误码
     }
 
-    // 初始状态:关闭功放(低电平)
+    // 初始状态:开启功放(低电平)
     gpio_set_level(AUDIO_PA_CTRL_GPIO, 0);
     ESP_LOGI(TAG, "PA control pin initialized"); // 记录初始化成功日志
     return ESP_OK;                               // 成功返回
@@ -239,7 +212,7 @@ static esp_err_t audio_es7210_init(void)
         }),
         .master_mode = false,                              // 从机模式(时钟由ESP32提供)
         .mic_selected = ES7210_SEL_MIC1 | ES7210_SEL_MIC2, // 选择双麦克风输入
-        .mclk_src = ES7210_MCLK_FROM_PAD,                  // MCLK来源:外部引脚(GPIO16)
+        .mclk_src = ES7210_MCLK_FROM_PAD,                  // MCLK来源:外部引脚(GPIO16）
     });
 
     if (s_record_codec_if == NULL)

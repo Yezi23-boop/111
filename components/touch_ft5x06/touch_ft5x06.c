@@ -1,9 +1,9 @@
 // 触摸屏驱动头文件
-#include "touch_ft5x06.h"          // FT5x06/FT3168触摸控制器接口定义
-#include "i2c_manager.h"           // I2C总线管理器
-#include "esp_log.h"               // ESP-IDF日志系统
-#include "esp_check.h"             // ESP错误检查宏
-#include "driver/gpio.h"           // GPIO驱动
+#include "touch_ft5x06.h" // FT5x06/FT3168触摸控制器接口定义
+#include "i2c_manager.h"  // I2C总线管理器
+#include "esp_log.h"      // ESP-IDF日志系统
+#include "esp_check.h"    // ESP错误检查宏
+#include "driver/gpio.h"  // GPIO驱动
 #include "driver/i2c.h"
 #include "co5300_panel_defaults.h" // 显示屏分辨率定义
 #include "freertos/FreeRTOS.h"     // FreeRTOS实时操作系统
@@ -61,7 +61,8 @@ static esp_err_t touch_ft5x06_i2c_read(touch_ft5x06_t *touch, uint8_t reg, uint8
     i2c_master_write_byte(cmd, reg, true);
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (FT5X06_ADDR << 1) | I2C_MASTER_READ, true);
-    if (len > 1) {
+    if (len > 1)
+    {
         i2c_master_read(cmd, data, len - 1, I2C_MASTER_ACK);
     }
     i2c_master_read_byte(cmd, &data[len - 1], I2C_MASTER_NACK);
@@ -104,9 +105,6 @@ esp_err_t touch_ft5x06_init(void)
     // 初始化I2C总线管理器(多次调用安全)
     ESP_RETURN_ON_ERROR(i2c_manager_init(), TAG, "i2c manager init failed");
 
-    // 旧版I2C通过端口号访问
-    (void)i2c_manager_get_port();
-
     // 分配触摸控制器结构体内存(并清零)
     s_touch = calloc(1, sizeof(touch_ft5x06_t));
     ESP_RETURN_ON_FALSE(s_touch, ESP_ERR_NO_MEM, TAG, "alloc touch failed");
@@ -124,11 +122,6 @@ esp_err_t touch_ft5x06_init(void)
         ESP_GOTO_ON_ERROR(gpio_config(&rst_cfg), err, TAG, "RST GPIO config failed");
     }
 
-    // 注意: INT引脚(GPIO38)未配置,当前使用轮询模式读取触摸数据
-    // 如需中断驱动模式,可配置INT为下降沿中断并添加ISR处理
-
-    // 旧版I2C无需添加设备
-
     // 设置触摸屏分辨率(从显示屏配置获取)
     s_touch->max_x = CO5300_PANEL_H_RES; // 水平分辨率
     s_touch->max_y = CO5300_PANEL_V_RES; // 垂直分辨率
@@ -140,7 +133,8 @@ esp_err_t touch_ft5x06_init(void)
     return ESP_OK;                                           // 返回成功
 
 err: // 错误处理标签
-    if (s_touch) {
+    if (s_touch)
+    {
         free(s_touch);
         s_touch = NULL;
     }

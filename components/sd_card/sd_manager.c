@@ -1,6 +1,6 @@
 /**
  * @file sd_manager.c
- * @brief ESP32 SD卡管理器实现
+ * @brief ESP32 SD卡管理器实现 (SPI模式)
  * @details 实现SD卡的初始化、文件系统挂载、文件读写等核心功能
  */
 
@@ -13,35 +13,100 @@
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
-#include "driver/sdmmc_host.h"
+#include "driver/sdspi_host.h"
 
 #define TAG "sd_manager"
 #define MOUNT_POINT "/sdcard"
 
+// SPI引脚定义 (根据原理图)
+#define PIN_NUM_MISO 3
+#define PIN_NUM_MOSI 1
+#define PIN_NUM_CLK 2
+#define PIN_NUM_CS 17
+
 // SD卡设备句柄
 static sdmmc_card_t *card = NULL;
+// 标记SPI总线是否由sd_manager初始化，用于deinit时决定是否释放总线
+static bool spi_initialized_by_sd = false;
 
 esp_err_t sd_manager_init(void)
 {
+    esp_err_t ret;
+
     // FAT文件系统挂载配置
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = false, .max_files = 8, .allocation_unit_size = 32 * 1024};
+        .format_if_mount_failed = false,
+        .max_files = 8,
+        .allocation_unit_size = 16 * 1024};
 
-    // SDMMC主机控制器配置
-    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    ESP_LOGI(TAG, "初始化SD卡 (SPI模式)...");
+    ESP_LOGI(TAG, "引脚配置: MOSI=%d, MISO=%d, CLK=%d, CS=%d",
+             PIN_NUM_MOSI, PIN_NUM_MISO, PIN_NUM_CLK, PIN_NUM_CS);
 
-    // SD卡插槽配置
-    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot_config.width = 4;
-    slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+    // 1. 配置SPI总线
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    // 强制使用 SPI3_HOST (HSPI)，避免与屏幕的 SPI2_HOST (FSPI) 冲突
+    host.slot = SPI3_HOST;
 
-    ESP_LOGI(TAG, "正在挂载SD卡文件系统...");
+    // 大幅降低频率以解决CRC错误问题 (1MHz)
+    // 挂载成功后，如果需要高速，可以尝试逐步提高到 10MHz 或 20MHz
+    host.max_freq_khz = 10000;
 
-    esp_err_t ret = esp_vfs_fat_sdmmc_mount(MOUNT_POINT, &host, &slot_config, &mount_config, &card);
+    spi_bus_config_t bus_cfg = {
+        .mosi_io_num = PIN_NUM_MOSI,
+        .miso_io_num = PIN_NUM_MISO,
+        .sclk_io_num = PIN_NUM_CLK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4000,
+    };
+
+    // 初始化SPI3总线
+    ret = spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
+    if (ret != ESP_OK)
+    {
+        if (ret == ESP_ERR_INVALID_STATE)
+        {
+            ESP_LOGW(TAG, "SPI3总线已被初始化，跳过初始化步骤，尝试复用总线");
+            spi_initialized_by_sd = false; // 总线不是我们初始化的，所以不要释放
+        }
+        else
+        {
+            ESP_LOGE(TAG, "SPI3总线初始化失败: %s", esp_err_to_name(ret));
+            return ret;
+        }
+    }
+    else
+    {
+        spi_initialized_by_sd = true; // 标记总线由我们初始化
+    }
+
+    // 2. 配置SD卡插槽
+    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot_config.gpio_cs = PIN_NUM_CS;
+    slot_config.host_id = host.slot;
+
+    // 3. 挂载文件系统
+    ESP_LOGI(TAG, "正在挂载文件系统(SPI3)...");
+    ret = esp_vfs_fat_sdspi_mount(MOUNT_POINT, &host, &slot_config, &mount_config, &card);
 
     if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "SD卡挂载失败 (%s)", esp_err_to_name(ret));
+        if (ret == ESP_FAIL)
+        {
+            ESP_LOGE(TAG, "挂载失败: 无法挂载文件系统。");
+            ESP_LOGE(TAG, "如果这是新卡，可能需要先在电脑上格式化为FAT32。");
+        }
+        else
+        {
+            ESP_LOGE(TAG, "SD卡挂载失败 (%s). 请检查硬件连接。", esp_err_to_name(ret));
+        }
+
+        // 只有在我们初始化了总线的情况下才释放它
+        if (spi_initialized_by_sd)
+        {
+            spi_bus_free(host.slot);
+        }
         return ret;
     }
 
@@ -55,8 +120,17 @@ void sd_manager_deinit(void)
 {
     if (card != NULL)
     {
+        // 卸载文件系统
         esp_vfs_fat_sdcard_unmount(MOUNT_POINT, card);
         card = NULL;
+
+        // 只有在我们初始化了总线的情况下才释放它
+        if (spi_initialized_by_sd)
+        {
+            spi_bus_free(SPI3_HOST);
+            ESP_LOGI(TAG, "SPI3总线已释放");
+        }
+
         ESP_LOGI(TAG, "SD卡已安全卸载");
     }
     else
@@ -82,14 +156,21 @@ void sd_manager_list_dir(const char *path)
 
         while ((ent = readdir(dir)) != NULL)
         {
-            ESP_LOGI(TAG, "发现项目: %s", ent->d_name);
+            if (ent->d_type == DT_DIR)
+            {
+                ESP_LOGI(TAG, "  [DIR]  %s", ent->d_name);
+            }
+            else
+            {
+                ESP_LOGI(TAG, "  [FILE] %s", ent->d_name);
+            }
         }
 
         closedir(dir);
     }
     else
     {
-        ESP_LOGE(TAG, "无法打开目录: %s", path);
+        ESP_LOGE(TAG, "无法打开目录: %s (可能不存在或未挂载)", path);
     }
 }
 
@@ -102,135 +183,9 @@ bool sd_manager_file_exists(const char *file_path)
     }
 
     struct stat st;
-    bool exists = (stat(file_path, &st) == 0);
-
-    if (exists)
-    {
-        ESP_LOGD(TAG, "文件存在: %s", file_path);
-    }
-    else
-    {
-        ESP_LOGD(TAG, "文件不存在: %s", file_path);
-    }
-
-    return exists;
-}
-
-esp_err_t sd_manager_read_file(const char *file_path, void *buffer, size_t buffer_size, size_t *bytes_read)
-{
-    if (file_path == NULL || buffer == NULL || buffer_size == 0)
-    {
-        ESP_LOGE(TAG, "读取文件参数无效");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    FILE *f = fopen(file_path, "rb");
-    if (f == NULL)
-    {
-        ESP_LOGE(TAG, "无法打开文件进行读取: %s", file_path);
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    size_t read_bytes = fread(buffer, 1, buffer_size, f);
-
-    if (bytes_read != NULL)
-    {
-        *bytes_read = read_bytes;
-    }
-
-    fclose(f);
-
-    ESP_LOGI(TAG, "从文件读取了 %zu 字节: %s", read_bytes, file_path);
-
-    return ESP_OK;
-}
-
-esp_err_t sd_manager_write_file(const char *file_path, const void *data, size_t data_size)
-{
-    if (file_path == NULL || data == NULL || data_size == 0)
-    {
-        ESP_LOGE(TAG, "写入文件参数无效");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    FILE *f = fopen(file_path, "wb");
-    if (f == NULL)
-    {
-        ESP_LOGE(TAG, "无法打开文件进行写入: %s", file_path);
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    size_t written_bytes = fwrite(data, 1, data_size, f);
-    fclose(f);
-
-    if (written_bytes != data_size)
-    {
-        ESP_LOGE(TAG, "文件写入不完整: %s (期望 %zu 字节，实际 %zu 字节)", file_path, data_size, written_bytes);
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    ESP_LOGI(TAG, "成功写入 %zu 字节到文件: %s", written_bytes, file_path);
-    return ESP_OK;
-}
-
-esp_err_t sd_manager_create_dir(const char *dir_path)
-{
-    if (dir_path == NULL)
-    {
-        ESP_LOGE(TAG, "目录路径参数为空");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (mkdir(dir_path, 0755) == 0)
-    {
-        ESP_LOGI(TAG, "目录创建成功: %s", dir_path);
-        return ESP_OK;
-    }
-    else
-    {
-        ESP_LOGE(TAG, "目录创建失败: %s", dir_path);
-        return ESP_FAIL;
-    }
-}
-
-esp_err_t sd_manager_delete_file(const char *file_path)
-{
-    if (file_path == NULL)
-    {
-        ESP_LOGE(TAG, "文件路径参数为空");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (unlink(file_path) == 0)
-    {
-        ESP_LOGI(TAG, "文件删除成功: %s", file_path);
-        return ESP_OK;
-    }
-    else
-    {
-        ESP_LOGE(TAG, "文件删除失败: %s", file_path);
-        return ESP_FAIL;
-    }
-}
-
-esp_err_t sd_manager_get_file_size(const char *file_path, size_t *file_size)
-{
-    if (file_path == NULL || file_size == NULL)
-    {
-        ESP_LOGE(TAG, "获取文件大小参数无效");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    struct stat st;
     if (stat(file_path, &st) == 0)
     {
-        *file_size = st.st_size;
-        ESP_LOGD(TAG, "文件大小: %zu 字节 (%s)", *file_size, file_path);
-        return ESP_OK;
+        return true;
     }
-    else
-    {
-        ESP_LOGE(TAG, "无法获取文件信息: %s", file_path);
-        return ESP_ERR_NOT_FOUND;
-    }
+    return false;
 }
