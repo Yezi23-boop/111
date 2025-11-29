@@ -4,7 +4,7 @@
 #include "esp_log.h"               // ESP-IDF日志系统
 #include "esp_check.h"             // ESP错误检查宏
 #include "driver/gpio.h"           // GPIO驱动
-#include "driver/i2c_master.h"     // I2C主机驱动(新API)
+#include "driver/i2c.h"
 #include "co5300_panel_defaults.h" // 显示屏分辨率定义
 #include "freertos/FreeRTOS.h"     // FreeRTOS实时操作系统
 #include "freertos/task.h"         // FreeRTOS任务管理
@@ -32,13 +32,12 @@ typedef struct
 // FT5x06设备控制结构体
 typedef struct
 {
-    i2c_master_dev_handle_t i2c_dev;          // I2C设备句柄
-    int rst_gpio;                             // 复位引脚编号
-    int int_gpio;                             // 中断引脚编号
-    uint16_t max_x;                           // X轴最大坐标
-    uint16_t max_y;                           // Y轴最大坐标
-    uint8_t point_num;                        // 当前触摸点数量
-    touch_point_t points[FT5X06_MAX_TOUCHES]; // 触摸点数组
+    int rst_gpio;
+    int int_gpio;
+    uint16_t max_x;
+    uint16_t max_y;
+    uint8_t point_num;
+    touch_point_t points[FT5X06_MAX_TOUCHES];
 } touch_ft5x06_t;
 
 // 全局静态变量
@@ -54,9 +53,22 @@ static touch_ft5x06_t *s_touch = NULL; // 触摸控制器实例指针
  */
 static esp_err_t touch_ft5x06_i2c_read(touch_ft5x06_t *touch, uint8_t reg, uint8_t *data, size_t len)
 {
-    // 使用I2C master API先发送寄存器地址,再接收数据
-    // 超时从100ms增加到500ms,适应100kHz低速和总线繁忙情况
-    return i2c_master_transmit_receive(touch->i2c_dev, &reg, 1, data, len, 500);
+    (void)touch;
+    i2c_port_t port = i2c_manager_get_port();
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (FT5X06_ADDR << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(cmd, reg, true);
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (FT5X06_ADDR << 1) | I2C_MASTER_READ, true);
+    if (len > 1) {
+        i2c_master_read(cmd, data, len - 1, I2C_MASTER_ACK);
+    }
+    i2c_master_read_byte(cmd, &data[len - 1], I2C_MASTER_NACK);
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(port, cmd, pdMS_TO_TICKS(500));
+    i2c_cmd_link_delete(cmd);
+    return ret;
 }
 
 /**
@@ -92,13 +104,8 @@ esp_err_t touch_ft5x06_init(void)
     // 初始化I2C总线管理器(多次调用安全)
     ESP_RETURN_ON_ERROR(i2c_manager_init(), TAG, "i2c manager init failed");
 
-    // 获取共享的I2C总线句柄
-    i2c_master_bus_handle_t i2c_bus = i2c_manager_get_bus();
-    if (!i2c_bus)
-    {
-        ESP_LOGE(TAG, "Failed to get I2C bus from manager");
-        return ESP_FAIL;
-    }
+    // 旧版I2C通过端口号访问
+    (void)i2c_manager_get_port();
 
     // 分配触摸控制器结构体内存(并清零)
     s_touch = calloc(1, sizeof(touch_ft5x06_t));
@@ -120,14 +127,7 @@ esp_err_t touch_ft5x06_init(void)
     // 注意: INT引脚(GPIO38)未配置,当前使用轮询模式读取触摸数据
     // 如需中断驱动模式,可配置INT为下降沿中断并添加ISR处理
 
-    // 添加I2C设备到总线
-    i2c_device_config_t dev_cfg =
-        {
-            .dev_addr_length = I2C_ADDR_BIT_LEN_7, // 7位地址
-            .device_address = FT5X06_ADDR,         // FT5x06设备地址(0x38)
-            .scl_speed_hz = TOUCH_FT5X06_I2C_HZ,   // I2C时钟频率400kHz
-        };
-    ESP_GOTO_ON_ERROR(i2c_master_bus_add_device(i2c_bus, &dev_cfg, &s_touch->i2c_dev), err, TAG, "add i2c device failed");
+    // 旧版I2C无需添加设备
 
     // 设置触摸屏分辨率(从显示屏配置获取)
     s_touch->max_x = CO5300_PANEL_H_RES; // 水平分辨率
@@ -140,14 +140,9 @@ esp_err_t touch_ft5x06_init(void)
     return ESP_OK;                                           // 返回成功
 
 err: // 错误处理标签
-    if (s_touch)
-    { // 如果已分配内存
-        if (s_touch->i2c_dev)
-        {                                               // 如果I2C设备已添加
-            i2c_master_bus_rm_device(s_touch->i2c_dev); // 从总线移除设备
-        }
-        free(s_touch);  // 释放内存
-        s_touch = NULL; // 清空指针
+    if (s_touch) {
+        free(s_touch);
+        s_touch = NULL;
     }
     return ret; // 返回错误码
 }

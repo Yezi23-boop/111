@@ -56,16 +56,12 @@ static esp_err_t audio_write_callback(void *audio_buffer, size_t len, size_t *by
     }
 
     int ret = esp_codec_dev_write(playback_dev, audio_buffer, len);
-    if (ret > 0)
-    {
-        *bytes_written = ret;
+    if (ret == 0) {
+        *bytes_written = len;
         return ESP_OK;
     }
-    else
-    {
-        *bytes_written = 0;
-        return ESP_FAIL;
-    }
+    *bytes_written = 0;
+    return ESP_FAIL;
 }
 
 // I2S时钟重配置回调

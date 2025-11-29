@@ -3,14 +3,15 @@
  * @brief I2C总线统一管理实现
  */
 
-#include "i2c_manager.h" // I2C管理器头文件
-#include "esp_log.h"     // ESP日志系统
-#include "esp_check.h"   // ESP错误检查宏
+#include "i2c_manager.h"
+#include "esp_log.h"
+#include "esp_check.h"
+#include "driver/i2c.h"
 
-static const char *TAG = "i2c_manager"; // 日志标签
+static const char *TAG = "i2c_manager";
 
-// 全局I2C总线句柄(可供多个组件共享)
-static i2c_master_bus_handle_t s_i2c_bus = NULL;
+static bool s_legacy_ready = false;
+static const i2c_port_t s_i2c_port = I2C_MANAGER_PORT;
 
 /**
  * @brief 初始化I2C总线管理器
@@ -18,73 +19,42 @@ static i2c_master_bus_handle_t s_i2c_bus = NULL;
 esp_err_t i2c_manager_init(void)
 {
     // 如果总线已初始化,直接返回成功
-    if (s_i2c_bus)
-    {
-        ESP_LOGW(TAG, "I2C bus already initialized");
+    if (s_legacy_ready) {
         return ESP_OK;
     }
 
-    // I2C主机总线配置
-    const i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = I2C_MANAGER_PORT,       // I2C端口号(I2C_NUM_0)
-        .sda_io_num = I2C_MANAGER_SDA_GPIO, // SDA引脚(GPIO15)
-        .scl_io_num = I2C_MANAGER_SCL_GPIO, // SCL引脚(GPIO14)
-        .clk_source = I2C_CLK_SRC_DEFAULT,  // 使用默认时钟源
-        .glitch_ignore_cnt = 7,             // 毛刺过滤计数(7个时钟周期)
-        .flags = {
-            .enable_internal_pullup = false, // 禁用内部上拉,使用外部上拉电阻
-        },
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = I2C_MANAGER_SDA_GPIO,
+        .scl_io_num = I2C_MANAGER_SCL_GPIO,
+        .sda_pullup_en = GPIO_PULLUP_DISABLE,
+        .scl_pullup_en = GPIO_PULLUP_DISABLE,
+        .master.clk_speed = I2C_MANAGER_FREQ_HZ,
     };
+    ESP_RETURN_ON_ERROR(i2c_param_config(s_i2c_port, &conf), TAG, "legacy param config failed");
+    ESP_RETURN_ON_ERROR(i2c_driver_install(s_i2c_port, conf.mode, 0, 0, 0), TAG, "legacy driver install failed");
+    s_legacy_ready = true;
 
-    // 创建I2C主机总线
-    ESP_RETURN_ON_ERROR(
-        i2c_new_master_bus(&bus_cfg, &s_i2c_bus),
-        TAG,
-        "Failed to create I2C master bus");
-
-    ESP_LOGI(TAG, "I2C bus initialized (SCL: GPIO%d, SDA: GPIO%d, Freq: %dHz)",
+    ESP_LOGI(TAG, "I2C initialized (legacy) SCL:%d SDA:%d Freq:%d",
              I2C_MANAGER_SCL_GPIO, I2C_MANAGER_SDA_GPIO, I2C_MANAGER_FREQ_HZ);
 
     return ESP_OK;
 }
 
-/**
- * @brief 获取I2C总线句柄
- */
-i2c_master_bus_handle_t i2c_manager_get_bus(void)
-{
-    // 如果未初始化,记录警告日志
-    if (!s_i2c_bus)
-    {
-        ESP_LOGW(TAG, "I2C bus not initialized, call i2c_manager_init() first");
-    }
-    return s_i2c_bus; // 返回总线句柄(可能为NULL)
-}
+ 
 
 /**
  * @brief 反初始化I2C总线管理器
  */
 esp_err_t i2c_manager_deinit(void)
 {
-    // 如果总线未初始化,直接返回成功
-    if (!s_i2c_bus)
-    {
+    if (!s_legacy_ready) {
         return ESP_OK;
     }
 
-    // 删除I2C总线
-    esp_err_t ret = i2c_del_master_bus(s_i2c_bus);
-    if (ret == ESP_OK)
-    {
-        s_i2c_bus = NULL; // 清空句柄
-        ESP_LOGI(TAG, "I2C bus deinitialized");
-    }
-    else
-    {
-        ESP_LOGE(TAG, "Failed to delete I2C bus: %s", esp_err_to_name(ret));
-    }
-
-    return ret;
+    i2c_driver_delete(s_i2c_port);
+    s_legacy_ready = false;
+    return ESP_OK;
 }
 
 /**
@@ -92,38 +62,29 @@ esp_err_t i2c_manager_deinit(void)
  */
 esp_err_t i2c_manager_scan(void)
 {
-    // 确保I2C总线已初始化
-    if (!s_i2c_bus)
-    {
-        ESP_LOGE(TAG, "I2C bus not initialized");
+    if (!s_legacy_ready) {
+        ESP_LOGE(TAG, "I2C not initialized");
         return ESP_ERR_INVALID_STATE;
     }
 
     ESP_LOGI(TAG, "扫描I2C总线 (0x03-0x77)...");
     int found_count = 0;
 
-    // 扫描有效的I2C地址范围
-    for (uint8_t addr = 0x03; addr <= 0x77; addr++)
-    {
-        // 尝试探测设备 (50ms超时)
-        esp_err_t ret = i2c_master_probe(s_i2c_bus, addr, 50);
-
-        if (ret == ESP_OK)
-        {
+    for (uint8_t addr = 0x03; addr <= 0x77; addr++) {
+        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+        i2c_master_start(cmd);
+        i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_stop(cmd);
+        esp_err_t ret = i2c_master_cmd_begin(s_i2c_port, cmd, pdMS_TO_TICKS(50));
+        i2c_cmd_link_delete(cmd);
+        if (ret == ESP_OK) {
             ESP_LOGI(TAG, "  发现设备: 0x%02X", addr);
             found_count++;
-
-            // 标注已知设备
-            if (addr == 0x18)
-            {
+            if (addr == 0x18) {
                 ESP_LOGI(TAG, "    -> ES8311 DAC");
-            }
-            else if (addr == 0x38)
-            {
+            } else if (addr == 0x38) {
                 ESP_LOGI(TAG, "    -> FT3168/FT5x06 Touch");
-            }
-            else if (addr == 0x40)
-            {
+            } else if (addr == 0x40) {
                 ESP_LOGI(TAG, "    -> ES7210 ADC");
             }
         }
@@ -140,4 +101,13 @@ esp_err_t i2c_manager_scan(void)
     }
 
     return ESP_OK;
+
+}
+
+i2c_port_t i2c_manager_get_port(void)
+{
+    if (!s_legacy_ready) {
+        ESP_LOGW(TAG, "I2C legacy driver not initialized");
+    }
+    return s_i2c_port;
 }

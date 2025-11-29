@@ -6,7 +6,7 @@
 #include "i2c_manager.h"            // I2C总线管理器
 #include "esp_log.h"                // ESP-IDF日志输出
 #include "driver/gpio.h"            // GPIO驱动
-#include "driver/i2c_master.h"      // I2C主机驱动(新API)
+#include "driver/i2c.h"
 #include "driver/i2s_std.h"         // I2S标准驱动
 #include "esp_codec_dev.h"          // ESP编解码设备高层API
 #include "esp_codec_dev_defaults.h" // 编解码设备默认配置
@@ -172,15 +172,7 @@ static esp_err_t audio_pa_init(void)
  */
 static esp_err_t audio_es8311_init(void)
 {
-    // 获取共享的I2C总线句柄
-    i2c_master_bus_handle_t i2c_bus = i2c_manager_get_bus();
-    if (!i2c_bus)
-    {
-        ESP_LOGE(TAG, "Failed to get I2C bus from manager");
-        return ESP_FAIL;
-    }
-
-    // 配置硬件增益参数(关键!匹配PA和DAC电压)
+    // 配置硬件增益参数
     esp_codec_dev_hw_gain_t hw_gain = {
         .pa_voltage = 5.0,        // PA供电电压(NS4150B使用5V)
         .codec_dac_voltage = 3.3, // ES8311 DAC输出电压(3.3V)
@@ -189,9 +181,8 @@ static esp_err_t audio_es8311_init(void)
     // 创建 ES8311 codec 底层接口(使用复合字面量简化代码)
     s_playback_codec_if = es8311_codec_new(&(es8311_codec_cfg_t){
         .ctrl_if = audio_codec_new_i2c_ctrl(&(audio_codec_i2c_cfg_t){
-            // 创建I2C控制接口
-            .addr = ES8311_CODEC_ADDR, // ES8311的I2C地址(0x18)
-            .bus_handle = i2c_bus,     // 共享的I2C总线句柄
+            .port = I2C_MANAGER_PORT,
+            .addr = ES8311_CODEC_ADDR,
         }),
         .gpio_if = audio_codec_new_gpio(),         // 创建GPIO控制接口
         .codec_mode = ESP_CODEC_DEV_WORK_MODE_DAC, // 工作模式:DAC(数模转换,播放)
@@ -240,20 +231,11 @@ static esp_err_t audio_es8311_init(void)
  */
 static esp_err_t audio_es7210_init(void)
 {
-    // 获取共享的I2C总线句柄
-    i2c_master_bus_handle_t i2c_bus = i2c_manager_get_bus();
-    if (!i2c_bus)
-    {
-        ESP_LOGE(TAG, "Failed to get I2C bus from manager");
-        return ESP_FAIL;
-    }
-
-    // 创建 ES7210 codec 底层接口(使用复合字面量简化代码)
+    // 创建 ES7210 codec 底层接口
     s_record_codec_if = es7210_codec_new(&(es7210_codec_cfg_t){
         .ctrl_if = audio_codec_new_i2c_ctrl(&(audio_codec_i2c_cfg_t){
-            // 创建I2C控制接口
-            .addr = ES7210_ADC_ADDR, // ES7210的I2C地址(0x40)
-            .bus_handle = i2c_bus,   // 共享的I2C总线句柄
+            .port = I2C_MANAGER_PORT,
+            .addr = ES7210_ADC_ADDR,
         }),
         .master_mode = false,                              // 从机模式(时钟由ESP32提供)
         .mic_selected = ES7210_SEL_MIC1 | ES7210_SEL_MIC2, // 选择双麦克风输入

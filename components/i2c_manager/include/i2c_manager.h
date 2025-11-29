@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "driver/i2c_master.h"
+#include "driver/i2c.h"
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -29,11 +29,9 @@ extern "C"
     esp_err_t i2c_manager_init(void);
 
     /**
-     * @brief 获取I2C总线句柄
-     * @note 调用前必须先调用i2c_manager_init()初始化
-     * @return I2C总线句柄,如果未初始化则返回NULL
+     * @brief 获取I2C端口号(旧版I2C驱动)
      */
-    i2c_master_bus_handle_t i2c_manager_get_bus(void);
+    i2c_port_t i2c_manager_get_port(void);
 
     /**
      * @brief 反初始化I2C总线管理器

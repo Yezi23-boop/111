@@ -34,7 +34,7 @@ void time_and_weather(void *pvParameters)
     else
     {
         ESP_LOGI(TAG, "音频系统初始化成功");
-        audio_codec_set_volume(80);
+        audio_codec_set_volume(10);
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 
