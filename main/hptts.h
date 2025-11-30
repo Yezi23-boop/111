@@ -17,18 +17,6 @@ typedef struct
     char *temperature;
     char *last_update;
 } user_seniverse_now_config_t;
-typedef struct
-{
-    int year;
-    int month;
-    int day;
-    int hour;
-    int min;
-    int sec;
-    char timestr[64]; // 格式化时间字符串
-} my_time_t;
-
-void get_local_time(my_time_t *out_time);
 // 函数声明
 esp_err_t _http_event_handler(esp_http_client_event_t *evt);
 void http_rest_with_url(void);

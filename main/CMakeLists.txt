@@ -4,6 +4,9 @@ file(GLOB_RECURSE srcs
     ${CMAKE_CURRENT_LIST_DIR}/ui/*.c
 )
 
+# 手动添加硬件初始化文件 (以防GLOB_RECURSE漏掉)
+list(APPEND srcs "hardware_init.c")
+
 # 设置包含目录
 set(include_dirs
     .

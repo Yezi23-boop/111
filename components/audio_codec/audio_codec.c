@@ -235,7 +235,7 @@ static esp_err_t audio_es7210_init(void)
                                                              .bits_per_sample = AUDIO_DEFAULT_BITS_PER_SAMPLE, // 采样位宽(16位)
                                                          }) == ESP_CODEC_DEV_OK)
     {                                                  // 检查打开是否成功
-        esp_codec_dev_set_in_gain(s_record_dev, 30.0); // 设置默认增益(30dB)
+        esp_codec_dev_set_in_gain(s_record_dev, 36.0); // 设置默认增益(36dB)
         ESP_LOGI(TAG, "ES7210 initialized");           // 记录初始化成功日志
         return ESP_OK;                                 // 成功返回
     }
@@ -459,4 +459,22 @@ esp_err_t audio_codec_set_pa_enable(bool enable)
 {
     gpio_set_level(AUDIO_PA_CTRL_GPIO, enable ? 1 : 0); // 设置PA控制引脚电平
     return ESP_OK;                                      // 总是返回成功
+}
+
+esp_err_t audio_codec_set_record_gain(float db)
+{
+    if (!s_record_dev)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return (esp_codec_dev_set_in_gain(s_record_dev, db) == ESP_CODEC_DEV_OK) ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t audio_codec_set_record_channel_gain(uint16_t channel_mask, float db)
+{
+    if (!s_record_dev)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return (esp_codec_dev_set_in_channel_gain(s_record_dev, channel_mask, db) == ESP_CODEC_DEV_OK) ? ESP_OK : ESP_FAIL;
 }

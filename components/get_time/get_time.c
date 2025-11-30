@@ -6,8 +6,9 @@
 #include "esp_system.h"
 #include "esp_sntp.h"
 #include "get_time.h"
-static const char* SNTP_TAG = "sntp";             // SNTP相关日志标签
-struct tm timeinfo = { 0 }; // 全局时间结构体，保存本地时间
+static const char *SNTP_TAG = "sntp"; // SNTP相关日志标签
+struct tm timeinfo = {0};             // 全局时间结构体，保存本地时间
+my_time_t now_time;                   // 全局当前时间
 
 /**
  * @brief 初始化SNTP
@@ -28,7 +29,7 @@ static void esp_initialize_sntp(void)
  * @details 获取系统当前时间并填充到自定义结构体 my_time_t 中，自动处理年份和月份
  * @param out_time 指向 my_time_t 结构体的指针
  */
-void get_local_time(my_time_t* out_time)
+void get_local_time(my_time_t *out_time)
 {
     struct tm t;
     time_t now;
@@ -42,6 +43,16 @@ void get_local_time(my_time_t* out_time)
     out_time->hour = t.tm_hour;
     out_time->min = t.tm_min;
     out_time->sec = t.tm_sec;
+    char time_str[64];
+    snprintf(time_str, sizeof(time_str), "%04d-%02d-%02d %02d:%02d:%02d",
+             out_time->year, out_time->month, out_time->day,
+             out_time->hour, out_time->min, out_time->sec);
+    strcpy(out_time->time_str, time_str);
+}
+
+void update_now_time(void)
+{
+    get_local_time(&now_time);
 }
 
 /**
@@ -73,10 +84,10 @@ void esp_wait_sntp_sync(void)
     strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
     ESP_LOGI(SNTP_TAG, "The current date/time in guangzhoou is: %s", strftime_buf);
     ESP_LOGI(SNTP_TAG, "详细时间: %04d-%02d-%02d %02d:%02d:%02d",
-        timeinfo.tm_year + 1900,
-        timeinfo.tm_mon + 1,
-        timeinfo.tm_mday,
-        timeinfo.tm_hour,
-        timeinfo.tm_min,
-        timeinfo.tm_sec);
+             timeinfo.tm_year + 1900,
+             timeinfo.tm_mon + 1,
+             timeinfo.tm_mday,
+             timeinfo.tm_hour,
+             timeinfo.tm_min,
+             timeinfo.tm_sec);
 }

@@ -9,8 +9,13 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_heap_caps.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <sd_manager.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 static const char *TAG = "audio_app";
 
@@ -84,10 +89,13 @@ static void record_task(void *arg)
     fwrite(&header, 1, sizeof(wav_header_t), f);
 
     ESP_LOGI(TAG, "开始录音: %s", s_record_filename);
+    // 提升录音增益：默认提升到36dB，适配低灵敏度驻极体麦克风
+    audio_codec_set_record_gain(36.0f);
 
     // 申请缓冲区
-    size_t buf_size = 4096;
-    uint8_t *buffer = malloc(buf_size);
+    size_t buf_size = 4096 * 1; // 可调节为2048/4096以平衡时延与I/O
+    // uint8_t *buffer = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    uint8_t *buffer = (uint8_t *)malloc(buf_size);
     if (buffer == NULL)
     {
         ESP_LOGE(TAG, "内存不足");
@@ -103,10 +111,10 @@ static void record_task(void *arg)
     while (s_is_recording)
     {
         read_res = esp_codec_dev_read(record_dev, buffer, buf_size);
-        if (read_res > 0)
+        if (read_res == ESP_CODEC_DEV_OK)
         {
-            fwrite(buffer, 1, read_res, f);
-            total_bytes += read_res;
+            fwrite(buffer, 1, buf_size, f);
+            total_bytes += buf_size;
         }
         else
         {
@@ -130,11 +138,11 @@ static void record_task(void *arg)
     ESP_LOGI(TAG, "录音文件已保存");
     vTaskDelete(NULL);
 }
-
 esp_err_t audio_app_init(void)
 {
     // 这里可以做一些应用层的初始化，目前驱动层已经初始化好了
     ESP_LOGI(TAG, "音频应用初始化");
+
     return ESP_OK;
 }
 

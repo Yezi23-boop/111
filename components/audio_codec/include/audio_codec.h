@@ -84,6 +84,10 @@ extern "C"
      */
     esp_err_t audio_codec_set_pa_enable(bool enable);
 
+    esp_err_t audio_codec_set_record_gain(float db);
+
+    esp_err_t audio_codec_set_record_channel_gain(uint16_t channel_mask, float db);
+
 #ifdef __cplusplus
 }
 #endif

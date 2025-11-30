@@ -8,7 +8,7 @@ typedef struct
     int hour;
     int min;
     int sec;
-    char timestr[64]; // 格式化时间字符串
+    char time_str[64];
 } my_time_t;
 
 /**
@@ -23,6 +23,9 @@ void esp_wait_sntp_sync(void);
  * @details 获取系统当前时间并填充到自定义结构体 my_time_t 中，自动处理年份和月份
  * @param out_time 指向 my_time_t 结构体的指针，用于存储当前时间
  */
-void get_local_time(my_time_t* out_time);
+void get_local_time(my_time_t *out_time);
+
+extern my_time_t now_time;
+void update_now_time(void);
 
 #endif // GET_TIME_H
