@@ -35,7 +35,7 @@
 
 /* TE信号配置 */
 #define CO5300_PANEL_USE_TE_SIGNAL 0 // 1=启用TE同步, 0=禁用
-#define CO5300_PANEL_TE_MODE 0x01    // 0x00=仅V-Blanking, 0x01=V+H-Blanking
+#define CO5300_PANEL_TE_MODE 0x00    // 0x00=Mode 1 (仅V-Porch, 推荐), 0x01=Mode 2 (V-Porch+H-Porch)
 
 /* ========== 性能优化 ========== */
 

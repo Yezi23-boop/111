@@ -155,7 +155,7 @@ void lv_port_disp_init_single(void) // 片外ram
 
     lv_display_set_buffers(s_display, disp_buf1, disp_buf2,
                            disp_buf_size * sizeof(lv_color_t),
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
+                           1);
 
     ESP_LOGI(TAG, "LVGL 9.2 单缓存显示驱动初始化完成 (RGB565格式%s字节交换)",
              LV_PORT_BYTE_SWAP_ENABLE ? "启用" : "禁用");
@@ -197,15 +197,6 @@ void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
     // 帧结束标记：flush_ready后重置为帧起始状态
     s_frame_ctx.frame_start = true;
     s_frame_ctx.flush_count = 0;
-
-    // 每100帧输出一次统计（调试用）
-    static uint32_t frame_counter = 0;
-    if (++frame_counter >= 100)
-    {
-        frame_counter = 0;
-        ESP_LOGI(TAG, "TE Stats - Sync: %lu, Timeout: %lu",
-                 s_frame_ctx.te_sync_count, s_frame_ctx.te_timeout_count);
-    }
 #endif
 
     if (ret != ESP_OK)

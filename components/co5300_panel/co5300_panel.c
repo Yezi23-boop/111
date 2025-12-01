@@ -1,7 +1,7 @@
 /**
  * @file co5300_panel.c
  * @brief CO5300 LCD面板驱动实现 (410x502, QSPI接口)
- * 
+ *
  * 主要功能：
  * - 面板初始化和配置
  * - TE信号同步（Mode1: V-Blanking + H-Blanking）
@@ -31,14 +31,15 @@ static const char *TAG = "co5300_panel";
 // 自定义初始化序列：启用TE信号（替换默认的0x34命令为0x35）
 static const co5300_lcd_init_cmd_t te_enable_init_cmds[] = {
     {0x11, (uint8_t[]){0x00}, 0, 120},                 // Sleep out + 120ms
-    {0x35, (uint8_t[]){CO5300_PANEL_TE_MODE}, 1, 0},   // TE ON (关键修改)
+    {0x35, (uint8_t[]){CO5300_PANEL_TE_MODE}, 1, 0},   // TE ON (Mode 1: V-Porch Only)
+    {0x44, (uint8_t[]){0x00, 0x00}, 2, 0},             // TE Scan Line (0x0000 = Line 0, equivalent to TEON Mode 1)
     {0xFE, (uint8_t[]){0x00}, 1, 0},                   // Page switch
-    {0xC4, (uint8_t[]){0x80}, 1, 0},                   // SPI Mode
-    {0x3A, (uint8_t[]){0x55}, 1, 0},                   // Pixel format RGB565
+    {0xC4, (uint8_t[]){0x80}, 1, 0},                   // SPI Mode (0x80 = Enable SPI Write SRAM)
+    {0x3A, (uint8_t[]){0x55}, 1, 0},                   // Pixel format (0x55 = 16-bit/pixel RGB565 for both SPI and RGB interface)
     {0x53, (uint8_t[]){0x20}, 1, 0},                   // Control display
     {0x63, (uint8_t[]){0xFF}, 1, 0},                   // HBM brightness
-    {0x2A, (uint8_t[]){0x00, 0x16, 0x01, 0xAF}, 4, 0}, // Column address
-    {0x2B, (uint8_t[]){0x00, 0x00, 0x01, 0xF5}, 4, 0}, // Page address
+    {0x2A, (uint8_t[]){0x00, 0x16, 0x01, 0xAF}, 4, 0}, // 设置列地址 (Column Address: Start 0x0016=22, End 0x01AF=431)
+    {0x2B, (uint8_t[]){0x00, 0x00, 0x01, 0xF5}, 4, 0}, // 设置行地址 (Page Address: Start 0x0000=0, End 0x01F5=501)
     {0x29, (uint8_t[]){0x00}, 0, 0},                   // Display on
     {0x51, (uint8_t[]){0xFF}, 1, 0},                   // Normal brightness
     {0x58, (uint8_t[]){0x00}, 1, 0},                   // High contrast OFF
@@ -48,50 +49,41 @@ static const co5300_lcd_init_cmd_t te_enable_init_cmds[] = {
 
 /* ========== 全局变量 ========== */
 
-static esp_lcd_panel_io_handle_t s_io_handle = NULL;    // SPI通信句柄
-static esp_lcd_panel_handle_t s_panel_handle = NULL;    // LCD面板句柄
+static esp_lcd_panel_io_handle_t s_io_handle = NULL; // SPI通信句柄
+static esp_lcd_panel_handle_t s_panel_handle = NULL; // LCD面板句柄
 
 #if CO5300_PANEL_USE_TE_SIGNAL
-static SemaphoreHandle_t s_te_semaphore = NULL;     // TE同步信号量
+static SemaphoreHandle_t s_te_semaphore = NULL;      // TE同步信号量
 static volatile uint32_t s_te_interrupt_counter = 0; // TE中断计数器（用于过滤H-Blanking）
-#define TE_FILTER_THRESHOLD 500  // 过滤阈值：502行/帧，使用500容错
+#define TE_FILTER_THRESHOLD 500                      // 过滤阈值：502行/帧，使用500容错
 #endif
 
-static bool s_initialized = false;  // 初始化标志
+static bool s_initialized = false; // 初始化标志
 
 /* ========== 中断处理 ========== */
 
 #if CO5300_PANEL_USE_TE_SIGNAL
 /**
- * @brief TE信号中断处理（带计数器过滤器）
- * @details Mode 1产生V-Blanking + H-Blanking信号：
- *          - 总频率：约30,120次/秒 (502行 × 60fps)
- *          - 通过计数器过滤：每502次中断释放1次信号量
- *          - 等效频率：60次/秒（仅V-Blanking）
- * 
- * 优势：
- *  1. 精确计数，不受FreeRTOS Tick精度限制
- *  2. 无时间溢出风险
- *  3. 可调阈值适应不同帧率
+ * @brief TE信号中断处理（优化版）
+ * @details TE Mode 1 (V-Porch Only) 模式下：
+ *          - 仅在V-Porch期间产生高电平（约60Hz）
+ *          - 对应 Datasheet Reg 35h M=0, Reg 44h N=0
+ *          - 无需计数器过滤，直接释放信号量
+ *          - 响应速度更快，CPU占用更低
  */
 static void IRAM_ATTR te_gpio_isr_handler(void *arg)
 {
-    s_te_interrupt_counter++;
-    
-    // 计数器过滤：每500次中断（约1帧@60Hz）释放信号量
-    if (s_te_interrupt_counter >= TE_FILTER_THRESHOLD) {
-        s_te_interrupt_counter = 0;  // 计数器归零
-        
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        if (s_te_semaphore != NULL) {
-            xSemaphoreGiveFromISR(s_te_semaphore, &xHigherPriorityTaskWoken);
-        }
-        
-        if (xHigherPriorityTaskWoken == pdTRUE) {
-            portYIELD_FROM_ISR();
-        }
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (s_te_semaphore != NULL)
+    {
+        xSemaphoreGiveFromISR(s_te_semaphore, &xHigherPriorityTaskWoken);
     }
-    // else: 计数未达阈值，继续累加
+
+    if (xHigherPriorityTaskWoken == pdTRUE)
+    {
+        portYIELD_FROM_ISR();
+    }
 }
 #endif
 
@@ -107,9 +99,9 @@ static bool default_color_trans_done_cb(esp_lcd_panel_io_handle_t panel_io, esp_
 
 /**
  * @brief 初始化CO5300面板
- * 
+ *
  * 流程：TE配置 -> QSPI总线 -> 面板IO -> 面板驱动 -> 复位启动
- * 
+ *
  * @return ESP_OK=成功, ESP_ERR_NO_MEM=内存不足, 其他=失败原因
  * @note 只能调用一次，重复调用直接返回ESP_OK
  */
@@ -125,7 +117,8 @@ esp_err_t co5300_panel_init(void)
     /* 步骤1: 创建TE信号量 */
     ESP_LOGI(TAG, "Creating TE semaphore");
     s_te_semaphore = xSemaphoreCreateBinary();
-    if (s_te_semaphore == NULL) {
+    if (s_te_semaphore == NULL)
+    {
         ESP_LOGE(TAG, "Failed to create TE semaphore");
         return ESP_ERR_NO_MEM;
     }
@@ -137,7 +130,7 @@ esp_err_t co5300_panel_init(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_POSEDGE,
+        .intr_type = GPIO_INTR_POSEDGE, // Mode 1: V-Porch Start (上升沿触发)
     };
     ESP_RETURN_ON_ERROR(gpio_config(&te_gpio_config), TAG, "TE GPIO config failed");
     ESP_RETURN_ON_ERROR(gpio_install_isr_service(0), TAG, "GPIO ISR service install failed");
@@ -185,7 +178,7 @@ esp_err_t co5300_panel_init(void)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel_handle, true), TAG, "Display on failed");
 
     s_initialized = true;
-    
+
 #if CO5300_PANEL_USE_TE_SIGNAL
     ESP_LOGI(TAG, "CO5300 init OK (TE enabled, mode: 0x%02X)", CO5300_PANEL_TE_MODE);
 #else
@@ -202,16 +195,20 @@ esp_err_t co5300_panel_init(void)
  */
 esp_err_t co5300_panel_wait_te_signal(uint32_t timeout_ms)
 {
-    if (!s_initialized || s_te_semaphore == NULL) {
+    if (!s_initialized || s_te_semaphore == NULL)
+    {
         ESP_LOGE(TAG, "TE not initialized");
         return ESP_ERR_INVALID_STATE;
     }
 
     TickType_t timeout_ticks = (timeout_ms == 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    
-    if (xSemaphoreTake(s_te_semaphore, timeout_ticks) == pdTRUE) {
+
+    if (xSemaphoreTake(s_te_semaphore, timeout_ticks) == pdTRUE)
+    {
         return ESP_OK;
-    } else {
+    }
+    else
+    {
         ESP_LOGW(TAG, "TE timeout (%lu ms)", timeout_ms);
         return ESP_ERR_TIMEOUT;
     }
@@ -232,11 +229,13 @@ esp_err_t co5300_panel_get_raw(struct esp_lcd_panel_io_t **io, struct esp_lcd_pa
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (io != NULL) {
+    if (io != NULL)
+    {
         *io = s_io_handle;
     }
 
-    if (panel != NULL) {
+    if (panel != NULL)
+    {
         *panel = s_panel_handle;
     }
 
