@@ -39,8 +39,8 @@
 
 /* ========== 性能优化 ========== */
 
-#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (80 * 1000 * 1000) // SPI时钟80MHz
-#define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 64       // 传输队列深度
+#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000) // SPI时钟50MHz
+#define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 32       // 传输队列深度
 
 /* ========== LCD参数 ========== */
 

@@ -22,7 +22,6 @@
 #include "button_gpio.h"
 // 前置声明
 void lvgl_bottomr_init(void);
-void iot_button_init(void);
 
 static const char *TAG = "lvgl_task";
 int next_call = 0;
@@ -33,12 +32,11 @@ static TaskHandle_t cpu_monitor_task_handle = NULL;
 // CPU使用率监控任务
 static void cpu_monitor_task(void *arg)
 {
-
     while (1)
     {
         // 等待5秒
         vTaskDelay(pdMS_TO_TICKS(5000));
-        // 打印内存统计信息
+        // // 打印内存统计信息
         // printf_esp32_memory_stats();
         // ESP_LOGI(TAG, "next_call:%d", next_call);
     }
@@ -49,13 +47,10 @@ void lvgl_task(void *pvParameter)
     ESP_LOGI(TAG, "Starting application");
     lv_port_init_small();
     // lv_demo_benchmark();
-    // lv_demo_stress();
+    //  lv_demo_stress();
     setup_ui(&guider_ui);
     events_init(&guider_ui);
 
-    // 初始化自定义底部按钮
-    // lvgl_bottomr_init();
-    iot_button_init();
     // 创建CPU使用率监控任务
     xTaskCreatePinnedToCore(
         cpu_monitor_task,         // 任务函数
@@ -64,7 +59,7 @@ void lvgl_task(void *pvParameter)
         NULL,                     // 参数
         1,                        // 优先级 (低优先级，避免影响其他任务)
         &cpu_monitor_task_handle, // 任务句柄
-        1                         // 在CPU1上运行
+        0                         // 在CPU1上运行
     );
 
     // LVGL任务主循环 - 保持任务持续运行
@@ -88,56 +83,6 @@ void lvgl_task(void *pvParameter)
 
         vTaskDelay(pdMS_TO_TICKS(delay_ms)); // 高性能动态延时控制
     }
-}
-
-static void button_single_click_cb(void *arg, void *data)
-{
-    ESP_LOGI(TAG, "BUTTON_SINGLE_CLICK");
-}
-
-static void button_long_press_start_cb(void *arg, void *data)
-{
-    ESP_LOGI(TAG, "BUTTON_LONG_PRESS_START");
-}
-
-static void button_triple_click_cb(void *arg, void *usr_data)
-{
-    char *msg = (char *)usr_data;
-    ESP_LOGI(TAG, "BUTTON_TRIPLE_CLICK: %s", msg);
-}
-
-void iot_button_init(void)
-{
-    button_config_t gpio_btn_cfg = {
-        .long_press_time = 1500,
-        .short_press_time = 180,
-    };
-
-    button_gpio_config_t gpio_cfg = {
-        .gpio_num = 0,
-        .active_level = 0,
-    };
-
-    button_handle_t gpio_btn_handle = NULL;
-    esp_err_t err = iot_button_new_gpio_device(&gpio_btn_cfg, &gpio_cfg, &gpio_btn_handle);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Button create failed");
-    }
-
-    // 定义用户数据（注意：确保该数据在回调执行时依然有效，通常使用全局变量或静态变量）
-    static char *user_msg = "Hello from Triple Click!";
-
-    // 定义事件参数：3次点击
-    button_event_args_t args = {
-        .multiple_clicks.clicks = 3,
-    };
-
-    iot_button_register_cb(gpio_btn_handle, BUTTON_SINGLE_CLICK, NULL, button_single_click_cb, NULL);
-    iot_button_register_cb(gpio_btn_handle, BUTTON_LONG_PRESS_START, NULL, button_long_press_start_cb, NULL);
-
-    // 注册三连击事件，使用所有参数
-    iot_button_register_cb(gpio_btn_handle, BUTTON_MULTIPLE_CLICK, &args, button_triple_click_cb, user_msg);
 }
 // 录音按钮事件回调
 static void record_btn_event_handler(lv_event_t *e)

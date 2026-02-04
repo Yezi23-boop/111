@@ -26,14 +26,14 @@ void app_main(void)
         ESP_LOGI("MAIN", "Hardware init success, starting tasks...");
 
         // 先创建lvgl任务，确保LVGL端口初始化完成
-        xTaskCreatePinnedToCore(lvgl_task, "lvgl_task", 1024 * 10, NULL, 5, &lvgl_task_handle, 1);
+        xTaskCreatePinnedToCore(lvgl_task, "lvgl_task", 1024 * 10, NULL, 6, &lvgl_task_handle, 1);
 
         // 延迟一段时间，确保LVGL初始化完成
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         // 创建时间和天气更新任务
         // 增加栈大小到10KB，避免SNTP和LVGL操作导致的栈溢出
-        xTaskCreatePinnedToCore(time_and_weather, "time", 1024 * 10, NULL, 6, &lvgl_time_handle, 0);
+        xTaskCreatePinnedToCore(time_and_weather, "time", 1024 * 4, NULL, 5, &lvgl_time_handle, 0);
     }
     else
     {

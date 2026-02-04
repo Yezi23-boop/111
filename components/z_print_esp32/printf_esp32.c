@@ -4,7 +4,12 @@
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "printf_esp32.h"
-#include <inttypes.h>  // 添加此头文件以支持PRI宏
+#include "soc/soc.h"
+#include "soc/soc_caps.h"
+#include <inttypes.h> // 添加此头文件以支持PRI宏
+
+extern char _iram_start;
+extern char _iram_end;
 /**
  * @brief 打印ESP32系统内存统计信息
  * @details 显示内部RAM和PSRAM的详细使用情况，包括LVGL内存池状态
@@ -22,6 +27,20 @@ void printf_esp32_memory_stats(void)
     size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);   // 内部 RAM 当前空闲容量（字节）
     size_t internal_used = internal_total - internal_free;                 // 内部 RAM 已用容量（字节）
 
+    // 2.1 统计 IRAM（可执行内存）使用情况（堆 + 链接器文本段）
+    size_t iram_heap_total = heap_caps_get_total_size(MALLOC_CAP_EXEC); // IRAM 堆总容量（字节）
+    size_t iram_heap_free = heap_caps_get_free_size(MALLOC_CAP_EXEC);   // IRAM 堆空闲容量（字节）
+    size_t iram_heap_used = iram_heap_total - iram_heap_free;           // IRAM 堆已用容量（字节）
+
+    size_t iram_text_used = (size_t)(&_iram_end - &_iram_start);
+    size_t iram_text_total = 0;
+#if defined(SOC_IRAM0_0_SEG_LEN)
+    iram_text_total += SOC_IRAM0_0_SEG_LEN;
+#endif
+#if defined(SOC_IRAM0_2_SEG_LEN)
+    iram_text_total += SOC_IRAM0_2_SEG_LEN;
+#endif
+
     // 3. 以 ESP-IDF 日志格式打印统计结果（等级：INFO，标签：TAG）
     ESP_LOGI(" ", "┌─────────────────────────────"); // 日志标题
     ESP_LOGI(" ", "│      📊 系统资源统计         ");
@@ -37,6 +56,31 @@ void printf_esp32_memory_stats(void)
              internal_used / 1024,
              internal_total / 1024,
              internal_used * 100.0f / internal_total);
+    if (iram_heap_total > 0)
+    {
+        ESP_LOGI(" ",
+                 "│ IRAM:  %6zu KB / %6zu KB (%.1f%%) ",
+                 iram_heap_used / 1024,
+                 iram_heap_total / 1024,
+                 iram_heap_total > 0 ? (iram_heap_used * 100.0f / iram_heap_total) : 0);
+    }
+    else
+    {
+        if (iram_text_total > 0)
+        {
+            ESP_LOGI(" ",
+                     "│ IRAM:  %6zu KB / %6zu KB (%.1f%%) ",
+                     iram_text_used / 1024,
+                     iram_text_total / 1024,
+                     iram_text_used * 100.0f / iram_text_total);
+        }
+        else
+        {
+            ESP_LOGI(" ",
+                     "│ IRAM:  %6zu KB (total: unknown) ",
+                     iram_text_used / 1024);
+        }
+    }
     ESP_LOGI(" ", "├─────────────────────────────");
     ESP_LOGI(" ", "│      ⚡ CPU任务统计           ");
     ESP_LOGI(" ", "└─────────────────────────────");
@@ -62,12 +106,14 @@ void printf_esp32_memory_stats(void)
 void printf_esp32_task_stack_stats(TaskHandle_t task_handle, uint32_t stack_size_bytes, const char *task_name)
 {
     // 1. 参数有效性检查
-    if (task_handle == NULL) {
+    if (task_handle == NULL)
+    {
         ESP_LOGW("STACK", "任务句柄为空，无法获取栈统计信息");
         return;
     }
-    
-    if (task_name == NULL) {
+
+    if (task_name == NULL)
+    {
         task_name = "未知任务"; // 提供默认任务名称
     }
 
@@ -75,16 +121,16 @@ void printf_esp32_task_stack_stats(TaskHandle_t task_handle, uint32_t stack_size
     // uxTaskGetStackHighWaterMark() 返回任务栈的最小剩余空间（高水位标记）
     UBaseType_t stack_remaining_words = uxTaskGetStackHighWaterMark(task_handle);
     uint32_t stack_remaining_bytes = stack_remaining_words * sizeof(StackType_t);
-    
+
     // 3. 计算栈使用情况
     uint32_t stack_used_bytes = stack_size_bytes - stack_remaining_bytes;
     float stack_usage_percent = (stack_used_bytes * 100.0f) / stack_size_bytes;
-    
+
     // 4. 获取任务状态信息（可选，用于更详细的调试）
     eTaskState task_state = eTaskGetState(task_handle);
-    const char* state_names[] = {"运行中", "就绪", "阻塞", "暂停", "删除", "无效"};
-    const char* state_name = (task_state <= eInvalid) ? state_names[task_state] : "未知";
-    
+    const char *state_names[] = {"运行中", "就绪", "阻塞", "暂停", "删除", "无效"};
+    const char *state_name = (task_state <= eInvalid) ? state_names[task_state] : "未知";
+
     // 5. 以统一格式打印栈统计信息
     ESP_LOGI("STACK", "┌─────────────────────────────────────");
     ESP_LOGI("STACK", "│  📋 任务栈统计: %s", task_name);
@@ -95,12 +141,14 @@ void printf_esp32_task_stack_stats(TaskHandle_t task_handle, uint32_t stack_size
     ESP_LOGI("STACK", "│  高水位标记: %6" PRIu32 " 字 (%" PRIu32 " 字节)", (uint32_t)stack_remaining_words, stack_remaining_bytes);
     ESP_LOGI("STACK", "│  任务状态:   %s", state_name);
     ESP_LOGI("STACK", "└─────────────────────────────────────");
-    
+
     // 6. 栈使用率警告检查
-    if (stack_usage_percent > 90.0f) {
+    if (stack_usage_percent > 90.0f)
+    {
         ESP_LOGW("STACK", "⚠️  警告: 任务 '%s' 栈使用率过高 (%.1f%%)，可能存在栈溢出风险！", task_name, stack_usage_percent);
-    } else if (stack_usage_percent > 75.0f) {
+    }
+    else if (stack_usage_percent > 75.0f)
+    {
         ESP_LOGW("STACK", "⚡ 注意: 任务 '%s' 栈使用率较高 (%.1f%%)，建议监控", task_name, stack_usage_percent);
     }
 }
-

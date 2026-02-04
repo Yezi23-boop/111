@@ -80,7 +80,13 @@ void lv_port_touch_init(void);
 // Tick定时器
 void lv_port_tick_init(void);
 
-void lv_port_disp_init_small(void)
+// 声明回调函数
+static bool lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
+
+// 全局变量用于追踪分块传输进度
+static volatile int s_flush_pending_count = 0;
+
+void lv_port_disp_init_small(void) // ram
 {
     const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES1;
 
@@ -115,6 +121,12 @@ void lv_port_disp_init_small(void)
     lv_display_set_buffers(s_display, disp1, disp2,
                            disp_buf_size * sizeof(lv_color_t),
                            0);
+
+    // 注册传输完成回调，启用异步刷新
+    const esp_lcd_panel_io_callbacks_t cbs = {
+        .on_color_trans_done = lvgl_port_flush_ready_callback,
+    };
+    co5300_panel_register_color_done_callback(&cbs, s_display);
 }
 
 void lv_port_disp_init_single(void) // 片外ram
@@ -155,10 +167,43 @@ void lv_port_disp_init_single(void) // 片外ram
 
     lv_display_set_buffers(s_display, disp_buf1, disp_buf2,
                            disp_buf_size * sizeof(lv_color_t),
-                           1);
+                           0);
+
+    // 注册传输完成回调，启用异步刷新
+    const esp_lcd_panel_io_callbacks_t cbs = {
+        .on_color_trans_done = lvgl_port_flush_ready_callback,
+    };
+    co5300_panel_register_color_done_callback(&cbs, s_display);
 
     ESP_LOGI(TAG, "LVGL 9.2 单缓存显示驱动初始化完成 (RGB565格式%s字节交换)",
              LV_PORT_BYTE_SWAP_ENABLE ? "启用" : "禁用");
+}
+
+/**
+ * @brief 传输完成回调函数
+ * @note 在ISR上下文中调用
+ */
+static bool IRAM_ATTR lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
+{
+    // 递减挂起的传输计数
+    if (s_flush_pending_count > 0)
+    {
+        s_flush_pending_count--;
+    }
+
+    // 如果所有分块都传输完成
+    if (s_flush_pending_count == 0)
+    {
+#if CO5300_PANEL_USE_TE_SIGNAL
+        // 传输完成，准备下一帧的TE同步
+        s_frame_ctx.frame_start = true;
+#endif
+        lv_display_t *disp = (lv_display_t *)user_ctx;
+        lv_display_flush_ready(disp);
+        return true; // 请求高优先级任务切换（如果需要）
+    }
+
+    return false;
 }
 
 /**
@@ -171,11 +216,27 @@ void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
 {
     esp_err_t ret = ESP_OK;
 
+    // 预先计算分块数量（如果启用分块传输）
+    // 注意：必须在调用传输函数前设置好计数器，以防传输过快回调提前触发
 #if LV_PORT_CHUNKED_TRANSFER_ENABLE
     uint32_t area_height = area->y2 - area->y1 + 1;
+    if (area_height > LV_PORT_FIXED_CHUNK_LINES)
+    {
+        s_flush_pending_count = (area_height + LV_PORT_FIXED_CHUNK_LINES - 1) / LV_PORT_FIXED_CHUNK_LINES;
+    }
+    else
+    {
+        s_flush_pending_count = 1;
+    }
+#else
+    s_flush_pending_count = 1;
+#endif
+
+#if LV_PORT_CHUNKED_TRANSFER_ENABLE
+    uint32_t area_height_val = area->y2 - area->y1 + 1;
 
     // 简单判断：如果区域高度大于固定块大小，就进行分块传输
-    if (area_height > LV_PORT_FIXED_CHUNK_LINES)
+    if (area_height_val > LV_PORT_FIXED_CHUNK_LINES)
     {
         // 分块传输大区域
         ret = lv_port_flush_area_chunked_simple(disp, area, px_map);
@@ -190,18 +251,15 @@ void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
     ret = lv_port_flush_area_with_sync(disp, area, px_map);
 #endif
 
-    // LVGL 9.2 API要求：必须调用此函数通知LVGL刷新完成
-    lv_display_flush_ready(disp);
-
-#if CO5300_PANEL_USE_TE_SIGNAL
-    // 帧结束标记：flush_ready后重置为帧起始状态
-    s_frame_ctx.frame_start = true;
-    s_frame_ctx.flush_count = 0;
-#endif
+    // 注意：不再此处立即调用 lv_display_flush_ready(disp)
+    // 而是等待所有分块传输完成后的回调中调用
 
     if (ret != ESP_OK)
     {
         ESP_LOGW(TAG, "Display flush failed: %s", esp_err_to_name(ret));
+        // 如果失败，手动调用以避免LVGL挂起
+        s_flush_pending_count = 0;
+        lv_display_flush_ready(disp);
     }
 }
 
@@ -237,8 +295,6 @@ static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_
     }
 
     s_frame_ctx.flush_count++;
-    ESP_LOGV(TAG, "Flush area #%lu (x1:%" PRId32 ", y1:%" PRId32 ", x2:%" PRId32 ", y2:%" PRId32 ")",
-             s_frame_ctx.flush_count, area->x1, area->y1, area->x2, area->y2);
 #endif
 
     // 计算像素数量用于字节交换和DMA同步

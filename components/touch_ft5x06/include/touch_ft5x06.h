@@ -31,7 +31,6 @@ extern "C"
 #define TOUCH_FT5X06_SDA_GPIO 15
 #define TOUCH_FT5X06_INT_GPIO 38
 #define TOUCH_FT5X06_RST_GPIO 9
-#define TOUCH_FT5X06_I2C_HZ 400000
 
 #ifdef __cplusplus
 }

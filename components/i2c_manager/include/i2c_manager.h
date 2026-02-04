@@ -19,7 +19,7 @@ extern "C"
 #define I2C_MANAGER_PORT I2C_NUM_0 // I2C端口号
 #define I2C_MANAGER_SCL_GPIO 14    // SCL引脚(GPIO14)
 #define I2C_MANAGER_SDA_GPIO 15    // SDA引脚(GPIO15)
-#define I2C_MANAGER_FREQ_HZ 100000 // I2C时钟频率(100kHz,降低以适应长走线和多设备)
+#define I2C_MANAGER_FREQ_HZ 400000 // I2C时钟频率(100kHz,降低以适应长走线和多设备)
 
     /**
      * @brief 初始化I2C总线管理器

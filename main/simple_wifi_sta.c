@@ -12,10 +12,10 @@
 #include "esp_event.h"
 #include "esp_log.h"
 
-#define DEFAULT_WIFI_SSID "NXP_2.4GHz"
-#define DEFAULT_WIFI_PASSWORD "freescale"
-// #define DEFAULT_WIFI_SSID "li"
-// #define DEFAULT_WIFI_PASSWORD "12345678"
+// #define DEFAULT_WIFI_SSID "NXP_2.4GHz"
+// #define DEFAULT_WIFI_PASSWORD "freescale"
+#define DEFAULT_WIFI_SSID "li"
+#define DEFAULT_WIFI_PASSWORD "12345678"
 static const char *TAG = "wifi";
 
 // 事件通知回调函数

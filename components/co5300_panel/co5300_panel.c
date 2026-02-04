@@ -17,6 +17,7 @@
 #include "esp_log.h"
 #include "esp_check.h"
 #include "co5300_panel_defaults.h"
+#include "esp_timer.h" // 新增头文件用于获取高精度时间
 
 #if CO5300_PANEL_USE_TE_SIGNAL
 #include "freertos/FreeRTOS.h"
@@ -30,12 +31,12 @@ static const char *TAG = "co5300_panel";
 #if CO5300_PANEL_USE_TE_SIGNAL
 // 自定义初始化序列：启用TE信号（替换默认的0x34命令为0x35）
 static const co5300_lcd_init_cmd_t te_enable_init_cmds[] = {
-    {0x11, (uint8_t[]){0x00}, 0, 120},                 // Sleep out + 120ms
-    {0x35, (uint8_t[]){CO5300_PANEL_TE_MODE}, 1, 0},   // TE ON (Mode 1: V-Porch Only)
-    {0x44, (uint8_t[]){0x00, 0x00}, 2, 0},             // TE Scan Line (0x0000 = Line 0, equivalent to TEON Mode 1)
-    {0xFE, (uint8_t[]){0x00}, 1, 0},                   // Page switch
-    {0xC4, (uint8_t[]){0x80}, 1, 0},                   // SPI Mode (0x80 = Enable SPI Write SRAM)
-    {0x3A, (uint8_t[]){0x55}, 1, 0},                   // Pixel format (0x55 = 16-bit/pixel RGB565 for both SPI and RGB interface)
+    {0x11, (uint8_t[]){0x00}, 0, 120},               // Sleep out + 120ms
+    {0x35, (uint8_t[]){CO5300_PANEL_TE_MODE}, 1, 0}, // TE ON (Mode 1: V-Porch Only)
+    {0x44, (uint8_t[]){0x00, 0x00}, 2, 0},           // TE Scan Line (0x0000 = Line 0, equivalent to TEON Mode 1)
+    {0xFE, (uint8_t[]){0x00}, 1, 0},                 // Page switch
+    {0xC4, (uint8_t[]){0x80}, 1, 0},                 // SPI Mode (0x80 = Enable SPI Write SRAM)
+    // {0x3A, (uint8_t[]){0x55}, 1, 0},                   // Pixel format (Removed to avoid warning: overwritten by external initialization sequence)
     {0x53, (uint8_t[]){0x20}, 1, 0},                   // Control display
     {0x63, (uint8_t[]){0xFF}, 1, 0},                   // HBM brightness
     {0x2A, (uint8_t[]){0x00, 0x16, 0x01, 0xAF}, 4, 0}, // 设置列地址 (Column Address: Start 0x0016=22, End 0x01AF=431)
@@ -54,8 +55,10 @@ static esp_lcd_panel_handle_t s_panel_handle = NULL; // LCD面板句柄
 
 #if CO5300_PANEL_USE_TE_SIGNAL
 static SemaphoreHandle_t s_te_semaphore = NULL;      // TE同步信号量
+static volatile int64_t s_last_te_timestamp = 0;     // 上次TE中断时间戳（微秒）
 static volatile uint32_t s_te_interrupt_counter = 0; // TE中断计数器（用于过滤H-Blanking）
-#define TE_FILTER_THRESHOLD 500                      // 过滤阈值：502行/帧，使用500容错
+// static volatile uint32_t s_te_fps_counter = 0;       // FPS计数器（每秒中断次数） - 调试完毕移除
+#define TE_FILTER_THRESHOLD 500 // 过滤阈值：502行/帧，使用500容错
 #endif
 
 static bool s_initialized = false; // 初始化标志
@@ -74,6 +77,10 @@ static bool s_initialized = false; // 初始化标志
 static void IRAM_ATTR te_gpio_isr_handler(void *arg)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // 记录中断时间戳
+    s_last_te_timestamp = esp_timer_get_time();
+    // s_te_fps_counter++; // 增加FPS计数
 
     if (s_te_semaphore != NULL)
     {
@@ -97,6 +104,17 @@ static bool default_color_trans_done_cb(esp_lcd_panel_io_handle_t panel_io, esp_
 
 /* ========== 公共API ========== */
 
+// 调试任务：监控TE频率
+// static void te_monitor_task(void *arg)
+// {
+//     while (1)
+//     {
+//         vTaskDelay(pdMS_TO_TICKS(1000));
+//         ESP_LOGI(TAG, "TE Frequency: %lu Hz", s_te_fps_counter);
+//         s_te_fps_counter = 0;
+//     }
+// }
+
 /**
  * @brief 初始化CO5300面板
  *
@@ -114,6 +132,9 @@ esp_err_t co5300_panel_init(void)
     }
 
 #if CO5300_PANEL_USE_TE_SIGNAL
+    /* 步骤0: 启动TE监控任务 (调试用) - 已禁用 */
+    // xTaskCreate(te_monitor_task, "te_monitor", 2048, NULL, 1, NULL);
+
     /* 步骤1: 创建TE信号量 */
     ESP_LOGI(TAG, "Creating TE semaphore");
     s_te_semaphore = xSemaphoreCreateBinary();
@@ -133,8 +154,31 @@ esp_err_t co5300_panel_init(void)
         .intr_type = GPIO_INTR_POSEDGE, // Mode 1: V-Porch Start (上升沿触发)
     };
     ESP_RETURN_ON_ERROR(gpio_config(&te_gpio_config), TAG, "TE GPIO config failed");
-    ESP_RETURN_ON_ERROR(gpio_install_isr_service(0), TAG, "GPIO ISR service install failed");
-    ESP_RETURN_ON_ERROR(gpio_isr_handler_add(CO5300_PANEL_PIN_TE, te_gpio_isr_handler, NULL), TAG, "TE ISR add failed");
+
+    // 尝试添加中断处理程序
+    // 如果 ISR 服务未安装，gpio_isr_handler_add 会返回 ESP_ERR_INVALID_STATE
+    // 这种方式可以避免重复调用 gpio_install_isr_service 导致的 "GPIO isr service already installed" 错误日志
+    esp_err_t isr_ret = gpio_isr_handler_add(CO5300_PANEL_PIN_TE, te_gpio_isr_handler, NULL);
+
+    if (isr_ret == ESP_ERR_INVALID_STATE)
+    {
+        ESP_LOGD(TAG, "ISR service not installed, installing now...");
+        // 安装 ISR 服务
+        isr_ret = gpio_install_isr_service(0);
+        if (isr_ret != ESP_OK && isr_ret != ESP_ERR_INVALID_STATE)
+        {
+            ESP_LOGE(TAG, "GPIO ISR service install failed: %s", esp_err_to_name(isr_ret));
+            return isr_ret;
+        }
+        // 再次尝试添加处理程序
+        ESP_RETURN_ON_ERROR(gpio_isr_handler_add(CO5300_PANEL_PIN_TE, te_gpio_isr_handler, NULL), TAG, "TE ISR add failed");
+    }
+    else
+    {
+        // 其他错误（或成功）直接返回
+        ESP_RETURN_ON_ERROR(isr_ret, TAG, "TE ISR add failed");
+    }
+
     ESP_LOGI(TAG, "TE configured (Mode: 0x%02X)", CO5300_PANEL_TE_MODE);
 #endif
 
@@ -199,6 +243,14 @@ esp_err_t co5300_panel_wait_te_signal(uint32_t timeout_ms)
     {
         ESP_LOGE(TAG, "TE not initialized");
         return ESP_ERR_INVALID_STATE;
+    }
+    // 优化：时间窗口过滤
+    // 如果当前时间距离上次TE中断时间非常短（例如 < 6ms），说明刚刚发生过TE
+    // 此时直接认为同步成功，无需等待信号量，避免错过本次传输窗口
+    int64_t now = esp_timer_get_time();
+    if ((now - s_last_te_timestamp) < 6000) // 6ms窗口（放宽窗口以容忍渲染延迟）
+    {
+        return ESP_OK;
     }
 
     TickType_t timeout_ticks = (timeout_ms == 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);

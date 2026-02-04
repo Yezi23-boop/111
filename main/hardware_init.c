@@ -1,41 +1,102 @@
 #include "hardware_init.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "simple_wifi_sta.h"
+#include "wifi_provision.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "audio_app.h"
 #include "sd_manager.h"
 #include "audio_codec.h"
 #include "i2c_manager.h"
-
+#include "button_gpio.h"
+#include "driver/gpio.h"
+#include "iot_button.h"
 static const char *TAG = "HARDWARE_INIT";
-
+/* @brief BOOT按钮的GPIO引脚号
+ *
+ * ESP32-S3开发板上的BOOT按钮默认连接到GPIO0
+ * 按下时GPIO0变为低电平，松开时为高电平（需要上拉电阻）
+ */
+#define BUTTON_GPIO_NUM GPIO_NUM_10
 // 内部使用的事件组
 static EventGroupHandle_t s_wifi_ev_handle = NULL;
 #define WIFI_CONNECT_BIT BIT0
+static void button_press_down_cb(void *arg, void *data)
+{
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "按键单击！启动AP配网模式...");
+    ESP_LOGI(TAG, "========================================");
 
+    wifi_provision_start_apcfg();
+}
+
+static void button_long_press_start_cb(void *arg, void *data)
+{
+    ESP_LOGI(TAG, "BUTTON_LONG_PRESS_START");
+}
+
+static void button_triple_click_cb(void *arg, void *usr_data)
+{
+    char *msg = (char *)usr_data;
+    ESP_LOGI(TAG, "BUTTON_TRIPLE_CLICK: %s", msg);
+}
+
+static void button_init(void)
+{
+    button_config_t gpio_btn_cfg = {
+        .long_press_time = 1500,
+        .short_press_time = 180,
+    };
+
+    button_gpio_config_t gpio_cfg = {
+        .gpio_num = BUTTON_GPIO_NUM,
+        .active_level = 1,
+        .enable_power_save = true,
+        .disable_pull = false,
+    };
+
+    button_handle_t gpio_btn_handle = NULL;
+    esp_err_t err = iot_button_new_gpio_device(&gpio_btn_cfg, &gpio_cfg, &gpio_btn_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Button create failed");
+    }
+
+    // 定义用户数据（注意：确保该数据在回调执行时依然有效，通常使用全局变量或静态变量）
+    static char *user_msg = "Hello from Triple Click!";
+
+    // 定义事件参数：3次点击
+    button_event_args_t args = {
+        .multiple_clicks.clicks = 3,
+    };
+
+    iot_button_register_cb(gpio_btn_handle, BUTTON_PRESS_DOWN, NULL, button_press_down_cb, NULL);
+    iot_button_register_cb(gpio_btn_handle, BUTTON_LONG_PRESS_START, NULL, button_long_press_start_cb, NULL);
+
+    // 注册三连击事件，使用所有参数
+    iot_button_register_cb(gpio_btn_handle, BUTTON_MULTIPLE_CLICK, &args, button_triple_click_cb, user_msg);
+}
 /**
  * @brief WiFi事件回调函数
  * @param ev WiFi事件类型
  */
-static void wifi_event_handler(WIFI_EV_e ev)
+
+static void wifi_provision_cb(wifi_provision_state_t state)
 {
-    if (ev == WIFI_CONNECTED) // 如果WiFi连接成功
+    if (state == WIFI_PROVISION_STATE_CONNECTED)
     {
-        ESP_LOGI(TAG, "WiFi Connected Event Received");
         // 设置事件组中的WiFi连接位，通知等待任务
         if (s_wifi_ev_handle != NULL)
         {
             xEventGroupSetBits(s_wifi_ev_handle, WIFI_CONNECT_BIT);
         }
+        ESP_LOGI(TAG, "WiFi Connected Event Received");
     }
-    else if (ev == WIFI_DISCONNECTED)
+    else if (state == WIFI_PROVISION_STATE_DISCONNECTED)
     {
         ESP_LOGW(TAG, "WiFi Disconnected");
     }
 }
-
 /**
  * @brief NVS闪存初始化
  * @return esp_err_t 初始化结果
@@ -87,14 +148,14 @@ esp_err_t hardware_init(void)
         ESP_LOGE(TAG, "SD Card init failed: %s", esp_err_to_name(ret));
         // 非致命错误，继续
     }
-    else
-    {
-        // SD卡初始化成功后，打印目录内容进行调试
-        ESP_LOGI(TAG, "Listing SD Card root directory:");
-        sd_manager_list_dir("/sdcard");
-        ESP_LOGI(TAG, "Listing /sdcard/mp3 directory:");
-        sd_manager_list_dir("/sdcard/mp3");
-    }
+    // else
+    // {
+    //     // SD卡初始化成功后，打印目录内容进行调试
+    //     ESP_LOGI(TAG, "Listing SD Card root directory:");
+    //     sd_manager_list_dir("/sdcard");
+    //     ESP_LOGI(TAG, "Listing /sdcard/mp3 directory:");
+    //     sd_manager_list_dir("/sdcard/mp3");
+    // }
 
     // 4. 初始化音频编解码器
     ESP_LOGI(TAG, "Initializing Audio Codec...");
@@ -109,28 +170,18 @@ esp_err_t hardware_init(void)
         audio_codec_set_volume(60);
     }
 
-    // 5. 扫描I2C总线
-    ESP_LOGI(TAG, "Scanning I2C Bus...");
-    i2c_manager_scan();
+    // // 5. 扫描I2C总线
+    // ESP_LOGI(TAG, "Scanning I2C Bus...");
+    // i2c_manager_scan();
 
     // 6. 创建事件组
     s_wifi_ev_handle = xEventGroupCreate();
-    if (s_wifi_ev_handle == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to create event group");
-        return ESP_FAIL;
-    }
 
     // 7. WiFi初始化
     ESP_LOGI(TAG, "Initializing WiFi...");
-    ret = wifi_sta_init(wifi_event_handler);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "WiFi init failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    // 8. 等待连接
+    button_init();
+    wifi_provision_init(wifi_provision_cb);
+    // 8. 等待连接事件
     ESP_LOGI(TAG, "Waiting for WiFi connection...");
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_ev_handle,

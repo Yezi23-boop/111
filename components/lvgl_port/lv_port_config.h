@@ -3,9 +3,9 @@
 #define LCD_WIDTH 410  // LCD宽度(像素)
 #define LCD_HEIGHT 502 // LCD高度(像素)
 
-#define LV_PORT_FIXED_CHUNK_LINES1 20  // 片内ram (建议20-60行，太大内存不够)
+#define LV_PORT_FIXED_CHUNK_LINES1 502 // 片内ram (建议20-60行，太大内存不够)
 #define LV_PORT_FIXED_CHUNK_LINES2 502 // 片外ram
-#define LV_PORT_FIXED_CHUNK_LINES23 1  // 控制ram开关
+#define LV_PORT_FIXED_CHUNK_LINES23 0  // 控制ram开关
 /**
  * @brief 字节交换配置
  * @details 用于处理RGB565格式的字节序问题
