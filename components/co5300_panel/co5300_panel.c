@@ -206,6 +206,9 @@ esp_err_t co5300_panel_init(void)
         .init_cmds = NULL,
         .init_cmds_size = 0,
 #endif
+        .flags = {
+            .use_qspi_interface = 1,
+        },
     };
     const esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = CO5300_PANEL_PIN_RST,

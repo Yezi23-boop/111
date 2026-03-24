@@ -14,8 +14,8 @@
 static const char *TAG = "HARDWARE_INIT";
 /* @brief BOOT按钮的GPIO引脚号
  *
- * ESP32-S3开发板上的BOOT按钮默认连接到GPIO0
- * 按下时GPIO0变为低电平，松开时为高电平（需要上拉电阻）
+ * ESP32-S3开发板上的BOOT按钮默认连接到GPIO10
+ * 按下时GPIO10变为低电平，松开时为高电平（需要上拉电阻）
  */
 #define BUTTON_GPIO_NUM GPIO_NUM_10
 // 内部使用的事件组

@@ -10,7 +10,6 @@
 #include "printf_esp32.h"
 #include "esp_timer.h"
 #include "esp_freertos_hooks.h"
-#include "simple_wifi_sta.h"
 #include "hptts.h"
 #include "time_weather.h"
 #include "nvs_flash.h"

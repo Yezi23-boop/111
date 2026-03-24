@@ -1,0 +1,362 @@
+{
+  "generated_at_utc": "2026-03-11T10:57:12.592451+00:00",
+  "project_root": "D:\\esp32S3\\111",
+  "docs_root": "docs/context",
+  "doc_count": 22,
+  "documents": [
+    {
+      "path": "docs/context/CHANGELOG.md",
+      "title": "上下文库变更记录",
+      "tags": [],
+      "summary": "- 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，迁入索引、质量检查、检索和打包脚本。",
+      "id": "",
+      "last_reviewed": "",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
+      "token_count": 97
+    },
+    {
+      "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
+      "title": "ADR: 将嵌入式 C/C++ 工程规则提升为仓库默认规则",
+      "tags": [
+        "decisions",
+        "rules",
+        "esp32",
+        "mcu",
+        "embedded",
+        "c-cpp"
+      ],
+      "summary": "将 ESP32/MCU 嵌入式 C/C++ 工程规则提升为本仓库默认代码生成规范的决策记录。",
+      "id": "adr-default-embedded-codegen-rules",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:19:04.458091+00:00",
+      "token_count": 125
+    },
+    {
+      "path": "docs/context/decisions/README.md",
+      "title": "ADR 目录说明",
+      "tags": [],
+      "summary": "该目录用于记录架构决策。",
+      "id": "",
+      "last_reviewed": "",
+      "mtime_utc": "2026-03-11T10:19:04.458091+00:00",
+      "token_count": 28
+    },
+    {
+      "path": "docs/context/knowledge/esp32-s3/amoled-206-board-hardware-map.md",
+      "title": "板级器件与关键网络映射",
+      "tags": [
+        "esp32-s3",
+        "schematic",
+        "hardware",
+        "display",
+        "touch",
+        "audio",
+        "power"
+      ],
+      "summary": "基于原理图和现有代码整理的 ESP32-S3-Touch-AMOLED-2.06 板级器件与关键网络映射。",
+      "id": "esp32-s3-amoled-206-board-hardware-map",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:31:49.478272+00:00",
+      "token_count": 190
+    },
+    {
+      "path": "docs/context/knowledge/esp32-s3/audio-codec-address-clock-baseline.md",
+      "title": "音频 Codec 地址与时钟基线",
+      "tags": [
+        "esp32-s3",
+        "audio",
+        "codec",
+        "es8311",
+        "es7210",
+        "i2c",
+        "i2s",
+        "clock"
+      ],
+      "summary": "ES8311 与 ES7210 在当前项目中的地址编码、时钟能力和代码映射基线。",
+      "id": "audio-codec-address-clock-baseline",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
+      "token_count": 203
+    },
+    {
+      "path": "docs/context/knowledge/esp32-s3/axp2101-minimal-probe.md",
+      "title": "AXP2101 最小探测",
+      "tags": [
+        "esp32-s3",
+        "axp2101",
+        "power",
+        "pmic",
+        "i2c",
+        "probe"
+      ],
+      "summary": "AXP2101 在当前板上的最小探测前提、候选地址和接入顺序摘要。",
+      "id": "axp2101-minimal-probe",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
+      "token_count": 156
+    },
+    {
+      "path": "docs/context/knowledge/esp32-s3/ft3168-shared-i2c-baseline.md",
+      "title": "FT3168 共享 I2C 基线",
+      "tags": [
+        "esp32-s3",
+        "ft3168",
+        "touch",
+        "i2c",
+        "shared-bus",
+        "lvgl"
+      ],
+      "summary": "FT3168 在当前项目共享 I2C 总线下的通信上限、休眠约束和上电时序基线。",
+      "id": "ft3168-shared-i2c-baseline",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
+      "token_count": 130
+    },
+    {
+      "path": "docs/context/knowledge/esp32-s3/lvgl-porting-baseline.md",
+      "title": "基础点亮流程",
+      "tags": [
+        "esp32-s3",
+        "esp-idf",
+        "lvgl",
+        "display",
+        "touch"
+      ],
+      "summary": "ESP32-S3 在 ESP-IDF 下集成 LVGL 显示与触摸的基础点亮流程。",
+      "id": "esp32-s3-lvgl-porting-baseline",
+      "last_reviewed": "2026-03-07",
+      "mtime_utc": "2026-03-11T10:19:04.459648+00:00",
+      "token_count": 43
+    },
+    {
+      "path": "docs/context/knowledge/esp32-s3/pcf85063atl-minimal-probe.md",
+      "title": "PCF85063ATL 最小探测",
+      "tags": [
+        "esp32-s3",
+        "rtc",
+        "pcf85063atl",
+        "i2c",
+        "probe",
+        "wakeup"
+      ],
+      "summary": "PCF85063ATL 在当前板上的最小探测地址、用途边界和接入顺序摘要。",
+      "id": "pcf85063atl-minimal-probe",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:39:14.671258+00:00",
+      "token_count": 117
+    },
+    {
+      "path": "docs/context/knowledge/esp32-s3/power-optimization-checklist.md",
+      "title": "待机电流优化清单",
+      "tags": [
+        "esp32-s3",
+        "power",
+        "sleep",
+        "battery",
+        "wearable"
+      ],
+      "summary": "ESP32-S3 智能手表待机功耗优化检查清单。",
+      "id": "esp32-s3-watch-power-checklist",
+      "last_reviewed": "2026-03-07",
+      "mtime_utc": "2026-03-11T10:19:04.460158+00:00",
+      "token_count": 36
+    },
+    {
+      "path": "docs/context/knowledge/esp32-s3/qmi8658c-minimal-probe.md",
+      "title": "QMI8658C 最小探测",
+      "tags": [
+        "esp32-s3",
+        "imu",
+        "qmi8658c",
+        "i2c",
+        "probe",
+        "wearable"
+      ],
+      "summary": "QMI8658C 在当前板上的最小探测地址、共享总线风险和后续接入顺序摘要。",
+      "id": "qmi8658c-minimal-probe",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:39:14.671258+00:00",
+      "token_count": 121
+    },
+    {
+      "path": "docs/context/knowledge/project/display-touch-audio-bus-map.md",
+      "title": "显示、触摸、音频与总线映射",
+      "tags": [
+        "project",
+        "display",
+        "touch",
+        "audio",
+        "bus",
+        "i2c",
+        "i2s",
+        "qspi"
+      ],
+      "summary": "当前仓库显示、触摸、音频与配网模块对应的总线、引脚和排障入口图。",
+      "id": "display-touch-audio-bus-map",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
+      "token_count": 236
+    },
+    {
+      "path": "docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md",
+      "title": "ESP32/MCU 嵌入式 C/C++ 工程规则",
+      "tags": [
+        "project",
+        "rules",
+        "esp32",
+        "mcu",
+        "embedded",
+        "c-cpp"
+      ],
+      "summary": "本仓库默认采用的 ESP32/MCU 嵌入式 C/C++ 工程规则，覆盖分层、接口、复杂度、资源、安全和算法/AI 模块边界。",
+      "id": "embedded-c-cpp-engineering-rules",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:19:04.458599+00:00",
+      "token_count": 259
+    },
+    {
+      "path": "docs/context/knowledge/project/hardware-capability-gap-map.md",
+      "title": "硬件能力缺口图",
+      "tags": [
+        "project",
+        "hardware",
+        "gap",
+        "rtc",
+        "imu",
+        "power",
+        "roadmap"
+      ],
+      "summary": "原理图可见硬件能力与当前代码已接入能力之间的差距摘要，便于规划下一阶段集成。",
+      "id": "hardware-capability-gap-map",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:35:22.130824+00:00",
+      "token_count": 135
+    },
+    {
+      "path": "docs/context/knowledge/project/plan-mode-rules.md",
+      "title": "计划模式规则",
+      "tags": [
+        "project",
+        "rules",
+        "planning",
+        "plan-mode",
+        "validation"
+      ],
+      "summary": "本仓库在上层环境进入计划模式后使用的深度计划规则，约束问题建模、方案比较、验证闭环和回滚设计。",
+      "id": "plan-mode-rules",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:19:04.458599+00:00",
+      "token_count": 338
+    },
+    {
+      "path": "docs/context/knowledge/project/power-wakeup-control-map.md",
+      "title": "电源与唤醒控制图",
+      "tags": [
+        "project",
+        "power",
+        "wakeup",
+        "axp2101",
+        "rtc",
+        "button",
+        "boot"
+      ],
+      "summary": "基于原理图与现有代码整理的电源、按键、RTC 和唤醒控制链路摘要。",
+      "id": "power-wakeup-control-map",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:35:22.130824+00:00",
+      "token_count": 142
+    },
+    {
+      "path": "docs/context/knowledge/project/repo-overview.md",
+      "title": "当前仓库概览",
+      "tags": [
+        "project",
+        "architecture",
+        "modules",
+        "lvgl",
+        "audio",
+        "wifi",
+        "esp32-s3"
+      ],
+      "summary": "当前仓库的模块地图、启动链路和构建依赖摘要，便于定位 UI、音频和配网相关改动。",
+      "id": "project-repo-overview",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:56:58.710089+00:00",
+      "token_count": 285
+    },
+    {
+      "path": "docs/context/knowledge/project/startup-init-and-blocking-chain.md",
+      "title": "启动与阻塞链路",
+      "tags": [
+        "project",
+        "startup",
+        "init",
+        "wifi",
+        "blocking",
+        "lvgl",
+        "audio"
+      ],
+      "summary": "当前仓库从上电到 UI 启动的初始化顺序、阻塞点和首启风险摘要。",
+      "id": "startup-init-and-blocking-chain",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:35:22.129823+00:00",
+      "token_count": 177
+    },
+    {
+      "path": "docs/context/knowledge/project/storage-and-provisioning-paths.md",
+      "title": "存储与配网路径",
+      "tags": [
+        "project",
+        "storage",
+        "sd",
+        "spiffs",
+        "wifi",
+        "provisioning",
+        "html"
+      ],
+      "summary": "当前仓库的存储路径、SD 总线选择和 AP 配网页面嵌入方式摘要。",
+      "id": "storage-and-provisioning-paths",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:36:12.327274+00:00",
+      "token_count": 197
+    },
+    {
+      "path": "docs/context/knowledge/project/teaching-milestones.md",
+      "title": "里程碑 1：环境可用",
+      "tags": [
+        "teaching",
+        "milestone",
+        "validation",
+        "beginner",
+        "lvgl",
+        "audio",
+        "wifi"
+      ],
+      "summary": "面向新手的 ESP32-S3 显示/音频项目分阶段教学验收点。",
+      "id": "esp32-ui-audio-teaching-milestones",
+      "last_reviewed": "2026-03-11",
+      "mtime_utc": "2026-03-11T10:19:04.459648+00:00",
+      "token_count": 45
+    },
+    {
+      "path": "docs/context/knowledge-map.md",
+      "title": "知识地图",
+      "tags": [],
+      "summary": "- `knowledge/esp32-s3/lvgl-porting-baseline.md`",
+      "id": "",
+      "last_reviewed": "",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
+      "token_count": 115
+    },
+    {
+      "path": "docs/context/README.md",
+      "title": "上下文库说明",
+      "tags": [],
+      "summary": "该目录是 Codex 使用的项目长期上下文库。",
+      "id": "",
+      "last_reviewed": "",
+      "mtime_utc": "2026-03-11T10:19:04.457073+00:00",
+      "token_count": 100
+    }
+  ]
+}
