@@ -17,6 +17,7 @@ bool ui_font_assets_ready(void);
 const lv_font_t *ui_font_assets_title(void);
 const lv_font_t *ui_font_assets_body(void);
 const lv_font_t *ui_font_assets_meta(void);
+const lv_font_t *ui_font_assets_icon(void);
 
 #ifdef __cplusplus
 }

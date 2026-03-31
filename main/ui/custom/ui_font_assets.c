@@ -48,6 +48,15 @@ static uint32_t ui_font_assets_read_u32(const uint8_t *data) {
            ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
 }
 
+static uint32_t ui_font_assets_compute_checksum(const uint8_t *data,
+                                                uint32_t length) {
+    uint32_t checksum = 0;
+    for (uint32_t i = 0; i < length; ++i) {
+        checksum += data[i];
+    }
+    return checksum & 0xFFFF;
+}
+
 static bool ui_font_assets_read_entry(const uint8_t *table, size_t index,
                                       ui_font_assets_entry_t *entry) {
     const uint8_t *cursor = table + (index * UI_FONT_ASSETS_ENTRY_SIZE);
@@ -155,24 +164,43 @@ static esp_err_t ui_font_assets_load_from_partition(void) {
 
     const uint8_t *root = s_runtime.mmap_root;
     const uint32_t total_files = ui_font_assets_read_u32(root);
-    const uint32_t checksum = ui_font_assets_read_u32(root + 4);
-    const uint32_t combined_len = ui_font_assets_read_u32(root + 8);
+    const uint32_t stored_checksum = ui_font_assets_read_u32(root + 4);
+    const uint32_t stored_len = ui_font_assets_read_u32(root + 8);
     const size_t table_len = (size_t)total_files * UI_FONT_ASSETS_ENTRY_SIZE;
-    const size_t image_len = UI_FONT_ASSETS_HEADER_SIZE + table_len + combined_len;
+    const size_t image_len = UI_FONT_ASSETS_HEADER_SIZE + stored_len;
 
     if (total_files == 0 || image_len > partition->size) {
-        ESP_LOGE(TAG, "invalid assets package: files=%" PRIu32 ", combined=%" PRIu32,
-                 total_files, combined_len);
+        ESP_LOGE(TAG, "invalid assets package: files=%" PRIu32 ", stored_len=%" PRIu32,
+                 total_files, stored_len);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    if (stored_len < table_len) {
+        ESP_LOGE(TAG,
+                 "invalid assets package layout: stored_len=%" PRIu32
+                 " smaller than table_len=%u",
+                 stored_len, (unsigned int)table_len);
         return ESP_ERR_INVALID_SIZE;
     }
 
     const uint8_t *table = root + UI_FONT_ASSETS_HEADER_SIZE;
+    const size_t combined_len = stored_len - table_len;
     const uint8_t *combined_data = table + table_len;
+    const uint32_t calculated_checksum =
+        ui_font_assets_compute_checksum(root + UI_FONT_ASSETS_HEADER_SIZE, stored_len);
+
+    if (calculated_checksum != stored_checksum) {
+        ESP_LOGE(TAG,
+                 "assets checksum mismatch: calculated=0x%08" PRIx32
+                 ", stored=0x%08" PRIx32,
+                 calculated_checksum, stored_checksum);
+        return ESP_ERR_INVALID_CRC;
+    }
 
     ESP_LOGI(TAG,
              "assets image loaded: files=%" PRIu32 ", checksum=0x%08" PRIx32
-             ", combined=%" PRIu32,
-             total_files, checksum, combined_len);
+             ", stored_len=%" PRIu32 ", data_len=%u",
+             total_files, stored_checksum, stored_len, (unsigned int)combined_len);
 
     ui_font_assets_entry_t index_entry = {0};
     if (!ui_font_assets_find_entry(table, total_files, "index.json", &index_entry)) {
@@ -303,5 +331,13 @@ const lv_font_t *ui_font_assets_meta(void) {
         (void)ui_font_assets_init();
     }
     return s_runtime.ready && s_runtime.meta_font != NULL ? s_runtime.meta_font
+                                                          : &lv_font_montserratMedium_16;
+}
+
+const lv_font_t *ui_font_assets_icon(void) {
+    if (!s_runtime.init_done) {
+        (void)ui_font_assets_init();
+    }
+    return s_runtime.ready && s_runtime.icon_font != NULL ? s_runtime.icon_font
                                                           : &lv_font_montserratMedium_16;
 }

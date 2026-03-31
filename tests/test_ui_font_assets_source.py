@@ -55,6 +55,7 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertIn("const lv_font_t *ui_font_assets_title(void)", source)
         self.assertIn("const lv_font_t *ui_font_assets_body(void)", source)
         self.assertIn("const lv_font_t *ui_font_assets_meta(void)", source)
+        self.assertIn("const lv_font_t *ui_font_assets_icon(void)", source)
         self.assertIn("s_runtime.title_font = cbin_font_bridge_create", source)
         self.assertIn("s_runtime.body_font = s_runtime.title_font;", source)
         self.assertIn("s_runtime.meta_font = s_runtime.title_font;", source)
@@ -74,6 +75,7 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertIn("const lv_font_t *ui_font_assets_title(void);", source)
         self.assertIn("const lv_font_t *ui_font_assets_body(void);", source)
         self.assertIn("const lv_font_t *ui_font_assets_meta(void);", source)
+        self.assertIn("const lv_font_t *ui_font_assets_icon(void);", source)
 
     def test_font_assets_source_uses_partition_mmap_and_index_json(self) -> None:
         source = FONT_ASSETS_SOURCE.read_text(encoding="utf-8")
@@ -86,6 +88,8 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertIn("index.json", source)
         self.assertIn("text_font", source)
         self.assertIn("icon_font", source)
+        self.assertIn("ui_font_assets_compute_checksum", source)
+        self.assertIn("ESP_ERR_INVALID_CRC", source)
 
     def test_font_assets_source_no_longer_returns_not_supported(self) -> None:
         source = FONT_ASSETS_SOURCE.read_text(encoding="utf-8")
@@ -93,6 +97,8 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertNotIn("return ESP_ERR_NOT_SUPPORTED;", source)
         self.assertNotIn("return false;", source)
         self.assertIn("cbin_font_create", source)
+        self.assertIn("ESP_ERR_INVALID_CRC", source)
+        self.assertIn("ui_font_assets_icon(void)", source)
 
     def test_main_cmakelists_mentions_font_assets_source(self) -> None:
         source = MAIN_CMAKELISTS.read_text(encoding="utf-8")
