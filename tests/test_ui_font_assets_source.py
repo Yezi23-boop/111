@@ -11,6 +11,16 @@ MAIN_CMAKELISTS = REPO_ROOT / "main" / "CMakeLists.txt"
 
 
 class UiFontAssetsSourceTests(unittest.TestCase):
+    def test_ai_ui_controller_initializes_font_assets_early(self) -> None:
+        source = AI_UI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("ui_font_assets_init();", source)
+        self.assertIn('ESP_LOGW(TAG, "ui_font_assets_init failed', source)
+        self.assertLess(
+            source.index("ui_font_assets_init();"),
+            source.index("s_ai_screen = lv_obj_create(NULL);"),
+        )
+
     def test_ai_ui_controller_uses_font_assets_seam(self) -> None:
         source = AI_UI_SOURCE.read_text(encoding="utf-8")
 
@@ -37,6 +47,17 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertNotIn("&lv_font_SourceHanSerifSC_Regular_22", source)
         self.assertNotIn("&lv_font_montserratMedium_16", source)
         self.assertNotIn("&lv_font_montserratMedium_27", source)
+
+    def test_font_assets_source_maps_title_body_meta_fonts(self) -> None:
+        source = FONT_ASSETS_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("const lv_font_t *ui_font_assets_title(void)", source)
+        self.assertIn("const lv_font_t *ui_font_assets_body(void)", source)
+        self.assertIn("const lv_font_t *ui_font_assets_meta(void)", source)
+        self.assertGreaterEqual(
+            source.count("return &lv_font_SourceHanSerifSC_Regular_22;"), 2
+        )
+        self.assertIn("return &lv_font_montserratMedium_16;", source)
 
     def test_custom_header_exposes_font_assets_layer(self) -> None:
         source = CUSTOM_HEADER.read_text(encoding="utf-8")

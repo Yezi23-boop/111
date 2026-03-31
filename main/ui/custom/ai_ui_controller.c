@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "esp_log.h"
+#include "esp_err.h"
 #include "gui_guider.h"
 #include "network_service.h"
 #include "official_chat_service.h"
@@ -184,6 +185,12 @@ static void ai_ui_status_timer_cb(lv_timer_t *timer) {
 static void ai_ui_ensure_screen_created(void) {
     if (s_ai_screen != NULL) {
         return;
+    }
+
+    esp_err_t font_assets_ret = ui_font_assets_init();
+    if (font_assets_ret != ESP_OK) {
+        ESP_LOGW(TAG, "ui_font_assets_init failed: %s",
+                 esp_err_to_name(font_assets_ret));
     }
 
     s_ai_screen = lv_obj_create(NULL);
