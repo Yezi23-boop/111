@@ -2,8 +2,6 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "wifi_provision.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
 #include "audio_app.h"
 #include "sd_manager.h"
 #include "audio_codec.h"
@@ -18,9 +16,6 @@ static const char *TAG = "HARDWARE_INIT";
  * 按下时GPIO10变为低电平，松开时为高电平（需要上拉电阻）
  */
 #define BUTTON_GPIO_NUM GPIO_NUM_10
-// 内部使用的事件组
-static EventGroupHandle_t s_wifi_ev_handle = NULL;
-#define WIFI_CONNECT_BIT BIT0
 static void button_press_down_cb(void *arg, void *data)
 {
     ESP_LOGI(TAG, "========================================");
@@ -85,11 +80,6 @@ static void wifi_provision_cb(wifi_provision_state_t state)
 {
     if (state == WIFI_PROVISION_STATE_CONNECTED)
     {
-        // 设置事件组中的WiFi连接位，通知等待任务
-        if (s_wifi_ev_handle != NULL)
-        {
-            xEventGroupSetBits(s_wifi_ev_handle, WIFI_CONNECT_BIT);
-        }
         ESP_LOGI(TAG, "WiFi Connected Event Received");
     }
     else if (state == WIFI_PROVISION_STATE_DISCONNECTED)
@@ -115,8 +105,8 @@ static esp_err_t hardware_nvs_init(void)
 
 /**
  * @brief 硬件层统一初始化
- * @details 初始化NVS、WiFi、SPIFFS、SD卡、I2C总线和音频编解码器，并阻塞等待WiFi连接成功
- * @return esp_err_t ESP_OK: 初始化成功且WiFi已连接; 其他: 初始化失败
+ * @details 初始化NVS、WiFi组件、SPIFFS、SD卡、I2C总线和音频编解码器，但不阻塞等待WiFi连接成功
+ * @return esp_err_t ESP_OK: 基础硬件初始化成功; 其他: 初始化失败
  */
 esp_err_t hardware_init(void)
 {
@@ -174,31 +164,10 @@ esp_err_t hardware_init(void)
     // ESP_LOGI(TAG, "Scanning I2C Bus...");
     // i2c_manager_scan();
 
-    // 6. 创建事件组
-    s_wifi_ev_handle = xEventGroupCreate();
-
-    // 7. WiFi初始化
+    // 6. WiFi初始化
     ESP_LOGI(TAG, "Initializing WiFi...");
     button_init();
     wifi_provision_init(wifi_provision_cb);
-    // 8. 等待连接事件
-    ESP_LOGI(TAG, "Waiting for WiFi connection...");
-    EventBits_t bits = xEventGroupWaitBits(
-        s_wifi_ev_handle,
-        WIFI_CONNECT_BIT,
-        pdTRUE,       // 退出时清除位
-        pdFALSE,      // 等待任意位
-        portMAX_DELAY // 永久等待
-    );
-
-    if (bits & WIFI_CONNECT_BIT)
-    {
-        ESP_LOGI(TAG, "Hardware init complete: WiFi Connected");
-        return ESP_OK;
-    }
-    else
-    {
-        ESP_LOGE(TAG, "Hardware init failed: WiFi Timeout");
-        return ESP_FAIL;
-    }
+    ESP_LOGI(TAG, "Hardware init complete: background network startup required");
+    return ESP_OK;
 }

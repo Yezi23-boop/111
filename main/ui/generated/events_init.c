@@ -63,6 +63,20 @@ static void screen_main_option_5_event_handler (lv_event_t *e)
     }
 }
 
+static void screen_main_option_2_event_handler (lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    switch (code) {
+    case LV_EVENT_CLICKED:
+    {
+        ai_ui_open();
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 static void screen_main_option_7_event_handler (lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -205,6 +219,8 @@ void events_init_screen_main (lv_ui *ui)
 {
     lv_obj_add_event_cb(ui->screen_main, screen_main_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_cont_1, screen_main_cont_1_event_handler, LV_EVENT_ALL, ui);
+    lv_obj_add_event_cb(ui->screen_main_option_2, screen_main_option_2_event_handler, LV_EVENT_ALL, ui);
+    lv_obj_add_event_cb(ui->screen_main_Xiao_Zhi, screen_main_option_2_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_option_5, screen_main_option_5_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_option_7, screen_main_option_7_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_top_grab_area, screen_main_top_grab_area_event_handler, LV_EVENT_ALL, ui);

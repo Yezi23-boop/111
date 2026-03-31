@@ -15,9 +15,13 @@ last_reviewed: 2026-03-11
 ## 启动链路
 
 - 应用入口在 `main/111.c`。
-- `app_main()` 先调用 `hardware_init()`，再创建 `lvgl_task` 和 `time_and_weather` 任务。
-- `main/hardware_init.c` 当前负责初始化 `NVS`、音频 SPIFFS、SD 卡、音频编解码器、按键和 `wifi_provision`，并阻塞等待 Wi-Fi 连接事件。
-- `hardware_init()` 未返回前，UI 与时间天气任务都不会启动；首启或无有效 Wi-Fi 时，实际可用性高度依赖配网触发路径。
+- `app_main()` 先调用 `hardware_init()`，再创建 `lvgl_task`、`time_and_weather` 和后台 `network_service`。
+- `main/hardware_init.c` 当前负责初始化 `NVS`、音频 SPIFFS、SD 卡、音频编解码器、按键和 `wifi_provision`，但不再阻塞等待 Wi-Fi 连接成功。
+- `main/network_service.c` 在 UI 启动后于后台继续执行：
+  - `wifi_provision_start_auto()`
+  - STA 联网状态轮询
+  - `api.tenclass.net` / `mqtt.xiaozhi.me` 服务就绪探测
+- 当前仓库的正式启动模型已经从“联网成功后再进 UI”切换为“硬件 ready 后先起 UI，联网后台继续”，这样没网时也能先使用手表基础功能。
 
 ## 模块地图
 
@@ -27,6 +31,7 @@ last_reviewed: 2026-03-11
 - `components/touch_ft5x06`：`FT5x06` 触摸驱动。
 - `components/audio_codec`：音频编解码器与 I2S 相关初始化封装。
 - `components/mp3_player`：基于 `esp-audio-player` 的播放封装。
+- `components/mp3_player` 当前保留为独立底层播放器组件，已不再由 `main/time_weather.c` 在启动时隐式初始化。
 - `components/wifi_provision`：按钮触发、AP 配网页面和连接状态回调。
 - `components/sd_card`：SD 卡挂载和文件访问。
 - `main/time_weather.c`、`main/audio_app.c`：时间天气和音频初始化相关应用逻辑；配网与联网主链路在 `components/wifi_provision` 与 `main/hardware_init.c`。

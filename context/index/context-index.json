@@ -1,8 +1,8 @@
 {
-  "generated_at_utc": "2026-03-31T11:51:46.168946+00:00",
+  "generated_at_utc": "2026-03-31T15:56:23.304469+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 27,
+  "doc_count": 29,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
@@ -11,8 +11,8 @@
       "summary": "- 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，接入索引、质量检查、检索和打包脚本。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-03-31T11:51:37.938763+00:00",
-      "token_count": 286
+      "mtime_utc": "2026-03-31T14:58:34.993823+00:00",
+      "token_count": 573
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -179,6 +179,23 @@
       "token_count": 121
     },
     {
+      "path": "docs/context/knowledge/project/ai-ui-entry-network-guidance.md",
+      "title": "AI 页面入口与未联网引导",
+      "tags": [
+        "project",
+        "ui",
+        "official-chat",
+        "lvgl",
+        "gui-guider",
+        "network-service"
+      ],
+      "summary": "记录当前仓库把主菜单 AI 图标接到手写 AI 页面，并通过 network_service 展示未联网引导的最小桥接方案。",
+      "id": "ai-ui-entry-network-guidance",
+      "last_reviewed": "2026-03-31",
+      "mtime_utc": "2026-03-31T14:10:55.176470+00:00",
+      "token_count": 224
+    },
+    {
       "path": "docs/context/knowledge/project/display-touch-audio-bus-map.md",
       "title": "显示、触摸、音频与总线映射",
       "tags": [
@@ -249,6 +266,23 @@
       "token_count": 92
     },
     {
+      "path": "docs/context/knowledge/project/nonblocking-boot-network-service.md",
+      "title": "非阻塞启动与后台联网服务",
+      "tags": [
+        "project",
+        "boot",
+        "wifi",
+        "network-service",
+        "esp32s3",
+        "official-chat"
+      ],
+      "summary": "记录当前仓库把正式主流程从阻塞联网切换到后台联网的第一步实现，作为 AI 融入 UI 的启动底座。",
+      "id": "nonblocking-boot-network-service",
+      "last_reviewed": "2026-03-31",
+      "mtime_utc": "2026-03-31T14:58:34.993823+00:00",
+      "token_count": 222
+    },
+    {
       "path": "docs/context/knowledge/project/official-chat-config-completeness-audit.md",
       "title": "official_chat 配置完整性审查",
       "tags": [
@@ -262,7 +296,7 @@
       "summary": "审查当前 111 仓库的 official_chat 迁移完整性，结论是最小可编译配置、model/assets 分区、AEC 和基础唤醒词开关已补齐，但完整运行时策略仍未完全对齐源仓库。",
       "id": "official-chat-config-completeness-audit",
       "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-03-31T06:53:51.110631+00:00",
+      "mtime_utc": "2026-03-31T13:42:00.408839+00:00",
       "token_count": 321
     },
     {
@@ -280,7 +314,7 @@
       "summary": "评估当前 111 仓库接入 official_chat 的可实现程度，并对比 idf-xiaozhi 与 idf-EDGE_lmpulse 的关键运行时差异、剩余风险和推荐落地顺序。",
       "id": "official-chat-feasibility-and-gap-assessment",
       "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-03-31T10:57:40.995501+00:00",
+      "mtime_utc": "2026-03-31T13:42:02.537940+00:00",
       "token_count": 724
     },
     {
@@ -294,11 +328,11 @@
         "audio",
         "experiment"
       ],
-      "summary": "当前仓库已将 official_chat 接到本地 wifi_provision，并通过独立实验入口接通最小 AI 对话链路。",
+      "summary": "当前仓库已将 official_chat 接到本地 wifi_provision，并通过独立实验入口接通最小 AI 对话链路与简易独立实验页。",
       "id": "official-chat-local-wifi-experiment",
       "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-03-31T11:51:37.938763+00:00",
-      "token_count": 369
+      "mtime_utc": "2026-03-31T14:45:53.651462+00:00",
+      "token_count": 491
     },
     {
       "path": "docs/context/knowledge/project/official-chat-migration-prerequisites.md",
@@ -314,7 +348,7 @@
       "summary": "将 idf-xiaozhi 的 official_chat 迁移到当前仓库前，需要先补齐的关键 sdkconfig 开关、内存策略和组件依赖。",
       "id": "official-chat-migration-prerequisites",
       "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-03-30T17:59:48.171985+00:00",
+      "mtime_utc": "2026-03-31T13:42:04.708064+00:00",
       "token_count": 150
     },
     {
@@ -366,8 +400,8 @@
       "summary": "当前仓库的模块地图、启动链路和构建依赖摘要，便于定位 UI、音频和配网相关改动。",
       "id": "project-repo-overview",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-03-30T17:00:56.641347+00:00",
-      "token_count": 285
+      "mtime_utc": "2026-03-31T12:21:59.637782+00:00",
+      "token_count": 316
     },
     {
       "path": "docs/context/knowledge/project/startup-init-and-blocking-chain.md",

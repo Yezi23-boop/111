@@ -19,6 +19,7 @@
 #include "driver/gpio.h"
 #include "iot_button.h"
 #include "button_gpio.h"
+#include "ai_ui_controller.h"
 // 前置声明
 void lvgl_bottomr_init(void);
 
@@ -48,6 +49,7 @@ void lvgl_task(void *pvParameter)
     // lv_demo_benchmark();
     //  lv_demo_stress();
     setup_ui(&guider_ui);
+    ai_ui_controller_init(&guider_ui);
     events_init(&guider_ui);
 
     // 创建CPU使用率监控任务

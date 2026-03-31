@@ -10,29 +10,23 @@ MAIN_EXPERIMENT_ENTRY = REPO_ROOT / "main" / "main_ai_chat_experiment.c"
 
 
 class OfficialChatExperimentSourceTests(unittest.TestCase):
-    def test_experiment_entry_exists_and_uses_minimal_local_bootstrap_chain(self) -> None:
+    def test_experiment_entry_exists_and_uses_shared_service_bootstrap_chain(self) -> None:
         source = MAIN_EXPERIMENT_ENTRY.read_text(encoding="utf-8")
 
         self.assertIn("nvs_flash_init", source)
         self.assertIn("wifi_provision_init", source)
-        self.assertIn("wifi_provision_start_auto", source)
-        self.assertIn("wait_for_network_services_ready", source)
+        self.assertIn("network_service_start()", source)
         self.assertIn("audio_codec_init", source)
-        self.assertIn("official_chat_create", source)
-        self.assertIn("official_chat_start", source)
-        self.assertIn("wifi_provision_is_connected", source)
+        self.assertIn("official_chat_service_init()", source)
+        self.assertIn("ai_experiment_ui_start()", source)
 
-    def test_experiment_entry_waits_for_official_service_dns_before_start(self) -> None:
+    def test_experiment_entry_uses_standalone_ai_ui_instead_of_wait_loop(self) -> None:
         source = MAIN_EXPERIMENT_ENTRY.read_text(encoding="utf-8")
 
-        self.assertIn("#include <lwip/netdb.h>", source)
-        self.assertIn("getaddrinfo(", source)
-        self.assertIn("api.tenclass.net", source)
-        self.assertIn("mqtt.xiaozhi.me", source)
-        self.assertLess(
-            source.find("wait_for_network_services_ready()"),
-            source.find("audio_codec_init()"),
-        )
+        self.assertIn('#include "network_service.h"', source)
+        self.assertIn('#include "ai_experiment_ui.h"', source)
+        self.assertNotIn("network_service_is_service_ready()", source)
+        self.assertNotIn("official_chat_service_enter_foreground()", source)
 
     def test_main_kconfig_exposes_official_chat_and_experiment_switches(self) -> None:
         source = MAIN_KCONFIG.read_text(encoding="utf-8")

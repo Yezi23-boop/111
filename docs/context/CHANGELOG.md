@@ -20,3 +20,19 @@
 - 2026-03-31：为 AI 实验入口增加 `api.tenclass.net` 与 `mqtt.xiaozhi.me` 的 DNS 就绪探测，并把 AP 门户 IP 配置前移到启用 `APSTA` 之前，减少首轮 OTA 解析竞态和 `192.168.4.1/192.168.100.1` 日志歧义。
 - 2026-03-31：把 `official_chat` 的 UDP 下行音频停顿判定改为项目可配置项，并在 `sdkconfig` 中设置 `CONFIG_OFFICIAL_CHAT_UDP_AUDIO_STALL_TIMEOUT_MS=5000`，用于缓解句中因 Wi-Fi 抖动导致的误判中断。
 - 2026-03-31：补充 `official_chat` 真机 TTS 中途停播案例，记录 `udp audio stalled while mqtt tts text continues` 的实际日志特征，并明确当前先保留 `5s` 硬故障阈值，不直接放宽到 `10s`。
+- 2026-03-31：修复 `official_chat` 在“最后一个 `tts` 文本后 UDP 已断流但没有后续 `tts` JSON`”场景下无法主动超时收敛的问题，改为在 UDP `recv()` timeout 分支直接检查并上报断流。
+- 2026-03-31：将当前仓库的 `sdkconfig` 默认 AEC 配置调整为与本地官方例程一致，关闭 `CONFIG_USE_DEVICE_AEC` / `CONFIG_USE_SERVER_AEC` 的默认值，使 `official_chat` 默认 listening mode 回到 `auto-stop`。
+- 2026-03-31：将 `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP` 调整为与本地官方例程一致的关闭状态，保留其余 AI 内存/TLS 策略不变，作为 UDP 音频断流问题的单变量回归验证。
+- 2026-03-31：在真机出现 `failed to send udp audio: ret=-1 errno=12` 后，将 Wi-Fi TX buffer 模式调成与本地官方例程一致的动态 TX 策略，用于验证 UDP 上行发送路径的内存压力问题。
+- 2026-03-31：在真机继续出现“MQTT 文本仍推进但下行 UDP 音频停在 `decode/playback` 计数冻结并最终超时”后，将 Wi-Fi RX buffer / RX mgmt / `RX_BA_WIN` 调成与本地官方例程一致，用于验证下行 UDP 接收路径的停顿问题。
+- 2026-03-31：为 `main_ai_chat_experiment.c` 增加临时 `WebSocket` 强制切换，启动时显式写入 `nvs_websocket` 并去掉 `mqtt.xiaozhi.me` 的就绪探测，用于对比 `MQTT+UDP` 音频断流问题。
+- 2026-03-31：修复 `wifi_manager_ap()` 在当前仍为 `WIFI_MODE_STA` 且无保存凭据时，先对 `WIFI_IF_AP` 调 `esp_wifi_set_config()` 导致的 `ESP_ERR_WIFI_MODE` 启动崩溃，并补充源码级回归测试。
+- 2026-03-31：继续修复 `wifi_manager_ap()` 在 ESP32-S3 + ESP-IDF 5.5.3 下因未先停 `ap_netif` 的 DHCPS 就调用 `esp_netif_set_ip_info()` 而触发的 `ESP_ERR_ESP_NETIF_DHCP_NOT_STOPPED`，并按官方组件 stop-config-start 模式补充回归测试。
+- 2026-03-31：将 `mp3_player` 从 `main/time_weather.c` 中脱钩，移除时间天气任务中的播放器初始化与示例播放残留，并补充源码级回归测试。
+- 2026-03-31：将正式主流程从“阻塞等待联网”切到“硬件先 ready、联网后台继续”，新增 `network_service` 统一承接 `wifi_provision_start_auto()`、联网状态轮询和 AI 服务就绪探测。
+- 2026-03-31：新增主菜单 AI 页面入口与未联网引导，主菜单 AI 图标已跳转到手写 `ai_ui_controller` 页面，并通过 `network_service` 展示联网状态与配网入口。
+- 2026-03-31：新增 `official_chat_service`，统一封装 `official_chat` 的创建与启动；AI 页面在 `SERVICE_READY` 后自动进入前台待唤醒，实验入口也改为复用该服务。
+- 2026-03-31：将 `main_ai_chat_experiment.c` 改为独立简易 AI 实验页，新增 `ai_experiment_ui` 负责显示网络/AI 状态、触发本地 AP 配网，并在 `SERVICE_READY` 后自动进入待唤醒。
+- 2026-03-31：针对独立 AI 实验页下的 `spi_master: Failed to allocate priv TX buffer / Display flush failed: ESP_ERR_NO_MEM`，将 `LV_PORT_FIXED_CHUNK_LINES` 从 30 下调到 10，以降低 LCD SPI 刷屏的内部 DMA 临时缓冲压力。
+- 2026-03-31：为隔离 UI 干扰，临时将正式入口切回 `main/111.c`，并在 `111.c` 中注释屏蔽 `lvgl_task`、启动延时与 `time_and_weather` 任务创建，仅保留硬件、后台联网与 `official_chat_service` 初始化链路。
+- 2026-03-31：在临时“无 UI”验证模式下，为 `main/111.c` 增加 `official_chat_bootstrap_task`，于 `network_service` 就绪后自动调用 `official_chat_service_enter_foreground()`，避免联网完成后无触发源导致 AI 一直停在空闲态。

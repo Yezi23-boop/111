@@ -1,7 +1,7 @@
 ---
 id: official-chat-local-wifi-experiment
 tags: [project, official-chat, wifi-provision, esp32s3, audio, experiment]
-summary: 当前仓库已将 official_chat 接到本地 wifi_provision，并通过独立实验入口接通最小 AI 对话链路。
+summary: 当前仓库已将 official_chat 接到本地 wifi_provision，并通过独立实验入口接通最小 AI 对话链路与简易独立实验页。
 last_reviewed: 2026-03-31
 ---
 
@@ -13,6 +13,7 @@ last_reviewed: 2026-03-31
 - `official_chat` 不再依赖 `hal_wifi`，运行时统一调用本地 `wifi_provision_*` helper。
 - 当前仓库的 `wifi_provision` 继续作为唯一 Wi-Fi owner，保留既有 AP 配网页行为和 `192.168.100.1` 地址。
 - AI 对话实验入口独立放在 `main/main_ai_chat_experiment.c`，默认关闭，不影响正式入口 `main/111.c`。
+- 当前实验入口已改成“单独的简易 AI 页面”，不再依赖正式主菜单或 `gui_guider` 页面结构。
 
 ## 本轮关键实现
 
@@ -46,16 +47,32 @@ last_reviewed: 2026-03-31
 
 ## 实验入口链路
 
-`main/main_ai_chat_experiment.c` 的启动顺序是：
+当前 `main/main_ai_chat_experiment.c` 已改成复用共享服务，启动顺序是：
 
 1. `nvs_flash_init`
 2. `wifi_provision_init(NULL)`
-3. `wifi_provision_start_auto()`
-4. 轮询 `wifi_provision_is_connected()`
-5. `audio_codec_init()`
-6. `official_chat_create()`
-7. `official_chat_set_event_callback()`
-8. `official_chat_start()`
+3. `network_service_start()`
+4. `audio_codec_init()`
+5. `official_chat_service_init()`
+6. `ai_experiment_ui_start()`
+
+也就是说，实验入口和正式 UI 主流程现在都共享同一个 `official_chat_service`，但实验入口会由 `ai_experiment_ui` 页面在 `SERVICE_READY` 后自动调用 `official_chat_service_enter_foreground()`。
+
+## 独立实验页
+
+- 新增：
+  - `main/ai_experiment_ui.h`
+  - `main/ai_experiment_ui.c`
+- 该页面不依赖主菜单和 `setup_ui()`。
+- 页面职责只有 4 件事：
+  - 显示网络状态
+  - 显示 `official_chat_service` 状态
+  - 提供“进入配网”按钮调用 `network_service_request_portal()`
+  - 在 `NETWORK_SERVICE_STATE_SERVICE_READY` 后自动进入待唤醒
+- 当前页面文案会映射：
+  - `OFFICIAL_CHAT_SERVICE_STATE_IDLE` -> `待唤醒`
+  - `OFFICIAL_CHAT_SERVICE_STATE_LISTENING` -> `聆听中`
+  - `OFFICIAL_CHAT_SERVICE_STATE_SPEAKING` -> `回答中`
 
 ## 配置闭环
 
@@ -93,5 +110,16 @@ last_reviewed: 2026-03-31
 ## 当前边界
 
 - 默认固件入口仍然是 `main/111.c`，不会自动启用 AI 对话实验。
-- 本轮只保证最小可编译、可启动链路和本地配网复用，不包含正式 UI 集成。
+- 本轮保证最小可编译、可启动链路、本地配网复用和独立实验页显示；不要求先并回正式 UI。
 - `official_chat` 运行时是否能在当前硬件上完整完成激活、协议连接、语音上下行，还需要真机烧录验证。
+
+## 显示内存压力修正
+
+- 真机验证独立实验页时，出现持续日志：
+  - `spi_master: setup_dma_priv_buffer(): Failed to allocate priv TX buffer`
+  - `lv_port: Display flush failed: ESP_ERR_NO_MEM`
+- 该问题不是 `official_chat` 协议失败，而是 AI 音频链路启用后，LCD SPI 刷屏申请内部 DMA 私有 TX buffer 失败。
+- 当前最小修正是在 `components/lvgl_port/lv_port_config.h` 中把：
+  - `LV_PORT_FIXED_CHUNK_LINES`
+  - 从 `30` 调整为 `10`
+- 目的：把单次刷屏需要的内部 DMA 临时缓冲压低，优先保证独立 AI 实验页在 AFE/I2S 同时运行下还能刷新显示。

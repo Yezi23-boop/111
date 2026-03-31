@@ -2,6 +2,12 @@ file(GLOB_RECURSE main_common_srcs
     ${CMAKE_CURRENT_LIST_DIR}/*.c
 )
 
+set(official_chat_service_src ${CMAKE_CURRENT_LIST_DIR}/official_chat_service.c)
+list(FIND main_common_srcs ${official_chat_service_src} official_chat_service_index)
+if(official_chat_service_index EQUAL -1)
+    list(APPEND main_common_srcs ${official_chat_service_src})
+endif()
+
 list(REMOVE_ITEM main_common_srcs
     ${CMAKE_CURRENT_LIST_DIR}/111.c
     ${CMAKE_CURRENT_LIST_DIR}/main_ai_chat_experiment.c

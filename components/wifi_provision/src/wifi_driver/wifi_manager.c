@@ -301,8 +301,6 @@ esp_err_t wifi_manager_ap(void) {
                                   sizeof(wifi_config.ap.password),
                                   g_config.ap_ssid, g_config.ap_password);
 
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
-
     esp_netif_ip_info_t ip_info = {0};
     int ip[4] = {0};
     sscanf(g_config.ap_ip, "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
@@ -310,14 +308,11 @@ esp_err_t wifi_manager_ap(void) {
     IP4_ADDR(&ip_info.gw, ip[0], ip[1], ip[2], ip[3]);
     IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
 
-    if (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA) {
-        esp_err_t dhcp_stop_ret = esp_netif_dhcps_stop(ap_netif);
-        if (dhcp_stop_ret != ESP_OK &&
-            dhcp_stop_ret != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
-            ESP_LOGE(TAG, "停止 AP DHCP 失败: %s",
-                     esp_err_to_name(dhcp_stop_ret));
-            return dhcp_stop_ret;
-        }
+    esp_err_t dhcp_stop_ret = esp_netif_dhcps_stop(ap_netif);
+    if (dhcp_stop_ret != ESP_OK &&
+        dhcp_stop_ret != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+        ESP_LOGE(TAG, "停止 AP DHCP 失败: %s", esp_err_to_name(dhcp_stop_ret));
+        return dhcp_stop_ret;
     }
 
     ESP_ERROR_CHECK(esp_netif_set_ip_info(ap_netif, &ip_info));
@@ -327,14 +322,11 @@ esp_err_t wifi_manager_ap(void) {
     }
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
 
-    if (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA) {
-        esp_err_t dhcp_restart = esp_netif_dhcps_start(ap_netif);
-        if (dhcp_restart != ESP_OK &&
-            dhcp_restart != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
-            ESP_LOGE(TAG, "启动 AP DHCP 失败: %s",
-                     esp_err_to_name(dhcp_restart));
-            return dhcp_restart;
-        }
+    esp_err_t dhcp_restart = esp_netif_dhcps_start(ap_netif);
+    if (dhcp_restart != ESP_OK &&
+        dhcp_restart != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
+        ESP_LOGE(TAG, "启动 AP DHCP 失败: %s", esp_err_to_name(dhcp_restart));
+        return dhcp_restart;
     }
 
     if (esp_netif_get_ip_info(ap_netif, &ip_info) == ESP_OK) {
