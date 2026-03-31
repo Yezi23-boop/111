@@ -6,6 +6,7 @@
 #include "esp_err.h"
 #include "lvgl.h"
 
+// 运行时优先读取 assets 分区字体，失败时回退到编译字体。
 #ifdef __cplusplus
 extern "C" {
 #endif

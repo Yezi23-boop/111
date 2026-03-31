@@ -14,6 +14,12 @@ if(ui_font_assets_index EQUAL -1)
     list(APPEND main_common_srcs ${ui_font_assets_src})
 endif()
 
+set(cbin_font_bridge_src ${CMAKE_CURRENT_LIST_DIR}/ui/custom/cbin_font_bridge.c)
+list(FIND main_common_srcs ${cbin_font_bridge_src} cbin_font_bridge_index)
+if(cbin_font_bridge_index EQUAL -1)
+    list(APPEND main_common_srcs ${cbin_font_bridge_src})
+endif()
+
 list(REMOVE_ITEM main_common_srcs
     ${CMAKE_CURRENT_LIST_DIR}/111.c
     ${CMAKE_CURRENT_LIST_DIR}/main_ai_chat_experiment.c
@@ -44,6 +50,7 @@ idf_component_register(
         mp3_player
         wifi_provision
         official_chat
+        78__xiaozhi_fonts
         chmorgan__esp-audio-player
         nvs_flash
         esp_wifi

@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-04-01：迁入 `xiaozhi-esp32` 风格字体资产读取链，补入本地 vendored `78__xiaozhi_fonts` 组件，并将 `ui_font_assets` 升级为 `assets.bin` 的 `mmap + index.json` 运行时解析。
 - 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，接入索引、质量检查、检索和打包脚本。
 - 2026-03-11：新增仓库级 `AGENTS.md`，引入默认上下文流程、计划模式摘要和 ESP32/MCU 嵌入式 C/C++ 默认规范。
 - 2026-03-11：导入并适配首批通用知识文档，包括 LVGL 点亮、功耗检查、计划模式规则、工程规则、教学里程碑和仓库概览。

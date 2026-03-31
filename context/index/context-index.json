@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-03-31T16:07:40.574737+00:00",
+  "generated_at_utc": "2026-03-31T16:23:53.324632+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
   "doc_count": 30,
@@ -8,11 +8,11 @@
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，接入索引、质量检查、检索和打包脚本。",
+      "summary": "- 2026-04-01：迁入 `xiaozhi-esp32` 风格字体资产读取链，补入本地 vendored `78__xiaozhi_fonts` 组件，并将 `ui_font_assets` 升级为 `assets.bin` 的 `mmap + index.json` 运行时解析。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-03-31T16:07:33.584752+00:00",
-      "token_count": 585
+      "mtime_utc": "2026-03-31T16:23:47.519036+00:00",
+      "token_count": 604
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -189,11 +189,11 @@
         "assets",
         "official-chat"
       ],
-      "summary": "记录 AI 页面 hand-written 字体资源链，当前已接好接缝与回退层，但 assets 真正字体解析尚未完成。",
+      "summary": "记录 AI 页面 hand-written 字体资源链，当前已通过 mmap + index.json 解析 assets.bin，并保留编译字体回退。",
       "id": "ai-font-assets",
-      "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-03-31T16:07:33.584752+00:00",
-      "token_count": 54
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-03-31T16:23:44.990343+00:00",
+      "token_count": 70
     },
     {
       "path": "docs/context/knowledge/project/ai-ui-entry-network-guidance.md",
