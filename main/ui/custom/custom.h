@@ -18,6 +18,7 @@ extern "C"
 #include "gui_guider.h"
 #include "ai_ui_controller.h"
 #include "clock_functions.h"  // 时钟功能模块
+#include "ui_font_assets.h"
 #include "scroll_functions.h" // 滚动功能模块
                               //   LV_IMG_DECLARE(_20221103102551_80994_240x280);
     /**

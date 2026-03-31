@@ -8,6 +8,12 @@ if(official_chat_service_index EQUAL -1)
     list(APPEND main_common_srcs ${official_chat_service_src})
 endif()
 
+set(ui_font_assets_src ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ui_font_assets.c)
+list(FIND main_common_srcs ${ui_font_assets_src} ui_font_assets_index)
+if(ui_font_assets_index EQUAL -1)
+    list(APPEND main_common_srcs ${ui_font_assets_src})
+endif()
+
 list(REMOVE_ITEM main_common_srcs
     ${CMAKE_CURRENT_LIST_DIR}/111.c
     ${CMAKE_CURRENT_LIST_DIR}/main_ai_chat_experiment.c
