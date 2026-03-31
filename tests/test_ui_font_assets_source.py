@@ -14,6 +14,22 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertIn("ui_font_assets_title()", source)
         self.assertIn("ui_font_assets_body()", source)
         self.assertIn("ui_font_assets_meta()", source)
+        self.assertIn(
+            "lv_obj_set_style_text_font(s_title_label, ui_font_assets_title()",
+            source,
+        )
+        self.assertIn(
+            "lv_obj_set_style_text_font(s_state_label, ui_font_assets_title()",
+            source,
+        )
+        self.assertIn(
+            "lv_obj_set_style_text_font(s_hint_label, ui_font_assets_body()",
+            source,
+        )
+        self.assertIn(
+            "lv_obj_set_style_text_font(s_ip_label, ui_font_assets_meta()",
+            source,
+        )
         self.assertNotIn("&lv_font_SourceHanSerifSC_Regular_22", source)
         self.assertNotIn("&lv_font_montserratMedium_16", source)
         self.assertNotIn("&lv_font_montserratMedium_27", source)
