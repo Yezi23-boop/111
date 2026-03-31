@@ -5,11 +5,10 @@
 
 #include "audio_app.h"
 #include "audio_codec.h"
-#include "esp_codec_dev.h"
+#include "audio_platform_config.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_heap_caps.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -65,15 +64,6 @@ static void generate_wav_header(wav_header_t *header, uint32_t data_len, uint32_
 // 录音任务
 static void record_task(void *arg)
 {
-    esp_codec_dev_handle_t record_dev = audio_codec_get_record_dev();
-    if (record_dev == NULL)
-    {
-        ESP_LOGE(TAG, "无法获取录音设备");
-        s_is_recording = false;
-        vTaskDelete(NULL);
-        return;
-    }
-
     FILE *f = fopen(s_record_filename, "wb");
     if (f == NULL)
     {
@@ -106,19 +96,22 @@ static void record_task(void *arg)
     }
 
     size_t total_bytes = 0;
-    int read_res;
+    const TickType_t read_timeout_ticks = pdMS_TO_TICKS(100);
 
     while (s_is_recording)
     {
-        read_res = esp_codec_dev_read(record_dev, buffer, buf_size);
-        if (read_res == ESP_CODEC_DEV_OK)
+        size_t bytes_read = 0;
+        esp_err_t read_res =
+            audio_codec_read(buffer, buf_size, &bytes_read, read_timeout_ticks);
+
+        if (read_res == ESP_OK || (read_res == ESP_ERR_TIMEOUT && bytes_read > 0))
         {
-            fwrite(buffer, 1, buf_size, f);
-            total_bytes += buf_size;
+            fwrite(buffer, 1, bytes_read, f);
+            total_bytes += bytes_read;
         }
-        else
+        else if (read_res != ESP_ERR_TIMEOUT)
         {
-            ESP_LOGW(TAG, "读取音频数据失败或超时: %d", read_res);
+            ESP_LOGW(TAG, "读取音频数据失败: %s", esp_err_to_name(read_res));
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
@@ -126,8 +119,9 @@ static void record_task(void *arg)
     // 录音结束，回填WAV头
     ESP_LOGI(TAG, "录音结束，正在保存... 总大小: %d 字节", total_bytes);
 
-    // 假设采样率48000, 双声道, 16位 (需与audio_codec配置一致)
-    generate_wav_header(&header, total_bytes, 48000, 2, 16);
+    generate_wav_header(&header, total_bytes, AUDIO_PLATFORM_HW_SAMPLE_RATE,
+                        AUDIO_PLATFORM_HW_INPUT_CHANNELS,
+                        AUDIO_PLATFORM_HW_BITS_PER_SAMPLE);
     fseek(f, 0, SEEK_SET);
     fwrite(&header, 1, sizeof(wav_header_t), f);
 

@@ -1,42 +1,47 @@
-# 自动查找所有 C 源文件（递归 main 与 ui 目录）
-file(GLOB_RECURSE srcs
+file(GLOB_RECURSE main_common_srcs
     ${CMAKE_CURRENT_LIST_DIR}/*.c
-    ${CMAKE_CURRENT_LIST_DIR}/ui/*.c
 )
 
-# 手动添加硬件初始化文件 (以防GLOB_RECURSE漏掉)
-list(APPEND srcs "hardware_init.c")
+list(REMOVE_ITEM main_common_srcs
+    ${CMAKE_CURRENT_LIST_DIR}/111.c
+    ${CMAKE_CURRENT_LIST_DIR}/main_ai_chat_experiment.c
+)
 
-# 设置包含目录
+set(app_entry_src ${CMAKE_CURRENT_LIST_DIR}/111.c)
+if(CONFIG_APP_AI_CHAT_EXPERIMENT)
+    set(app_entry_src ${CMAKE_CURRENT_LIST_DIR}/main_ai_chat_experiment.c)
+endif()
+
+set(srcs ${main_common_srcs} ${app_entry_src})
+
 set(include_dirs
     .
     ui/custom
     ui/generated
 )
 
-# 注册组件
 idf_component_register(
     SRCS ${srcs}
     INCLUDE_DIRS ${include_dirs}
-    REQUIRES  
-    lvgl_port 
-    z_print_esp32 
-    esp_http_client         
-    get_time
-    sd_card
-    audio_codec
-    mp3_player            
-    wifi_provision
-    chmorgan__esp-audio-player  # 音频播放器 (MP3/WAV)
-    nvs_flash              # NVS存储管理
-    esp_wifi               # WiFi功能
-    esp_event              # 事件系统
-    esp_http_client        # HTTP客户端
-    esp_netif              # 网络接口
-    esp_system             # 系统功能
-    esp-tls                # TLS安全连接
-    json                   # JSON数据解析
-    driver                 # 硬件驱动 (GPIO, SPI等)
-    freertos               # FreeRTOS系统
-    spiffs                 # spiffs文件管理系统
+    REQUIRES
+        lvgl_port
+        z_print_esp32
+        get_time
+        sd_card
+        audio_codec
+        mp3_player
+        wifi_provision
+        official_chat
+        chmorgan__esp-audio-player
+        nvs_flash
+        esp_wifi
+        esp_event
+        esp_http_client
+        esp_netif
+        esp_system
+        esp-tls
+        json
+        driver
+        freertos
+        spiffs
 )

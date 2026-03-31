@@ -1,0 +1,64 @@
+menu "Official Chat"
+
+config USE_AUDIO_PROCESSOR
+    bool "Enable official_chat audio processor"
+    default y
+    depends on IDF_TARGET_ESP32S3 && SPIRAM
+    help
+        Enable the AFE-based audio processor inside official_chat.
+
+config USE_DEVICE_AEC
+    bool "Enable official_chat device-side AEC"
+    default n
+    depends on USE_AUDIO_PROCESSOR
+    help
+        Enable device-side AEC for the AFE audio processor.
+
+config SEND_WAKE_WORD_DATA
+    bool "Send wake word audio before listen/start"
+    default y
+    depends on IDF_TARGET_ESP32S3 && SPIRAM
+    help
+        Encode and send the cached wake word audio before a wake-word-triggered chat.
+
+config WAKE_WORD_DETECTION_IN_LISTENING
+    bool "Enable wake word detection while listening"
+    default n
+    depends on IDF_TARGET_ESP32S3 && SPIRAM
+    help
+        Keep wake word detection active during listening so wake words can
+        interrupt an ongoing conversation.
+
+config OFFICIAL_CHAT_OTA_URL
+    string "Official chat OTA URL"
+    default "https://api.tenclass.net/xiaozhi/ota/"
+    help
+        Default OTA endpoint used by official_chat when wifi.ota_url is not
+        present in NVS.
+
+config OFFICIAL_CHAT_LANGUAGE_CODE
+    string "Official chat language code"
+    default "zh-CN"
+    help
+        Language code used by official_chat for OTA requests and metadata.
+
+config OFFICIAL_CHAT_UDP_AUDIO_STALL_TIMEOUT_MS
+    int "Official chat UDP audio stall timeout (ms)"
+    default 5000
+    range 1000 15000
+    help
+        Maximum silence gap allowed between downlink UDP audio packets while
+        MQTT TTS text is still arriving. Increase this when Wi-Fi jitter causes
+        false mid-sentence stalls.
+
+endmenu
+
+menu "Application Experiments"
+
+config APP_AI_CHAT_EXPERIMENT
+    bool "Build AI chat experiment entry"
+    default n
+    help
+        Build and boot the standalone AI chat experiment entry instead of 111.c.
+
+endmenu

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "audio_codec.c"
+    SRCS "audio_codec.c" "audio_codec_bus.c"
     INCLUDE_DIRS "include"
     REQUIRES 
         driver

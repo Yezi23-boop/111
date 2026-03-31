@@ -22,6 +22,6 @@ typedef struct
     .ap_ssid = "ESP32_wifi",            \
     .ap_password = "12345678",          \
     .ap_ip = "192.168.100.1",           \
-    .max_retry = 1}
+    .max_retry = 10}
 
 #endif // WIFI_MANAGER_PRIVATE_H

@@ -3,8 +3,12 @@
 #include "i2c_manager.h"  // I2C总线管理器
 #include "esp_log.h"      // ESP-IDF日志系统
 #include "esp_check.h"    // ESP错误检查宏
+#include "esp_idf_version.h"
 #include "driver/gpio.h"  // GPIO驱动
 #include "driver/i2c.h"
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
+#include "driver/i2c_master.h"
+#endif
 #include "co5300_panel_defaults.h" // 显示屏分辨率定义
 #include "freertos/FreeRTOS.h"     // FreeRTOS实时操作系统
 #include "freertos/task.h"         // FreeRTOS任务管理
@@ -38,6 +42,9 @@ typedef struct
     uint16_t max_y;
     uint8_t point_num;
     touch_point_t points[FT5X06_MAX_TOUCHES];
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
+    i2c_master_dev_handle_t dev_handle;
+#endif
 } touch_ft5x06_t;
 
 // 全局静态变量
@@ -53,7 +60,16 @@ static touch_ft5x06_t *s_touch = NULL; // 触摸控制器实例指针
  */
 static esp_err_t touch_ft5x06_i2c_read(touch_ft5x06_t *touch, uint8_t reg, uint8_t *data, size_t len)
 {
-    (void)touch;
+    ESP_RETURN_ON_FALSE(touch != NULL, ESP_ERR_INVALID_ARG, TAG, "touch is null");
+    ESP_RETURN_ON_FALSE(data != NULL, ESP_ERR_INVALID_ARG, TAG, "data is null");
+    ESP_RETURN_ON_FALSE(len > 0, ESP_ERR_INVALID_ARG, TAG, "len must be > 0");
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
+    ESP_RETURN_ON_FALSE(touch->dev_handle != NULL, ESP_ERR_INVALID_STATE, TAG,
+                        "touch i2c device not ready");
+    return i2c_master_transmit_receive(touch->dev_handle, &reg, sizeof(reg),
+                                       data, len, 500);
+#else
     i2c_port_t port = i2c_manager_get_port();
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
@@ -70,6 +86,7 @@ static esp_err_t touch_ft5x06_i2c_read(touch_ft5x06_t *touch, uint8_t reg, uint8
     esp_err_t ret = i2c_master_cmd_begin(port, cmd, pdMS_TO_TICKS(500));
     i2c_cmd_link_delete(cmd);
     return ret;
+#endif
 }
 
 /**
@@ -128,6 +145,20 @@ esp_err_t touch_ft5x06_init(void)
 
     // 复位芯片
     ESP_GOTO_ON_ERROR(touch_ft5x06_reset(s_touch), err, TAG, "reset failed");
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
+    i2c_master_bus_handle_t bus_handle = i2c_manager_get_bus_handle();
+    ESP_GOTO_ON_FALSE(bus_handle != NULL, ESP_ERR_INVALID_STATE, err, TAG,
+                      "i2c master bus not ready");
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = FT5X06_ADDR,
+        .scl_speed_hz = I2C_MANAGER_FREQ_HZ,
+    };
+    ESP_GOTO_ON_ERROR(
+        i2c_master_bus_add_device(bus_handle, &dev_cfg, &s_touch->dev_handle),
+        err, TAG, "add FT5x06 device failed");
+#endif
 
     ESP_LOGI(TAG, "FT5x06/FT3168 initialized successfully"); // 记录初始化成功日志
     return ESP_OK;                                           // 返回成功

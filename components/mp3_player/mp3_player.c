@@ -5,6 +5,7 @@
 #include "esp_spiffs.h"
 #include "audio_player.h"
 #include "audio_codec.h"
+#include "audio_platform_config.h"
 
 static const char *TAG = "mp3_player";
 
@@ -48,15 +49,10 @@ static esp_err_t audio_mute_callback(AUDIO_PLAYER_MUTE_SETTING setting)
 // I2S写入回调
 static esp_err_t audio_write_callback(void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms)
 {
-    esp_codec_dev_handle_t playback_dev = audio_codec_get_playback_dev();
-    if (playback_dev == NULL)
-    {
-        ESP_LOGE(TAG, "播放设备未初始化");
-        return ESP_FAIL;
-    }
+    (void)timeout_ms;
 
-    int ret = esp_codec_dev_write(playback_dev, audio_buffer, len);
-    if (ret == 0) {
+    if (audio_codec_write(audio_buffer, len) == ESP_OK)
+    {
         *bytes_written = len;
         return ESP_OK;
     }
@@ -70,10 +66,11 @@ static esp_err_t audio_clk_reconfig_callback(uint32_t rate, uint32_t bits_cfg, i
     ESP_LOGI(TAG, "重配置I2S时钟: %lu Hz, %lu bits, %s",
              rate, bits_cfg,
              ch == I2S_SLOT_MODE_MONO ? "单声道" : "立体声");
-
-    // 这里可以添加重新配置I2S时钟的代码
-    // 因为audio_codec已经配置好了,通常不需要动态改变
-    // 如果需要支持不同采样率的MP3文件,可以在这里实现
+    if (rate != AUDIO_PLATFORM_HW_SAMPLE_RATE)
+    {
+        ESP_LOGW(TAG, "当前音频输出固定为 %d Hz，输入请求 %lu Hz",
+                 AUDIO_PLATFORM_HW_SAMPLE_RATE, rate);
+    }
 
     return ESP_OK;
 }

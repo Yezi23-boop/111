@@ -1,11 +1,22 @@
 # 上下文库变更记录
 
-- 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，迁入索引、质量检查、检索和打包脚本。
+- 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，接入索引、质量检查、检索和打包脚本。
 - 2026-03-11：新增仓库级 `AGENTS.md`，引入默认上下文流程、计划模式摘要和 ESP32/MCU 嵌入式 C/C++ 默认规范。
-- 2026-03-11：迁入并适配首批通用知识文档，包括 LVGL 点亮、功耗检查、计划模式规则、工程规则、教学里程碑和当前仓库概览。
+- 2026-03-11：导入并适配首批通用知识文档，包括 LVGL 点亮、功耗检查、计划模式规则、工程规则、教学里程碑和仓库概览。
 - 2026-03-11：新增默认嵌入式代码生成规范 ADR，并为当前仓库生成首个本地上下文索引。
-- 2026-03-11：基于 `ESP32-S3-Touch-AMOLED-2.06.pdf` 和现有代码新增板级硬件映射、共享总线与模块归属知识卡，补强显示/触摸/音频/配网排障上下文。
-- 2026-03-11：新增启动阻塞链路、电源与唤醒控制图、以及硬件能力缺口知识卡，补强首启、低功耗和后续功能接入的上下文基线。
+- 2026-03-11：基于 `ESP32-S3-Touch-AMOLED-2.06.pdf` 和现有代码新增板级硬件映射、共享总线与模块归属知识卡，补强显示、触摸、音频、配网排障上下文。
+- 2026-03-11：新增启动阻塞链路、电源与唤醒控制，以及硬件能力缺口知识卡，补强首启、低功耗和后续功能接入的上下文基线。
 - 2026-03-11：新增存储与配网路径知识卡，固化 SD 卡总线选择、录音/MP3 路径和 AP 配网页面嵌入方式。
 - 2026-03-11：新增 `AXP2101`、`PCF85063ATL`、`QMI8658C` 最小探测知识卡，固化候选地址、共享总线、预期扫描结果和失败信号。
 - 2026-03-11：基于 `AXP2101`、`FT3168`、`ES8311`、`ES7210` datasheet 补充地址与时钟基线，并把 AXP2101 默认 7 位地址从候选升级为已确认。
+- 2026-03-31：将 `i2c_manager` 迁移到新版 master bus 接口，同步让 `audio_codec` 使用共享 `bus_handle`，并更新 I2C 迁移知识卡。
+- 2026-03-31：新增 `official_chat` 迁移前置条件知识卡，固化 `sdkconfig` 关键差异、语音模型开关和缺失组件依赖。
+- 2026-03-31：引入 `official_chat` 和 `utils` 组件，给本地 `wifi_provision` 补 runtime helper，新增独立 AI 对话实验入口，并补齐 `esp_audio_codec`、`esp_audio_effects`、`esp-sr` 等依赖。
+- 2026-03-31：新增 `official_chat` 配置完整性审查知识卡，确认当前仓库已具备最小可编译 `sdkconfig` 基线，但 `model/assets` 分区、AEC 板级偏好和源仓库内存/TLS 策略仍未完全对齐。
+- 2026-03-31：为 `official_chat` 追加 `model 4M` 和 `assets 8M` 分区，确认构建会生成 `srmodels.bin` 并准备刷写到 `model` 分区。
+- 2026-03-31：同步 `CONFIG_USE_DEVICE_AEC=y` 和 `CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y`，使板级 AEC 偏好与基础唤醒词模型进入当前 AI 对话实验构建链路。
+- 2026-03-31：继续同步 `CONFIG_SPIRAM_USE_MALLOC`、`CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`、`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC` 和 `CONFIG_MBEDTLS_DYNAMIC_BUFFER` 等低风险 AI 内存策略，同时刻意保持 `CONFIG_PM_ENABLE` 与 `CONFIG_SPIRAM_RODATA` 不变。
+- 2026-03-31：新增 `official_chat` 可实现性与移植差距评估知识卡，明确当前仓库更接近 `idf-EDGE_lmpulse` 适配路线，已具备最小 AI 对话实验链路基础，但完整产品化仍主要卡在运行时整合与真机验证。
+- 2026-03-31：为 AI 实验入口增加 `api.tenclass.net` 与 `mqtt.xiaozhi.me` 的 DNS 就绪探测，并把 AP 门户 IP 配置前移到启用 `APSTA` 之前，减少首轮 OTA 解析竞态和 `192.168.4.1/192.168.100.1` 日志歧义。
+- 2026-03-31：把 `official_chat` 的 UDP 下行音频停顿判定改为项目可配置项，并在 `sdkconfig` 中设置 `CONFIG_OFFICIAL_CHAT_UDP_AUDIO_STALL_TIMEOUT_MS=5000`，用于缓解句中因 Wi-Fi 抖动导致的误判中断。
+- 2026-03-31：补充 `official_chat` 真机 TTS 中途停播案例，记录 `udp audio stalled while mqtt tts text continues` 的实际日志特征，并明确当前先保留 `5s` 硬故障阈值，不直接放宽到 `10s`。

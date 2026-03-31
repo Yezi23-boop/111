@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-03-11T10:57:12.592451+00:00",
+  "generated_at_utc": "2026-03-31T11:51:46.168946+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 22,
+  "doc_count": 27,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，迁入索引、质量检查、检索和打包脚本。",
+      "summary": "- 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，接入索引、质量检查、检索和打包脚本。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
-      "token_count": 97
+      "mtime_utc": "2026-03-31T11:51:37.938763+00:00",
+      "token_count": 286
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -233,6 +233,91 @@
       "token_count": 135
     },
     {
+      "path": "docs/context/knowledge/project/i2c-manager-master-bus-migration.md",
+      "title": "i2c_manager master bus 迁移",
+      "tags": [
+        "project",
+        "i2c",
+        "esp-idf",
+        "audio",
+        "touch"
+      ],
+      "summary": "当前仓库 i2c_manager 切换到 master bus 接口后的调用约束与兼容边界。",
+      "id": "i2c-manager-master-bus-migration",
+      "last_reviewed": "2026-03-31",
+      "mtime_utc": "2026-03-30T17:42:24.608817+00:00",
+      "token_count": 92
+    },
+    {
+      "path": "docs/context/knowledge/project/official-chat-config-completeness-audit.md",
+      "title": "official_chat 配置完整性审查",
+      "tags": [
+        "project",
+        "official-chat",
+        "sdkconfig",
+        "partition",
+        "esp32s3",
+        "review"
+      ],
+      "summary": "审查当前 111 仓库的 official_chat 迁移完整性，结论是最小可编译配置、model/assets 分区、AEC 和基础唤醒词开关已补齐，但完整运行时策略仍未完全对齐源仓库。",
+      "id": "official-chat-config-completeness-audit",
+      "last_reviewed": "2026-03-31",
+      "mtime_utc": "2026-03-31T06:53:51.110631+00:00",
+      "token_count": 321
+    },
+    {
+      "path": "docs/context/knowledge/project/official-chat-feasibility-and-gap-assessment.md",
+      "title": "official_chat 可实现性与差距评估",
+      "tags": [
+        "project",
+        "official-chat",
+        "esp32s3",
+        "migration",
+        "review",
+        "wifi",
+        "audio"
+      ],
+      "summary": "评估当前 111 仓库接入 official_chat 的可实现程度，并对比 idf-xiaozhi 与 idf-EDGE_lmpulse 的关键运行时差异、剩余风险和推荐落地顺序。",
+      "id": "official-chat-feasibility-and-gap-assessment",
+      "last_reviewed": "2026-03-31",
+      "mtime_utc": "2026-03-31T10:57:40.995501+00:00",
+      "token_count": 724
+    },
+    {
+      "path": "docs/context/knowledge/project/official-chat-local-wifi-experiment.md",
+      "title": "official_chat 本地 Wi-Fi 实验入口",
+      "tags": [
+        "project",
+        "official-chat",
+        "wifi-provision",
+        "esp32s3",
+        "audio",
+        "experiment"
+      ],
+      "summary": "当前仓库已将 official_chat 接到本地 wifi_provision，并通过独立实验入口接通最小 AI 对话链路。",
+      "id": "official-chat-local-wifi-experiment",
+      "last_reviewed": "2026-03-31",
+      "mtime_utc": "2026-03-31T11:51:37.938763+00:00",
+      "token_count": 369
+    },
+    {
+      "path": "docs/context/knowledge/project/official-chat-migration-prerequisites.md",
+      "title": "official_chat 迁移前置条件",
+      "tags": [
+        "project",
+        "official-chat",
+        "sdkconfig",
+        "esp32s3",
+        "audio",
+        "speech"
+      ],
+      "summary": "将 idf-xiaozhi 的 official_chat 迁移到当前仓库前，需要先补齐的关键 sdkconfig 开关、内存策略和组件依赖。",
+      "id": "official-chat-migration-prerequisites",
+      "last_reviewed": "2026-03-31",
+      "mtime_utc": "2026-03-30T17:59:48.171985+00:00",
+      "token_count": 150
+    },
+    {
       "path": "docs/context/knowledge/project/plan-mode-rules.md",
       "title": "计划模式规则",
       "tags": [
@@ -281,7 +366,7 @@
       "summary": "当前仓库的模块地图、启动链路和构建依赖摘要，便于定位 UI、音频和配网相关改动。",
       "id": "project-repo-overview",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-03-11T10:56:58.710089+00:00",
+      "mtime_utc": "2026-03-30T17:00:56.641347+00:00",
       "token_count": 285
     },
     {
@@ -299,7 +384,7 @@
       "summary": "当前仓库从上电到 UI 启动的初始化顺序、阻塞点和首启风险摘要。",
       "id": "startup-init-and-blocking-chain",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-03-11T10:35:22.129823+00:00",
+      "mtime_utc": "2026-03-30T17:00:56.641347+00:00",
       "token_count": 177
     },
     {
@@ -345,7 +430,7 @@
       "summary": "- `knowledge/esp32-s3/lvgl-porting-baseline.md`",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
+      "mtime_utc": "2026-03-30T17:00:56.640347+00:00",
       "token_count": 115
     },
     {
