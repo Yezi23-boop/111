@@ -62,3 +62,4 @@ last_reviewed: 2026-03-31
 
 - 下一步补 `leave_foreground` 的行为边界，决定离开 AI 页面时是否只退前台，还是主动停止监听。
 - 再下一步处理 AI 页面和音乐播放器/其它音频功能的资源协调，不要把 owner 逻辑直接塞回入口文件。
+- 字体资源链的当前状态见 [`ai-font-assets`](./ai-font-assets.md)。

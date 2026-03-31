@@ -1,8 +1,8 @@
 {
-  "generated_at_utc": "2026-03-31T15:56:23.304469+00:00",
+  "generated_at_utc": "2026-03-31T16:07:40.574737+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 29,
+  "doc_count": 30,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
@@ -11,8 +11,8 @@
       "summary": "- 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，接入索引、质量检查、检索和打包脚本。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-03-31T14:58:34.993823+00:00",
-      "token_count": 573
+      "mtime_utc": "2026-03-31T16:07:33.584752+00:00",
+      "token_count": 585
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -179,6 +179,23 @@
       "token_count": 121
     },
     {
+      "path": "docs/context/knowledge/project/ai-font-assets.md",
+      "title": "AI 页面字体资源链",
+      "tags": [
+        "project",
+        "ui",
+        "lvgl",
+        "fonts",
+        "assets",
+        "official-chat"
+      ],
+      "summary": "记录 AI 页面 hand-written 字体资源链，当前已接好接缝与回退层，但 assets 真正字体解析尚未完成。",
+      "id": "ai-font-assets",
+      "last_reviewed": "2026-03-31",
+      "mtime_utc": "2026-03-31T16:07:33.584752+00:00",
+      "token_count": 54
+    },
+    {
       "path": "docs/context/knowledge/project/ai-ui-entry-network-guidance.md",
       "title": "AI 页面入口与未联网引导",
       "tags": [
@@ -192,8 +209,8 @@
       "summary": "记录当前仓库把主菜单 AI 图标接到手写 AI 页面，并通过 network_service 展示未联网引导的最小桥接方案。",
       "id": "ai-ui-entry-network-guidance",
       "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-03-31T14:10:55.176470+00:00",
-      "token_count": 224
+      "mtime_utc": "2026-03-31T16:07:07.259075+00:00",
+      "token_count": 229
     },
     {
       "path": "docs/context/knowledge/project/display-touch-audio-bus-map.md",

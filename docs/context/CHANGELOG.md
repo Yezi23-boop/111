@@ -31,6 +31,7 @@
 - 2026-03-31：将 `mp3_player` 从 `main/time_weather.c` 中脱钩，移除时间天气任务中的播放器初始化与示例播放残留，并补充源码级回归测试。
 - 2026-03-31：将正式主流程从“阻塞等待联网”切到“硬件先 ready、联网后台继续”，新增 `network_service` 统一承接 `wifi_provision_start_auto()`、联网状态轮询和 AI 服务就绪探测。
 - 2026-03-31：新增主菜单 AI 页面入口与未联网引导，主菜单 AI 图标已跳转到手写 `ai_ui_controller` 页面，并通过 `network_service` 展示联网状态与配网入口。
+- 2026-03-31：补充 AI 页面字体资源链知识卡，确认 `ui_font_assets` 已落地接缝与回退层，但 `assets` 真正字体解析仍未完成，当前继续回退到编译字体。
 - 2026-03-31：新增 `official_chat_service`，统一封装 `official_chat` 的创建与启动；AI 页面在 `SERVICE_READY` 后自动进入前台待唤醒，实验入口也改为复用该服务。
 - 2026-03-31：将 `main_ai_chat_experiment.c` 改为独立简易 AI 实验页，新增 `ai_experiment_ui` 负责显示网络/AI 状态、触发本地 AP 配网，并在 `SERVICE_READY` 后自动进入待唤醒。
 - 2026-03-31：针对独立 AI 实验页下的 `spi_master: Failed to allocate priv TX buffer / Display flush failed: ESP_ERR_NO_MEM`，将 `LV_PORT_FIXED_CHUNK_LINES` 从 30 下调到 10，以降低 LCD SPI 刷屏的内部 DMA 临时缓冲压力。
