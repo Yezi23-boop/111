@@ -69,6 +69,8 @@ static esp_err_t lv_port_flush_area_chunked_simple(lv_display_t *disp, const lv_
 #endif
 
 static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
+static esp_err_t lv_port_wait_one_chunk_done(uint32_t *pending_chunks, TickType_t timeout_ticks);
+static void lv_port_rounder_event_cb(lv_event_t *e);
 
 // LVGL 9.x API：显示刷新回调函数签名变更（第三个参数为 uint8_t*）
 void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
@@ -83,8 +85,15 @@ void lv_port_tick_init(void);
 // 声明回调函数
 static bool lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
 
-// 全局变量用于追踪分块传输进度
-static volatile int s_flush_pending_count = 0;
+// 记录颜色传输完成事件，用于限制同时在飞的 chunk 数量
+static SemaphoreHandle_t s_flush_done_sem = NULL;
+// LCD 发送 bounce buffer：避免直接修改 LVGL 渲染缓冲，并绕开 PSRAM -> 私有 DMA 缓冲复制
+static uint8_t *s_tx_chunk_bufs[LV_PORT_MAX_INFLIGHT_CHUNKS] = {0};
+static size_t s_tx_chunk_buf_size = 0;
+static uint32_t s_tx_chunk_buf_next = 0;
+
+static void lv_port_init_tx_chunk_buffers(void);
+static uint8_t *lv_port_prepare_tx_buffer(const uint8_t *px_map, uint32_t pixel_count, size_t color_bytes);
 
 void lv_port_disp_init_small(void) // ram
 {
@@ -111,16 +120,29 @@ void lv_port_disp_init_small(void) // ram
     // LVGL 9.x API：创建显示对象并设置参数
     s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
 
+    if (s_flush_done_sem == NULL)
+    {
+        s_flush_done_sem = xSemaphoreCreateCounting(CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH, 0);
+        if (s_flush_done_sem == NULL)
+        {
+            ESP_LOGE(TAG, "创建刷新同步信号量失败");
+            return;
+        }
+    }
+
+    lv_port_init_tx_chunk_buffers();
+
     // 设置颜色格式为RGB565（16位色深）
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
 
     // 设置刷新回调函数
     lv_display_set_flush_cb(s_display, lv_port_disp_flush);
+    lv_display_add_event_cb(s_display, lv_port_rounder_event_cb, LV_EVENT_INVALIDATE_AREA, NULL);
 
     // 设置显示缓冲区：使用lv_display_set_buffers API，缓冲区大小以字节为单位
     lv_display_set_buffers(s_display, disp1, disp2,
                            disp_buf_size * sizeof(lv_color_t),
-                           0);
+                           LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     // 注册传输完成回调，启用异步刷新
     const esp_lcd_panel_io_callbacks_t cbs = {
@@ -159,15 +181,28 @@ void lv_port_disp_init_single(void) // 片外ram
     // LVGL 9.x API：创建显示对象并设置参数
     s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
 
+    if (s_flush_done_sem == NULL)
+    {
+        s_flush_done_sem = xSemaphoreCreateCounting(CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH, 0);
+        if (s_flush_done_sem == NULL)
+        {
+            ESP_LOGE(TAG, "创建刷新同步信号量失败");
+            return;
+        }
+    }
+
+    lv_port_init_tx_chunk_buffers();
+
     // 设置颜色格式为RGB565（16位色深）
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
 
     // 设置刷新回调函数
     lv_display_set_flush_cb(s_display, lv_port_disp_flush);
+    lv_display_add_event_cb(s_display, lv_port_rounder_event_cb, LV_EVENT_INVALIDATE_AREA, NULL);
 
     lv_display_set_buffers(s_display, disp_buf1, disp_buf2,
                            disp_buf_size * sizeof(lv_color_t),
-                           0);
+                           LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     // 注册传输完成回调，启用异步刷新
     const esp_lcd_panel_io_callbacks_t cbs = {
@@ -175,8 +210,63 @@ void lv_port_disp_init_single(void) // 片外ram
     };
     co5300_panel_register_color_done_callback(&cbs, s_display);
 
-    ESP_LOGI(TAG, "LVGL 9.3 单缓存显示驱动初始化完成 (RGB565格式%s字节交换)",
+    ESP_LOGI(TAG, "LVGL 9.3 单缓存显示驱动初始化完成 (PARTIAL/%d行, RGB565格式%s字节交换)",
+             LV_PORT_FIXED_CHUNK_LINES2,
              LV_PORT_BYTE_SWAP_ENABLE ? "启用" : "禁用");
+}
+
+static void lv_port_init_tx_chunk_buffers(void)
+{
+    if (s_tx_chunk_buf_size != 0)
+    {
+        return;
+    }
+
+    const size_t tx_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES * sizeof(lv_color_t);
+
+    for (uint32_t i = 0; i < LV_PORT_MAX_INFLIGHT_CHUNKS; ++i)
+    {
+        s_tx_chunk_bufs[i] = heap_caps_malloc(tx_buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+        if (s_tx_chunk_bufs[i] == NULL)
+        {
+            ESP_LOGW(TAG, "LCD bounce buffer[%lu] 分配失败，回退到直接发送渲染缓冲", (unsigned long)i);
+            for (uint32_t j = 0; j < i; ++j)
+            {
+                free(s_tx_chunk_bufs[j]);
+                s_tx_chunk_bufs[j] = NULL;
+            }
+            s_tx_chunk_buf_size = 0;
+            s_tx_chunk_buf_next = 0;
+            return;
+        }
+    }
+
+    s_tx_chunk_buf_size = tx_buf_size;
+    s_tx_chunk_buf_next = 0;
+    ESP_LOGI(TAG, "LCD bounce buffer: %lu x %zu bytes (Internal DMA)", (unsigned long)LV_PORT_MAX_INFLIGHT_CHUNKS, tx_buf_size);
+}
+
+static uint8_t *lv_port_prepare_tx_buffer(const uint8_t *px_map, uint32_t pixel_count, size_t color_bytes)
+{
+    if (px_map == NULL)
+    {
+        return NULL;
+    }
+
+    if (s_tx_chunk_buf_size >= color_bytes && s_tx_chunk_bufs[0] != NULL)
+    {
+        uint8_t *tx_px_map = s_tx_chunk_bufs[s_tx_chunk_buf_next];
+        s_tx_chunk_buf_next = (s_tx_chunk_buf_next + 1U) % LV_PORT_MAX_INFLIGHT_CHUNKS;
+        memcpy(tx_px_map, px_map, color_bytes);
+
+        if (s_byte_swap_enabled)
+        {
+            lv_draw_sw_rgb565_swap(tx_px_map, pixel_count);
+        }
+        return tx_px_map;
+    }
+
+    return (uint8_t *)px_map;
 }
 
 /**
@@ -185,25 +275,36 @@ void lv_port_disp_init_single(void) // 片外ram
  */
 static bool IRAM_ATTR lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
-    // 递减挂起的传输计数
-    if (s_flush_pending_count > 0)
+    (void)panel_io;
+    (void)edata;
+    (void)user_ctx;
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (s_flush_done_sem != NULL)
     {
-        s_flush_pending_count--;
+        xSemaphoreGiveFromISR(s_flush_done_sem, &xHigherPriorityTaskWoken);
+    }
+    return xHigherPriorityTaskWoken == pdTRUE;
+}
+
+static void lv_port_rounder_event_cb(lv_event_t *e)
+{
+    lv_area_t *area = (lv_area_t *)lv_event_get_param(e);
+    if (area == NULL)
+    {
+        return;
     }
 
-    // 如果所有分块都传输完成
-    if (s_flush_pending_count == 0)
-    {
-#if CO5300_PANEL_USE_TE_SIGNAL
-        // 传输完成，准备下一帧的TE同步
-        s_frame_ctx.frame_start = true;
-#endif
-        lv_display_t *disp = (lv_display_t *)user_ctx;
-        lv_display_flush_ready(disp);
-        return true; // 请求高优先级任务切换（如果需要）
-    }
+    uint16_t x1 = area->x1;
+    uint16_t x2 = area->x2;
+    uint16_t y1 = area->y1;
+    uint16_t y2 = area->y2;
 
-    return false;
+    // 参考 Waveshare BSP：将失效区域对齐到偶数边界，减少圆角/弧线边缘在局部刷新时的碎片化。
+    area->x1 = (x1 >> 1) << 1;
+    area->y1 = (y1 >> 1) << 1;
+    area->x2 = ((x2 >> 1) << 1) + 1;
+    area->y2 = ((y2 >> 1) << 1) + 1;
 }
 
 /**
@@ -215,22 +316,14 @@ static bool IRAM_ATTR lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t p
 void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     esp_err_t ret = ESP_OK;
+    uint32_t pending_chunks = 0;
 
-    // 预先计算分块数量（如果启用分块传输）
-    // 注意：必须在调用传输函数前设置好计数器，以防传输过快回调提前触发
-#if LV_PORT_CHUNKED_TRANSFER_ENABLE
-    uint32_t area_height = area->y2 - area->y1 + 1;
-    if (area_height > LV_PORT_FIXED_CHUNK_LINES)
+    if (s_flush_done_sem != NULL)
     {
-        s_flush_pending_count = (area_height + LV_PORT_FIXED_CHUNK_LINES - 1) / LV_PORT_FIXED_CHUNK_LINES;
+        while (xSemaphoreTake(s_flush_done_sem, 0) == pdTRUE)
+        {
+        }
     }
-    else
-    {
-        s_flush_pending_count = 1;
-    }
-#else
-    s_flush_pending_count = 1;
-#endif
 
 #if LV_PORT_CHUNKED_TRANSFER_ENABLE
     uint32_t area_height_val = area->y2 - area->y1 + 1;
@@ -239,28 +332,83 @@ void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
     if (area_height_val > LV_PORT_FIXED_CHUNK_LINES)
     {
         // 分块传输大区域
-        ret = lv_port_flush_area_chunked_simple(disp, area, px_map);
+        uint32_t area_width = area->x2 - area->x1 + 1;
+        uint32_t area_height = area->y2 - area->y1 + 1;
+        uint32_t bytes_per_line = area_width * sizeof(uint16_t);
+        uint32_t chunk_lines = LV_PORT_FIXED_CHUNK_LINES;
+
+        ESP_LOGD(TAG, "Chunked transfer: %lux%lu area, %lu lines per chunk, inflight=%d",
+                 area_width, area_height, chunk_lines, LV_PORT_MAX_INFLIGHT_CHUNKS);
+
+        for (uint32_t y_offset = 0; y_offset < area_height; y_offset += chunk_lines)
+        {
+            uint32_t current_chunk_lines =
+                (y_offset + chunk_lines > area_height) ? (area_height - y_offset) : chunk_lines;
+
+            while (pending_chunks >= LV_PORT_MAX_INFLIGHT_CHUNKS)
+            {
+                ret = lv_port_wait_one_chunk_done(&pending_chunks, pdMS_TO_TICKS(200));
+                if (ret != ESP_OK)
+                {
+                    break;
+                }
+            }
+            if (ret != ESP_OK)
+            {
+                break;
+            }
+
+            lv_area_t chunk_area = {
+                .x1 = area->x1,
+                .y1 = area->y1 + y_offset,
+                .x2 = area->x2,
+                .y2 = area->y1 + y_offset + current_chunk_lines - 1};
+
+            uint8_t *chunk_px_map = px_map + (y_offset * bytes_per_line);
+            ret = lv_port_flush_area_with_sync(disp, &chunk_area, chunk_px_map);
+            if (ret != ESP_OK)
+            {
+                break;
+            }
+
+            pending_chunks++;
+        }
     }
     else
     {
         // 直接传输小区域
         ret = lv_port_flush_area_with_sync(disp, area, px_map);
+        if (ret == ESP_OK)
+        {
+            pending_chunks = 1;
+        }
     }
 #else
     // 标准传输模式
     ret = lv_port_flush_area_with_sync(disp, area, px_map);
+    if (ret == ESP_OK)
+    {
+        pending_chunks = 1;
+    }
 #endif
 
-    // 注意：不再此处立即调用 lv_display_flush_ready(disp)
-    // 而是等待所有分块传输完成后的回调中调用
+    while (ret == ESP_OK && pending_chunks > 0)
+    {
+        ret = lv_port_wait_one_chunk_done(&pending_chunks, pdMS_TO_TICKS(200));
+    }
 
     if (ret != ESP_OK)
     {
         ESP_LOGW(TAG, "Display flush failed: %s", esp_err_to_name(ret));
-        // 如果失败，手动调用以避免LVGL挂起
-        s_flush_pending_count = 0;
         lv_display_flush_ready(disp);
+        return;
     }
+
+#if CO5300_PANEL_USE_TE_SIGNAL
+    // 整帧刷新完成，下一帧重新等待TE
+    s_frame_ctx.frame_start = true;
+#endif
+    lv_display_flush_ready(disp);
 }
 
 /**
@@ -272,6 +420,7 @@ void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
  */
 static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
+    (void)disp;
 #if CO5300_PANEL_USE_TE_SIGNAL
     // 帧首等TE优化：只在帧的第一个area时等待TE信号
     if (s_frame_ctx.frame_start)
@@ -299,15 +448,17 @@ static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_
 
     // 计算像素数量用于字节交换和DMA同步
     uint32_t pixel_count = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+    size_t color_bytes = pixel_count * sizeof(uint16_t);
+    uint8_t *tx_px_map = lv_port_prepare_tx_buffer(px_map, pixel_count, color_bytes);
 
-    // 根据配置进行字节交换
-    if (s_byte_swap_enabled)
+    // 若没有 bounce buffer，只能回退到原地字节交换
+    if (tx_px_map == px_map && s_byte_swap_enabled)
     {
         lv_draw_sw_rgb565_swap(px_map, pixel_count);
     }
 
     // 调用底层面板驱动进行像素数据传输
-    return esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    return esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, tx_px_map);
 }
 
 #if LV_PORT_CHUNKED_TRANSFER_ENABLE
@@ -320,40 +471,32 @@ static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_
  */
 static esp_err_t lv_port_flush_area_chunked_simple(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    uint32_t area_width = area->x2 - area->x1 + 1;
-    uint32_t area_height = area->y2 - area->y1 + 1;
-    uint32_t bytes_per_line = area_width * sizeof(uint16_t);
-    uint32_t chunk_lines = LV_PORT_FIXED_CHUNK_LINES;
-
-    ESP_LOGD(TAG, "Chunked transfer: %lux%lu area, %lu lines per chunk", area_width, area_height, chunk_lines);
-
-    for (uint32_t y_offset = 0; y_offset < area_height; y_offset += chunk_lines)
-    {
-        uint32_t current_chunk_lines = (y_offset + chunk_lines > area_height) ? (area_height - y_offset) : chunk_lines;
-
-        // 构造当前块的区域
-        lv_area_t chunk_area = {
-            .x1 = area->x1,
-            .y1 = area->y1 + y_offset,
-            .x2 = area->x2,
-            .y2 = area->y1 + y_offset + current_chunk_lines - 1};
-
-        // 计算当前块的像素数据指针
-        uint8_t *chunk_px_map = px_map + (y_offset * bytes_per_line);
-
-        // 传输当前块
-        esp_err_t ret = lv_port_flush_area_with_sync(disp, &chunk_area, chunk_px_map);
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Chunk transfer failed at y_offset %lu", y_offset);
-            return ret;
-        }
-    }
-
-    return ESP_OK;
+    (void)disp;
+    (void)area;
+    (void)px_map;
+    return ESP_ERR_NOT_SUPPORTED;
 }
 
 #endif // LV_PORT_CHUNKED_TRANSFER_ENABLE
+
+static esp_err_t lv_port_wait_one_chunk_done(uint32_t *pending_chunks, TickType_t timeout_ticks)
+{
+    if (pending_chunks == NULL || *pending_chunks == 0)
+    {
+        return ESP_OK;
+    }
+    if (s_flush_done_sem == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xSemaphoreTake(s_flush_done_sem, timeout_ticks) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "等待LCD颜色传输完成超时");
+        return ESP_ERR_TIMEOUT;
+    }
+    (*pending_chunks)--;
+    return ESP_OK;
+}
 
 /* ========== LVGL输入设备相关函数 ========== */
 

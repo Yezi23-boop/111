@@ -1,6 +1,7 @@
 # 上下文库变更记录
 
 - 2026-04-01：为 `official_chat` 增加 `prepare_shutdown` 护栏，退出 AI 时应用层会清除排队任务并忽略 `ActivationDone/ToggleChat/StartListening/WakeWordDetected` 等旧事件，修复 speaking 退出窗口内被旧事件重入、唤醒词任务析构前未停净的问题。
+- 2026-04-01：新增显示渲染、CO5300 QSPI 传输与 FT5x06 触摸输入链路知识卡，固化 `LVGL 9.3` 升级后圆角异常、绿色条纹与 `spi_master: Failed to allocate priv TX buffer` 的联合排查结论。
 - 2026-04-01：修复正式 AI 页“service 已停完但页面没返回主页”的异步退出判定问题；AI 页本地锁存 `exit requested`，不再要求 `shutdown_pending` 与 `STOPPED` 同时成立，只要 service 到 `STOPPED` 就完成离页。
 - 2026-04-01：修正正式 AI 页返回主页时的会话销毁节奏，`official_chat_service_shutdown()` 现先对 active audio state 调 `official_chat_stop_listening()`，再等待传输静默窗口后销毁 `official_chat`，避免 speaking 态直接 destroy 触发 lwIP / MQTT 断言崩溃。
 - 2026-04-01：将正式 AI 页退出流程改成异步两阶段，先 `request_shutdown` 并等待 `connecting/listening/speaking -> idle -> quiet -> stopped`，页面仅在 service 确认 `STOPPED` 后再返回主页，避免退出过程中被唤醒词或残余传输动作重入。
@@ -33,6 +34,13 @@
 - 2026-03-31：继续同步 `CONFIG_SPIRAM_USE_MALLOC`、`CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`、`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC` 和 `CONFIG_MBEDTLS_DYNAMIC_BUFFER` 等低风险 AI 内存策略，同时刻意保持 `CONFIG_PM_ENABLE` 与 `CONFIG_SPIRAM_RODATA` 不变。
 - 2026-03-31：新增 `official_chat` 可实现性与移植差距评估知识卡，明确当前仓库更接近 `idf-EDGE_lmpulse` 适配路线，已具备最小 AI 对话实验链路基础，但完整产品化仍主要卡在运行时整合与真机验证。
 - 2026-04-01：修复 `official_chat` 在 MQTT 模式下离开 AI 页面时，`idle` 态仍直接销毁会话导致的停机崩溃；改为将 `idle` 纳入停机静默窗，并确认 MQTT 停机保持 `stop + destroy`，不再手动 `disconnect`，以避免 `esp_tls` 二次释放。
+- 2026-04-01：将 `LV_PORT_FIXED_CHUNK_LINES` 调到 `5`，并把 `CO5300_PANEL_OPTIMIZED_PCLK_HZ` 从 `50MHz` 降到 `40MHz`，作为“圆角控件异常 + 小 chunk 绿色条纹”联合 A/B 验证，并补充对应源码级配置测试。
+- 2026-04-01：把 `LV_PORT_MAX_INFLIGHT_CHUNKS` 从 `2` 调到 `1`，用于验证“小 chunk 绿色条纹”是否主要来自多块并发在飞，并新增 `lvgl-display-tuning-log.md` 统一记录每轮显示调参结果，供后续 agent 复用。
+- 2026-04-01：为 `lv_port` 引入片内 DMA bounce buffer，改为“复制到 bounce buffer 后再做 RGB565 字节交换并发送”，避免直接原地修改 `LVGL` 渲染缓冲，并补充对应源码级测试与知识记录。
+- 2026-04-01：参考 Waveshare `02_lvgl_demo_v9` 的 BSP 做法，为 `lv_port` 增加 `LV_EVENT_INVALIDATE_AREA` rounder 回调，并将当前仓库的 `LVGL partial tile / flush chunk` 统一校正到 `10` 行，减少圆角控件局部刷新边界碎片化。
+- 2026-04-01：撤回主屏圆角控件 `bg_opa=255` 的临时 A/B 诊断改动，恢复 GUI Guider 原始透明度配置，继续保留其作为“透明混合相关性验证”经验而非当前默认状态。
+- 2026-04-01：将主屏几个疑似异常的圆角半透明控件 `bg_opa` 临时提高到 `255`，用于验证 `LVGL 9.3` 下“圆角 + 半透明混合”是否是主要触发条件，并补充源码级回归测试。
+- 2026-04-01：为定位 `LVGL 9.3` 下圆角/圆形控件异常，关闭 `CONFIG_LV_DRAW_SW_CIRCLE_CACHE_SIZE` 与 `CONFIG_LV_DRAW_SW_SHADOW_CACHE_SIZE`，并补充对应源码级配置测试与经验记录。
 - 2026-03-31：为 AI 实验入口增加 `api.tenclass.net` 与 `mqtt.xiaozhi.me` 的 DNS 就绪探测，并把 AP 门户 IP 配置前移到启用 `APSTA` 之前，减少首轮 OTA 解析竞态和 `192.168.4.1/192.168.100.1` 日志歧义。
 - 2026-03-31：把 `official_chat` 的 UDP 下行音频停顿判定改为项目可配置项，并在 `sdkconfig` 中设置 `CONFIG_OFFICIAL_CHAT_UDP_AUDIO_STALL_TIMEOUT_MS=5000`，用于缓解句中因 Wi-Fi 抖动导致的误判中断。
 - 2026-03-31：补充 `official_chat` 真机 TTS 中途停播案例，记录 `udp audio stalled while mqtt tts text continues` 的实际日志特征，并明确当前先保留 `5s` 硬故障阈值，不直接放宽到 `10s`。
@@ -53,3 +61,7 @@
 - 2026-03-31：针对独立 AI 实验页下的 `spi_master: Failed to allocate priv TX buffer / Display flush failed: ESP_ERR_NO_MEM`，将 `LV_PORT_FIXED_CHUNK_LINES` 从 30 下调到 10，以降低 LCD SPI 刷屏的内部 DMA 临时缓冲压力。
 - 2026-03-31：为隔离 UI 干扰，临时将正式入口切回 `main/111.c`，并在 `111.c` 中注释屏蔽 `lvgl_task`、启动延时与 `time_and_weather` 任务创建，仅保留硬件、后台联网与 `official_chat_service` 初始化链路。
 - 2026-03-31：在临时“无 UI”验证模式下，为 `main/111.c` 增加 `official_chat_bootstrap_task`，于 `network_service` 就绪后自动调用 `official_chat_service_enter_foreground()`，避免联网完成后无触发源导致 AI 一直停在空闲态。
+- 2026-04-01：补充 LVGL/CO5300 `60 FPS` 预算结论，明确当前 `40MHz + 30 行二次切块 + LVGL 40ms 刷新周期` 无法支撑全屏 60 FPS，并给出对齐 `refr period / tile / max transfer / pclk` 的推荐起点。
+- 2026-04-01：将显示链路切到 `60FPS` 尝试档：`LVGL tile/flush = 100 行`、`CO5300 max transfer = 100 行`、`QSPI PCLK = 80MHz`、`LVGL refr period = 16ms`、`circle/shadow cache = 4`，并完成 `fullclean + build` 验证。
+- 2026-04-01：根据“滑动画面有切割感”的反馈，将 `LV_PORT_FIXED_CHUNK_LINES1/2` 从 `100` 提到 `512`，保持 flush 仍按 `100` 行发送，以优先减轻滚动过程中的 tile 分片感；已完成源码测试与构建验证。
+- 2026-04-01：按用户确认的 `CO5300 PCLK 最高 50MHz` 收回此前错误的 `80MHz` 假设，当前显示链路改为 `LVGL tile=512 / flush=max transfer=128 / PCLK=50MHz / refr period=16ms`，并把提帧目标收敛为“局部交互高帧率 + 主观顺滑”。

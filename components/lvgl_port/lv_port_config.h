@@ -3,8 +3,8 @@
 #define LCD_WIDTH 410  // LCD宽度(像素)
 #define LCD_HEIGHT 502 // LCD高度(像素)
 
-#define LV_PORT_FIXED_CHUNK_LINES1 502 // 片内ram (建议20-60行，太大内存不够)
-#define LV_PORT_FIXED_CHUNK_LINES2 502 // 片外ram
+#define LV_PORT_FIXED_CHUNK_LINES1 512 // LVGL 片内渲染缓冲高度（滑动优先档：尽量减少 tile 边界带来的切割感）
+#define LV_PORT_FIXED_CHUNK_LINES2 512 // LVGL 片外渲染缓冲高度（滑动优先档：接近整屏，减少手势滚动时的分片感）
 #define LV_PORT_FIXED_CHUNK_LINES23 0  // 控制ram开关
 /**
  * @brief 字节交换配置
@@ -32,9 +32,19 @@
  * @brief 固定传输块大小配置
  * @details 使用固定的传输块大小，简单稳定
  *
- * 当前 AI 对话链路启用后，I2S/AFE 会显著增加片内 DMA 可用内存压力。
- * 如果分块过大，SPI 面板刷新在申请 priv TX buffer 时会失败，表现为：
- * `setup_dma_priv_buffer(): Failed to allocate priv TX buffer`
- * 因此这里先收紧到 10 行，优先保证实验链路下的显示稳定性。
+ * 在 CO5300 `PCLK <= 50MHz` 的硬件上限下，全屏真 60FPS 几乎没有总线余量，
+ * 当前优先目标改为“减少每帧块数 + 保持交互顺滑”，而不是继续按错误的 80MHz 假设调参。
+ * 当前屏幕 410x502/RGB565 一帧约 411,640 字节，
+ * flush chunk 设为 128 行时，全屏约 4 块，能比 100 行进一步减少块间管理开销，
+ * 同时又不至于像整屏或超大块那样明显放大 DMA/局部刷新风险。
  */
-#define LV_PORT_FIXED_CHUNK_LINES 10 // 固定传输行数（优先降低 DMA 临时缓冲压力）
+#define LV_PORT_FIXED_CHUNK_LINES 100 // 固定传输行数（50MHz 上限档：全屏约 4 块/帧）
+
+/**
+ * @brief 允许同时在 SPI 队列中的 chunk 数量
+ * @details
+ * - 设为 1：最稳，但刷新率更低
+ * - 设为 2：当前优先尝试在 `128 行 partial flush` 下提升刷新率
+ * - 继续增大时，可能再次触发条纹、错块或内部 DMA 私有缓冲压力问题
+ */
+#define LV_PORT_MAX_INFLIGHT_CHUNKS 2

@@ -1,8 +1,8 @@
 {
-  "generated_at_utc": "2026-04-01T09:05:37.071386+00:00",
+  "generated_at_utc": "2026-04-01T12:36:04.226841+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 32,
+  "doc_count": 34,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
@@ -11,8 +11,8 @@
       "summary": "- 2026-04-01：为 `official_chat` 增加 `prepare_shutdown` 护栏，退出 AI 时应用层会清除排队任务并忽略 `ActivationDone/ToggleChat/StartListening/WakeWordDetected` 等旧事件，修复 speaking 退出窗口内被旧事件重入、唤醒词任务析构前未停净的问题",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-01T09:05:31.674328+00:00",
-      "token_count": 924
+      "mtime_utc": "2026-04-01T12:35:52.501023+00:00",
+      "token_count": 1178
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -213,6 +213,26 @@
       "token_count": 615
     },
     {
+      "path": "docs/context/knowledge/project/display-render-touch-transfer-pipeline.md",
+      "title": "显示渲染、传输与触摸输入链路",
+      "tags": [
+        "project",
+        "lvgl",
+        "display",
+        "touch",
+        "co5300",
+        "ft5x06",
+        "qspi",
+        "dma",
+        "rendering"
+      ],
+      "summary": "记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。",
+      "id": "display-render-touch-transfer-pipeline",
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-04-01T10:52:25.106100+00:00",
+      "token_count": 1169
+    },
+    {
       "path": "docs/context/knowledge/project/display-touch-audio-bus-map.md",
       "title": "显示、触摸、音频与总线映射",
       "tags": [
@@ -281,6 +301,23 @@
       "last_reviewed": "2026-03-31",
       "mtime_utc": "2026-03-30T17:42:24.608817+00:00",
       "token_count": 92
+    },
+    {
+      "path": "docs/context/knowledge/project/lvgl-display-tuning-log.md",
+      "title": "LVGL 显示调参实验记录",
+      "tags": [
+        "project",
+        "lvgl",
+        "display",
+        "co5300",
+        "tuning",
+        "debugging"
+      ],
+      "summary": "按时间记录 LVGL 9.3 显示异常排查中的每轮参数修改、实测现象与当前结论，供后续 agent 直接复用，避免重复调参。",
+      "id": "lvgl-display-tuning-log",
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-04-01T12:35:52.501023+00:00",
+      "token_count": 1199
     },
     {
       "path": "docs/context/knowledge/project/nonblocking-boot-network-service.md",
