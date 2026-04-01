@@ -86,8 +86,6 @@ class UiFontAssetsSourceTests(unittest.TestCase):
     def test_font_assets_source_uses_partition_mmap_and_index_json(self) -> None:
         source = FONT_ASSETS_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("LV_VERSION_CHECK(9, 3, 0)", source)
-        self.assertIn("ESP_ERR_NOT_SUPPORTED", source)
         self.assertIn("esp_partition_find_first", source)
         self.assertIn("esp_partition_mmap", source)
         self.assertIn("ESP_PARTITION_TYPE_DATA", source)
@@ -99,12 +97,11 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertIn("ui_font_assets_compute_checksum", source)
         self.assertIn("ESP_ERR_INVALID_CRC", source)
 
-    def test_font_assets_source_short_circuits_incompatible_lvgl_runtime(self) -> None:
+    def test_font_assets_source_no_longer_short_circuits_lvgl_93(self) -> None:
         source = FONT_ASSETS_SOURCE.read_text(encoding="utf-8")
 
-        self.assertNotIn("return false;", source)
-        self.assertIn("return ESP_ERR_NOT_SUPPORTED;", source)
-        self.assertIn("fallback to compiled Chinese fonts", source)
+        self.assertNotIn("runtime cbin fonts require LVGL >= 9.3.0", source)
+        self.assertNotIn("ESP_ERR_NOT_SUPPORTED", source)
         self.assertIn("cbin_font_create", source)
         self.assertIn("ESP_ERR_INVALID_CRC", source)
         self.assertIn("ui_font_assets_icon(void)", source)

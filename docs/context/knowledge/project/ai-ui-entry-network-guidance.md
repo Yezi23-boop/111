@@ -1,7 +1,7 @@
 ---
 id: ai-ui-entry-network-guidance
 tags: [project, ui, official-chat, lvgl, gui-guider, network-service]
-summary: 记录当前仓库把主菜单 AI 图标接到 hand-written AI 页面，并统一为对话优先页、静态 AI 图标卡片、官方式左右气泡聊天区和未联网引导方案。
+summary: 记录当前仓库在替换 GUI Guider 新导出层并升级到 LVGL 9.3 后，如何保持主菜单 AI 图标继续跳转到 hand-written AI 页面，以及当前 AI 页面布局与联网引导方案。
 last_reviewed: 2026-04-01
 ---
 
@@ -9,11 +9,12 @@ last_reviewed: 2026-04-01
 
 ## 结论
 
-- 当前仓库没有 GUI Guider 生成的 `screen_ai`，第一版不要先重导 UI。
-- 最稳的做法是：
-  - 保持 `main/ui/generated` 只做结构和事件绑定
-  - 在 `main/ui/custom/ai_ui_controller.c` 中手写独立 AI 页面
-  - 主菜单 `screen_main_option_2` / `screen_main_Xiao_Zhi` 点击后跳转到该页面
+- 当前仓库已用 `C:\Users\ye\Desktop\src` 替换 `main/ui/generated` 和 GUI Guider 配套通用 `custom` 文件，并同步升级到 `lvgl/lvgl 9.3.0`。
+- 新导出层默认没有保留 `screen_main_option_2 -> ai_ui_open()` 这条桥接，因此仓库中已在新的 `events_init.c` 里手工补回：
+  - `screen_main_option_2`
+  - `screen_main_Xiao_Zhi`
+  - 点击后继续进入 hand-written `ai_ui_controller.c`
+- 当前仓库仍然没有 GUI Guider 生成的 `screen_ai`，AI 页面继续完全由 hand-written 层承担。
 - AI 页面第一版只负责：
   - 读取 `network_service` 状态
   - 展示“未联网 / 正在联网 / 网络已连接 / AI 服务已就绪 / 网络异常”
@@ -23,6 +24,7 @@ last_reviewed: 2026-04-01
 
 - 入口事件：
   - `D:\esp32S3\111\main\ui\generated\events_init.c`
+  - `D:\esp32S3\111\main\ui\generated\gui_guider.h`
 - 手写桥接层：
   - `D:\esp32S3\111\main\ui\custom\ai_ui_controller.h`
   - `D:\esp32S3\111\main\ui\custom\ai_ui_controller.c`
@@ -33,6 +35,10 @@ last_reviewed: 2026-04-01
 ## 当前页面行为
 
 - 从主菜单点击 AI 图标后，加载手写 AI 页面。
+- 新 GUI Guider 导出层的 `custom.h` 已重新补回：
+  - `ai_ui_controller.h`
+  - `ui_font_assets.h`
+  以保证 generated/custom 层仍能看到 hand-written AI 接缝。
 - 页面通过 `lv_timer` 轮询 `network_service_get_state()` 和 `network_service_get_ip()`。
 - 当未联网或需要重配网时，页面显示本地 AP 配网提示，并保留 `http://192.168.100.1/` 引导文案。
 - 当前版本在 `NETWORK_SERVICE_STATE_SERVICE_READY` 后会自动调用 `official_chat_service_enter_foreground()`。
@@ -52,6 +58,7 @@ last_reviewed: 2026-04-01
   - 中部静态 AI 图标卡片
   - 中下部官方式左右气泡聊天区
   - 底部操作区
+- 当前新 GUI Guider 导出层仍带有少量旧 API 痕迹，例如旧版图片旋转调用；仓库已在兼容收敛阶段把与现有 build 链冲突的接缝修到可编译状态。
 - 聊天区由 `main/ui/custom/ai_chat_view.c` 统一构建，保持：
   - 用户消息右侧气泡
   - 小智消息左侧气泡
@@ -89,14 +96,15 @@ last_reviewed: 2026-04-01
 - 按 user / assistant 角色生成左右分侧气泡
 - 根据消息队列重建聊天区并滚动到末尾
 
-## 为什么先这样做
+## 为什么这样落
 
-- 可以避免现在就改大量 GUI Guider 生成文件。
-- 可以把业务逻辑留在 `main/ui/custom`，降低后续重新导出 UI 的覆盖风险。
-- 可以先把“AI 是主菜单里的独立应用”这个交互路径跑通，再接 `official_chat_service`。
+- GUI Guider 新导出层可以整体替换，但 AI 业务桥接继续放在 `main/ui/custom`，这样后续再次导出 UI 时只需要重补很少的桥接点。
+- `events_init.c` 中把 AI 图标事件重新指向 `ai_ui_open()`，是当前最小、最可回退的做法。
+- 升级到 LVGL 9.3 后，GUI Guider 新导出层与运行时字体链的版本方向终于一致，不再需要维持 9.2.2 时期那套长期兼容假设。
 
 ## 后续建议
 
-- 下一步优先做真机验证，确认两张对话卡片在真实对话过程中能稳定刷新为中文最近一轮文本。
+- 下一步优先做真机验证，确认新 generated 层下主菜单、时间页、壁纸页和 AI 入口都正常。
+- 继续确认 AI 页面中文、聊天区滚动和运行时字体链在 `LVGL 9.3.0` 下的真实表现。
 - 再下一步处理离开 AI 页面后的 `leave_foreground` 和音频 owner 行为边界，避免与音乐播放器等功能冲突。
 - 字体资源链的当前状态见 [`ai-font-assets`](./ai-font-assets.md)。

@@ -12,6 +12,11 @@ AI_CHAT_VIEW_SOURCE = REPO_ROOT / "main" / "ui" / "custom" / "ai_chat_view.c"
 
 
 class AiUiEntrySourceTests(unittest.TestCase):
+    def test_generated_ai_entry_still_routes_to_handwritten_ai_page(self) -> None:
+        source = EVENTS_INIT_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("ai_ui_open();", source)
+
     def test_main_menu_ai_option_routes_to_custom_ai_page(self) -> None:
         source = EVENTS_INIT_SOURCE.read_text(encoding="utf-8")
 

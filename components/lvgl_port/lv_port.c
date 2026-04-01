@@ -15,7 +15,7 @@
 #include "freertos/semphr.h"
 #include "lv_port.h"
 #include "esp_log.h"
-#include "lvgl.h" // LVGL 9.2 主头文件
+#include "lvgl.h" // LVGL 9.3 主头文件
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
@@ -31,7 +31,7 @@
 #define TAG "lv_port"
 // LCD显示参数改为 CO5300 面板分辨率
 
-// LVGL 9.2 API更新：移除了lv_disp_drv_t，改为使用lv_display_t对象
+// LVGL 9.x API：移除了 lv_disp_drv_t，改为使用 lv_display_t 对象
 static lv_display_t *s_display = NULL; // LVGL显示对象
 
 // 新增：底层原生句柄（从 co5300_panel / ft5x06 获取）
@@ -70,7 +70,7 @@ static esp_err_t lv_port_flush_area_chunked_simple(lv_display_t *disp, const lv_
 
 static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 
-// LVGL 9.2 API更新：显示刷新回调函数签名变更 (第三个参数为uint8_t*)
+// LVGL 9.x API：显示刷新回调函数签名变更（第三个参数为 uint8_t*）
 void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 // 输入设备
 void lv_port_indev_init(void);
@@ -108,7 +108,7 @@ void lv_port_disp_init_small(void) // ram
              esp_ptr_external_ram(disp1) ? "PSRAM" : "Internal",
              esp_ptr_external_ram(disp2) ? "PSRAM" : "Internal");
 
-    // LVGL 9.2 新API：创建显示对象并设置参数
+    // LVGL 9.x API：创建显示对象并设置参数
     s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
 
     // 设置颜色格式为RGB565（16位色深）
@@ -156,7 +156,7 @@ void lv_port_disp_init_single(void) // 片外ram
              esp_ptr_external_ram(disp_buf1) ? "PSRAM" : "Internal",
              esp_ptr_external_ram(disp_buf2) ? "PSRAM" : "Internal");
 
-    // LVGL 9.2 新API：创建显示对象并设置参数
+    // LVGL 9.x API：创建显示对象并设置参数
     s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
 
     // 设置颜色格式为RGB565（16位色深）
@@ -175,7 +175,7 @@ void lv_port_disp_init_single(void) // 片外ram
     };
     co5300_panel_register_color_done_callback(&cbs, s_display);
 
-    ESP_LOGI(TAG, "LVGL 9.2 单缓存显示驱动初始化完成 (RGB565格式%s字节交换)",
+    ESP_LOGI(TAG, "LVGL 9.3 单缓存显示驱动初始化完成 (RGB565格式%s字节交换)",
              LV_PORT_BYTE_SWAP_ENABLE ? "启用" : "禁用");
 }
 
@@ -207,7 +207,7 @@ static bool IRAM_ATTR lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t p
 }
 
 /**
- * @brief LVGL显示刷新回调函数 (LVGL 9.2 API)
+ * @brief LVGL显示刷新回调函数 (LVGL 9.x API)
  * @param disp 显示对象指针
  * @param area 需要刷新的区域
  * @param px_map 像素数据指针 (uint8_t* 格式)
@@ -389,12 +389,12 @@ static void lv_port_indev_read(lv_indev_t *indev, lv_indev_data_t *data)
 }
 
 /**
- * @brief 初始化LVGL输入设备 (LVGL 9.2 API)
+ * @brief 初始化LVGL输入设备 (LVGL 9.x API)
  * @details 创建触摸输入设备对象并设置回调函数
  */
 void lv_port_indev_init(void)
 {
-    // LVGL 9.2 新API：创建输入设备对象
+    // LVGL 9.x API：创建输入设备对象
     lv_indev_t *indev = lv_indev_create();
 
     // 设置输入设备类型为指针(触摸)
@@ -403,7 +403,7 @@ void lv_port_indev_init(void)
     // 设置读取回调函数
     lv_indev_set_read_cb(indev, lv_port_indev_read);
 
-    ESP_LOGI(TAG, "LVGL 9.2 输入设备初始化完成");
+    ESP_LOGI(TAG, "LVGL 9.3 输入设备初始化完成");
 }
 
 /* ========== 硬件初始化相关函数 ========== */

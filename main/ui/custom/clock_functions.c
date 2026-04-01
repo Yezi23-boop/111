@@ -13,7 +13,10 @@
 #include "gui_guider.h"
 #include <stdio.h>
 #include <time.h>
-
+// // 外部全局变量声明（在generated文件中定义）
+// extern int screen_digital_clock_1_hour_value;
+// extern int screen_digital_clock_1_min_value;
+// extern int screen_digital_clock_1_sec_value;
 /**
  * 更新数字时钟的时间显示
  *
@@ -36,14 +39,18 @@ void update_digital_clock(int hour, int minute, int second)
     {
         return; // 参数超出范围，不执行更新（错误保护）
     }
-    lv_lock();
-    // 更新时钟显示（UI层）
-    if (lv_obj_is_valid(guider_ui.screen_main_digital_clock_1))
-    {
-        lv_label_set_text_fmt(guider_ui.screen_main_digital_clock_1, "%02d:%02d",
-                              hour, minute);
-    }
-    lv_unlock();
+
+    // // 更新全局时间变量（数据层）
+    // screen_digital_clock_1_hour_value = hour;
+    // screen_digital_clock_1_min_value = minute;
+    // screen_digital_clock_1_sec_value = second;
+
+    // // 更新时钟显示（UI层）
+    // if (lv_obj_is_valid(guider_ui.screen_digital_clock_1))
+    // {
+    //     lv_dclock_set_text_fmt(guider_ui.screen_digital_clock_1, "%02d:%02d:%02d",
+    //                            hour, minute, second);
+    // }
 }
 
 /**

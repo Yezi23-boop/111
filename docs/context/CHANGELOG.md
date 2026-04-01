@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-04-01：用 `C:\Users\ye\Desktop\src` 替换 `main/ui/generated` 与 GUI Guider 配套通用 `custom` 文件，手工恢复主菜单 AI 图标到 `ai_ui_open()` 的桥接，升级 `lvgl/lvgl` 到 `9.3.0`，并移除 `ui_font_assets` 中仅针对 `< 9.3.0` 的运行时字体短路保护；当次刷机因 `COM3` 被 monitor 占用而未完成。
 - 2026-04-01：确认 `xiaozhi-esp32` 的 `cbin` 运行时字体链与当前仓库 `LVGL 9.2.2` 结构布局不兼容，因此在 `ui_font_assets` 中对 `LVGL < 9.3.0` 主动短路回退到编译中文字库，避免 `assets` 已读通但中文仍显示方框。
 - 2026-04-01：将 `assets` 分区调整到 16MB 以下并收缩为 2M，保持 `model` 分区也位于 16MB 以下，把 `audio` 顺延到高地址，以规避 `esp_partition_mmap()` 访问高地址 flash 时的字体/模型资产异常。
 - 2026-04-01：正式 UI 入口不再在主菜单阶段自动 `enter_foreground` 启动 AI，对话前台化仅保留在进入 AI 页面后触发；同时将 `ui_font_assets` 的 `meta` 回退字体切到中文编译字体，避免 `assets` 分区异常时 AI 页中文出现方框。

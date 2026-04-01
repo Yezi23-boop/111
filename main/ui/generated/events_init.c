@@ -1,5 +1,5 @@
 /*
-* Copyright 2025 NXP
+* Copyright 2026 NXP
 * NXP Proprietary. This software is owned or controlled by NXP and may only be used strictly in
 * accordance with the applicable license terms. By expressly accepting such terms or by downloading, installing,
 * activating and/or otherwise using the software, you are agreeing that you have read, and that you agree to
@@ -191,23 +191,17 @@ static void screen_main_Brightness_event_handler (lv_event_t *e)
     switch (code) {
     case LV_EVENT_VALUE_CHANGED:
     {
-        // 增量改动：修复LVGL 9.2 API兼容性问题
-        // 原因：
-        // - LVGL 8.x使用lv_img_set_pivot和lv_img_set_angle
-        // - LVGL 9.2改为lv_image_set_pivot和lv_image_set_rotation
-        // - 角度单位也从0.1度改为度数
-        
         // 获取滑动条的当前值
         int32_t slider_value = lv_slider_get_value(guider_ui.screen_main_Brightness);
 
         // 计算旋转角度：将0-100的值映射到0-360度
         int32_t rotation_angle = (slider_value * 360) / 100;
 
-        // 设置图片旋转中心（图片中心）- 使用LVGL 9.2 API
-        lv_image_set_pivot(guider_ui.screen_main_img_1, 23, 23); // 图片大小为46x46，中心点为23,23
+        // 设置图片旋转中心（图片中心）
+        lv_img_set_pivot(guider_ui.screen_main_img_1, 23, 23); // 假设图片大小为20x20，中心点为10,10
 
-        // 设置旋转角度 - 使用LVGL 9.2 API（直接使用度数，不需要乘以10）
-        lv_image_set_rotation(guider_ui.screen_main_img_1, rotation_angle);
+        // 设置旋转角度（转换为0.1度单位）
+        lv_img_set_angle(guider_ui.screen_main_img_1, rotation_angle * 10);
         break;
     }
     default:

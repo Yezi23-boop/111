@@ -43,10 +43,6 @@ typedef struct {
 
 static ui_font_assets_runtime_t s_runtime = {0};
 
-static bool ui_font_assets_runtime_font_supported(void) {
-    return LV_VERSION_CHECK(9, 3, 0);
-}
-
 static uint32_t ui_font_assets_read_u32(const uint8_t *data) {
     return ((uint32_t)data[0]) | ((uint32_t)data[1] << 8) |
            ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
@@ -144,14 +140,6 @@ static void ui_font_assets_reset_runtime(void) {
 }
 
 static esp_err_t ui_font_assets_load_from_partition(void) {
-    if (!ui_font_assets_runtime_font_supported()) {
-        ESP_LOGW(TAG,
-                 "runtime cbin fonts require LVGL >= 9.3.0, current=%d.%d.%d; "
-                 "fallback to compiled Chinese fonts",
-                 LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-
     const esp_partition_t *partition = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "assets");
     if (partition == NULL) {
