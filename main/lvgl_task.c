@@ -20,6 +20,8 @@
 #include "iot_button.h"
 #include "button_gpio.h"
 #include "ai_ui_controller.h"
+#include "danger_detection_controller.h"
+#include "display_alert_adapter.h"
 // 前置声明
 void lvgl_bottomr_init(void);
 
@@ -50,6 +52,7 @@ void lvgl_task(void *pvParameter)
     //  lv_demo_stress();
     setup_ui(&guider_ui);
     ai_ui_controller_init(&guider_ui);
+    danger_detection_controller_init(&guider_ui);
     events_init(&guider_ui);
 
     // 创建CPU使用率监控任务
@@ -66,6 +69,8 @@ void lvgl_task(void *pvParameter)
     // LVGL任务主循环 - 保持任务持续运行
     while (1)
     {
+        display_alert_adapter_process_ui();
+        danger_detection_controller_poll_ui();
         next_call = lv_timer_handler();
         // 优化延时逻辑，提高滑动时的帧率稳定性
         uint32_t delay_ms;
