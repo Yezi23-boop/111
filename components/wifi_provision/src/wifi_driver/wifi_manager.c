@@ -176,7 +176,14 @@ static void event_handler(void *arg, esp_event_base_t event_base,
             case WIFI_EVENT_STA_CONNECTED:
                 ESP_LOGI(TAG, "已连接到 AP");
                 break;
-            case WIFI_EVENT_STA_DISCONNECTED:
+            case WIFI_EVENT_STA_DISCONNECTED: {
+                wifi_event_sta_disconnected_t *disconnected =
+                    (wifi_event_sta_disconnected_t *)event_data;
+                uint8_t reason = 0;
+                if (disconnected != NULL) {
+                    reason = disconnected->reason;
+                }
+                ESP_LOGW(TAG, "STA 断开连接: reason=%u", (unsigned)reason);
                 if (is_sta_connected) {
                     is_sta_connected = false;
                     if (wifi_state_cb != NULL) {
@@ -193,6 +200,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
                     wifi_state_cb(WIFI_STATE_CONNECT_FAIL);
                 }
                 break;
+            }
             case WIFI_EVENT_AP_STACONNECTED:
                 ESP_LOGI(TAG, "客户端已连接到热点");
                 break;

@@ -50,6 +50,7 @@ class Application {
 
   esp_err_t Initialize(const official_chat_config_t &config);
   esp_err_t Start();
+  esp_err_t PrepareForShutdown();
   esp_err_t StartListening();
   esp_err_t StartSyntheticWakeWord();
   esp_err_t ToggleChat();
@@ -148,6 +149,7 @@ class Application {
   bool button_stop_channel_closed_ = false;
   bool button_stop_finalizing_ = false;
   int64_t button_stop_deadline_us_ = 0;
+  std::atomic<bool> shutting_down_{false};
 };
 
 }  // namespace official_chat

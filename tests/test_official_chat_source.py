@@ -9,6 +9,8 @@ OFFICIAL_CHAT_CMAKE = OFFICIAL_CHAT_DIR / "CMakeLists.txt"
 OFFICIAL_CHAT_APPLICATION = OFFICIAL_CHAT_DIR / "application.cc"
 OFFICIAL_CHAT_MCP = OFFICIAL_CHAT_DIR / "mcp_server.cc"
 OFFICIAL_CHAT_MQTT = OFFICIAL_CHAT_DIR / "protocols" / "mqtt_protocol.cc"
+OFFICIAL_CHAT_HEADER = OFFICIAL_CHAT_DIR / "include" / "official_chat.h"
+OFFICIAL_CHAT_C_API = OFFICIAL_CHAT_DIR / "official_chat_c_api.cc"
 MAIN_MANIFEST = REPO_ROOT / "main" / "idf_component.yml"
 MAIN_KCONFIG = REPO_ROOT / "main" / "Kconfig.projbuild"
 
@@ -81,6 +83,32 @@ class OfficialChatSourceTests(unittest.TestCase):
         self.assertNotIn(
             "constexpr int64_t kUdpAudioStallTimeoutUs = 2500000;", source
         )
+
+    def test_official_chat_mqtt_shutdown_relies_on_stop_without_manual_disconnect(self) -> None:
+        source = OFFICIAL_CHAT_MQTT.read_text(encoding="utf-8")
+
+        self.assertNotIn("esp_mqtt_client_disconnect(mqtt_client_handle_);",
+                         source)
+        self.assertNotIn("waiting for mqtt disconnected event during stop",
+                         source)
+        self.assertNotIn("mqtt disconnect event not observed before stop timeout",
+                         source)
+        self.assertIn("esp_mqtt_client_stop(mqtt_client_handle_);", source)
+        self.assertIn("esp_mqtt_client_destroy(mqtt_client_handle_);", source)
+
+    def test_official_chat_shutdown_fences_worker_reentry(self) -> None:
+        header = OFFICIAL_CHAT_HEADER.read_text(encoding="utf-8")
+        app = OFFICIAL_CHAT_APPLICATION.read_text(encoding="utf-8")
+        c_api = OFFICIAL_CHAT_C_API.read_text(encoding="utf-8")
+
+        self.assertIn("esp_err_t official_chat_prepare_shutdown(", header)
+        self.assertIn("return handle->app.PrepareForShutdown();", c_api)
+        self.assertIn("esp_err_t Application::PrepareForShutdown()", app)
+        self.assertIn("shutting_down_", app)
+        self.assertIn("shutdown ignoring toggle chat event", app)
+        self.assertIn("shutdown ignoring start listening event", app)
+        self.assertIn("shutdown ignoring wake word event", app)
+        self.assertIn("shutdown ignoring activation done event", app)
 
 
 if __name__ == "__main__":

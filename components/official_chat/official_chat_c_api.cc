@@ -91,6 +91,13 @@ esp_err_t official_chat_start(official_chat_handle_t handle) {
   return handle->app.Start();
 }
 
+esp_err_t official_chat_prepare_shutdown(official_chat_handle_t handle) {
+  if (handle == nullptr) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  return handle->app.PrepareForShutdown();
+}
+
 esp_err_t official_chat_start_listening(official_chat_handle_t handle) {
   if (handle == nullptr) {
     return ESP_ERR_INVALID_ARG;

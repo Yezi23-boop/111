@@ -75,6 +75,7 @@ esp_err_t official_chat_set_event_callback(official_chat_handle_t handle,
                                            void *user_data);
 
 esp_err_t official_chat_start(official_chat_handle_t handle);
+esp_err_t official_chat_prepare_shutdown(official_chat_handle_t handle);
 esp_err_t official_chat_start_listening(official_chat_handle_t handle);
 esp_err_t official_chat_start_synthetic_wakeword(official_chat_handle_t handle);
 esp_err_t official_chat_toggle_chat(official_chat_handle_t handle);

@@ -11,9 +11,59 @@ static const char *TAG = "ai_ui";
 static lv_ui *s_ui = NULL;
 static ai_chat_view_t *s_view = NULL;
 static lv_timer_t *s_status_timer = NULL;
+static lv_timer_t *s_destroy_timer = NULL;
+static ai_chat_view_t *s_pending_destroy_view = NULL;
 static bool s_foreground_requested = false;
+static bool s_exit_requested = false;
 
 static void ai_ui_refresh_status(void);
+static void ai_ui_complete_exit_to_main(void);
+
+static void ai_ui_flush_pending_destroy(void) {
+    if (s_destroy_timer != NULL) {
+        lv_timer_delete(s_destroy_timer);
+        s_destroy_timer = NULL;
+    }
+
+    if (s_pending_destroy_view != NULL) {
+        ai_chat_view_destroy(s_pending_destroy_view);
+        s_pending_destroy_view = NULL;
+    }
+}
+
+static void ai_ui_destroy_screen_cb(lv_timer_t *timer) {
+    if (timer != NULL) {
+        lv_timer_delete(timer);
+    }
+
+    s_destroy_timer = NULL;
+
+    if (s_pending_destroy_view != NULL) {
+        ai_chat_view_destroy(s_pending_destroy_view);
+        s_pending_destroy_view = NULL;
+    }
+}
+
+static void ai_ui_destroy_screen(void) {
+    if (s_view == NULL) {
+        return;
+    }
+
+    ai_chat_view_t *view_to_destroy = s_view;
+    s_view = NULL;
+    s_foreground_requested = false;
+    s_exit_requested = false;
+
+    if (s_status_timer != NULL) {
+        lv_timer_delete(s_status_timer);
+        s_status_timer = NULL;
+    }
+
+    ai_ui_flush_pending_destroy();
+
+    s_pending_destroy_view = view_to_destroy;
+    s_destroy_timer = lv_timer_create(ai_ui_destroy_screen_cb, 350, NULL);
+}
 
 static void ai_ui_back_event(void *user_data) {
     (void)user_data;
@@ -23,10 +73,17 @@ static void ai_ui_back_event(void *user_data) {
         return;
     }
 
-    official_chat_service_leave_foreground();
+    if (s_exit_requested || official_chat_service_is_shutdown_pending()) {
+        ESP_LOGI(TAG, "ai exit already in progress");
+        ai_ui_refresh_status();
+        return;
+    }
+
+    s_exit_requested = true;
     s_foreground_requested = false;
-    lv_screen_load_anim(s_ui->screen_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0,
-                        false);
+    official_chat_service_request_shutdown();
+    ESP_LOGI(TAG, "ai exit requested");
+    ai_ui_refresh_status();
 }
 
 static void ai_ui_portal_event(void *user_data) {
@@ -44,6 +101,19 @@ static void ai_ui_refresh_status(void) {
     network_service_state_t network_state = network_service_get_state();
     official_chat_service_state_t service_state =
         official_chat_service_get_state();
+    const bool shutdown_pending =
+        s_exit_requested || official_chat_service_is_shutdown_pending();
+
+    if (shutdown_pending) {
+        ai_chat_view_set_top_status(
+            s_view, ai_chat_view_network_badge_text(network_state),
+            ai_chat_view_network_badge_color(network_state), "正在退出 AI",
+            ai_chat_view_service_title(service_state));
+        ai_chat_view_set_primary_action(s_view, "网络设置", false);
+        ai_chat_view_set_secondary_action(s_view, "正在退出", true, false);
+        ai_chat_view_reload_messages(s_view, "正在安全退出 AI，请稍候。");
+        return;
+    }
 
     if (network_state == NETWORK_SERVICE_STATE_SERVICE_READY) {
         if (!s_foreground_requested) {
@@ -76,9 +146,34 @@ static void ai_ui_refresh_status(void) {
     ai_chat_view_reload_messages(s_view, "还没有真实消息，先说一句试试。");
 }
 
+static void ai_ui_complete_exit_to_main(void) {
+    if (s_ui == NULL || s_ui->screen_main == NULL) {
+        ESP_LOGW(TAG, "screen_main not ready when completing ai exit");
+        return;
+    }
+
+    ai_ui_destroy_screen();
+    lv_screen_load_anim(s_ui->screen_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0,
+                        true);
+}
+
 static void ai_ui_status_timer_cb(lv_timer_t *timer) {
     (void)timer;
     if (s_view == NULL || lv_screen_active() != ai_chat_view_get_screen(s_view)) {
+        return;
+    }
+
+    if (official_chat_service_is_shutdown_pending() &&
+        official_chat_service_get_state() ==
+            OFFICIAL_CHAT_SERVICE_STATE_STOPPED) {
+        ai_ui_complete_exit_to_main();
+        return;
+    }
+
+    if (s_exit_requested &&
+        official_chat_service_get_state() ==
+            OFFICIAL_CHAT_SERVICE_STATE_STOPPED) {
+        ai_ui_complete_exit_to_main();
         return;
     }
 
@@ -87,9 +182,12 @@ static void ai_ui_status_timer_cb(lv_timer_t *timer) {
 
 void ai_ui_controller_init(lv_ui *ui) {
     s_ui = ui;
+    s_exit_requested = false;
 }
 
 static void ai_ui_ensure_screen_created(void) {
+    ai_ui_flush_pending_destroy();
+
     if (s_view != NULL) {
         return;
     }
@@ -114,7 +212,7 @@ static void ai_ui_ensure_screen_created(void) {
     }
 
     if (s_status_timer == NULL) {
-        s_status_timer = lv_timer_create(ai_ui_status_timer_cb, 1000, NULL);
+        s_status_timer = lv_timer_create(ai_ui_status_timer_cb, 200, NULL);
     }
 
     ai_ui_refresh_status();
@@ -126,6 +224,7 @@ void ai_ui_open(void) {
         return;
     }
 
+    s_exit_requested = false;
     ai_ui_refresh_status();
     lv_screen_load_anim(ai_chat_view_get_screen(s_view),
                         LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, false);

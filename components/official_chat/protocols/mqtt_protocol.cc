@@ -211,7 +211,11 @@ void MqttProtocol::StopMqttClientLocked() {
   }
 
   manual_mqtt_stop_.store(true);
-  esp_mqtt_client_stop(mqtt_client_handle_);
+  const esp_err_t stop_err = esp_mqtt_client_stop(mqtt_client_handle_);
+  if (stop_err != ESP_OK) {
+    ESP_LOGW(kTag, "esp_mqtt_client_stop failed during shutdown: %s",
+             esp_err_to_name(stop_err));
+  }
   esp_mqtt_client_destroy(mqtt_client_handle_);
   mqtt_client_handle_ = nullptr;
   mqtt_connected_.store(false);

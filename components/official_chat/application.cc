@@ -243,6 +243,7 @@ esp_err_t Application::Start() {
   if (started_) {
     return ESP_OK;
   }
+  shutting_down_.store(false, std::memory_order_release);
 
   codec_ = std::make_unique<LocalAudioCodecAdapter>();
   if (!codec_ || !codec_->Initialize()) {
@@ -302,8 +303,36 @@ esp_err_t Application::Start() {
   return ESP_OK;
 }
 
-esp_err_t Application::StartListening() {
+esp_err_t Application::PrepareForShutdown() {
   if (!started_ || event_group_ == nullptr) {
+    return ESP_OK;
+  }
+
+  const bool already_shutting_down =
+      shutting_down_.exchange(true, std::memory_order_acq_rel);
+  if (already_shutting_down) {
+    return ESP_OK;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    main_tasks_.clear();
+  }
+
+  xEventGroupClearBits(event_group_,
+                       kMainEventSchedule | kMainEventSendAudio |
+                           kMainEventToggleChat | kMainEventStartListening |
+                           kMainEventWakeWordDetected |
+                           kMainEventActivationDone |
+                           kMainEventUpgradeProgress | kMainEventVadChange);
+  xEventGroupSetBits(event_group_, kMainEventStateChanged);
+  ESP_LOGI(kTag, "prepare shutdown armed");
+  return ESP_OK;
+}
+
+esp_err_t Application::StartListening() {
+  if (!started_ || event_group_ == nullptr ||
+      shutting_down_.load(std::memory_order_acquire)) {
     return ESP_ERR_INVALID_STATE;
   }
   xEventGroupSetBits(event_group_, kMainEventStartListening);
@@ -311,7 +340,8 @@ esp_err_t Application::StartListening() {
 }
 
 esp_err_t Application::StartSyntheticWakeWord() {
-  if (!started_ || event_group_ == nullptr) {
+  if (!started_ || event_group_ == nullptr ||
+      shutting_down_.load(std::memory_order_acquire)) {
     return ESP_ERR_INVALID_STATE;
   }
   Schedule([this]() { HandleStartListeningEvent(GetDefaultListeningMode()); });
@@ -319,7 +349,8 @@ esp_err_t Application::StartSyntheticWakeWord() {
 }
 
 esp_err_t Application::ToggleChat() {
-  if (!started_ || event_group_ == nullptr) {
+  if (!started_ || event_group_ == nullptr ||
+      shutting_down_.load(std::memory_order_acquire)) {
     return ESP_ERR_INVALID_STATE;
   }
   xEventGroupSetBits(event_group_, kMainEventToggleChat);
@@ -327,7 +358,8 @@ esp_err_t Application::ToggleChat() {
 }
 
 esp_err_t Application::StopListening() {
-  if (!started_ || event_group_ == nullptr) {
+  if (!started_ || event_group_ == nullptr ||
+      shutting_down_.load(std::memory_order_acquire)) {
     return ESP_ERR_INVALID_STATE;
   }
   xEventGroupSetBits(event_group_, kMainEventStopListening);
@@ -335,7 +367,8 @@ esp_err_t Application::StopListening() {
 }
 
 esp_err_t Application::ReloadProtocol() {
-  if (!started_ || event_group_ == nullptr) {
+  if (!started_ || event_group_ == nullptr ||
+      shutting_down_.load(std::memory_order_acquire)) {
     return ESP_ERR_INVALID_STATE;
   }
   Schedule([this]() {
@@ -534,7 +567,8 @@ void Application::HandleGracefulButtonStopTimeout() {
 }
 
 void Application::Schedule(std::function<void()> &&callback) {
-  if (!started_ || event_group_ == nullptr) {
+  if (!started_ || event_group_ == nullptr ||
+      shutting_down_.load(std::memory_order_acquire)) {
     return;
   }
   {
@@ -564,7 +598,11 @@ void Application::RunLoop() {
     }
 
     if (bits & kMainEventActivationDone) {
-      HandleActivationDoneEvent();
+      if (shutting_down_.load(std::memory_order_acquire)) {
+        ESP_LOGI(kTag, "shutdown ignoring activation done event");
+      } else {
+        HandleActivationDoneEvent();
+      }
     }
 
     if (bits & kMainEventUpgradeProgress) {
@@ -576,11 +614,19 @@ void Application::RunLoop() {
     }
 
     if (bits & kMainEventToggleChat) {
-      HandleToggleChatEvent();
+      if (shutting_down_.load(std::memory_order_acquire)) {
+        ESP_LOGI(kTag, "shutdown ignoring toggle chat event");
+      } else {
+        HandleToggleChatEvent();
+      }
     }
 
     if (bits & kMainEventStartListening) {
-      HandleStartListeningEvent();
+      if (shutting_down_.load(std::memory_order_acquire)) {
+        ESP_LOGI(kTag, "shutdown ignoring start listening event");
+      } else {
+        HandleStartListeningEvent();
+      }
     }
 
     if (bits & kMainEventStopListening) {
@@ -601,7 +647,11 @@ void Application::RunLoop() {
     }
 
     if (bits & kMainEventWakeWordDetected) {
-      HandleWakeWordDetectedEvent();
+      if (shutting_down_.load(std::memory_order_acquire)) {
+        ESP_LOGI(kTag, "shutdown ignoring wake word event");
+      } else {
+        HandleWakeWordDetectedEvent();
+      }
     }
 
     if (bits & kMainEventVadChange) {
@@ -626,6 +676,14 @@ void Application::HandleStateChanged() {
   const DeviceState state = GetState();
   ESP_LOGI(kTag, "HandleStateChanged state=%s", DeviceStateToString(state));
   UpdateWifiPowerSaveForState(state);
+  if (shutting_down_.load(std::memory_order_acquire)) {
+    CancelGracefulButtonStop("shutdown");
+    SetDownlinkAudioActive(false, "shutdown");
+    audio_service_.EnableVoiceProcessing(false);
+    audio_service_.EnableWakeWordDetection(false);
+    audio_service_.ResetDecoder();
+    return;
+  }
   switch (state) {
     case DeviceState::kActivating:
     case DeviceState::kUpgrading:
@@ -1347,7 +1405,8 @@ esp_err_t Application::InitializeAudioService() {
   };
   callbacks.on_wake_word_detected = [this](const std::string &wake_word) {
     ESP_LOGI(kTag, "audio service wake word callback: %s", wake_word.c_str());
-    if (event_group_ != nullptr) {
+    if (event_group_ != nullptr &&
+        !shutting_down_.load(std::memory_order_acquire)) {
       xEventGroupSetBits(event_group_, kMainEventWakeWordDetected);
     }
   };

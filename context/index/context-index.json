@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-01T05:52:01.946951+00:00",
+  "generated_at_utc": "2026-04-01T09:05:37.071386+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 30,
+  "doc_count": 32,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-01：用 `C:\\Users\\ye\\Desktop\\src` 替换 `main/ui/generated` 与 GUI Guider 配套通用 `custom` 文件，手工恢复主菜单 AI 图标到 `ai_ui_open()` 的桥接，升级 `lvgl/lvgl` 到 `9.3.0`，并移除 `ui_font_assets` 中仅针对 `",
+      "summary": "- 2026-04-01：为 `official_chat` 增加 `prepare_shutdown` 护栏，退出 AI 时应用层会清除排队任务并忽略 `ActivationDone/ToggleChat/StartListening/WakeWordDetected` 等旧事件，修复 speaking 退出窗口内被旧事件重入、唤醒词任务析构前未停净的问题",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-01T05:51:53.434461+00:00",
-      "token_count": 800
+      "mtime_utc": "2026-04-01T09:05:31.674328+00:00",
+      "token_count": 924
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -192,7 +192,7 @@
       "summary": "记录 AI 页面 hand-written 字体资源链，当前已在 LVGL 9.3.0 下重新回到运行时资产主路径，并保留编译字体回退。",
       "id": "ai-font-assets",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-01T05:51:47.234544+00:00",
+      "mtime_utc": "2026-04-01T06:58:48.098867+00:00",
       "token_count": 257
     },
     {
@@ -209,8 +209,8 @@
       "summary": "记录当前仓库在替换 GUI Guider 新导出层并升级到 LVGL 9.3 后，如何保持主菜单 AI 图标继续跳转到 hand-written AI 页面，以及当前 AI 页面布局与联网引导方案。",
       "id": "ai-ui-entry-network-guidance",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-01T05:51:28.291265+00:00",
-      "token_count": 516
+      "mtime_utc": "2026-04-01T08:17:15.478641+00:00",
+      "token_count": 615
     },
     {
       "path": "docs/context/knowledge/project/display-touch-audio-bus-map.md",
@@ -369,6 +369,23 @@
       "token_count": 150
     },
     {
+      "path": "docs/context/knowledge/project/official-chat-mqtt-shutdown-lwip-mutex-crash.md",
+      "title": "official_chat MQTT 停机触发 lwIP mutex 断言",
+      "tags": [
+        "project",
+        "official-chat",
+        "mqtt",
+        "lwip",
+        "shutdown",
+        "esp32s3"
+      ],
+      "summary": "记录 official_chat 在 MQTT 模式下离开 AI 页面时，`esp_mqtt_client_destroy()` 命中 `sys_mutex_lock` 断言的根因与最小修复策略。",
+      "id": "official-chat-mqtt-shutdown-lwip-mutex-crash",
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-04-01T09:05:22.382216+00:00",
+      "token_count": 474
+    },
+    {
       "path": "docs/context/knowledge/project/plan-mode-rules.md",
       "title": "计划模式规则",
       "tags": [
@@ -473,6 +490,22 @@
       "last_reviewed": "2026-03-11",
       "mtime_utc": "2026-03-11T10:19:04.459648+00:00",
       "token_count": 45
+    },
+    {
+      "path": "docs/context/knowledge/project/wifi-provision-retry-reasons.md",
+      "title": "Wi-Fi 自动连接重试诊断",
+      "tags": [
+        "project",
+        "wifi",
+        "provision",
+        "diagnostics",
+        "esp32-s3"
+      ],
+      "summary": "记录当前仓库 Wi-Fi 自动连接失败后常见断连 reason 码的含义，以及哪些告警是正常探测噪声。",
+      "id": "wifi-provision-retry-reasons",
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-04-01T07:18:32.939311+00:00",
+      "token_count": 195
     },
     {
       "path": "docs/context/knowledge-map.md",

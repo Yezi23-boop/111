@@ -43,6 +43,15 @@ last_reviewed: 2026-04-01
 - 当未联网或需要重配网时，页面显示本地 AP 配网提示，并保留 `http://192.168.100.1/` 引导文案。
 - 当前版本在 `NETWORK_SERVICE_STATE_SERVICE_READY` 后会自动调用 `official_chat_service_enter_foreground()`。
 - 上述“自动进入前台”仅保留在独立实验页 `main/ai_experiment_ui.c`。
+- 正式 AI 页 `main/ui/custom/ai_ui_controller.c` 现在只在当前页面生命周期内持有 AI 会话：
+  - 进入页面后，若网络已就绪，才调用 `official_chat_service_enter_foreground()`
+  - 返回主页时调用 `official_chat_service_shutdown()`
+  - 同时销毁当前 hand-written AI 页面对象并清空消息视图句柄
+  - 下次再次进入 AI 页时，通过 `ai_ui_ensure_screen_created()` 重新建页并重新拉起新的 AI 会话
+  - `official_chat_service_shutdown()` 当前不是“立刻 delete handle”，而是：
+    - 若仍处于 `connecting / listening / speaking`，先调用 `official_chat_stop_listening()`
+    - 再等待一段传输静默窗口后才真正 `official_chat_destroy()`
+    - 这样可以避免 speaking 态直接销毁 `official_chat` 时触发 `esp_mqtt_client_destroy()` 与 lwIP 互斥崩溃
 - 正式入口 `main/111.c` 当前只负责：
   - 启动 `lvgl_task`
   - 启动后台 `network_service`
@@ -69,6 +78,10 @@ last_reviewed: 2026-04-01
   - 最近一轮用户/助手文本兼容缓存
   - 一个 8 条的小型消息队列，供聊天区按“从旧到新”重建气泡列表
 - 独立实验页 `main/ai_experiment_ui.c` 已与正式 AI 页对齐到同一套 hand-written 聊天骨架，避免后续出现两套不同 AI 产品形态。
+- 独立实验页当前仍没有独立“返回主页”路径：
+  - `secondary_action_text = NULL`
+  - `secondary_action_cb = NULL`
+  - 因此本轮没有额外给实验页补 `official_chat_service_shutdown()` 交互
 - `main/CMakeLists.txt` 现已显式把 `main/ui/custom/ai_chat_view.c` 加入 `main` 组件，避免新 hand-written 视图文件仅依赖 glob 收集时在正式 UI 链路下出现链接缺符号。
 - `ui_font_assets` 若因 `assets` 分区内容非法而回退到编译字体，`title/body/meta` 三类中文文本当前都应继续走 `lv_font_SourceHanSerifSC_Regular_22`，避免 AI 页出现中文方框；若仍看到 `invalid assets package`，优先重新执行完整 `idf.py flash` 以确保 `0x1310000` 的 `assets` 分区与当前构建一致。
 
@@ -83,6 +96,8 @@ last_reviewed: 2026-04-01
 - 在 `network_service` 真正进入 `SERVICE_READY` 后再启动 `official_chat`
 - 给正式 UI 主流程和实验入口提供同一套 AI 启动骨架
 - 缓存最近一轮文本并维护小型消息队列，供 hand-written AI 页面读取
+- 提供 `official_chat_service_shutdown()`，由正式 AI 页在返回主页时显式销毁 `official_chat` 句柄、清空缓存并等待 service task 完成停机
+  - 对于 `speaking` 态，必须先走 `official_chat_stop_listening()` 和传输静默等待，不能只靠“状态回到 idle”就立即 destroy
 
 ## 共享聊天视图位置
 

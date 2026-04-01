@@ -16,10 +16,15 @@ static const char *TAG = "official_chat_srv";
 static const size_t kLastUserTextMaxBytes = 192;
 static const size_t kLastAssistantTextMaxBytes = 256;
 static const size_t kMessageHistoryCapacity = 8;
+static const uint32_t kShutdownTransportQuietPeriodMs = 1500;
+static const uint32_t kShutdownWaitTimeoutMs = 4000;
 
 static TaskHandle_t s_service_task_handle = NULL;
 static official_chat_handle_t s_chat_handle = NULL;
 static volatile bool s_foreground_requested = false;
+static volatile bool s_shutdown_requested = false;
+static volatile bool s_shutdown_stop_requested = false;
+static volatile TickType_t s_shutdown_destroy_deadline_ticks = 0;
 static volatile official_chat_service_state_t s_service_state =
     OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
 static volatile esp_err_t s_last_error = ESP_OK;
@@ -40,6 +45,13 @@ static void official_chat_service_unlock(void) {
     if (s_text_mutex != NULL) {
         xSemaphoreGive(s_text_mutex);
     }
+}
+
+static void official_chat_service_clear_cached_text_locked(void) {
+    memset(s_last_user_text, 0, sizeof(s_last_user_text));
+    memset(s_last_assistant_text, 0, sizeof(s_last_assistant_text));
+    memset(s_message_history, 0, sizeof(s_message_history));
+    s_message_count = 0;
 }
 
 static void official_chat_service_store_text_locked(char *target,
@@ -111,6 +123,25 @@ static official_chat_service_state_t map_official_chat_state(
     }
 }
 
+static bool official_chat_service_requires_shutdown_quiet_period(
+    official_chat_state_t state) {
+    return state == OFFICIAL_CHAT_STATE_CONNECTING ||
+           state == OFFICIAL_CHAT_STATE_IDLE ||
+           state == OFFICIAL_CHAT_STATE_LISTENING ||
+           state == OFFICIAL_CHAT_STATE_SPEAKING;
+}
+
+static void official_chat_service_request_shutdown_internal(void) {
+    s_foreground_requested = false;
+    s_shutdown_requested = true;
+    s_shutdown_stop_requested = false;
+    s_shutdown_destroy_deadline_ticks = 0;
+
+    if (s_service_task_handle != NULL) {
+        xTaskAbortDelay(s_service_task_handle);
+    }
+}
+
 const char *official_chat_service_state_to_string(
     official_chat_service_state_t state) {
     switch (state) {
@@ -140,6 +171,10 @@ static void official_chat_service_event_cb(const official_chat_event_t *event,
                                            void *user_data) {
     (void)user_data;
     if (event == NULL) {
+        return;
+    }
+
+    if (s_shutdown_requested) {
         return;
     }
 
@@ -232,6 +267,99 @@ static void official_chat_service_task(void *arg) {
     (void)arg;
 
     while (1) {
+        if (s_shutdown_requested) {
+            official_chat_handle_t chat_handle = s_chat_handle;
+
+            if (chat_handle != NULL) {
+                const esp_err_t prepare_ret =
+                    official_chat_prepare_shutdown(chat_handle);
+                if (prepare_ret != ESP_OK) {
+                    ESP_LOGW(TAG, "official_chat_prepare_shutdown failed: %s",
+                             esp_err_to_name(prepare_ret));
+                }
+                official_chat_state_t chat_state =
+                    official_chat_get_state(chat_handle);
+                s_service_state = map_official_chat_state(chat_state);
+                if (official_chat_service_requires_shutdown_quiet_period(
+                        chat_state)) {
+                    if (chat_state != OFFICIAL_CHAT_STATE_IDLE &&
+                        !s_shutdown_stop_requested) {
+                        const esp_err_t stop_ret =
+                            official_chat_stop_listening(chat_handle);
+                        if (stop_ret != ESP_OK) {
+                            ESP_LOGW(
+                                TAG,
+                                "official_chat_stop_listening during shutdown failed: %s",
+                                esp_err_to_name(stop_ret));
+                        }
+                        s_shutdown_stop_requested = true;
+                        ESP_LOGI(
+                            TAG,
+                            "shutdown waiting for idle before destroy state=%s",
+                            official_chat_service_state_to_string(
+                                map_official_chat_state(chat_state)));
+                    }
+
+                    if (chat_state != OFFICIAL_CHAT_STATE_IDLE) {
+                        if (s_shutdown_destroy_deadline_ticks != 0) {
+                            s_shutdown_destroy_deadline_ticks = 0;
+                            ESP_LOGI(
+                                TAG,
+                                "shutdown quiet period canceled until idle state=%s",
+                                official_chat_service_state_to_string(
+                                    map_official_chat_state(chat_state)));
+                        }
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                        continue;
+                    }
+
+                    s_service_state = OFFICIAL_CHAT_SERVICE_STATE_IDLE;
+                    if (s_shutdown_destroy_deadline_ticks == 0) {
+                        s_shutdown_destroy_deadline_ticks =
+                            xTaskGetTickCount() +
+                            pdMS_TO_TICKS(kShutdownTransportQuietPeriodMs);
+                        ESP_LOGI(
+                            TAG,
+                            "shutdown reached idle, arming destroy quiet period wait_ms=%lu",
+                            (unsigned long)kShutdownTransportQuietPeriodMs);
+                        ESP_LOGI(TAG,
+                                 "shutdown transport quiet period armed state=idle wait_ms=%lu",
+                                 (unsigned long)kShutdownTransportQuietPeriodMs);
+                    }
+
+                    if (xTaskGetTickCount() <
+                        s_shutdown_destroy_deadline_ticks) {
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                        continue;
+                    }
+                }
+            }
+
+            if (s_shutdown_stop_requested &&
+                xTaskGetTickCount() < s_shutdown_destroy_deadline_ticks) {
+                vTaskDelay(pdMS_TO_TICKS(50));
+                continue;
+            }
+
+            if (chat_handle != NULL) {
+                official_chat_set_event_callback(chat_handle, NULL, NULL);
+                official_chat_destroy(chat_handle);
+            }
+
+            official_chat_service_lock();
+            official_chat_service_clear_cached_text_locked();
+            official_chat_service_unlock();
+
+            s_chat_handle = NULL;
+            s_last_error = ESP_OK;
+            s_service_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
+            s_shutdown_requested = false;
+            s_shutdown_stop_requested = false;
+            s_shutdown_destroy_deadline_ticks = 0;
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
         if (!s_foreground_requested) {
             if (s_chat_handle == NULL) {
                 s_service_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
@@ -283,11 +411,43 @@ esp_err_t official_chat_service_init(void) {
 }
 
 void official_chat_service_enter_foreground(void) {
+    s_shutdown_requested = false;
+    s_shutdown_stop_requested = false;
+    s_shutdown_destroy_deadline_ticks = 0;
     s_foreground_requested = true;
 }
 
 void official_chat_service_leave_foreground(void) {
     s_foreground_requested = false;
+}
+
+void official_chat_service_request_shutdown(void) {
+    official_chat_service_request_shutdown_internal();
+}
+
+bool official_chat_service_is_shutdown_pending(void) {
+    return s_shutdown_requested;
+}
+
+esp_err_t official_chat_service_shutdown(void) {
+    official_chat_service_request_shutdown_internal();
+
+    const TickType_t start_ticks = xTaskGetTickCount();
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(kShutdownWaitTimeoutMs);
+
+    while (s_shutdown_requested || s_chat_handle != NULL ||
+           s_service_state != OFFICIAL_CHAT_SERVICE_STATE_STOPPED) {
+        if ((xTaskGetTickCount() - start_ticks) >= timeout_ticks) {
+            return ESP_ERR_TIMEOUT;
+        }
+
+        if (s_service_task_handle != NULL) {
+            xTaskAbortDelay(s_service_task_handle);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    return ESP_OK;
 }
 
 official_chat_service_state_t official_chat_service_get_state(void) {

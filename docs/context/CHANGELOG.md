@@ -1,5 +1,10 @@
 # 上下文库变更记录
 
+- 2026-04-01：为 `official_chat` 增加 `prepare_shutdown` 护栏，退出 AI 时应用层会清除排队任务并忽略 `ActivationDone/ToggleChat/StartListening/WakeWordDetected` 等旧事件，修复 speaking 退出窗口内被旧事件重入、唤醒词任务析构前未停净的问题。
+- 2026-04-01：修复正式 AI 页“service 已停完但页面没返回主页”的异步退出判定问题；AI 页本地锁存 `exit requested`，不再要求 `shutdown_pending` 与 `STOPPED` 同时成立，只要 service 到 `STOPPED` 就完成离页。
+- 2026-04-01：修正正式 AI 页返回主页时的会话销毁节奏，`official_chat_service_shutdown()` 现先对 active audio state 调 `official_chat_stop_listening()`，再等待传输静默窗口后销毁 `official_chat`，避免 speaking 态直接 destroy 触发 lwIP / MQTT 断言崩溃。
+- 2026-04-01：将正式 AI 页退出流程改成异步两阶段，先 `request_shutdown` 并等待 `connecting/listening/speaking -> idle -> quiet -> stopped`，页面仅在 service 确认 `STOPPED` 后再返回主页，避免退出过程中被唤醒词或残余传输动作重入。
+- 2026-04-01：将正式 AI 页返回主页语义从“仅退后台”改为“调用 `official_chat_service_shutdown()` 销毁会话与页面对象”，使 AI 对话只在当前页面内运行；实验页继续保持无独立返回路径的最小边界。
 - 2026-04-01：用 `C:\Users\ye\Desktop\src` 替换 `main/ui/generated` 与 GUI Guider 配套通用 `custom` 文件，手工恢复主菜单 AI 图标到 `ai_ui_open()` 的桥接，升级 `lvgl/lvgl` 到 `9.3.0`，并移除 `ui_font_assets` 中仅针对 `< 9.3.0` 的运行时字体短路保护；当次刷机因 `COM3` 被 monitor 占用而未完成。
 - 2026-04-01：确认 `xiaozhi-esp32` 的 `cbin` 运行时字体链与当前仓库 `LVGL 9.2.2` 结构布局不兼容，因此在 `ui_font_assets` 中对 `LVGL < 9.3.0` 主动短路回退到编译中文字库，避免 `assets` 已读通但中文仍显示方框。
 - 2026-04-01：将 `assets` 分区调整到 16MB 以下并收缩为 2M，保持 `model` 分区也位于 16MB 以下，把 `audio` 顺延到高地址，以规避 `esp_partition_mmap()` 访问高地址 flash 时的字体/模型资产异常。
@@ -27,6 +32,7 @@
 - 2026-03-31：同步 `CONFIG_USE_DEVICE_AEC=y` 和 `CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y`，使板级 AEC 偏好与基础唤醒词模型进入当前 AI 对话实验构建链路。
 - 2026-03-31：继续同步 `CONFIG_SPIRAM_USE_MALLOC`、`CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`、`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC` 和 `CONFIG_MBEDTLS_DYNAMIC_BUFFER` 等低风险 AI 内存策略，同时刻意保持 `CONFIG_PM_ENABLE` 与 `CONFIG_SPIRAM_RODATA` 不变。
 - 2026-03-31：新增 `official_chat` 可实现性与移植差距评估知识卡，明确当前仓库更接近 `idf-EDGE_lmpulse` 适配路线，已具备最小 AI 对话实验链路基础，但完整产品化仍主要卡在运行时整合与真机验证。
+- 2026-04-01：修复 `official_chat` 在 MQTT 模式下离开 AI 页面时，`idle` 态仍直接销毁会话导致的停机崩溃；改为将 `idle` 纳入停机静默窗，并确认 MQTT 停机保持 `stop + destroy`，不再手动 `disconnect`，以避免 `esp_tls` 二次释放。
 - 2026-03-31：为 AI 实验入口增加 `api.tenclass.net` 与 `mqtt.xiaozhi.me` 的 DNS 就绪探测，并把 AP 门户 IP 配置前移到启用 `APSTA` 之前，减少首轮 OTA 解析竞态和 `192.168.4.1/192.168.100.1` 日志歧义。
 - 2026-03-31：把 `official_chat` 的 UDP 下行音频停顿判定改为项目可配置项，并在 `sdkconfig` 中设置 `CONFIG_OFFICIAL_CHAT_UDP_AUDIO_STALL_TIMEOUT_MS=5000`，用于缓解句中因 Wi-Fi 抖动导致的误判中断。
 - 2026-03-31：补充 `official_chat` 真机 TTS 中途停播案例，记录 `udp audio stalled while mqtt tts text continues` 的实际日志特征，并明确当前先保留 `5s` 硬故障阈值，不直接放宽到 `10s`。

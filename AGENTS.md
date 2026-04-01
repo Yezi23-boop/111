@@ -5,6 +5,27 @@
 2. 仅当满足“当前项目专项规则触发条件”时，才启用当前项目专项规则。
 3. 若规则冲突，优先遵循：最小可运行改动 + 可验证 + 可回退。
 面对底层代码或者苦难时可以联网搜索ESP-IDF 官方的资料
+直接修改不需要worktree 
+## ESP-IDF Rules
+
+- 先使用 `D:\esp-idf\v5.5.3\esp-idf\export.ps1` 拉起 `IDF 5.5` 环境，再实际执行 `idf.py build`。
+- 项目配置基线优先看 `sdkconfig.defaults`；不要无说明地大范围改生成出来的 `sdkconfig`。
+- 修改 `sdkconfig` 后，必须先 `idf.py fullclean` 再 `idf.py build`，否则配置变更可能不会正确进入最终产物。
+- 默认不走 `test app` 路线；除非任务明确要求，否则直接修改主工程并验证。
+
+## Monitor And Flash Rules
+
+- `idf.py monitor` 没有自然返回值；自动化验证时默认采集窗口 `30` 秒，最长不超过 `1` 分钟。
+- Windows Codex 桌面环境下，如需让 agent 直接读取 `idf.py monitor`，可临时设置 `ESP_IDF_MONITOR_TEST=1` 绕过 TTY 检查；该变量只用于 host 侧采集，不属于固件配置。
+- 使用 `ESP_IDF_MONITOR_TEST=1` 后，必须清理残留 `idf_monitor` / `idf.py monitor` 进程，并确认串口已释放，再进行下一轮 `flash`、`monitor` 或串口验证。
+- 如果 `monitor` 日志提示 built/flashed checksum mismatch，不得把板端日志直接当作当前本地 `build` 产物的验证结论，必须单独标注镜像漂移风险，必要时重做一致的 `build` / `flash` / `monitor` 闭环。
+
+## Hardware And Safety Rules
+
+- 修改 `GPIO` / `I2C` / `SPI` / `UART` / `I2S` / `LCD` / `Touch` / `Wi-Fi` / `BLE` 前，先确认引脚定义、初始化顺序、时钟或带宽、错误恢复路径。
+- 不要在没有证据时删除已有 reset、delay、power-on sequence 或初始化命令序列。
+- 涉及 DMA、双缓冲、PSRAM、cache、共享总线、共享状态机时，必须说明数据生命周期、资源归属和性能影响。
+- 不要随意修改 `partition table`、boot 流程、OTA 逻辑、NVS 关键结构、Wi-Fi/BLE 初始化主流程；若必须修改，要显式说明原因、影响范围和验证方法。
 ## 当前仓库规则（默认生效）
 
 将 `docs/context` 作为项目长期上下文库。

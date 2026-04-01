@@ -22,10 +22,21 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
 
         self.assertIn('#include "official_chat.h"', source)
         self.assertIn("official_chat_create(", source)
+        self.assertIn("official_chat_destroy(", source)
         self.assertIn("official_chat_set_event_callback(", source)
         self.assertIn("official_chat_start(", source)
         self.assertIn("network_service_is_service_ready()", source)
         self.assertIn("official_chat_service_enter_foreground(", source)
+        self.assertIn("official_chat_service_shutdown(", source)
+        self.assertIn("s_foreground_requested = false;", source)
+        self.assertIn("s_shutdown_requested", source)
+        self.assertIn("s_shutdown_stop_requested", source)
+        self.assertIn("s_shutdown_destroy_deadline_ticks", source)
+        self.assertIn("kShutdownTransportQuietPeriodMs", source)
+        self.assertIn("xTaskAbortDelay(", source)
+        self.assertIn("official_chat_get_state(", source)
+        self.assertIn("official_chat_stop_listening(", source)
+        self.assertIn("official_chat_prepare_shutdown(", source)
         self.assertIn("OFFICIAL_CHAT_EVENT_USER_TEXT", source)
         self.assertIn("OFFICIAL_CHAT_EVENT_ASSISTANT_TEXT", source)
         self.assertIn("official_chat_service_get_message_count(", source)
@@ -43,10 +54,45 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
                       header)
         self.assertIn("esp_err_t official_chat_service_get_message(",
                       header)
+        self.assertIn("void official_chat_service_request_shutdown(void);",
+                      header)
+        self.assertIn("bool official_chat_service_is_shutdown_pending(void);",
+                      header)
+        self.assertIn("esp_err_t official_chat_service_shutdown(void);", header)
         self.assertIn("s_message_history", source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER", source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT", source)
         self.assertIn("memmove(", source)
+        self.assertIn("s_last_user_text", source)
+        self.assertIn("s_last_assistant_text", source)
+        self.assertIn("memset(s_message_history, 0, sizeof(s_message_history));",
+                      source)
+        self.assertIn("s_message_count = 0;", source)
+        self.assertIn("s_last_error = ESP_OK;", source)
+        self.assertIn("s_chat_handle = NULL;", source)
+        self.assertIn("official_chat_set_event_callback(chat_handle, NULL, NULL);",
+                      source)
+        self.assertIn("ESP_ERR_TIMEOUT", source)
+        self.assertIn("OFFICIAL_CHAT_STATE_SPEAKING", source)
+        self.assertIn("OFFICIAL_CHAT_STATE_LISTENING", source)
+        self.assertIn("OFFICIAL_CHAT_STATE_CONNECTING", source)
+        self.assertIn("xTaskGetTickCount()", source)
+        self.assertIn("pdMS_TO_TICKS(kShutdownTransportQuietPeriodMs)", source)
+        self.assertIn("s_service_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED;",
+                      source)
+
+    def test_service_shutdown_waits_transport_quiet_period_for_idle_session(self) -> None:
+        source = SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("official_chat_service_requires_shutdown_quiet_period(",
+                      source)
+        self.assertIn("OFFICIAL_CHAT_STATE_IDLE", source)
+        self.assertIn("shutdown transport quiet period armed", source)
+        self.assertIn("if (official_chat_service_requires_shutdown_quiet_period(",
+                      source)
+        self.assertIn("shutdown waiting for idle before destroy", source)
+        self.assertIn("shutdown reached idle, arming destroy quiet period",
+                      source)
 
     def test_official_chat_public_event_surface_exposes_text_events(self) -> None:
         header = OFFICIAL_CHAT_HEADER.read_text(encoding="utf-8")

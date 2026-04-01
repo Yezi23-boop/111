@@ -19,6 +19,14 @@ class AiExperimentUiSourceTests(unittest.TestCase):
         self.assertIn("network_service_request_portal()", source)
         self.assertIn("official_chat_service_enter_foreground()", source)
         self.assertIn("ai_chat_view_create(", source)
+        self.assertIn("secondary_action_text = NULL", source)
+        self.assertIn("secondary_action_cb = NULL", source)
+        self.assertIn("ai_chat_view_set_secondary_action(s_view, NULL, false, false);",
+                      source)
+        self.assertNotIn("official_chat_service_shutdown(", source)
+        self.assertNotIn("返回主页", source)
+        self.assertNotIn("ai_experiment_ui_back_event", source)
+        self.assertNotIn("lv_screen_load_anim(s_ui->screen_main", source)
 
     def test_standalone_ai_experiment_ui_maps_network_and_chat_states(self) -> None:
         source = AI_EXPERIMENT_UI.read_text(encoding="utf-8")

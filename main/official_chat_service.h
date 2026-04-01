@@ -1,6 +1,7 @@
 #ifndef OFFICIAL_CHAT_SERVICE_H
 #define OFFICIAL_CHAT_SERVICE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "esp_err.h"
@@ -34,6 +35,9 @@ typedef struct {
 esp_err_t official_chat_service_init(void);
 void official_chat_service_enter_foreground(void);
 void official_chat_service_leave_foreground(void);
+void official_chat_service_request_shutdown(void);
+bool official_chat_service_is_shutdown_pending(void);
+esp_err_t official_chat_service_shutdown(void);
 official_chat_service_state_t official_chat_service_get_state(void);
 esp_err_t official_chat_service_get_last_error(void);
 size_t official_chat_service_get_message_count(void);
