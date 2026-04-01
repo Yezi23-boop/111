@@ -8,6 +8,7 @@ LVGL_TASK_SOURCE = REPO_ROOT / "main" / "lvgl_task.c"
 CUSTOM_HEADER = REPO_ROOT / "main" / "ui" / "custom" / "custom.h"
 AI_UI_HEADER = REPO_ROOT / "main" / "ui" / "custom" / "ai_ui_controller.h"
 AI_UI_SOURCE = REPO_ROOT / "main" / "ui" / "custom" / "ai_ui_controller.c"
+AI_CHAT_VIEW_SOURCE = REPO_ROOT / "main" / "ui" / "custom" / "ai_chat_view.c"
 
 
 class AiUiEntrySourceTests(unittest.TestCase):
@@ -38,12 +39,29 @@ class AiUiEntrySourceTests(unittest.TestCase):
         self.assertTrue(AI_UI_SOURCE.exists())
         source = AI_UI_SOURCE.read_text(encoding="utf-8")
 
+        self.assertIn('#include "ai_chat_view.h"', source)
         self.assertIn('#include "network_service.h"', source)
         self.assertIn("network_service_get_state()", source)
         self.assertIn("network_service_request_portal()", source)
         self.assertIn("lv_timer_create(", source)
-        self.assertIn("未联网", source)
         self.assertIn("进入配网", source)
+        self.assertIn("ai_chat_view_create(", source)
+        self.assertIn("ai_chat_view_reload_messages(", source)
+
+    def test_ai_chat_view_source_builds_scrollable_bubble_list(self) -> None:
+        self.assertTrue(AI_CHAT_VIEW_SOURCE.exists())
+        source = AI_CHAT_VIEW_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("lv_obj_set_scroll_dir(", source)
+        self.assertIn("LV_DIR_VER", source)
+        self.assertIn("ai_chat_view_reload_messages(", source)
+        self.assertIn("ai_chat_view_create_spacer(", source)
+        self.assertIn("AI_CHAT_BUBBLE_USER", source)
+        self.assertIn("AI_CHAT_BUBBLE_ASSISTANT", source)
+        self.assertIn("official_chat_service_get_message_count(", source)
+        self.assertIn("official_chat_service_get_message(", source)
+        self.assertIn("lv_obj_scroll_to_view(", source)
+        self.assertIn("聊天区", source)
 
 
 if __name__ == "__main__":

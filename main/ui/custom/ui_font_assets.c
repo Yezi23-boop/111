@@ -43,6 +43,10 @@ typedef struct {
 
 static ui_font_assets_runtime_t s_runtime = {0};
 
+static bool ui_font_assets_runtime_font_supported(void) {
+    return LV_VERSION_CHECK(9, 3, 0);
+}
+
 static uint32_t ui_font_assets_read_u32(const uint8_t *data) {
     return ((uint32_t)data[0]) | ((uint32_t)data[1] << 8) |
            ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
@@ -140,6 +144,14 @@ static void ui_font_assets_reset_runtime(void) {
 }
 
 static esp_err_t ui_font_assets_load_from_partition(void) {
+    if (!ui_font_assets_runtime_font_supported()) {
+        ESP_LOGW(TAG,
+                 "runtime cbin fonts require LVGL >= 9.3.0, current=%d.%d.%d; "
+                 "fallback to compiled Chinese fonts",
+                 LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
     const esp_partition_t *partition = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "assets");
     if (partition == NULL) {
@@ -229,6 +241,8 @@ static esp_err_t ui_font_assets_load_from_partition(void) {
         return ESP_ERR_INVALID_ARG;
     }
     const char *text_font_name = text_item->valuestring;
+    char text_font_name_copy[UI_FONT_ASSETS_NAME_LEN + 1] = {0};
+    strncpy(text_font_name_copy, text_font_name, UI_FONT_ASSETS_NAME_LEN);
 
     ui_font_assets_entry_t text_entry = {0};
     if (!ui_font_assets_find_entry(table, total_files, text_font_name, &text_entry)) {
@@ -283,7 +297,7 @@ static esp_err_t ui_font_assets_load_from_partition(void) {
     cJSON_Delete(index_root);
     s_runtime.ready = true;
     s_runtime.init_error = ESP_OK;
-    ESP_LOGI(TAG, "font assets ready: title/body/meta use %s", text_font_name);
+    ESP_LOGI(TAG, "font assets ready: title/body/meta use %s", text_font_name_copy);
     return ESP_OK;
 }
 
@@ -330,8 +344,9 @@ const lv_font_t *ui_font_assets_meta(void) {
     if (!s_runtime.init_done) {
         (void)ui_font_assets_init();
     }
-    return s_runtime.ready && s_runtime.meta_font != NULL ? s_runtime.meta_font
-                                                          : &lv_font_montserratMedium_16;
+    return s_runtime.ready && s_runtime.meta_font != NULL
+               ? s_runtime.meta_font
+               : &lv_font_SourceHanSerifSC_Regular_22;
 }
 
 const lv_font_t *ui_font_assets_icon(void) {

@@ -1,5 +1,13 @@
 # 上下文库变更记录
 
+- 2026-04-01：确认 `xiaozhi-esp32` 的 `cbin` 运行时字体链与当前仓库 `LVGL 9.2.2` 结构布局不兼容，因此在 `ui_font_assets` 中对 `LVGL < 9.3.0` 主动短路回退到编译中文字库，避免 `assets` 已读通但中文仍显示方框。
+- 2026-04-01：将 `assets` 分区调整到 16MB 以下并收缩为 2M，保持 `model` 分区也位于 16MB 以下，把 `audio` 顺延到高地址，以规避 `esp_partition_mmap()` 访问高地址 flash 时的字体/模型资产异常。
+- 2026-04-01：正式 UI 入口不再在主菜单阶段自动 `enter_foreground` 启动 AI，对话前台化仅保留在进入 AI 页面后触发；同时将 `ui_font_assets` 的 `meta` 回退字体切到中文编译字体，避免 `assets` 分区异常时 AI 页中文出现方框。
+- 2026-04-01：恢复正式入口 `main/111.c` 中的 `lvgl_task` 创建以重新点亮屏幕，并在 `main/CMakeLists.txt` 中显式注册 `main/ui/custom/ai_chat_view.c`，修复正式 UI 恢复后暴露出的 hand-written 聊天视图链接缺符号问题。
+- 2026-04-01：将共享 `ai_chat_view` 进一步收敛为更紧凑的正式 AI 页布局，压缩顶部标题与静态 AI 卡片，把聊天区整体上提并扩大，同时保留底部双按钮持续可见。
+- 2026-04-01：将正式 AI 页与独立实验页统一改为共享 `ai_chat_view` 的官方式左右气泡聊天区，并在 `official_chat_service` 中补入 8 条小型消息队列供页面重建滚动消息列表。
+- 2026-04-01：为 `official_chat` public event 增加用户文本/助手文本事件，并在 `official_chat_service` 中缓存最近一轮对话内容，使正式 AI 页和实验页的“你刚刚说 / 小智回答”卡片优先显示真实中文文本。
+- 2026-04-01：接通 AI 字体资产本地打包与 `assets` 分区烧录链，复用 `xiaozhi-esp32` 的 `index.json + font_puhui_common_20_4.bin` 约定，并把正式 AI 页与实验页统一重构为“对话优先页 + 静态 AI 图标卡片”布局。
 - 2026-04-01：迁入 `xiaozhi-esp32` 风格字体资产读取链，补入本地 vendored `78__xiaozhi_fonts` 组件，并将 `ui_font_assets` 升级为 `assets.bin` 的 `mmap + index.json` 运行时解析。
 - 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，接入索引、质量检查、检索和打包脚本。
 - 2026-03-11：新增仓库级 `AGENTS.md`，引入默认上下文流程、计划模式摘要和 ESP32/MCU 嵌入式 C/C++ 默认规范。

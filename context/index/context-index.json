@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-03-31T16:23:53.324632+00:00",
+  "generated_at_utc": "2026-04-01T05:20:25.592689+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
   "doc_count": 30,
@@ -8,11 +8,11 @@
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-01：迁入 `xiaozhi-esp32` 风格字体资产读取链，补入本地 vendored `78__xiaozhi_fonts` 组件，并将 `ui_font_assets` 升级为 `assets.bin` 的 `mmap + index.json` 运行时解析。",
+      "summary": "- 2026-04-01：确认 `xiaozhi-esp32` 的 `cbin` 运行时字体链与当前仓库 `LVGL 9.2.2` 结构布局不兼容，因此在 `ui_font_assets` 中对 `LVGL < 9.3.0` 主动短路回退到编译中文字库，避免 `assets` 已读通但中文仍显示方框。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-03-31T16:23:47.519036+00:00",
-      "token_count": 604
+      "mtime_utc": "2026-04-01T05:20:17.649665+00:00",
+      "token_count": 758
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -192,8 +192,8 @@
       "summary": "记录 AI 页面 hand-written 字体资源链，当前已通过 mmap + index.json 解析 assets.bin，并保留编译字体回退。",
       "id": "ai-font-assets",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-03-31T16:23:44.990343+00:00",
-      "token_count": 70
+      "mtime_utc": "2026-04-01T05:20:10.417650+00:00",
+      "token_count": 221
     },
     {
       "path": "docs/context/knowledge/project/ai-ui-entry-network-guidance.md",
@@ -206,11 +206,11 @@
         "gui-guider",
         "network-service"
       ],
-      "summary": "记录当前仓库把主菜单 AI 图标接到手写 AI 页面，并通过 network_service 展示未联网引导的最小桥接方案。",
+      "summary": "记录当前仓库把主菜单 AI 图标接到 hand-written AI 页面，并统一为对话优先页、静态 AI 图标卡片、官方式左右气泡聊天区和未联网引导方案。",
       "id": "ai-ui-entry-network-guidance",
-      "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-03-31T16:07:07.259075+00:00",
-      "token_count": 229
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-04-01T04:51:17.917584+00:00",
+      "token_count": 422
     },
     {
       "path": "docs/context/knowledge/project/display-touch-audio-bus-map.md",

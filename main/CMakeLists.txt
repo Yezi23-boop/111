@@ -20,6 +20,12 @@ if(cbin_font_bridge_index EQUAL -1)
     list(APPEND main_common_srcs ${cbin_font_bridge_src})
 endif()
 
+set(ai_chat_view_src ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ai_chat_view.c)
+list(FIND main_common_srcs ${ai_chat_view_src} ai_chat_view_index)
+if(ai_chat_view_index EQUAL -1)
+    list(APPEND main_common_srcs ${ai_chat_view_src})
+endif()
+
 list(REMOVE_ITEM main_common_srcs
     ${CMAKE_CURRENT_LIST_DIR}/111.c
     ${CMAKE_CURRENT_LIST_DIR}/main_ai_chat_experiment.c

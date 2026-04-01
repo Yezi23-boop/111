@@ -1,8 +1,8 @@
 ---
 id: ai-ui-entry-network-guidance
 tags: [project, ui, official-chat, lvgl, gui-guider, network-service]
-summary: 记录当前仓库把主菜单 AI 图标接到手写 AI 页面，并通过 network_service 展示未联网引导的最小桥接方案。
-last_reviewed: 2026-03-31
+summary: 记录当前仓库把主菜单 AI 图标接到 hand-written AI 页面，并统一为对话优先页、静态 AI 图标卡片、官方式左右气泡聊天区和未联网引导方案。
+last_reviewed: 2026-04-01
 ---
 
 # AI 页面入口与未联网引导
@@ -36,10 +36,34 @@ last_reviewed: 2026-03-31
 - 页面通过 `lv_timer` 轮询 `network_service_get_state()` 和 `network_service_get_ip()`。
 - 当未联网或需要重配网时，页面显示本地 AP 配网提示，并保留 `http://192.168.100.1/` 引导文案。
 - 当前版本在 `NETWORK_SERVICE_STATE_SERVICE_READY` 后会自动调用 `official_chat_service_enter_foreground()`。
+- 上述“自动进入前台”仅保留在独立实验页 `main/ai_experiment_ui.c`。
+- 正式入口 `main/111.c` 当前只负责：
+  - 启动 `lvgl_task`
+  - 启动后台 `network_service`
+  - 初始化 `official_chat_service`
+  - 不再在主菜单阶段自动调用 `official_chat_service_enter_foreground()`
+- 正式入口 `main/111.c` 当前已恢复 `lvgl_task` 创建；此前若屏幕完全不亮且串口里没有 `co5300_panel / lv_port` 日志，首查点就是 `lvgl_task` 是否仍被临时注释。
 - 页面状态文案会进一步映射 `official_chat_service`：
   - `IDLE` -> `待唤醒`
   - `LISTENING` -> `聆听中`
   - `SPEAKING` -> `回答中`
+- 页面布局已重构为：
+  - 顶部轻状态条
+  - 中部静态 AI 图标卡片
+  - 中下部官方式左右气泡聊天区
+  - 底部操作区
+- 聊天区由 `main/ui/custom/ai_chat_view.c` 统一构建，保持：
+  - 用户消息右侧气泡
+  - 小智消息左侧气泡
+  - 空消息时显示居中占位提示
+  - 刷新后自动滚到最新一条
+  - 顶部标题区和静态 AI 卡片已进一步压缩为紧凑版布局，把更多垂直空间让给聊天区，同时保留底部双按钮的持续可见性
+- `official_chat` 现已通过 public event 新增 `OFFICIAL_CHAT_EVENT_USER_TEXT` 和 `OFFICIAL_CHAT_EVENT_ASSISTANT_TEXT`，由 `official_chat_service` 同时维护：
+  - 最近一轮用户/助手文本兼容缓存
+  - 一个 8 条的小型消息队列，供聊天区按“从旧到新”重建气泡列表
+- 独立实验页 `main/ai_experiment_ui.c` 已与正式 AI 页对齐到同一套 hand-written 聊天骨架，避免后续出现两套不同 AI 产品形态。
+- `main/CMakeLists.txt` 现已显式把 `main/ui/custom/ai_chat_view.c` 加入 `main` 组件，避免新 hand-written 视图文件仅依赖 glob 收集时在正式 UI 链路下出现链接缺符号。
+- `ui_font_assets` 若因 `assets` 分区内容非法而回退到编译字体，`title/body/meta` 三类中文文本当前都应继续走 `lv_font_SourceHanSerifSC_Regular_22`，避免 AI 页出现中文方框；若仍看到 `invalid assets package`，优先重新执行完整 `idf.py flash` 以确保 `0x1310000` 的 `assets` 分区与当前构建一致。
 
 ## official_chat_service 位置
 
@@ -51,6 +75,19 @@ last_reviewed: 2026-03-31
 - 统一封装 `official_chat_create()`、事件回调和 `official_chat_start()`
 - 在 `network_service` 真正进入 `SERVICE_READY` 后再启动 `official_chat`
 - 给正式 UI 主流程和实验入口提供同一套 AI 启动骨架
+- 缓存最近一轮文本并维护小型消息队列，供 hand-written AI 页面读取
+
+## 共享聊天视图位置
+
+- `D:\esp32S3\111\main\ui\custom\ai_chat_view.h`
+- `D:\esp32S3\111\main\ui\custom\ai_chat_view.c`
+
+该视图负责：
+
+- 创建顶部标题、网络徽标、静态 AI 图标卡片和底部操作区
+- 创建可滚动消息列表容器
+- 按 user / assistant 角色生成左右分侧气泡
+- 根据消息队列重建聊天区并滚动到末尾
 
 ## 为什么先这样做
 
@@ -60,6 +97,6 @@ last_reviewed: 2026-03-31
 
 ## 后续建议
 
-- 下一步补 `leave_foreground` 的行为边界，决定离开 AI 页面时是否只退前台，还是主动停止监听。
-- 再下一步处理 AI 页面和音乐播放器/其它音频功能的资源协调，不要把 owner 逻辑直接塞回入口文件。
+- 下一步优先做真机验证，确认两张对话卡片在真实对话过程中能稳定刷新为中文最近一轮文本。
+- 再下一步处理离开 AI 页面后的 `leave_foreground` 和音频 owner 行为边界，避免与音乐播放器等功能冲突。
 - 字体资源链的当前状态见 [`ai-font-assets`](./ai-font-assets.md)。

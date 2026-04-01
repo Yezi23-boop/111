@@ -23,6 +23,7 @@ class OfficialChatPartitionSourceTests(unittest.TestCase):
         source = PARTITIONS.read_text(encoding="utf-8")
 
         entries = {}
+        current_offset = 0
         for raw_line in source.splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#"):
@@ -30,14 +31,22 @@ class OfficialChatPartitionSourceTests(unittest.TestCase):
             fields = [field.strip() for field in line.split(",")]
             if len(fields) < 5:
                 continue
-            entries[fields[0]] = fields
+            size_value = _parse_size(fields[4])
+            offset_value = int(fields[3], 0) if fields[3] else current_offset
+            current_offset = offset_value + size_value
+            entries[fields[0]] = {
+                "fields": fields,
+                "offset": offset_value,
+            }
 
         self.assertIn("model", entries)
         self.assertIn("assets", entries)
-        self.assertEqual("spiffs", entries["model"][2])
-        self.assertEqual("spiffs", entries["assets"][2])
-        self.assertGreaterEqual(_parse_size(entries["model"][4]), 0x400000)
-        self.assertGreaterEqual(_parse_size(entries["assets"][4]), 0x800000)
+        self.assertEqual("spiffs", entries["model"]["fields"][2])
+        self.assertEqual("spiffs", entries["assets"]["fields"][2])
+        self.assertGreaterEqual(_parse_size(entries["model"]["fields"][4]), 0x400000)
+        self.assertGreaterEqual(_parse_size(entries["assets"]["fields"][4]), 0x200000)
+        self.assertLess(entries["assets"]["offset"], 0x1000000)
+        self.assertLess(entries["model"]["offset"], 0x1000000)
 
 
 if __name__ == "__main__":

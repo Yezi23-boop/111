@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 聊天气泡预览</title>
+  <style>
+    :root {
+      --paper: #f4efe7;
+      --ink: #111827;
+      --muted: #6b7280;
+      --line: rgba(17, 24, 39, 0.12);
+      --screen-top: #0b1020;
+      --screen-bottom: #121a2f;
+      --card: rgba(22, 27, 34, 0.92);
+      --card-line: rgba(96, 165, 250, 0.16);
+      --assistant: #1e293b;
+      --assistant-line: #334155;
+      --user: #2563eb;
+      --system: #0f172a;
+      --good: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --text-strong: #f8fafc;
+      --text-soft: #cbd5e1;
+      --text-meta: #94a3b8;
+      --shadow: 0 30px 80px rgba(15, 23, 42, 0.22);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.14), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.12), transparent 24%),
+        linear-gradient(180deg, #f7f2ea 0%, #eee6da 100%);
+    }
+
+    .page {
+      width: min(1220px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    .headline {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    .headline h1 {
+      margin: 0 0 12px;
+      font-size: clamp(32px, 5vw, 56px);
+      font-weight: 700;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .headline p {
+      margin: 0;
+      color: rgba(17, 24, 39, 0.74);
+      font-size: 15px;
+      line-height: 1.75;
+      max-width: 56ch;
+    }
+
+    .stamp {
+      justify-self: end;
+      align-self: center;
+      border: 1px solid rgba(17, 24, 39, 0.14);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: 12px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: rgba(17, 24, 39, 0.56);
+      background: rgba(255, 255, 255, 0.48);
+      backdrop-filter: blur(10px);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 350px minmax(360px, 410px) 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(17, 24, 39, 0.09);
+      border-radius: 28px;
+      padding: 22px;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+      backdrop-filter: blur(16px);
+    }
+
+    .panel h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+
+    .panel p {
+      margin: 0 0 18px;
+      color: rgba(17, 24, 39, 0.68);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .option-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .chip {
+      appearance: none;
+      border: 1px solid rgba(17, 24, 39, 0.12);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.76);
+      color: #1f2937;
+      padding: 12px 14px;
+      font: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+    }
+
+    .chip:hover {
+      transform: translateY(-1px);
+      border-color: rgba(37, 99, 235, 0.32);
+    }
+
+    .chip.active {
+      background: #111827;
+      color: #fff;
+      border-color: #111827;
+    }
+
+    .note-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .note {
+      border-top: 1px solid rgba(17, 24, 39, 0.08);
+      padding-top: 10px;
+      color: rgba(17, 24, 39, 0.72);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .device-wrap {
+      display: flex;
+      justify-content: center;
+    }
+
+    .watch {
+      position: relative;
+      width: 410px;
+      height: 502px;
+      border-radius: 42px;
+      padding: 14px;
+      background:
+        linear-gradient(145deg, #1f2937 0%, #0f172a 62%, #0b1020 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .watch::before,
+    .watch::after {
+      content: "";
+      position: absolute;
+      width: 44px;
+      height: 118px;
+      top: 192px;
+      background: linear-gradient(180deg, #1f2937, #0f172a);
+      z-index: 0;
+    }
+
+    .watch::before {
+      left: -18px;
+      border-radius: 18px 0 0 18px;
+    }
+
+    .watch::after {
+      right: -18px;
+      border-radius: 0 18px 18px 0;
+    }
+
+    .screen {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 32px;
+      background:
+        radial-gradient(circle at top center, rgba(96, 165, 250, 0.16), transparent 22%),
+        linear-gradient(180deg, var(--screen-top) 0%, var(--screen-bottom) 100%);
+      padding: 20px 20px 16px;
+    }
+
+    .screen-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .screen-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-strong);
+      letter-spacing: 0.02em;
+    }
+
+    .badge {
+      min-width: 108px;
+      border-radius: 999px;
+      padding: 8px 12px;
+      text-align: center;
+      font-size: 12px;
+      color: #fff;
+      background: var(--good);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+    }
+
+    .hero {
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(22, 27, 34, 0.96), rgba(18, 25, 38, 0.94));
+      border: 1px solid var(--card-line);
+      padding: 8px 12px;
+      margin-bottom: 4px;
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 10px;
+      align-items: center;
+      text-align: left;
+    }
+
+    .ai-orb {
+      width: 56px;
+      height: 56px;
+      margin: 0;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 30% 30%, rgba(96, 165, 250, 0.24), rgba(37,99,235,0.12));
+      border: 1px solid rgba(96, 165, 250, 0.42);
+      box-shadow: inset 0 0 40px rgba(37, 99, 235, 0.22);
+    }
+
+    .ai-face {
+      width: 38px;
+      height: 38px;
+      border-radius: 13px;
+      background:
+        radial-gradient(circle at 19px 12px, rgba(255,255,255,0.95) 0 2px, transparent 3px),
+        radial-gradient(circle at 19px 26px, rgba(191,219,254,0.8) 0 10px, transparent 11px),
+        linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
+      position: relative;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+    }
+
+    .ai-face::before,
+    .ai-face::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      top: 11px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.95);
+    }
+
+    .ai-face::before { left: 8px; }
+    .ai-face::after { right: 8px; }
+
+    .hero-copy {
+      min-width: 0;
+    }
+
+    .hero-state {
+      font-size: 18px;
+      color: var(--text-strong);
+      line-height: 1.2;
+      margin-bottom: 2px;
+    }
+
+    .hero-hint {
+      color: var(--text-soft);
+      font-size: 11px;
+      line-height: 1.45;
+      min-height: 0;
+    }
+
+    .chat-card {
+      height: 284px;
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(20, 28, 42, 0.96), rgba(14, 20, 33, 0.96));
+      border: 1px solid rgba(51, 65, 85, 0.72);
+      padding: 8px 10px 8px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chat-title {
+      color: var(--text-meta);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .chat-scroll {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 2px;
+    }
+
+    .chat-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .chat-scroll::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.24);
+      border-radius: 999px;
+    }
+
+    .row {
+      width: 100%;
+      display: flex;
+    }
+
+    .row.user {
+      justify-content: flex-end;
+    }
+
+    .row.assistant {
+      justify-content: flex-start;
+    }
+
+    .row.system {
+      justify-content: center;
+    }
+
+    .bubble {
+      max-width: 82%;
+      padding: 9px 11px;
+      border-radius: 16px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+    }
+
+    .bubble.user {
+      background: var(--user);
+      color: #eff6ff;
+      text-align: right;
+    }
+
+    .bubble.assistant {
+      background: var(--assistant);
+      color: var(--text-strong);
+      border: 1px solid var(--assistant-line);
+    }
+
+    .bubble.system {
+      background: var(--system);
+      color: var(--text-meta);
+      border: 1px solid rgba(71, 85, 105, 0.72);
+      text-align: center;
+      max-width: 88%;
+    }
+
+    .role {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 10px;
+      color: rgba(226, 232, 240, 0.82);
+      letter-spacing: 0.04em;
+    }
+
+    .bubble.user .role {
+      color: rgba(219, 234, 254, 0.88);
+    }
+
+    .text {
+      font-size: 13px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+
+    .footer {
+      display: grid;
+      grid-template-columns: 1.45fr 0.55fr;
+      gap: 6px;
+      margin-top: auto;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 16px;
+      min-height: 38px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      transition: transform 150ms ease, opacity 150ms ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.primary {
+      background: #2563eb;
+      color: #fff;
+    }
+
+    .btn.secondary {
+      background: #30363d;
+      color: #fff;
+    }
+
+    .legend {
+      display: grid;
+      gap: 12px;
+    }
+
+    .legend-card {
+      padding: 16px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.62);
+      border: 1px solid rgba(17, 24, 39, 0.09);
+    }
+
+    .legend-title {
+      font-size: 13px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: rgba(17,24,39,0.48);
+      margin-bottom: 10px;
+    }
+
+    .legend strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 17px;
+    }
+
+    .legend span {
+      color: rgba(17,24,39,0.72);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1120px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .headline {
+        grid-template-columns: 1fr;
+      }
+
+      .stamp {
+        justify-self: start;
+      }
+
+      .device-wrap {
+        order: -1;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .page {
+        width: min(100vw - 18px, 100%);
+        padding-top: 16px;
+      }
+
+      .watch {
+        width: min(410px, 100%);
+        height: auto;
+        aspect-ratio: 410 / 502;
+      }
+
+      .option-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="headline">
+      <div>
+        <h1>AI 聊天气泡页预览</h1>
+        <p>这是一版按你当前方向做的网页预览：保留顶部状态条和静态 AI 图标卡片，把中下部改成更像官方的聊天区。用户消息在右，小智消息在左，中文字号和留白都按手表小屏做了收敛。</p>
+      </div>
+      <div class="stamp">Waveshare ESP32-S3 Touch AMOLED 2.06</div>
+    </section>
+
+    <section class="layout">
+      <aside class="panel">
+        <h2>状态切换</h2>
+        <p>点这些按钮，可以快速看不同网络状态和对话阶段下的页面表现。</p>
+        <div class="option-grid" id="stateSwitch">
+          <button class="chip active" data-state="idle">待唤醒</button>
+          <button class="chip" data-state="listening">聆听中</button>
+          <button class="chip" data-state="speaking">回答中</button>
+          <button class="chip" data-state="offline">未联网</button>
+        </div>
+
+        <h2>示例对话</h2>
+        <p>可以切换不同中文长度，看看左右气泡和滚动区域的阅读感受。</p>
+        <div class="option-grid" id="scenarioSwitch">
+          <button class="chip active" data-scenario="weather">天气查询</button>
+          <button class="chip" data-scenario="banter">闲聊吐槽</button>
+          <button class="chip" data-scenario="short">短回复</button>
+          <button class="chip" data-scenario="empty">空消息</button>
+        </div>
+
+        <div class="note-list">
+          <div class="note">顶部和主卡片没有做成官方那种双状态栏，而是保留你现在手表路线里更稳的结构。</div>
+          <div class="note">聊天区按小屏收到了 79% 最大气泡宽度，避免右侧气泡挤进圆角安全区。</div>
+          <div class="note">这一版先突出结构和阅读感，不急着加头像、小尾巴和时间分割线。</div>
+        </div>
+      </aside>
+
+      <div class="device-wrap">
+        <div class="watch">
+          <section class="screen">
+            <div class="screen-header">
+              <div class="screen-title">小智</div>
+              <div class="badge" id="badge">已联网</div>
+            </div>
+
+            <section class="hero">
+              <div class="ai-orb">
+                <div class="ai-face" aria-hidden="true"></div>
+              </div>
+              <div class="hero-copy">
+                <div class="hero-state" id="heroState">待唤醒</div>
+                <div class="hero-hint" id="heroHint">小智已经进入待唤醒状态，现在可以直接说“你好小智”。</div>
+              </div>
+            </section>
+
+            <section class="chat-card">
+              <div class="chat-title">聊天区</div>
+              <div class="chat-scroll" id="chatScroll"></div>
+            </section>
+
+            <div class="footer">
+              <button class="btn primary" id="primaryAction">网络设置</button>
+              <button class="btn secondary" id="secondaryAction">返回主页</button>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <aside class="legend">
+        <div class="legend-card">
+          <div class="legend-title">保留点</div>
+          <strong>顶部状态条 + 静态主卡片</strong>
+          <span>这部分延续你当前 AI-first 页面骨架，用户进入后能立刻看懂“现在是什么状态”。</span>
+        </div>
+        <div class="legend-card">
+          <div class="legend-title">变化点</div>
+          <strong>两张固定卡片改成聊天流</strong>
+          <span>用户消息右侧，小智消息左侧；页面从“状态页”升级成“状态 + 对话反馈页”。</span>
+        </div>
+        <div class="legend-card">
+          <div class="legend-title">当前取舍</div>
+          <strong>先做气泡体验，不先做复杂装饰</strong>
+          <span>先把中文阅读、密度、滚动和状态切换做稳，再考虑头像、小尾巴和更强的官方风格细节。</span>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const states = {
+      idle: {
+        badge: "已联网",
+        badgeColor: "#22c55e",
+        title: "待唤醒",
+        hint: "小智已经进入待唤醒状态，现在可以直接说“你好小智”。",
+        primary: "网络设置"
+      },
+      listening: {
+        badge: "已联网",
+        badgeColor: "#22c55e",
+        title: "聆听中",
+        hint: "正在认真听你说话，继续问就好。",
+        primary: "网络设置"
+      },
+      speaking: {
+        badge: "已联网",
+        badgeColor: "#22c55e",
+        title: "回答中",
+        hint: "小智正在回答，稍等这一句播报完成。",
+        primary: "网络设置"
+      },
+      offline: {
+        badge: "未联网",
+        badgeColor: "#ef4444",
+        title: "未联网",
+        hint: "手表其余功能可继续使用，点下方按钮可进入本地 AP 配网。",
+        primary: "进入配网"
+      }
+    };
+
+    const scenarios = {
+      weather: [
+        { role: "user", label: "你", text: "今天天气怎么样？" },
+        { role: "assistant", label: "小智", text: "广州现在 19°C，正在下雨，湿度 89%。空气湿到能种香菇了，出门记得带伞，别冻成冰棒喔～" }
+      ],
+      banter: [
+        { role: "user", label: "你", text: "你不要每次都讲这么多啦。" },
+        { role: "assistant", label: "小智", text: "谁说小智啰嗦！人家已经努力缩水了欸，不然你先讲一句，我们来比赛看看谁更会收着说。"},
+        { role: "user", label: "你", text: "那你今天先简短一点。" },
+        { role: "assistant", label: "小智", text: "好呀，那我今天就做一只收口版小智。" }
+      ],
+      short: [
+        { role: "user", label: "你", text: "小智在吗？" },
+        { role: "assistant", label: "小智", text: "在呀。" }
+      ],
+      empty: [
+        { role: "system", label: "提示", text: "还没有真实消息，先说一句试试。" }
+      ]
+    };
+
+    const badge = document.getElementById("badge");
+    const heroState = document.getElementById("heroState");
+    const heroHint = document.getElementById("heroHint");
+    const primaryAction = document.getElementById("primaryAction");
+    const chatScroll = document.getElementById("chatScroll");
+
+    let currentState = "idle";
+    let currentScenario = "weather";
+
+    function setActive(group, value) {
+      group.querySelectorAll(".chip").forEach((button) => {
+        button.classList.toggle("active", button.dataset.state === value || button.dataset.scenario === value);
+      });
+    }
+
+    function renderHeader() {
+      const state = states[currentState];
+      badge.textContent = state.badge;
+      badge.style.background = state.badgeColor;
+      heroState.textContent = state.title;
+      heroHint.textContent = state.hint;
+      primaryAction.textContent = state.primary;
+    }
+
+    function bubbleTemplate(item) {
+      return `
+        <div class="row ${item.role}">
+          <div class="bubble ${item.role}">
+            ${item.role === "system" ? "" : `<span class="role">${item.label}</span>`}
+            <div class="text">${item.text}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderChat() {
+      const items = scenarios[currentScenario];
+      chatScroll.innerHTML = items.map(bubbleTemplate).join("");
+      chatScroll.scrollTop = chatScroll.scrollHeight;
+    }
+
+    document.getElementById("stateSwitch").addEventListener("click", (event) => {
+      const button = event.target.closest(".chip");
+      if (!button) return;
+      currentState = button.dataset.state;
+      setActive(document.getElementById("stateSwitch"), currentState);
+      renderHeader();
+    });
+
+    document.getElementById("scenarioSwitch").addEventListener("click", (event) => {
+      const button = event.target.closest(".chip");
+      if (!button) return;
+      currentScenario = button.dataset.scenario;
+      setActive(document.getElementById("scenarioSwitch"), currentScenario);
+      renderChat();
+    });
+
+    renderHeader();
+    renderChat();
+  </script>
+</body>
+</html>

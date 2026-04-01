@@ -99,6 +99,14 @@ void LogJsonTextField(const cJSON *root, const char *type_name,
   }
 }
 
+const char *GetJsonStringField(const cJSON *root, const char *field_name) {
+  const cJSON *field = cJSON_GetObjectItem(root, field_name);
+  if (!cJSON_IsString(field)) {
+    return nullptr;
+  }
+  return field->valuestring;
+}
+
 void LogWorkerStackHighWatermark(const char *reason) {
   const UBaseType_t watermark =
       uxTaskGetStackHighWaterMark(xTaskGetCurrentTaskHandle());
@@ -1286,6 +1294,10 @@ void Application::InitializeProtocol() {
         });
       } else if (std::strcmp(state->valuestring, "sentence_start") == 0) {
         LogJsonTextField(root, "assistant", "text");
+        const char *assistant_text = GetJsonStringField(root, "text");
+        if (assistant_text != nullptr) {
+          EmitMessageEvent(OFFICIAL_CHAT_EVENT_ASSISTANT_TEXT, assistant_text);
+        }
       }
     } else if (std::strcmp(type->valuestring, "mcp") == 0) {
       const cJSON *payload = cJSON_GetObjectItem(root, "payload");
@@ -1294,6 +1306,10 @@ void Application::InitializeProtocol() {
       }
     } else if (std::strcmp(type->valuestring, "stt") == 0) {
       LogJsonTextField(root, "stt", "text");
+      const char *user_text = GetJsonStringField(root, "text");
+      if (user_text != nullptr) {
+        EmitMessageEvent(OFFICIAL_CHAT_EVENT_USER_TEXT, user_text);
+      }
     } else if (std::strcmp(type->valuestring, "llm") == 0) {
       LogJsonTextField(root, "llm", "text");
     } else if (std::strcmp(type->valuestring, "system") == 0) {

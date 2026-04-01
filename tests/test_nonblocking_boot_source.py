@@ -24,7 +24,7 @@ class NonblockingBootSourceTests(unittest.TestCase):
         self.assertIn('#include "network_service.h"', source)
         self.assertIn("network_service_start()", source)
         self.assertIn(
-            '// xTaskCreatePinnedToCore(lvgl_task, "lvgl_task"',
+            'xTaskCreatePinnedToCore(lvgl_task, "lvgl_task"',
             source,
         )
         self.assertIn(
@@ -32,9 +32,9 @@ class NonblockingBootSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn("official_chat_service_init()", source)
-        self.assertIn("network_service_is_service_ready()", source)
-        self.assertIn("official_chat_service_enter_foreground()", source)
-        self.assertIn('"official_chat_bootstrap"', source)
+        self.assertNotIn("official_chat_bootstrap_task", source)
+        self.assertNotIn("network_service_is_service_ready()", source)
+        self.assertNotIn("official_chat_service_enter_foreground()", source)
 
     def test_sdkconfig_uses_formal_entry_instead_of_ai_experiment(self) -> None:
         source = SDKCONFIG.read_text(encoding="utf-8")
