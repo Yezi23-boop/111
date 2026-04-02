@@ -31,7 +31,7 @@
 /* ========== 显示控制 ========== */
 
 #define CO5300_PANEL_DEFAULT_BRIGHTNESS 0xFF // 默认亮度 (0x00~0xFF)
-#define CO5300_PANEL_MAX_TRANSFER_LINES 48   // 单次传输最大行数（优先确保 inflight=2 时两块片内 DMA bounce buffer 可分配）
+#define CO5300_PANEL_MAX_TRANSFER_LINES 30   // 单次传输最大行数（优先确保 inflight=2 时两块片内 DMA bounce buffer 可分配）
 
 /* TE信号配置 */
 #define CO5300_PANEL_USE_TE_SIGNAL 1 // 1=启用TE同步, 0=禁用

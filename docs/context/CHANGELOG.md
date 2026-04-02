@@ -79,3 +79,6 @@
 - 2026-04-02：在 `64` 行档位下真机进一步确认“第 1 块 bounce buffer 成功、第 2 块失败”，因此继续将 `flush/max transfer` 从 `64` 收敛到 `48`，以保留 `inflight=2` 的前提下争取两块片内 DMA bounce buffer 全部成功分配。
 - 2026-04-02：在 `48` 行档位下真机确认双 bounce buffer 已成功分配后，新增 `inflight=1` 的单变量 A/B，用于验证剩余撕裂是否主要来自两个 chunk 同时在飞。
 - 2026-04-02：根据 CO5300 TE Mode 1“高电平即 V-Porch”语义和真机“TE 已启用但仍撕裂”的现象，修正 `co5300_panel_wait_te_signal()`：不再依赖时间窗口猜测，改为“实时读取 TE 电平 + 清空陈旧二值信号量 token + 阻塞等待下一次上升沿”，避免伪同步到历史 TE 事件。
+- 2026-04-02：完成 BLE 配网首轮实机闭环：先通过只擦 `nvs` 分区确认设备会在“无凭据”路径进入 NimBLE 配网，再定位并修复 `ble_gap_adv_set_fields()` 因 advertising payload 超过 31 字节导致的 `rc=4 (BLE_HS_EMSGSIZE)`，将完整设备名移到 scan response，实机已看到 `BLE provisioning advertising: ESP32S3-723C`。
+- 2026-04-02：为 BLE 配网补齐微信小程序联调所需的分包兼容层：固件 `ble_provision_transport` 新增 `JSON + 换行` 的 RX 分片重组，同时保留对旧单包 JSON 写入的兼容；并新增对应知识卡，明确微信小程序 `writeBLECharacteristicValue()` 的 20 字节兼容边界与当前处理方式。
+- 2026-04-02：新增微信小程序 BLE 配网交接配置卡，固化 `E:\eps32_ble` 工程入口、UUID/分片协议基线、真机限制，以及“先确认新固件已刷入再排查小程序”的联调顺序。

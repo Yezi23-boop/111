@@ -20,6 +20,24 @@ class BleTransportSourceTests(unittest.TestCase):
         self.assertIn("ble_provision_transport_reset_runtime_state", source)
         self.assertIn("nimble_port_deinit();", source)
 
+    def test_ble_transport_splits_adv_and_scan_response_fields(self) -> None:
+        source = BLE_TRANSPORT_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("ble_gap_adv_rsp_set_fields(&scan_rsp_fields);", source)
+        self.assertIn("scan_rsp_fields.name = (uint8_t *)s_device_name;", source)
+        self.assertNotIn("fields.tx_pwr_lvl_is_present = 1;", source)
+
+    def test_ble_transport_supports_fragmented_rx_frames(self) -> None:
+        source = BLE_TRANSPORT_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("BLE_PROVISION_RX_FRAME_LEN", source)
+        self.assertIn("ble_provision_transport_consume_rx_chunk", source)
+        self.assertIn("memchr(chunk + start, '\\n', chunk_len - start)", source)
+        self.assertIn(
+            "if (s_rx_frame_len == 0 && chunk[0] == '{' && chunk[chunk_len - 1] == '}')",
+            source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

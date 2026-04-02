@@ -1,32 +1,41 @@
 # 上下文包
 
-- 生成时间(UTC): 2026-03-11T10:19:15.722535+00:00
-- 查询: co5300 面板
+- 生成时间(UTC): 2026-04-02T12:02:28.036645+00:00
+- 查询: BLE 配网 network_service AP fallback
 - 范围: mixed
 - 包含导航文档: False
 
 ## 命中文档
 
-1. `docs/context/knowledge/project/repo-overview.md` (score=22)
-   - 标题: 当前仓库概览
-   - 标签: project, architecture, modules, lvgl, audio, wifi, esp32-s3
-   - 摘要: 当前仓库的模块地图、启动链路和构建依赖摘要，便于定位 UI、音频和配网相关改动。
-2. `docs/context/knowledge/project/plan-mode-rules.md` (score=10)
-   - 标题: 计划模式规则
-   - 标签: project, rules, planning, plan-mode, validation
-   - 摘要: 本仓库在上层环境进入计划模式后使用的深度计划规则，约束问题建模、方案比较、验证闭环和回滚设计。
+1. `docs/context/knowledge/project/ble-provisioning-wechat-feasibility.md` (score=76)
+   - 标题: BLE 配网与微信小程序可行性
+   - 标签: project, wifi, provisioning, ble, wechat, esp32-s3
+   - 摘要: 当前仓库新增 BLE 配网时，推荐先走“自定义 BLE GATT 主路径 + 现有 AP 网页兜底 + 先固件后小程序”的最小闭环方案。
+2. `docs/context/knowledge/project/storage-and-provisioning-paths.md` (score=39)
+   - 标题: 存储与配网路径
+   - 标签: project, storage, sd, spiffs, wifi, provisioning, html
+   - 摘要: 当前仓库的存储路径、SD 总线选择和 AP 配网页面嵌入方式摘要。
+3. `docs/context/knowledge/project/display-render-touch-transfer-pipeline.md` (score=31)
+   - 标题: 显示渲染、传输与触摸输入链路
+   - 标签: project, lvgl, display, touch, co5300, ft5x06, qspi, dma, rendering
+   - 摘要: 记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。
 
 ## 可直接粘贴给 Codex 的上下文
 
-### 来源: docs/context/knowledge/project/repo-overview.md
-- 相关分数: 22
-- 关键片段(L19): - `components/co5300_panel`：`CO5300` 面板驱动和 `TE` 同步处理。
-- 摘要: 当前仓库的模块地图、启动链路和构建依赖摘要，便于定位 UI、音频和配网相关改动。
+### 来源: docs/context/knowledge/project/ble-provisioning-wechat-feasibility.md
+- 相关分数: 76
+- 关键片段(L66): 3. 调整 `network_service`，无凭据时默认启动 BLE 配网
+- 摘要: 当前仓库新增 BLE 配网时，推荐先走“自定义 BLE GATT 主路径 + 现有 AP 网页兜底 + 先固件后小程序”的最小闭环方案。
 
-### 来源: docs/context/knowledge/project/plan-mode-rules.md
-- 相关分数: 10
-- 关键片段(L96): - 合格示例：在 `components/lvgl_port/lv_port.c` 中为显示刷新增加等待点统计和超时保护，并在 `components/co5300_panel/co5300_panel.c` 中补 TE 中断观测与失败回退路径。
-- 摘要: 本仓库在上层环境进入计划模式后使用的深度计划规则，约束问题建模、方案比较、验证闭环和回滚设计。
+### 来源: docs/context/knowledge/project/storage-and-provisioning-paths.md
+- 相关分数: 39
+- 关键片段(L34): - `wifi_provision_start_apcfg()` 会启动 AP 和 WebSocket 服务器，把这份 HTML 作为配网页面提供给用户
+- 摘要: 当前仓库的存储路径、SD 总线选择和 AP 配网页面嵌入方式摘要。
+
+### 来源: docs/context/knowledge/project/display-render-touch-transfer-pipeline.md
+- 相关分数: 31
+- 关键片段(L290): - `LVGL` 文档在 `lv_display_set_color_format()` 说明里明确提到：若屏幕是 `RGB565` 且需要交换高低字节，应在 `flush_cb` 中调用 `lv_draw_sw_rgb565_swap()`。
+- 摘要: 记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。
 
 
-> 已打包片段数: 2/2，片段字符预算: 4000
+> 已打包片段数: 3/3，片段字符预算: 4000

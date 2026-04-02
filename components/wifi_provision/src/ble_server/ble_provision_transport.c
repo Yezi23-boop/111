@@ -12,6 +12,7 @@
 #include "store/config/ble_store_config.h"
 
 #define BLE_PROVISION_MAX_JSON_LEN 256
+#define BLE_PROVISION_RX_FRAME_LEN (BLE_PROVISION_MAX_JSON_LEN + 32)
 
 static const char *TAG = "ble_prov";
 void ble_store_config_init(void);
@@ -32,6 +33,8 @@ static uint16_t s_tx_val_handle = 0;
 static char s_device_name[20] = "ESP32S3";
 static char s_last_payload[BLE_PROVISION_MAX_JSON_LEN] =
     "{\"evt\":\"status\",\"state\":\"idle\"}";
+static char s_rx_frame_buffer[BLE_PROVISION_RX_FRAME_LEN] = {0};
+static size_t s_rx_frame_len = 0;
 
 static const ble_uuid128_t s_service_uuid = BLE_UUID128_INIT(
     0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf,
@@ -45,6 +48,76 @@ static const ble_uuid128_t s_tx_uuid = BLE_UUID128_INIT(
 
 static void ble_provision_transport_advertise(void);
 static void ble_provision_transport_reset_runtime_state(void);
+static void ble_provision_transport_reset_rx_frame(void);
+static void ble_provision_transport_consume_rx_chunk(const char *chunk,
+                                                     size_t chunk_len);
+
+static void ble_provision_transport_reset_rx_frame(void) {
+    s_rx_frame_len = 0;
+    s_rx_frame_buffer[0] = '\0';
+}
+
+static void ble_provision_transport_dispatch_rx_payload(const char *payload,
+                                                        size_t payload_len) {
+    char framed_payload[BLE_PROVISION_RX_FRAME_LEN] = {0};
+
+    if (payload == NULL || payload_len == 0 || s_rx_cb == NULL) {
+        return;
+    }
+
+    while (payload_len > 0 &&
+           (payload[payload_len - 1] == '\r' || payload[payload_len - 1] == '\n'
+            || payload[payload_len - 1] == '\0')) {
+        --payload_len;
+    }
+    if (payload_len == 0 || payload_len >= sizeof(framed_payload)) {
+        return;
+    }
+
+    memcpy(framed_payload, payload, payload_len);
+    framed_payload[payload_len] = '\0';
+    s_rx_cb(framed_payload, payload_len, s_user_data);
+}
+
+static void ble_provision_transport_consume_rx_chunk(const char *chunk,
+                                                     size_t chunk_len) {
+    size_t start = 0;
+
+    if (chunk == NULL || chunk_len == 0) {
+        return;
+    }
+
+    if (s_rx_frame_len == 0 && chunk[0] == '{' && chunk[chunk_len - 1] == '}') {
+        ble_provision_transport_dispatch_rx_payload(chunk, chunk_len);
+        return;
+    }
+
+    while (start < chunk_len) {
+        const char *terminator = memchr(chunk + start, '\n', chunk_len - start);
+        size_t part_len = terminator != NULL
+                              ? (size_t)(terminator - (chunk + start)) + 1
+                              : chunk_len - start;
+
+        if (s_rx_frame_len + part_len >= sizeof(s_rx_frame_buffer)) {
+            ESP_LOGW(TAG, "BLE RX frame overflow, drop partial payload");
+            ble_provision_transport_reset_rx_frame();
+            start += part_len;
+            continue;
+        }
+
+        memcpy(s_rx_frame_buffer + s_rx_frame_len, chunk + start, part_len);
+        s_rx_frame_len += part_len;
+        s_rx_frame_buffer[s_rx_frame_len] = '\0';
+
+        if (terminator != NULL) {
+            ble_provision_transport_dispatch_rx_payload(s_rx_frame_buffer,
+                                                        s_rx_frame_len);
+            ble_provision_transport_reset_rx_frame();
+        }
+
+        start += part_len;
+    }
+}
 
 static int ble_provision_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                                    struct ble_gatt_access_ctxt *ctxt,
@@ -74,9 +147,7 @@ static int ble_provision_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
             }
             buffer[copy_len] = '\0';
-            if (s_rx_cb != NULL) {
-                s_rx_cb(buffer, copy_len, s_user_data);
-            }
+            ble_provision_transport_consume_rx_chunk(buffer, copy_len);
             return 0;
         default:
             return BLE_ATT_ERR_UNLIKELY;
@@ -162,6 +233,7 @@ static int ble_provision_gap_event(struct ble_gap_event *event, void *arg) {
 static void ble_provision_transport_advertise(void) {
     struct ble_gap_adv_params adv_params = {0};
     struct ble_hs_adv_fields fields = {0};
+    struct ble_hs_adv_fields scan_rsp_fields = {0};
     int rc = 0;
 
     if (!s_synced || !s_active) {
@@ -173,11 +245,6 @@ static void ble_provision_transport_advertise(void) {
     }
 
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    fields.tx_pwr_lvl_is_present = 1;
-    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-    fields.name = (uint8_t *)s_device_name;
-    fields.name_len = strlen(s_device_name);
-    fields.name_is_complete = 1;
     fields.uuids128 = (ble_uuid128_t *)&s_service_uuid;
     fields.num_uuids128 = 1;
     fields.uuids128_is_complete = 1;
@@ -185,6 +252,16 @@ static void ble_provision_transport_advertise(void) {
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "set adv fields failed, rc=%d", rc);
+        return;
+    }
+
+    scan_rsp_fields.name = (uint8_t *)s_device_name;
+    scan_rsp_fields.name_len = strlen(s_device_name);
+    scan_rsp_fields.name_is_complete = 1;
+
+    rc = ble_gap_adv_rsp_set_fields(&scan_rsp_fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "set scan rsp fields failed, rc=%d", rc);
         return;
     }
 
@@ -234,6 +311,7 @@ static void ble_provision_transport_reset_runtime_state(void) {
     s_rx_cb = NULL;
     s_state_cb = NULL;
     s_user_data = NULL;
+    ble_provision_transport_reset_rx_frame();
 }
 
 bool ble_provision_transport_is_active(void) {
@@ -347,6 +425,7 @@ esp_err_t ble_provision_transport_start(
 esp_err_t ble_provision_transport_stop(void) {
     s_active = false;
     s_notify_enabled = false;
+    ble_provision_transport_reset_rx_frame();
 
     if (s_connected) {
         ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
