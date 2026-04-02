@@ -22,6 +22,7 @@
 
 #define TAG "wifi_prov"
 #define BLE_STATUS_JSON_LEN 256
+#define BLE_NOTIFY_FLUSH_DELAY_MS 600
 #define WIFI_PROVISION_AP_URL "http://192.168.100.1/"
 
 extern const uint8_t apcfg_html_start[] asm("_binary_apcfg_html_start");
@@ -47,8 +48,49 @@ static char ble_service_name[20] = "ESP32S3";
 static wifi_provision_transport_t current_transport =
     WIFI_PROVISION_TRANSPORT_NONE;
 static bool s_provision_task_started = false;
+static TaskHandle_t s_ble_stop_task_handle = NULL;
 
 void ws_receive_handle(const char *data, int len);
+
+static void wifi_provision_cancel_scheduled_ble_stop(void) {
+    if (s_ble_stop_task_handle == NULL) {
+        return;
+    }
+
+    vTaskDelete(s_ble_stop_task_handle);
+    s_ble_stop_task_handle = NULL;
+}
+
+static void wifi_provision_delayed_ble_stop_task(void *arg) {
+    (void)arg;
+
+    vTaskDelay(pdMS_TO_TICKS(BLE_NOTIFY_FLUSH_DELAY_MS));
+    if (current_transport == WIFI_PROVISION_TRANSPORT_NONE && !is_configuring &&
+        ble_provision_transport_is_active()) {
+        ESP_LOGI(TAG, "BLE 终态通知缓冲完成，关闭 BLE 配网");
+        ble_provision_transport_stop();
+    }
+
+    s_ble_stop_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+static void wifi_provision_schedule_ble_stop(void) {
+    BaseType_t task_ret = pdPASS;
+
+    if (s_ble_stop_task_handle != NULL) {
+        return;
+    }
+
+    task_ret = xTaskCreatePinnedToCore(wifi_provision_delayed_ble_stop_task,
+                                       "ble_stop_delay", 2048, NULL, 2,
+                                       &s_ble_stop_task_handle, 1);
+    if (task_ret != pdPASS) {
+        s_ble_stop_task_handle = NULL;
+        ESP_LOGW(TAG, "创建 BLE 延迟停止任务失败，立即关闭 BLE");
+        ble_provision_transport_stop();
+    }
+}
 
 static void send_status_to_web(const char *status, const char *ssid,
                                const char *ip) {
@@ -129,6 +171,7 @@ static void wifi_provision_send_ble_status(const char *state, const char *ssid,
 static esp_err_t wifi_provision_switch_to_ap_fallback(void) {
     esp_err_t ret = ESP_OK;
 
+    wifi_provision_cancel_scheduled_ble_stop();
     if (ble_provision_transport_is_active()) {
         ble_provision_transport_stop();
     }
@@ -278,7 +321,7 @@ static void internal_wifi_cb(WIFI_STATE state) {
                                                NULL, NULL);
                 is_configuring = false;
                 current_transport = WIFI_PROVISION_TRANSPORT_NONE;
-                ble_provision_transport_stop();
+                wifi_provision_schedule_ble_stop();
             } else if (is_configuring) {
                 xEventGroupSetBits(prov_ev_group, PROV_WIFI_SUCCESS_BIT);
             }
@@ -415,6 +458,7 @@ esp_err_t wifi_provision_start_auto(void) {
 }
 
 esp_err_t wifi_provision_start_blecfg(void) {
+    wifi_provision_cancel_scheduled_ble_stop();
     wifi_provision_prepare_ble_service_name();
     current_transport = WIFI_PROVISION_TRANSPORT_BLE;
     is_configuring = false;
@@ -425,6 +469,7 @@ esp_err_t wifi_provision_start_blecfg(void) {
 }
 
 esp_err_t wifi_provision_stop_blecfg(void) {
+    wifi_provision_cancel_scheduled_ble_stop();
     if (current_transport == WIFI_PROVISION_TRANSPORT_BLE && !is_configuring) {
         current_transport = WIFI_PROVISION_TRANSPORT_NONE;
     }

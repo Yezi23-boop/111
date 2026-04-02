@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-04-02：补充 BLE 配网“终态 notify 冲刷窗口”知识卡，并在 `wifi_provision.c` 中记录 `connected` 回包后延迟关闭 BLE transport 的稳定性处理，避免微信小程序漏收最后一条成功通知。
 - 2026-04-02：修复 BLE 配网首轮实现中的 AP 兜底状态闭环、`wifi_provision_init()` 错误传播与 NimBLE 初始化失败回滚，确保无凭据时 BLE 主路径和 AP 兜底路径不会互相抢占并保持可重试。
 - 2026-04-02：新增 BLE 配网与微信小程序方案知识卡，确定“自定义 BLE GATT 主路径 + 现有 AP 网页兜底 + 先固件后小程序”的实施边界与可行性结论。
 - 2026-04-02：按 `D:\xiaozhiai\xiaozhi-esp32` 例程对齐 `official_chat` AI 对话的内部 RAM 配置，将 `audio_input / opus / afe_proc / afe_wake` 相关任务栈及 `lwIP tcpip/udp mailbox` 收敛到参考值，并新增对应知识卡与源码级回归测试。

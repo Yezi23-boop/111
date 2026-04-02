@@ -40,6 +40,13 @@ class WifiProvisionBleSourceTests(unittest.TestCase):
         self.assertIn("if (task_ret != pdPASS)", source)
         self.assertIn("return ESP_FAIL;", source)
 
+    def test_wifi_provision_keeps_ble_alive_briefly_after_connected_status(self) -> None:
+        source = WIFI_PROVISION_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("BLE_NOTIFY_FLUSH_DELAY_MS", source)
+        self.assertIn("wifi_provision_schedule_ble_stop();", source)
+        self.assertIn("wifi_provision_delayed_ble_stop_task", source)
+
 
 if __name__ == "__main__":
     unittest.main()
