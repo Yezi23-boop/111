@@ -31,7 +31,7 @@
 /* ========== 显示控制 ========== */
 
 #define CO5300_PANEL_DEFAULT_BRIGHTNESS 0xFF // 默认亮度 (0x00~0xFF)
-#define CO5300_PANEL_MAX_TRANSFER_LINES 100  // 单次传输最大行数（与 lv_port 128 行 flush chunk 对齐）
+#define CO5300_PANEL_MAX_TRANSFER_LINES 100  // 单次传输最大行数（与 lv_port 100 行 flush chunk 对齐）
 
 /* TE信号配置 */
 #define CO5300_PANEL_USE_TE_SIGNAL 0 // 1=启用TE同步, 0=禁用
@@ -39,7 +39,7 @@
 
 /* ========== 性能优化 ========== */
 
-#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (80 * 1000 * 1000) // CO5300 当前硬件上限 50MHz；以真实上限为准做局部高帧率调优
+#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000) // CO5300 当前硬件上限 50MHz；以真实上限为准做局部高帧率调优
 #define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 8        // 传输队列深度（够用即可，避免过深队列放大抖动）
 
 /* ========== LCD参数 ========== */

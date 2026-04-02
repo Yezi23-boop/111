@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-01T12:36:04.226841+00:00",
+  "generated_at_utc": "2026-04-02T04:35:14.295684+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 34,
+  "doc_count": 38,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-01：为 `official_chat` 增加 `prepare_shutdown` 护栏，退出 AI 时应用层会清除排队任务并忽略 `ActivationDone/ToggleChat/StartListening/WakeWordDetected` 等旧事件，修复 speaking 退出窗口内被旧事件重入、唤醒词任务析构前未停净的问题",
+      "summary": "- 2026-04-02：将 `components/traffic_inference` 的 Edge Impulse 模型从 `manual_v4_3s` 切到用户提供的 `manual_v5`（`v2-cpp-mcu-v5.zip`），确认其 `1s / 16kHz / background-horn-siren` 结构兼容当前运行时代码并已通过 `i",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-01T12:35:52.501023+00:00",
-      "token_count": 1178
+      "mtime_utc": "2026-04-02T04:35:02.891317+00:00",
+      "token_count": 1270
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -213,6 +213,56 @@
       "token_count": 615
     },
     {
+      "path": "docs/context/knowledge/project/audio-horn-like-segment-extraction.md",
+      "title": "喇叭样片段提取脚本",
+      "tags": [
+        "project",
+        "audio",
+        "ffmpeg",
+        "horn",
+        "dataset",
+        "tooling"
+      ],
+      "summary": "使用 ffmpeg 解码并结合短时 RMS 与过零率启发式提取 1 秒喇叭样候选片段的脚本入口与默认输出。",
+      "id": "audio-horn-like-segment-extraction",
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-04-01T15:31:56.017823+00:00",
+      "token_count": 131
+    },
+    {
+      "path": "docs/context/knowledge/project/audio-low-activity-filter-script.md",
+      "title": "低活动音频筛选脚本",
+      "tags": [
+        "project",
+        "audio",
+        "ffmpeg",
+        "dataset",
+        "tooling"
+      ],
+      "summary": "使用 ffmpeg 解码后按静音占比、整体 RMS 和包络起伏系数筛选低活动音频的脚本入口与默认阈值。",
+      "id": "audio-low-activity-filter-script",
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-04-01T15:05:41.719330+00:00",
+      "token_count": 87
+    },
+    {
+      "path": "docs/context/knowledge/project/danger-signal-detection-port.md",
+      "title": "危险信号识别移植",
+      "tags": [
+        "project",
+        "audio",
+        "traffic-inference",
+        "lvgl",
+        "alert",
+        "esp32-s3"
+      ],
+      "summary": "记录危险音频识别移植、option_6 页面生命周期、统一提醒链路和资源释放边界。",
+      "id": "danger-signal-detection-port",
+      "last_reviewed": "2026-04-01",
+      "mtime_utc": "2026-04-01T14:42:19.868194+00:00",
+      "token_count": 222
+    },
+    {
       "path": "docs/context/knowledge/project/display-render-touch-transfer-pipeline.md",
       "title": "显示渲染、传输与触摸输入链路",
       "tags": [
@@ -229,8 +279,8 @@
       "summary": "记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。",
       "id": "display-render-touch-transfer-pipeline",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-01T10:52:25.106100+00:00",
-      "token_count": 1169
+      "mtime_utc": "2026-04-01T12:54:35.786665+00:00",
+      "token_count": 1165
     },
     {
       "path": "docs/context/knowledge/project/display-touch-audio-bus-map.md",
@@ -316,8 +366,8 @@
       "summary": "按时间记录 LVGL 9.3 显示异常排查中的每轮参数修改、实测现象与当前结论，供后续 agent 直接复用，避免重复调参。",
       "id": "lvgl-display-tuning-log",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-01T12:35:52.501023+00:00",
-      "token_count": 1199
+      "mtime_utc": "2026-04-01T12:54:35.785649+00:00",
+      "token_count": 1200
     },
     {
       "path": "docs/context/knowledge/project/nonblocking-boot-network-service.md",
@@ -527,6 +577,22 @@
       "last_reviewed": "2026-03-11",
       "mtime_utc": "2026-03-11T10:19:04.459648+00:00",
       "token_count": 45
+    },
+    {
+      "path": "docs/context/knowledge/project/traffic-inference-edge-impulse-manual-v5-integration.md",
+      "title": "traffic_inference Edge Impulse manual_v5 接入",
+      "tags": [
+        "project",
+        "audio",
+        "traffic-inference",
+        "edge-impulse",
+        "esp32s3"
+      ],
+      "summary": "记录当前仓库将 Edge Impulse `v2-cpp-mcu-v5.zip` 作为 `manual_v5` 接入 `components/traffic_inference` 的最小改动与兼容结论。",
+      "id": "traffic-inference-edge-impulse-manual-v5-integration",
+      "last_reviewed": "2026-04-02",
+      "mtime_utc": "2026-04-02T04:34:53.513934+00:00",
+      "token_count": 215
     },
     {
       "path": "docs/context/knowledge/project/wifi-provision-retry-reasons.md",

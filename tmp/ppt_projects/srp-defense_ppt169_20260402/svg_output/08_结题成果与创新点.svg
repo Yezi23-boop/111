@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <rect x="0" y="0" width="1280" height="70" fill="#1F4E79"/>
+  <rect x="0" y="0" width="6" height="70" fill="#D97A32"/>
+  <text x="40" y="46" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="28" font-weight="bold">07 结题成果与创新点</text>
+  <text x="1220" y="46" text-anchor="end" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="bold">广州城市理工学院</text>
+
+  <rect x="0" y="70" width="1280" height="50" fill="#EAF1FB"/>
+  <rect x="0" y="70" width="6" height="50" fill="#5B8FD9"/>
+  <text x="40" y="102" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">
+    项目已完成阶段性原型建设，并形成面向助残场景的嵌入式系统创新组合。
+  </text>
+
+  <rect x="40" y="145" width="378" height="96" rx="14" fill="#1F4E79"/>
+  <text x="72" y="182" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="21" font-weight="bold">成果 1</text>
+  <text x="72" y="212" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17">完成可运行手表原型与多页面交互底座</text>
+
+  <rect x="451" y="145" width="378" height="96" rx="14" fill="#D97A32"/>
+  <text x="483" y="182" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="21" font-weight="bold">成果 2</text>
+  <text x="483" y="212" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17">完成离线危险声音识别与告警闭环验证</text>
+
+  <rect x="862" y="145" width="378" height="96" rx="14" fill="#5B8FD9"/>
+  <text x="894" y="182" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="21" font-weight="bold">成果 3</text>
+  <text x="894" y="212" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17">接入 AI 对话扩展链路并形成联网底座</text>
+
+  <rect x="40" y="272" width="378" height="352" rx="16" fill="#FFFFFF" stroke="#C9D7E8"/>
+  <text x="72" y="314" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="bold">阶段成果</text>
+  <text x="72" y="352" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">
+    <tspan x="72" dy="0">• 已构建以 ESP32-S3 为核心的</tspan>
+    <tspan x="72" dy="26">  可穿戴交互平台。</tspan>
+    <tspan x="72" dy="30">• 已打通显示、触摸、音频采集/播放、</tspan>
+    <tspan x="72" dy="26">  Wi-Fi 配网与页面级状态反馈。</tspan>
+    <tspan x="72" dy="30">• 已形成可继续扩展的工程底座。</tspan>
+  </text>
+  <rect x="72" y="562" width="138" height="32" rx="16" fill="#EAF1FB"/>
+  <text x="141" y="583" text-anchor="middle" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="bold">原型验证成立</text>
+
+  <rect x="451" y="272" width="378" height="352" rx="16" fill="#FFFFFF" stroke="#C9D7E8"/>
+  <text x="483" y="314" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="bold">创新点</text>
+  <text x="483" y="352" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">
+    <tspan x="483" dy="0">• 端侧 AI 与助残需求相结合，</tspan>
+    <tspan x="483" dy="26">  聚焦高价值危险声音识别。</tspan>
+    <tspan x="483" dy="30">• 把识别结果转化为红屏与提示音，</tspan>
+    <tspan x="483" dy="26">  形成可感知的用户反馈。</tspan>
+    <tspan x="483" dy="30">• 以模块化方式组织系统，便于后续扩展。</tspan>
+  </text>
+  <rect x="483" y="562" width="138" height="32" rx="16" fill="#FDEEDD"/>
+  <text x="552" y="583" text-anchor="middle" fill="#C44F2A" font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="bold">工程创新组合</text>
+
+  <rect x="862" y="272" width="378" height="352" rx="16" fill="#FFFFFF" stroke="#C9D7E8"/>
+  <text x="894" y="314" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="bold">阶段价值</text>
+  <text x="894" y="352" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">
+    <tspan x="894" dy="0">• 为后续引入传感器、BLE 协同、</tspan>
+    <tspan x="894" dy="26">  用户研究与产品化验证提供底座。</tspan>
+    <tspan x="894" dy="30">• 证明团队具备从需求到实现、</tspan>
+    <tspan x="894" dy="26">  再到调试验证的完整工程能力。</tspan>
+    <tspan x="894" dy="30">• 具备继续深化和迭代的现实基础。</tspan>
+  </text>
+  <rect x="894" y="562" width="138" height="32" rx="16" fill="#EAF1FB"/>
+  <text x="963" y="583" text-anchor="middle" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="bold">可持续扩展</text>
+
+  <line x1="40" y1="665" x2="1240" y2="665" stroke="#EAF1FB" stroke-width="1"/>
+  <text x="40" y="695" fill="#8D97A5" font-family="Microsoft YaHei, Arial, sans-serif" font-size="12">数据来源：项目结题报告、仓库实现与上下文资料</text>
+  <text x="640" y="695" text-anchor="middle" fill="#8D97A5" font-family="Microsoft YaHei, Arial, sans-serif" font-size="12">成果总结</text>
+  <text x="1220" y="695" text-anchor="end" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">08</text>
+</svg>

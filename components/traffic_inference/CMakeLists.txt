@@ -1,5 +1,5 @@
 set(EDGE_IMPULSE_MODEL_DIR
-    "${CMAKE_CURRENT_LIST_DIR}/edge_impulse/manual_v4_3s")
+    "${CMAKE_CURRENT_LIST_DIR}/edge_impulse/manual_v5")
 set(EDGE_IMPULSE_SDK_DIR
     "${EDGE_IMPULSE_MODEL_DIR}/edge-impulse-sdk")
 set(EDGE_IMPULSE_PORTING_ESPRESSIF_DIR

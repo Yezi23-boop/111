@@ -1,0 +1,145 @@
+# 运行契约版本。当前 phase 1 固定为 1。
+[meta]
+spec_version = 1
+# 本次运行的名字，只用于区分和记录。
+run_name = "edge-3class-upload-20260402"
+
+[project]
+# Edge Impulse 项目 ID，必须和 API 配置里的 project_id 一致。
+edge_impulse_project_id = 942602
+# 给人看的项目名说明，不参与远端鉴权。
+project_name = "v2"
+# Edge Impulse API 配置文件路径，里面要有 api_key / project_id / api_host / ingestion_host。
+api_config_path = 'C:\\Users\\ye\\.config\\edge-impulse\\config.toml'
+# 本地状态缓存文件路径，只作缓存，不是执行权威来源。
+local_state_path = 'C:\\Users\\ye\\Desktop\\idf-EDGE_lmpulse\\scripts\\edge_impulse\\.state\\semi_automatic.json'
+
+[dataset]
+# 本地数据集根目录。
+local_root = 'C:\\Users\\ye\\Desktop\\stdio\\edge_phase1_upload'
+# 期望出现的标签名，用来校验目录结构。
+expected_labels = ["background", "horn", "siren"]
+# 期望出现的 split，用来校验目录结构。
+expected_splits = ["train", "test"]
+
+[dataset.split_mapping]
+# phase 1 固定要求 train -> training。
+train = "training"
+# phase 1 固定要求 test -> testing。
+test = "testing"
+
+[upload.proposed]
+# agent 建议的是否允许重复上传相同样本。
+allow_duplicates = false
+# agent 建议的每批上传文件数。
+batch_size = 8
+
+[upload.approved]
+# 真正执行上传时是否允许重复样本。
+allow_duplicates = false
+# 真正执行上传时的每批文件数。
+batch_size = 8
+
+[training.proposed]
+# 输入窗口时长，单位毫秒。
+window_ms = 1000
+# 窗口步长，单位毫秒。
+stride_ms = 500
+# 音频采样率，单位 Hz。
+frequency_hz = 16000
+# 单次训练的 cycles / epochs 上限。
+training_cycles = 200
+# 学习率。
+learning_rate = 0.005
+# 训练 batch size。
+batch_size = 32
+# 是否启用 augmentation 总开关。
+augmentation_enabled = false
+# 谱图高斯噪声强度。
+augmentation_gaussian_noise = "high"
+# 时间遮挡强度。
+augmentation_time_masking = "low"
+# 频率遮挡强度。
+augmentation_freq_masking = "none"
+# 是否启用 warping。
+augmentation_warping = false
+# 是否自动做类别权重平衡。
+auto_class_weights = true
+# 是否启用 learned optimizer。
+use_learned_optimizer = false
+# 训练处理器，例如 "CPU" 或 "GPU"。
+training_processor = "CPU"
+
+[training.approved]
+# 真正要在网页里核对并执行的窗口时长，单位毫秒。
+window_ms = 1000
+# 真正要在网页里核对并执行的窗口步长，单位毫秒。
+stride_ms = 500
+# 真正要在网页里核对并执行的采样率，单位 Hz。
+frequency_hz = 16000
+# 真正批准的训练 cycles / epochs。
+training_cycles = 200
+# 真正批准的学习率。
+learning_rate = 0.005
+# 真正批准的训练 batch size。
+batch_size = 32
+# 真正批准的 augmentation 总开关。
+augmentation_enabled = false
+# 真正批准的谱图高斯噪声强度。
+augmentation_gaussian_noise = "high"
+# 真正批准的时间遮挡强度。
+augmentation_time_masking = "low"
+# 真正批准的频率遮挡强度。
+augmentation_freq_masking = "none"
+# 真正批准的 warping 开关。
+augmentation_warping = false
+# 真正批准的自动类别权重开关。
+auto_class_weights = true
+# 真正批准的 learned optimizer 开关。
+use_learned_optimizer = false
+# 真正批准的训练处理器，例如 "CPU" 或 "GPU"。
+training_processor = "CPU"
+
+[artifact.proposed]
+# 期望导出的目标类型，例如 C++ library。
+target_name = "C++ library"
+# 导出引擎，例如 tflite-eon。
+engine = "tflite-eon"
+# 模型类型，例如 int8。
+model_type = "int8"
+# agent 建议的下载目录，zip 会先落到这里。
+download_dir = 'C:\\Users\\ye\\Desktop\\idf-EDGE_lmpulse\\artifacts\\edge-impulse'
+# agent 建议的解压目录。
+extract_dir = 'C:\\Users\\ye\\Desktop\\idf-EDGE_lmpulse\\components\\traffic_inference\\edge_impulse\\manual_v5'
+# 给这次导出起的本地标签说明。
+version_tag = "v5"
+
+[artifact.approved]
+# 真正批准的导出目标类型。
+target_name = "C++ library"
+# 真正批准的导出引擎。
+engine = "tflite-eon"
+# 真正批准的模型类型。
+model_type = "int8"
+# 真正下载 zip 的目录。
+download_dir = 'C:\\Users\\ye\\Desktop\\idf-EDGE_lmpulse\\artifacts\\edge-impulse'
+# 真正解压导出包的目录。
+extract_dir = 'C:\\Users\\ye\\Desktop\\idf-EDGE_lmpulse\\components\\traffic_inference\\edge_impulse\\manual_v5'
+# 本地版本标签说明。
+version_tag = "v5"
+
+[artifact.approved.remote_selector]
+# 远端导出包选取方式。可选：deployment_version / deployment_history_selector / remote_label。
+type = "deployment_history_selector"
+# 当 type=deployment_history_selector 时，phase 1 固定使用这个值。
+selector = "latest_successful_after_training_confirmation"
+# 从哪个 deployment version 之后开始找“更新的”导出包。
+baseline_deployment_version = 1
+
+[workflow]
+# 是否要求每次真实上传前都再次确认。
+require_upload_confirmation = true
+# phase 1 固定用 web-manual，表示训练在网页里手动发起。
+training_mode = "web-manual"
+# 训练完成后是否允许本地拉取导出包。
+post_train_fetch_enabled = true

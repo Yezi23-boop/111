@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#FFFFFF" />
+  <rect x="0" y="0" width="1280" height="70" fill="#1F4E79" />
+  <rect x="0" y="0" width="6" height="70" fill="#D97A32" />
+  <text x="40" y="46" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="28" font-weight="bold">02 项目目标与总体方案</text>
+  <text x="1220" y="46" text-anchor="end" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="bold">广州城市理工学院</text>
+
+  <rect x="0" y="70" width="1280" height="50" fill="#EAF1FB" />
+  <rect x="0" y="70" width="6" height="50" fill="#5B8FD9" />
+  <text x="40" y="102" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">
+    结题阶段的核心不是“把所有设想一次做完”，而是先打通最关键的技术闭环。
+  </text>
+
+  <rect x="40" y="145" width="580" height="178" rx="14" fill="#F8FBFF" stroke="#C9D7E8" />
+  <text x="72" y="186" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="bold">立项目标</text>
+  <text font-size="18" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" x="72" y="224">• 面向智能手表形态，探索时间显示、环境声音识别、</text><text font-size="18" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" x="72" y="251">  人机交互、联网服务和后续手机协同的综合方案。</text><text font-size="18" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" x="72" y="278">• 形成兼具助残应用价值和嵌入式工程训练意义的样机。</text><rect x="660" y="145" width="580" height="178" rx="14" fill="#1F4E79" />
+  <text x="692" y="186" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="bold">阶段性取舍</text>
+  <text font-size="18" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" x="692" y="224">• 优先完成嵌入式交互底座、危险声音离线识别、联网 AI 扩展。</text><text font-size="18" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" x="692" y="251">• 心率、BLE/手机联动、长期低功耗优化保留到下一阶段。</text><text font-size="18" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" x="692" y="278">• 当前成果定位为“原型样机 + 核心能力验证 + 技术底座建设”。</text><text x="40" y="372" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="bold">总体方案三条主线</text>
+
+  <rect x="40" y="396" width="378" height="224" rx="14" fill="#FFFFFF" stroke="#C9D7E8" />
+  <rect x="40" y="396" width="378" height="12" rx="6" fill="#1F4E79" />
+  <text x="72" y="444" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="bold">嵌入式交互底座</text>
+  <text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="72" y="478">• 基于 ESP32-S3 + ESP-IDF 搭建主控系统</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="72" y="502">• LVGL 完成显示、触摸和多页面交互</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="72" y="526">• 提供可持续扩展的 UI 与任务骨架</text><rect x="72" y="564" width="130" height="30" rx="15" fill="#EAF1FB" />
+  <text x="137" y="584" text-anchor="middle" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="bold">系统可用性基础</text>
+
+  <rect x="451" y="396" width="378" height="224" rx="14" fill="#FFFFFF" stroke="#C9D7E8" />
+  <rect x="451" y="396" width="378" height="12" rx="6" fill="#D97A32" />
+  <text x="483" y="444" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="bold">离线危险识别</text>
+  <text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="483" y="478">• 端侧部署危险声音分类模型</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="483" y="502">• 打通采集、推理、后处理、告警输出链路</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="483" y="526">• 优先聚焦喇叭、警笛等高价值场景</text><rect x="483" y="564" width="130" height="30" rx="15" fill="#FDEEDD" />
+  <text x="548" y="584" text-anchor="middle" fill="#C44F2A" font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="bold">核心亮点模块</text>
+
+  <rect x="862" y="396" width="378" height="224" rx="14" fill="#FFFFFF" stroke="#C9D7E8" />
+  <rect x="862" y="396" width="378" height="12" rx="6" fill="#5B8FD9" />
+  <text x="894" y="444" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="bold">联网 AI 扩展</text>
+  <text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="894" y="478">• 复用配网链路与后台网络状态管理</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="894" y="502">• 接入 official_chat 对话能力底座</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="894" y="526">• 为后续助残交互与服务扩展预留空间</text><rect x="894" y="564" width="130" height="30" rx="15" fill="#EAF1FB" />
+  <text x="959" y="584" text-anchor="middle" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="bold">后续扩展入口</text>
+
+  <line x1="40" y1="665" x2="1240" y2="665" stroke="#EAF1FB" stroke-width="1" />
+  <text x="40" y="695" fill="#8D97A5" font-family="Microsoft YaHei, Arial, sans-serif" font-size="12">数据来源：SRP 立项申请表、项目结题报告</text>
+  <text x="640" y="695" text-anchor="middle" fill="#8D97A5" font-family="Microsoft YaHei, Arial, sans-serif" font-size="12">总体方案</text>
+  <text x="1220" y="695" text-anchor="end" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">03</text>
+</svg>

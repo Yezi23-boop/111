@@ -223,15 +223,15 @@ last_reviewed: 2026-04-01
 - `components/lvgl_port/lv_port_config.h`
   - `LV_PORT_FIXED_CHUNK_LINES1 = 512`
   - `LV_PORT_FIXED_CHUNK_LINES2 = 512`
-  - `LV_PORT_FIXED_CHUNK_LINES = 128`
+  - `LV_PORT_FIXED_CHUNK_LINES = 100`
   - `LV_PORT_CHUNKED_TRANSFER_ENABLE = 1`
   - `LV_PORT_MAX_INFLIGHT_CHUNKS = 2`
 - `components/co5300_panel/co5300_panel_defaults.h`
-  - `CO5300_PANEL_MAX_TRANSFER_LINES = 128`
+  - `CO5300_PANEL_MAX_TRANSFER_LINES = 100`
   - `CO5300_PANEL_OPTIMIZED_PCLK_HZ = 50MHz`
 - 这意味着：
   - LVGL render tile 已接近整屏，优先减少滑动画面的 tile 分片感
-  - 面板 flush 仍按 `128` 行发送，全屏约 `4` 块，优先减少块管理开销
+  - 面板 flush 仍按 `100` 行发送，全屏约 `6` 块，优先减少块管理开销
   - 当前最值得优化的是“主观顺滑度和局部交互 FPS”，而不是继续用错误的 80MHz 前提追全屏 60 帧
 
 ## 50MHz 上限下的推荐起点
@@ -240,12 +240,12 @@ last_reviewed: 2026-04-01
   - `CONFIG_LV_DEF_REFR_PERIOD = 16`
   - `LV_PORT_FIXED_CHUNK_LINES1 = 512`
   - `LV_PORT_FIXED_CHUNK_LINES2 = 512`
-  - `LV_PORT_FIXED_CHUNK_LINES = 128`
+  - `LV_PORT_FIXED_CHUNK_LINES = 100`
   - `LV_PORT_MAX_INFLIGHT_CHUNKS = 2`
-  - `CO5300_PANEL_MAX_TRANSFER_LINES = 128`
+  - `CO5300_PANEL_MAX_TRANSFER_LINES = 100`
   - `CO5300_PANEL_OPTIMIZED_PCLK_HZ = 50MHz`
 - 这组的意义是：
-  - 把单帧 flush 块数压到约 `4` 块
+  - 把单帧 flush 块数压到约 `6` 块
   - 用 `512` 行 render tile 优先减轻“滑动画面有切割感”
   - 明确以真实 `50MHz` 上限做调优，避免建立在错误硬件假设上的虚高目标
 - 失效边界：
@@ -300,7 +300,7 @@ last_reviewed: 2026-04-01
   - 更大的 render tile 可能重新放大局部刷新面积
   - 真机上仍需观察是否带回撕裂、条纹或圆角异常
 
-### 15. 按真实硬件上限收敛：`PCLK = 50MHz`，flush chunk 提到 `128`
+### 15. 按真实硬件上限收敛：`PCLK = 50MHz`，flush/max transfer 保持 `100`
 
 - 触发原因：
   - 用户确认：`CO5300` 当前最高 `PCLK = 50MHz`
@@ -309,10 +309,10 @@ last_reviewed: 2026-04-01
   - `components/lvgl_port/lv_port_config.h`
     - `LV_PORT_FIXED_CHUNK_LINES1 = 512`
     - `LV_PORT_FIXED_CHUNK_LINES2 = 512`
-    - `LV_PORT_FIXED_CHUNK_LINES = 128`
+    - `LV_PORT_FIXED_CHUNK_LINES = 100`
     - `LV_PORT_MAX_INFLIGHT_CHUNKS = 2`
   - `components/co5300_panel/co5300_panel_defaults.h`
-    - `CO5300_PANEL_MAX_TRANSFER_LINES = 128`
+    - `CO5300_PANEL_MAX_TRANSFER_LINES = 100`
     - `CO5300_PANEL_OPTIMIZED_PCLK_HZ = 50MHz`
     - `CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH = 8`
   - `sdkconfig`

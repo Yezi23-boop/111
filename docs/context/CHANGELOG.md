@@ -1,5 +1,10 @@
 # 上下文库变更记录
 
+- 2026-04-02：将 `components/traffic_inference` 的 Edge Impulse 模型从 `manual_v4_3s` 切到用户提供的 `manual_v5`（`v2-cpp-mcu-v5.zip`），确认其 `1s / 16kHz / background-horn-siren` 结构兼容当前运行时代码并已通过 `idf.py build`。
+- 2026-04-01：新增基于 `ffmpeg + 短时 RMS/ZCR` 的喇叭样 1 秒片段提取脚本与测试，固化 `scripts/extract_horn_like_segments.py` 的默认参数、输出目录和调参入口。
+- 2026-04-01：新增基于 `ffmpeg` 的低活动音频筛选脚本与测试，固化 `scripts/analyze_low_activity_audio.py` 的默认阈值、输出物和适用边界。
+- 2026-04-01：新增危险信号识别移植知识卡，固化 `option_6` 入口、`traffic_inference -> danger_detection_service -> app_alert_manager` 提醒链路，以及单 `lvgl_task` 线程下的危险覆盖层处理边界。
+- 2026-04-01：将危险信号识别提示音 `tishiyinpin_pcm.h` 从 `16kHz` 离线重采样为 `24kHz mono PCM`，对齐当前板级音频输出配置。
 - 2026-04-01：为 `official_chat` 增加 `prepare_shutdown` 护栏，退出 AI 时应用层会清除排队任务并忽略 `ActivationDone/ToggleChat/StartListening/WakeWordDetected` 等旧事件，修复 speaking 退出窗口内被旧事件重入、唤醒词任务析构前未停净的问题。
 - 2026-04-01：新增显示渲染、CO5300 QSPI 传输与 FT5x06 触摸输入链路知识卡，固化 `LVGL 9.3` 升级后圆角异常、绿色条纹与 `spi_master: Failed to allocate priv TX buffer` 的联合排查结论。
 - 2026-04-01：修复正式 AI 页“service 已停完但页面没返回主页”的异步退出判定问题；AI 页本地锁存 `exit requested`，不再要求 `shutdown_pending` 与 `STOPPED` 同时成立，只要 service 到 `STOPPED` 就完成离页。
@@ -64,4 +69,5 @@
 - 2026-04-01：补充 LVGL/CO5300 `60 FPS` 预算结论，明确当前 `40MHz + 30 行二次切块 + LVGL 40ms 刷新周期` 无法支撑全屏 60 FPS，并给出对齐 `refr period / tile / max transfer / pclk` 的推荐起点。
 - 2026-04-01：将显示链路切到 `60FPS` 尝试档：`LVGL tile/flush = 100 行`、`CO5300 max transfer = 100 行`、`QSPI PCLK = 80MHz`、`LVGL refr period = 16ms`、`circle/shadow cache = 4`，并完成 `fullclean + build` 验证。
 - 2026-04-01：根据“滑动画面有切割感”的反馈，将 `LV_PORT_FIXED_CHUNK_LINES1/2` 从 `100` 提到 `512`，保持 flush 仍按 `100` 行发送，以优先减轻滚动过程中的 tile 分片感；已完成源码测试与构建验证。
-- 2026-04-01：按用户确认的 `CO5300 PCLK 最高 50MHz` 收回此前错误的 `80MHz` 假设，当前显示链路改为 `LVGL tile=512 / flush=max transfer=128 / PCLK=50MHz / refr period=16ms`，并把提帧目标收敛为“局部交互高帧率 + 主观顺滑”。
+- 2026-04-01：按用户确认的 `CO5300 PCLK 最高 50MHz` 收回此前错误的 `80MHz` 假设，当前显示链路改为 `LVGL tile=512 / flush=max transfer=100 / PCLK=50MHz / refr period=16ms`，并把提帧目标收敛为“局部交互高帧率 + 主观顺滑”。
+- 2026-04-01：将 `components/lvgl_port` 做无行为变化的模块清理：`lv_port.c` 只保留公共状态与总入口，显示/输入/tick 拆到独立实现文件，并删除未使用的 `lv_port_flush_area_chunked_simple()` 历史残留。

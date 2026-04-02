@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#FFFFFF" />
+  <rect x="0" y="0" width="1280" height="70" fill="#1F4E79" />
+  <rect x="0" y="0" width="6" height="70" fill="#D97A32" />
+  <text x="40" y="46" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="28" font-weight="bold">04 离线模型识别危险信号</text>
+  <text x="1220" y="46" text-anchor="end" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="bold">广州城市理工学院</text>
+
+  <rect x="0" y="70" width="1280" height="50" fill="#EAF1FB" />
+  <rect x="0" y="70" width="6" height="50" fill="#D97A32" />
+  <text x="40" y="102" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">
+    识别链路部署在端侧，本地即可完成危险声音感知与提醒，不依赖云端实时返回。
+  </text>
+
+  <rect x="40" y="145" width="650" height="495" rx="14" fill="#F8FBFF" stroke="#C9D7E8" />
+  <text x="72" y="186" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="bold">离线识别流程图</text>
+
+  <rect x="72" y="226" width="146" height="74" rx="12" fill="#FFFFFF" stroke="#5B8FD9" stroke-width="2" />
+  <text x="145" y="255" text-anchor="middle" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" font-weight="bold">音频采集</text>
+  <text x="145" y="279" text-anchor="middle" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">麦克风输入</text>
+
+  <rect x="270" y="226" width="146" height="74" rx="12" fill="#FFFFFF" stroke="#5B8FD9" stroke-width="2" />
+  <text x="343" y="255" text-anchor="middle" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" font-weight="bold">通道抽取</text>
+  <text x="343" y="279" text-anchor="middle" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">主麦声道</text>
+
+  <rect x="468" y="226" width="146" height="74" rx="12" fill="#FFFFFF" stroke="#5B8FD9" stroke-width="2" />
+  <text x="541" y="255" text-anchor="middle" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" font-weight="bold">重采样</text>
+  <text x="541" y="279" text-anchor="middle" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">24kHz → 16kHz</text>
+
+  <line x1="218" y1="263" x2="270" y2="263" stroke="#5B8FD9" stroke-width="3" />
+  <polygon points="270,263 258,257 258,269" fill="#5B8FD9" />
+  <line x1="416" y1="263" x2="468" y2="263" stroke="#5B8FD9" stroke-width="3" />
+  <polygon points="468,263 456,257 456,269" fill="#5B8FD9" />
+
+  <rect x="171" y="360" width="146" height="74" rx="12" fill="#FFFFFF" stroke="#D97A32" stroke-width="2" />
+  <text x="244" y="389" text-anchor="middle" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" font-weight="bold">滑窗推理</text>
+  <text x="244" y="413" text-anchor="middle" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">3 秒窗口</text>
+
+  <rect x="369" y="360" width="146" height="74" rx="12" fill="#FFFFFF" stroke="#D97A32" stroke-width="2" />
+  <text x="442" y="389" text-anchor="middle" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" font-weight="bold">后处理</text>
+  <text x="442" y="413" text-anchor="middle" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">阈值与状态判定</text>
+
+  <rect x="567" y="360" width="91" height="74" rx="12" fill="#D97A32" />
+  <text x="612" y="389" text-anchor="middle" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="bold">告警</text>
+  <text x="612" y="413" text-anchor="middle" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">红屏 + 提示音</text>
+
+  <line x1="244" y1="300" x2="244" y2="360" stroke="#D97A32" stroke-width="3" />
+  <polygon points="244,360 238,348 250,348" fill="#D97A32" />
+  <line x1="317" y1="397" x2="369" y2="397" stroke="#D97A32" stroke-width="3" />
+  <polygon points="369,397 357,391 357,403" fill="#D97A32" />
+  <line x1="515" y1="397" x2="567" y2="397" stroke="#D97A32" stroke-width="3" />
+  <polygon points="567,397 555,391 555,403" fill="#D97A32" />
+
+  <rect x="72" y="478" width="586" height="128" rx="12" fill="#FFFFFF" stroke="#D7E3F1" />
+  <text x="100" y="512" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="bold">为什么要强调离线</text>
+  <text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="100" y="544">• 危险声音提醒必须具备及时性，不能依赖网络往返。</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="100" y="568">• 无网或弱网环境下，手表仍需保留最基本的安全感知能力。</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="100" y="592">• 端侧识别更符合可穿戴设备的独立运行需求。</text><rect x="720" y="145" width="520" height="495" rx="14" fill="#FFFFFF" stroke="#C9D7E8" />
+  <text x="752" y="186" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="bold">当前识别结果与验证</text>
+
+  <rect x="752" y="216" width="140" height="42" rx="21" fill="#EAF1FB" />
+  <text x="822" y="243" text-anchor="middle" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" font-weight="bold">喇叭</text>
+  <rect x="910" y="216" width="140" height="42" rx="21" fill="#EAF1FB" />
+  <text x="980" y="243" text-anchor="middle" fill="#1F4E79" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" font-weight="bold">警笛</text>
+  <rect x="1068" y="216" width="140" height="42" rx="21" fill="#FDEEDD" />
+  <text x="1138" y="243" text-anchor="middle" fill="#C44F2A" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" font-weight="bold">背景音</text>
+
+  <rect x="752" y="290" width="456" height="112" rx="12" fill="#F8FBFF" stroke="#D7E3F1" />
+  <text x="784" y="324" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" font-weight="bold">当前模型配置</text>
+  <text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="784" y="354">• 音频窗口长度：3 秒</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="784" y="378">• 推理采样率：16kHz</text><text font-size="17" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="784" y="402">• 推理结果通过服务层映射为统一危险状态</text><rect x="752" y="422" width="456" height="96" rx="12" fill="#1F4E79" />
+  <text x="784" y="456" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" font-weight="bold">真机级别验证表现</text>
+  <text font-size="17" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" x="784" y="486">识别页面启动后，喇叭和警笛均可触发后处理告警，</text><text font-size="17" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif" x="784" y="510">系统同步切换红屏提示并播放提示音。</text><rect x="752" y="538" width="456" height="82" rx="12" fill="#FFF8F2" stroke="#F1C7A8" />
+  <text x="784" y="570" fill="#233142" font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" font-weight="bold">结题阶段结论</text>
+  <text font-size="16" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="784" y="592">离线危险声音识别已经从“模型可运行”推进到</text><text font-size="16" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" x="784" y="614">“可在手表中触发提醒闭环”的阶段。</text><line x1="40" y1="665" x2="1240" y2="665" stroke="#EAF1FB" stroke-width="1" />
+  <text x="40" y="695" fill="#8D97A5" font-family="Microsoft YaHei, Arial, sans-serif" font-size="12">数据来源：traffic_inference 组件、danger_detection_service、结题报告</text>
+  <text x="640" y="695" text-anchor="middle" fill="#8D97A5" font-family="Microsoft YaHei, Arial, sans-serif" font-size="12">核心亮点</text>
+  <text x="1220" y="695" text-anchor="end" fill="#5B6572" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">05</text>
+</svg>

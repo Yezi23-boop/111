@@ -110,18 +110,16 @@ last_reviewed: 2026-04-01
 - `components/co5300_panel/co5300_panel_defaults.h`
   - 分辨率：`410x502`
   - `CO5300_PANEL_OPTIMIZED_PCLK_HZ = 50MHz`
-  - `CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH = 32`
-  - `CO5300_PANEL_MAX_TRANSFER_LINES = 30`
+  - `CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH = 8`
+  - `CO5300_PANEL_MAX_TRANSFER_LINES = 100`
   - `CO5300_PANEL_USE_TE_SIGNAL = 0`
 
 ### 3. `lv_port` 到面板的 flush 路径
 
 - `lv_port_disp_flush()`
   - 根据区域高度选择整块传输或分块传输
-- `lv_port_flush_area_chunked_simple()`
-  - 把一个 `area` 切成多个高度固定的 chunk
 - `lv_port_flush_area_with_sync()`
-  - 对当前 chunk 执行 `lv_draw_sw_rgb565_swap()`
+  - 对当前 chunk 准备 bounce buffer，并在需要时执行 `lv_draw_sw_rgb565_swap()`
   - 然后调用 `esp_lcd_panel_draw_bitmap()`
 
 ### 4. 当前字节序处理
