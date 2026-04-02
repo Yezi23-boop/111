@@ -18,11 +18,17 @@ static const char *TAG = "HARDWARE_INIT";
 #define BUTTON_GPIO_NUM GPIO_NUM_10
 static void button_press_down_cb(void *arg, void *data)
 {
+    esp_err_t ret = ESP_OK;
+
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "按键单击！启动AP配网模式...");
     ESP_LOGI(TAG, "========================================");
 
-    wifi_provision_start_apcfg();
+    ret = wifi_provision_start_apcfg();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "启动AP配网失败: %s", esp_err_to_name(ret));
+    }
 }
 
 static void button_long_press_start_cb(void *arg, void *data)
@@ -167,7 +173,12 @@ esp_err_t hardware_init(void)
     // 6. WiFi初始化
     ESP_LOGI(TAG, "Initializing WiFi...");
     button_init();
-    wifi_provision_init(wifi_provision_cb);
+    ret = wifi_provision_init(wifi_provision_cb);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "WiFi provision init failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
     ESP_LOGI(TAG, "Hardware init complete: background network startup required");
     return ESP_OK;
 }

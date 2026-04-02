@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-02T06:46:51.839203+00:00",
+  "generated_at_utc": "2026-04-02T10:18:52.683591+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 39,
+  "doc_count": 40,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-02：按 `D:\\xiaozhiai\\xiaozhi-esp32` 例程对齐 `official_chat` AI 对话的内部 RAM 配置，将 `audio_input / opus / afe_proc / afe_wake` 相关任务栈及 `lwIP tcpip/udp mailbox` 收敛到参考值，并新增对应知识卡与源码级回归测",
+      "summary": "- 2026-04-02：修复 BLE 配网首轮实现中的 AP 兜底状态闭环、`wifi_provision_init()` 错误传播与 NimBLE 初始化失败回滚，确保无凭据时 BLE 主路径和 AP 兜底路径不会互相抢占并保持可重试。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-02T06:46:19.925493+00:00",
-      "token_count": 1427
+      "mtime_utc": "2026-04-02T10:18:48.550664+00:00",
+      "token_count": 1458
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -244,6 +244,23 @@
       "last_reviewed": "2026-04-01",
       "mtime_utc": "2026-04-01T15:05:41.719330+00:00",
       "token_count": 87
+    },
+    {
+      "path": "docs/context/knowledge/project/ble-provisioning-wechat-feasibility.md",
+      "title": "BLE 配网与微信小程序可行性",
+      "tags": [
+        "project",
+        "wifi",
+        "provisioning",
+        "ble",
+        "wechat",
+        "esp32-s3"
+      ],
+      "summary": "当前仓库新增 BLE 配网时，推荐先走“自定义 BLE GATT 主路径 + 现有 AP 网页兜底 + 先固件后小程序”的最小闭环方案。",
+      "id": "ble-provisioning-wechat-feasibility",
+      "last_reviewed": "2026-04-02",
+      "mtime_utc": "2026-04-02T09:05:09.746010+00:00",
+      "token_count": 204
     },
     {
       "path": "docs/context/knowledge/project/danger-signal-detection-port.md",

@@ -28,7 +28,7 @@ static esp_err_t ai_chat_nvs_init(void) {
 void app_main(void) {
     ESP_ERROR_CHECK(ai_chat_nvs_init());
 
-    wifi_provision_init(NULL);
+    ESP_ERROR_CHECK(wifi_provision_init(NULL));
     ESP_ERROR_CHECK(network_service_start());
     ESP_ERROR_CHECK(audio_codec_init());
     audio_codec_set_volume(60);

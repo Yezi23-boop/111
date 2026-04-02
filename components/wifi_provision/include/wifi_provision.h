@@ -29,7 +29,7 @@ typedef void (*wifi_provision_cb_t)(wifi_provision_state_t state);
  *
  * @param callback Wi-Fi 状态变化回调
  */
-void wifi_provision_init(wifi_provision_cb_t callback);
+esp_err_t wifi_provision_init(wifi_provision_cb_t callback);
 
 /**
  * @brief 根据本地凭据状态自动启动 Wi-Fi
@@ -40,9 +40,38 @@ void wifi_provision_init(wifi_provision_cb_t callback);
 esp_err_t wifi_provision_start_auto(void);
 
 /**
+ * @brief 启动 BLE 配网广播
+ */
+esp_err_t wifi_provision_start_blecfg(void);
+
+/**
+ * @brief 停止 BLE 配网广播
+ */
+esp_err_t wifi_provision_stop_blecfg(void);
+
+/**
  * @brief 启动 AP 配网模式
  */
-void wifi_provision_start_apcfg(void);
+esp_err_t wifi_provision_start_apcfg(void);
+
+/**
+ * @brief 当前 BLE 配网是否处于活动状态
+ */
+bool wifi_provision_is_ble_active(void);
+
+/**
+ * @brief 当前 AP 网页配网是否处于活动状态
+ */
+bool wifi_provision_is_ap_active(void);
+
+/**
+ * @brief 获取 BLE 配网广播名称
+ *
+ * @param service_name 输出缓冲区
+ * @param service_name_len 输出缓冲区长度
+ */
+esp_err_t wifi_provision_get_ble_service_name(char *service_name,
+                                              size_t service_name_len);
 
 /**
  * @brief 当前是否已连接 STA

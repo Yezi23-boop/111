@@ -1,0 +1,36 @@
+import pathlib
+import unittest
+
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+NETWORK_SERVICE_HEADER = REPO_ROOT / "main" / "network_service.h"
+NETWORK_SERVICE_SOURCE = REPO_ROOT / "main" / "network_service.c"
+
+
+class NetworkServiceBleSourceTests(unittest.TestCase):
+    def test_network_service_prefers_ble_when_no_credentials(self) -> None:
+        header = NETWORK_SERVICE_HEADER.read_text(encoding="utf-8")
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("NETWORK_SERVICE_STATE_BLE_PROVISIONING", header)
+        self.assertIn("wifi_provision_start_blecfg()", source)
+        self.assertIn("wifi_provision_start_auto()", source)
+        self.assertIn("network_service_request_portal", source)
+
+    def test_network_service_falls_back_to_portal_when_ble_bootstrap_fails(
+        self,
+    ) -> None:
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("wifi_provision_start_apcfg();", source)
+        self.assertIn("NETWORK_SERVICE_STATE_PORTAL_REQUIRED", source)
+
+    def test_network_service_keeps_portal_state_when_ap_is_active(self) -> None:
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("wifi_provision_is_ap_active()", source)
+        self.assertIn("s_portal_requested = true;", source)
+
+
+if __name__ == "__main__":
+    unittest.main()

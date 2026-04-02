@@ -1,5 +1,7 @@
 idf_component_register(
     SRCS 
+        "src/ble_server/ble_provision_protocol.c"
+        "src/ble_server/ble_provision_transport.c"
         "src/wifi_provision.c"
         "src/wifi_driver/wifi_manager.c"
         "src/web_server/ws_server.c"
@@ -14,6 +16,7 @@ idf_component_register(
         esp_netif
         esp_http_server
         nvs_flash
+        bt
         json
         lwip
     EMBED_TXTFILES 

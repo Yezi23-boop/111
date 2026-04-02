@@ -16,6 +16,21 @@ static TaskHandle_t s_network_task_handle = NULL;
 static volatile network_service_state_t s_network_state =
     NETWORK_SERVICE_STATE_OFFLINE;
 static char s_network_ip[16] = {0};
+static bool s_portal_requested = false;
+
+static void network_service_enter_portal_required_state(void) {
+    esp_err_t ret = wifi_provision_start_apcfg();
+
+    s_network_ip[0] = '\0';
+    if (ret == ESP_OK) {
+        s_portal_requested = true;
+        s_network_state = NETWORK_SERVICE_STATE_PORTAL_REQUIRED;
+    } else {
+        ESP_LOGE(TAG, "start AP fallback failed: %s", esp_err_to_name(ret));
+        s_portal_requested = false;
+        s_network_state = NETWORK_SERVICE_STATE_ERROR;
+    }
+}
 
 static bool resolve_hostname_once(const char *hostname) {
     struct addrinfo hints = {0};
@@ -80,23 +95,25 @@ static void refresh_connected_ip(void) {
 static void network_service_task(void *pv_parameter) {
     (void)pv_parameter;
 
+    esp_err_t ret = ESP_OK;
+
     if (wifi_provision_has_credentials()) {
         s_network_state = NETWORK_SERVICE_STATE_CONNECTING;
+        ret = wifi_provision_start_auto();
     } else {
-        s_network_state = NETWORK_SERVICE_STATE_PORTAL_REQUIRED;
+        s_network_state = NETWORK_SERVICE_STATE_BLE_PROVISIONING;
+        ret = wifi_provision_start_blecfg();
     }
 
-    esp_err_t ret = wifi_provision_start_auto();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "wifi_provision_start_auto failed: %s",
+        ESP_LOGW(TAG, "initial BLE provisioning start failed, fallback to AP: %s",
                  esp_err_to_name(ret));
-        s_network_state = NETWORK_SERVICE_STATE_ERROR;
-        vTaskDelete(NULL);
-        return;
+        network_service_enter_portal_required_state();
     }
 
     while (1) {
         if (wifi_provision_is_connected()) {
+            s_portal_requested = false;
             refresh_connected_ip();
 
             if (s_network_state != NETWORK_SERVICE_STATE_SERVICE_READY) {
@@ -108,14 +125,29 @@ static void network_service_task(void *pv_parameter) {
                 }
             }
         } else if (wifi_provision_has_credentials()) {
+            s_portal_requested = false;
             if (s_network_state != NETWORK_SERVICE_STATE_CONNECTING) {
                 ESP_LOGI(TAG, "Wi-Fi not connected yet, waiting in background");
             }
             s_network_ip[0] = '\0';
             s_network_state = NETWORK_SERVICE_STATE_CONNECTING;
-        } else {
+        } else if (s_portal_requested || wifi_provision_is_ap_active()) {
+            s_portal_requested = true;
             s_network_ip[0] = '\0';
             s_network_state = NETWORK_SERVICE_STATE_PORTAL_REQUIRED;
+        } else if (wifi_provision_is_ble_active()) {
+            s_network_ip[0] = '\0';
+            s_network_state = NETWORK_SERVICE_STATE_BLE_PROVISIONING;
+        } else {
+            ret = wifi_provision_start_blecfg();
+            s_network_ip[0] = '\0';
+            if (ret == ESP_OK) {
+                s_network_state = NETWORK_SERVICE_STATE_BLE_PROVISIONING;
+            } else {
+                ESP_LOGW(TAG, "restart BLE provisioning failed, fallback to AP: %s",
+                         esp_err_to_name(ret));
+                network_service_enter_portal_required_state();
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -162,6 +194,5 @@ esp_err_t network_service_get_ip(char *ip_str, size_t ip_str_len) {
 }
 
 void network_service_request_portal(void) {
-    wifi_provision_start_apcfg();
-    s_network_state = NETWORK_SERVICE_STATE_PORTAL_REQUIRED;
+    network_service_enter_portal_required_state();
 }
