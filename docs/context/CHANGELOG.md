@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-04-02：按 `D:\xiaozhiai\xiaozhi-esp32` 例程对齐 `official_chat` AI 对话的内部 RAM 配置，将 `audio_input / opus / afe_proc / afe_wake` 相关任务栈及 `lwIP tcpip/udp mailbox` 收敛到参考值，并新增对应知识卡与源码级回归测试。
 - 2026-04-02：将 `components/traffic_inference` 的 Edge Impulse 模型从 `manual_v4_3s` 切到用户提供的 `manual_v5`（`v2-cpp-mcu-v5.zip`），确认其 `1s / 16kHz / background-horn-siren` 结构兼容当前运行时代码并已通过 `idf.py build`。
 - 2026-04-01：新增基于 `ffmpeg + 短时 RMS/ZCR` 的喇叭样 1 秒片段提取脚本与测试，固化 `scripts/extract_horn_like_segments.py` 的默认参数、输出目录和调参入口。
 - 2026-04-01：新增基于 `ffmpeg` 的低活动音频筛选脚本与测试，固化 `scripts/analyze_low_activity_audio.py` 的默认阈值、输出物和适用边界。
@@ -71,3 +72,8 @@
 - 2026-04-01：根据“滑动画面有切割感”的反馈，将 `LV_PORT_FIXED_CHUNK_LINES1/2` 从 `100` 提到 `512`，保持 flush 仍按 `100` 行发送，以优先减轻滚动过程中的 tile 分片感；已完成源码测试与构建验证。
 - 2026-04-01：按用户确认的 `CO5300 PCLK 最高 50MHz` 收回此前错误的 `80MHz` 假设，当前显示链路改为 `LVGL tile=512 / flush=max transfer=100 / PCLK=50MHz / refr period=16ms`，并把提帧目标收敛为“局部交互高帧率 + 主观顺滑”。
 - 2026-04-01：将 `components/lvgl_port` 做无行为变化的模块清理：`lv_port.c` 只保留公共状态与总入口，显示/输入/tick 拆到独立实现文件，并删除未使用的 `lv_port_flush_area_chunked_simple()` 历史残留。
+- 2026-04-02：按“30FPS 稳定档”打开 CO5300 TE 同步链路：启用 `CO5300_PANEL_USE_TE_SIGNAL`、将 `PCLK` 收回 `50MHz`、把 `LV_PORT_MAX_INFLIGHT_CHUNKS` 收回 `2`，并将 TE 快速放行窗口从 `6000us` 收紧到 `2000us`，完成源码测试与 `idf.py build` 验证。
+- 2026-04-02：根据真机日志中 “TE enabled 但 `LCD bounce buffer[0]` 分配失败”的证据，将 `flush/max transfer` 从 `100` 一起收小到 `64`，优先恢复片内 DMA bounce buffer 路径，并完成源码测试与 `idf.py build` 验证。
+- 2026-04-02：在 `64` 行档位下真机进一步确认“第 1 块 bounce buffer 成功、第 2 块失败”，因此继续将 `flush/max transfer` 从 `64` 收敛到 `48`，以保留 `inflight=2` 的前提下争取两块片内 DMA bounce buffer 全部成功分配。
+- 2026-04-02：在 `48` 行档位下真机确认双 bounce buffer 已成功分配后，新增 `inflight=1` 的单变量 A/B，用于验证剩余撕裂是否主要来自两个 chunk 同时在飞。
+- 2026-04-02：根据 CO5300 TE Mode 1“高电平即 V-Porch”语义和真机“TE 已启用但仍撕裂”的现象，修正 `co5300_panel_wait_te_signal()`：不再依赖时间窗口猜测，改为“实时读取 TE 电平 + 清空陈旧二值信号量 token + 阻塞等待下一次上升沿”，避免伪同步到历史 TE 事件。

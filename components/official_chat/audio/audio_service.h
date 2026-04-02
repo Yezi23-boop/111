@@ -39,9 +39,9 @@ constexpr int kAudioTestingMaxDurationMs = 10000;
 constexpr int kMaxTimestampsInQueue = 3;
 constexpr int kAudioPowerTimeoutMs = 15000;
 constexpr int kAudioPowerCheckIntervalMs = 1000;
-constexpr configSTACK_DEPTH_TYPE kAudioInputTaskStackBytes = 8192;
+constexpr configSTACK_DEPTH_TYPE kAudioInputTaskStackBytes = 6144;
 constexpr configSTACK_DEPTH_TYPE kAudioOutputTaskStackBytes = 4096;
-constexpr configSTACK_DEPTH_TYPE kAudioOpusTaskStackBytes = 32768;
+constexpr configSTACK_DEPTH_TYPE kAudioOpusTaskStackBytes = 24576;
 
 constexpr EventBits_t kAsEventAudioTestingRunning = BIT0;
 constexpr EventBits_t kAsEventWakeWordRunning = BIT1;

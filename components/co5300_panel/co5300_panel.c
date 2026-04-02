@@ -4,7 +4,7 @@
  *
  * 主要功能：
  * - 面板初始化和配置
- * - TE信号同步（Mode1: V-Blanking + H-Blanking）
+ * - TE信号同步（Mode 1: 仅 V-Blanking）
  * - 颜色传输完成回调管理
  */
 
@@ -247,11 +247,22 @@ esp_err_t co5300_panel_wait_te_signal(uint32_t timeout_ms)
         ESP_LOGE(TAG, "TE not initialized");
         return ESP_ERR_INVALID_STATE;
     }
-    // 优化：时间窗口过滤
-    // 如果当前时间距离上次TE中断时间非常短（例如 < 6ms），说明刚刚发生过TE
-    // 此时直接认为同步成功，无需等待信号量，避免错过本次传输窗口
-    int64_t now = esp_timer_get_time();
-    if ((now - s_last_te_timestamp) < 6000) // 6ms窗口（放宽窗口以容忍渲染延迟）
+
+    // Mode 1 / N=0 时，TE 高电平本身就表示当前处于 V-Porch。
+    // 这里优先看实时电平，而不是继续依赖“上次中断发生在若干微秒内”的经验窗口，
+    // 避免任务调度抖动把普通显示区误判成仍处于空白期。
+    if (gpio_get_level(CO5300_PANEL_PIN_TE) == 1)
+    {
+        return ESP_OK;
+    }
+
+    // 清掉历史遗留 token，确保下面等待的是“下一次”TE 上升沿，而不是之前错过的旧事件。
+    while (xSemaphoreTake(s_te_semaphore, 0) == pdTRUE)
+    {
+    }
+
+    // 重新检查一次实时电平，覆盖“清空旧 token 的间隙里恰好进入 V-Porch”的情况。
+    if (gpio_get_level(CO5300_PANEL_PIN_TE) == 1)
     {
         return ESP_OK;
     }

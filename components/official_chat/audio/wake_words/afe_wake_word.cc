@@ -150,7 +150,7 @@ bool AfeWakeWord::Initialize(AudioCodecIface *codec, srmodel_list_t *models_list
           self->detection_task_handle_ = nullptr;
           vTaskDelete(nullptr);
         },
-        "afe_wake", 6144, this, 3, &detection_task_handle_);
+        "afe_wake", 4096, this, 3, &detection_task_handle_);
     if (created != pdPASS) {
       ESP_LOGE(kTag, "failed to create wake word detection task");
       afe_iface_->destroy(afe_data_);

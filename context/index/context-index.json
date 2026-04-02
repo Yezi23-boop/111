@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-02T04:35:14.295684+00:00",
+  "generated_at_utc": "2026-04-02T06:46:51.839203+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 38,
+  "doc_count": 39,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-02：将 `components/traffic_inference` 的 Edge Impulse 模型从 `manual_v4_3s` 切到用户提供的 `manual_v5`（`v2-cpp-mcu-v5.zip`），确认其 `1s / 16kHz / background-horn-siren` 结构兼容当前运行时代码并已通过 `i",
+      "summary": "- 2026-04-02：按 `D:\\xiaozhiai\\xiaozhi-esp32` 例程对齐 `official_chat` AI 对话的内部 RAM 配置，将 `audio_input / opus / afe_proc / afe_wake` 相关任务栈及 `lwIP tcpip/udp mailbox` 收敛到参考值，并新增对应知识卡与源码级回归测",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-02T04:35:02.891317+00:00",
-      "token_count": 1270
+      "mtime_utc": "2026-04-02T06:46:19.925493+00:00",
+      "token_count": 1427
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -279,8 +279,8 @@
       "summary": "记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。",
       "id": "display-render-touch-transfer-pipeline",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-01T12:54:35.786665+00:00",
-      "token_count": 1165
+      "mtime_utc": "2026-04-02T06:04:49.956030+00:00",
+      "token_count": 1347
     },
     {
       "path": "docs/context/knowledge/project/display-touch-audio-bus-map.md",
@@ -366,8 +366,8 @@
       "summary": "按时间记录 LVGL 9.3 显示异常排查中的每轮参数修改、实测现象与当前结论，供后续 agent 直接复用，避免重复调参。",
       "id": "lvgl-display-tuning-log",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-01T12:54:35.785649+00:00",
-      "token_count": 1200
+      "mtime_utc": "2026-04-02T06:04:36.895527+00:00",
+      "token_count": 1774
     },
     {
       "path": "docs/context/knowledge/project/nonblocking-boot-network-service.md",
@@ -471,6 +471,23 @@
       "last_reviewed": "2026-04-01",
       "mtime_utc": "2026-04-01T09:05:22.382216+00:00",
       "token_count": 474
+    },
+    {
+      "path": "docs/context/knowledge/project/official-chat-ram-alignment-to-xiaozhi-reference.md",
+      "title": "背景",
+      "tags": [
+        "project",
+        "official-chat",
+        "ram",
+        "esp32s3",
+        "audio",
+        "lwip"
+      ],
+      "summary": "记录当前仓库按 D:\\xiaozhiai\\xiaozhi-esp32 例程对齐的 AI 对话内部 RAM 配置，仅收敛可一一对应的栈与 lwIP mailbox 参数。",
+      "id": "official-chat-ram-alignment-to-xiaozhi-reference",
+      "last_reviewed": "2026-04-02",
+      "mtime_utc": "2026-04-02T06:46:45.129407+00:00",
+      "token_count": 185
     },
     {
       "path": "docs/context/knowledge/project/plan-mode-rules.md",

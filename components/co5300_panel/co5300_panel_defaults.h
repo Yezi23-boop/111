@@ -31,15 +31,15 @@
 /* ========== 显示控制 ========== */
 
 #define CO5300_PANEL_DEFAULT_BRIGHTNESS 0xFF // 默认亮度 (0x00~0xFF)
-#define CO5300_PANEL_MAX_TRANSFER_LINES 100  // 单次传输最大行数（与 lv_port 100 行 flush chunk 对齐）
+#define CO5300_PANEL_MAX_TRANSFER_LINES 48   // 单次传输最大行数（优先确保 inflight=2 时两块片内 DMA bounce buffer 可分配）
 
 /* TE信号配置 */
-#define CO5300_PANEL_USE_TE_SIGNAL 0 // 1=启用TE同步, 0=禁用
+#define CO5300_PANEL_USE_TE_SIGNAL 1 // 1=启用TE同步, 0=禁用
 #define CO5300_PANEL_TE_MODE 0x00    // 0x00=Mode 1 (仅V-Porch, 推荐), 0x01=Mode 2 (V-Porch+H-Porch)
 
 /* ========== 性能优化 ========== */
 
-#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000) // CO5300 当前硬件上限 50MHz；以真实上限为准做局部高帧率调优
+#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000) // CO5300 当前硬件上限 50MHz；30FPS 稳定档按真实上限配置
 #define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 8        // 传输队列深度（够用即可，避免过深队列放大抖动）
 
 /* ========== LCD参数 ========== */

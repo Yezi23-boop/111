@@ -4,6 +4,8 @@
 
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "model-parameters/model_metadata.h"
 #include "traffic_inference_runner_internal.h"
 
@@ -26,6 +28,13 @@ typedef struct {
 
 traffic_inference_postprocess_alert_callback_t s_alert_callback = nullptr;
 void *s_alert_callback_user_data = nullptr;
+traffic_inference_postprocess_snapshot_t s_latest_snapshot = {
+    .raw_label = TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE,
+    .stable_label = TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE,
+    .horn_score = 0.0f,
+    .siren_score = 0.0f,
+};
+portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 
 stable_label_t normalize_label(const char *label) {
   if (label == nullptr) {
@@ -55,6 +64,7 @@ void set_output_defaults(traffic_inference_postprocess_output_t *out,
   out->stable_label = stable_label;
   out->event = TRAFFIC_INFERENCE_POSTPROCESS_EVENT_NONE;
   out->alert_fired = false;
+  out->confidence_score = 0.0f;
 }
 
 const char *label_name_for(stable_label_t label) {
@@ -211,6 +221,15 @@ esp_err_t traffic_inference_postprocess_update(
   const stable_label_t effective_label =
       effective_label_for(state, input, raw_label);
   set_output_defaults(out, raw_label, state->stable_label);
+  out->confidence_score = score_for_label(input, effective_label);
+  taskENTER_CRITICAL(&s_snapshot_lock);
+  s_latest_snapshot.raw_label = raw_label;
+  s_latest_snapshot.stable_label = state->stable_label;
+  s_latest_snapshot.horn_score = score_for_label(
+      input, TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_HORN);
+  s_latest_snapshot.siren_score = score_for_label(
+      input, TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_SIREN);
+  taskEXIT_CRITICAL(&s_snapshot_lock);
 
   if (state->stable_label == TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE) {
     state->consecutive_misses = 0U;
@@ -231,6 +250,10 @@ esp_err_t traffic_inference_postprocess_update(
       clear_pending(state);
       out->stable_label = state->stable_label;
       out->event = TRAFFIC_INFERENCE_POSTPROCESS_EVENT_START;
+      out->confidence_score = score_for_label(input, state->stable_label);
+      taskENTER_CRITICAL(&s_snapshot_lock);
+      s_latest_snapshot.stable_label = state->stable_label;
+      taskEXIT_CRITICAL(&s_snapshot_lock);
       if (!state->alert_latched) {
         out->alert_fired = true;
         state->alert_latched = true;
@@ -244,6 +267,10 @@ esp_err_t traffic_inference_postprocess_update(
     clear_pending(state);
     out->stable_label = state->stable_label;
     out->event = TRAFFIC_INFERENCE_POSTPROCESS_EVENT_ACTIVE;
+    out->confidence_score = score_for_label(input, state->stable_label);
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_latest_snapshot.stable_label = state->stable_label;
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     return ESP_OK;
   }
 
@@ -260,6 +287,10 @@ esp_err_t traffic_inference_postprocess_update(
   if (state->consecutive_misses <= kTrafficInferencePostprocessHoldMisses) {
     out->stable_label = state->stable_label;
     out->event = TRAFFIC_INFERENCE_POSTPROCESS_EVENT_ACTIVE;
+    out->confidence_score = score_for_label(input, state->stable_label);
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_latest_snapshot.stable_label = state->stable_label;
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     return ESP_OK;
   }
 
@@ -270,6 +301,10 @@ esp_err_t traffic_inference_postprocess_update(
     state->alert_latched = false;
     out->stable_label = TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE;
     out->event = TRAFFIC_INFERENCE_POSTPROCESS_EVENT_END;
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_latest_snapshot.stable_label =
+        TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE;
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     if (next_candidate == TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE) {
       clear_pending(state);
     } else {
@@ -307,9 +342,20 @@ esp_err_t traffic_inference_postprocess_dispatch_alert(
                    : TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE,
       .event = out->event,
       .action = action,
+      .confidence_score = action == TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_RAISE
+                              ? out->confidence_score
+                              : 0.0f,
   };
   s_alert_callback(&alert, s_alert_callback_user_data);
   return ESP_OK;
+}
+
+traffic_inference_postprocess_snapshot_t
+traffic_inference_postprocess_get_latest_snapshot(void) {
+  taskENTER_CRITICAL(&s_snapshot_lock);
+  const traffic_inference_postprocess_snapshot_t snapshot = s_latest_snapshot;
+  taskEXIT_CRITICAL(&s_snapshot_lock);
+  return snapshot;
 }
 
 const char *traffic_inference_postprocess_stable_label_to_string(

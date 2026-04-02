@@ -1,6 +1,8 @@
 #ifndef APP_ALERT_MANAGER_H
 #define APP_ALERT_MANAGER_H
 
+#include <stdbool.h>
+
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -32,6 +34,7 @@ typedef struct {
 esp_err_t app_alert_manager_init(void);
 esp_err_t app_alert_manager_raise(const app_alert_request_t *request);
 esp_err_t app_alert_manager_clear(app_alert_source_t source);
+esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled);
 
 #ifdef __cplusplus
 }

@@ -28,6 +28,11 @@ static danger_detection_service_state_t s_service_state = {
     .snapshot = {
         .state = DANGER_DETECTION_STATE_IDLE,
         .stable_label = DANGER_DETECTION_LABEL_NONE,
+        .last_detected_label = DANGER_DETECTION_LABEL_NONE,
+        .last_detected_confidence = 0.0f,
+        .horn_confidence = 0.0f,
+        .siren_confidence = 0.0f,
+        .alert_sequence = 0U,
         .last_error = ESP_OK,
         .danger_overlay_active = false,
     },
@@ -101,6 +106,11 @@ static void danger_detection_on_alert(
         s_service_state.snapshot.state = DANGER_DETECTION_STATE_RUNNING;
         s_service_state.snapshot.stable_label =
             danger_detection_map_label(alert->label);
+        s_service_state.snapshot.last_detected_label =
+            danger_detection_map_label(alert->label);
+        s_service_state.snapshot.last_detected_confidence =
+            alert->confidence_score;
+        s_service_state.snapshot.alert_sequence += 1U;
         s_service_state.snapshot.danger_overlay_active = true;
         taskEXIT_CRITICAL(&s_service_state.lock);
     } else if (alert->action ==
@@ -131,6 +141,11 @@ esp_err_t danger_detection_service_init(void)
     s_service_state.initialized = true;
     s_service_state.snapshot.state = DANGER_DETECTION_STATE_IDLE;
     s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.last_detected_confidence = 0.0f;
+    s_service_state.snapshot.horn_confidence = 0.0f;
+    s_service_state.snapshot.siren_confidence = 0.0f;
+    s_service_state.snapshot.alert_sequence = 0U;
     s_service_state.snapshot.last_error = ESP_OK;
     s_service_state.snapshot.danger_overlay_active = false;
     taskEXIT_CRITICAL(&s_service_state.lock);
@@ -161,6 +176,11 @@ esp_err_t danger_detection_service_start(void)
     danger_detection_set_state(DANGER_DETECTION_STATE_STARTING, ESP_OK);
     taskENTER_CRITICAL(&s_service_state.lock);
     s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.last_detected_confidence = 0.0f;
+    s_service_state.snapshot.horn_confidence = 0.0f;
+    s_service_state.snapshot.siren_confidence = 0.0f;
+    s_service_state.snapshot.alert_sequence = 0U;
     s_service_state.snapshot.danger_overlay_active = false;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
@@ -230,6 +250,11 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     s_service_state.callback_registered = false;
     s_service_state.runtime_started = false;
     s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.last_detected_confidence = 0.0f;
+    s_service_state.snapshot.horn_confidence = 0.0f;
+    s_service_state.snapshot.siren_confidence = 0.0f;
+    s_service_state.snapshot.alert_sequence = 0U;
     s_service_state.snapshot.danger_overlay_active = false;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
@@ -256,8 +281,12 @@ danger_detection_snapshot_t danger_detection_service_get_snapshot(void)
     if (runtime_started) {
         traffic_audio_runtime_state_t runtime_state =
             traffic_audio_runtime_get_state();
+        const traffic_inference_postprocess_snapshot_t postprocess_snapshot =
+            traffic_inference_postprocess_get_latest_snapshot();
         snapshot.state = danger_detection_map_runtime_state(runtime_state,
                                                             snapshot.state);
+        snapshot.horn_confidence = postprocess_snapshot.horn_score;
+        snapshot.siren_confidence = postprocess_snapshot.siren_score;
         if (runtime_state == TRAFFIC_AUDIO_RUNTIME_STATE_FAILED &&
             snapshot.last_error == ESP_OK) {
             snapshot.last_error = ESP_FAIL;

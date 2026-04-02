@@ -41,12 +41,21 @@ typedef struct {
     traffic_inference_postprocess_stable_label_t stable_label;
     traffic_inference_postprocess_event_t event;
     bool alert_fired;
+    float confidence_score;
 } traffic_inference_postprocess_output_t;
+
+typedef struct {
+    traffic_inference_postprocess_stable_label_t raw_label;
+    traffic_inference_postprocess_stable_label_t stable_label;
+    float horn_score;
+    float siren_score;
+} traffic_inference_postprocess_snapshot_t;
 
 typedef struct {
     traffic_inference_postprocess_stable_label_t label;
     traffic_inference_postprocess_event_t event;
     traffic_inference_postprocess_alert_action_t action;
+    float confidence_score;
 } traffic_inference_postprocess_alert_t;
 
 typedef void (*traffic_inference_postprocess_alert_callback_t)(
@@ -64,6 +73,8 @@ esp_err_t traffic_inference_postprocess_set_alert_callback(
     void *user_data);
 esp_err_t traffic_inference_postprocess_dispatch_alert(
     const traffic_inference_postprocess_output_t *out);
+traffic_inference_postprocess_snapshot_t
+traffic_inference_postprocess_get_latest_snapshot(void);
 
 const char *traffic_inference_postprocess_stable_label_to_string(
     traffic_inference_postprocess_stable_label_t label);

@@ -11,6 +11,7 @@
 
 typedef struct {
     bool initialized;
+    bool suppressed;
     volatile bool pending_show;
     volatile bool pending_hide;
     lv_obj_t *danger_overlay;
@@ -64,6 +65,7 @@ static void display_alert_apply_hide(void)
 
 esp_err_t display_alert_adapter_init(void)
 {
+    s_display_alert_state.suppressed = false;
     s_display_alert_state.pending_show = false;
     s_display_alert_state.pending_hide = false;
     s_display_alert_state.initialized = true;
@@ -88,9 +90,29 @@ esp_err_t display_alert_adapter_hide_danger_overlay(void)
     return ESP_OK;
 }
 
+esp_err_t display_alert_adapter_set_suppressed(bool suppressed)
+{
+    ESP_RETURN_ON_FALSE(s_display_alert_state.initialized, ESP_ERR_INVALID_STATE,
+                        TAG, "display alert adapter not initialized");
+
+    s_display_alert_state.suppressed = suppressed;
+    if (suppressed) {
+        display_alert_apply_hide();
+    }
+    return ESP_OK;
+}
+
 void display_alert_adapter_process_ui(void)
 {
     if (!s_display_alert_state.initialized) {
+        return;
+    }
+
+    if (s_display_alert_state.suppressed) {
+        if (s_display_alert_state.pending_hide) {
+            s_display_alert_state.pending_hide = false;
+            display_alert_apply_hide();
+        }
         return;
     }
 

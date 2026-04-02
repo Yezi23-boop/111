@@ -13,12 +13,14 @@
 typedef struct {
     bool initialized;
     bool active;
+    bool traffic_audio_overlay_enabled;
     app_alert_request_t active_request;
 } app_alert_manager_state_t;
 
 static app_alert_manager_state_t s_alert_manager_state = {
     .initialized = false,
     .active = false,
+    .traffic_audio_overlay_enabled = true,
     .active_request = {
         .source = APP_ALERT_SOURCE_NONE,
         .severity = APP_ALERT_SEVERITY_NONE,
@@ -59,6 +61,7 @@ esp_err_t app_alert_manager_init(void)
 
     memset(&s_alert_manager_state.active_request, 0,
            sizeof(s_alert_manager_state.active_request));
+    s_alert_manager_state.traffic_audio_overlay_enabled = true;
     s_alert_manager_state.initialized = true;
     return ESP_OK;
 }
@@ -78,6 +81,9 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
     const bool same_source_active =
         s_alert_manager_state.active &&
         s_alert_manager_state.active_request.source == request->source;
+    const bool overlay_enabled =
+        !(request->source == APP_ALERT_SOURCE_TRAFFIC_AUDIO &&
+          !s_alert_manager_state.traffic_audio_overlay_enabled);
 
     s_alert_manager_state.active_request = *request;
 
@@ -87,9 +93,12 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
         return ESP_OK;
     }
 
-    esp_err_t ret = display_alert_adapter_show_danger_overlay();
-    if (ret != ESP_OK) {
-        return ret;
+    esp_err_t ret = ESP_OK;
+    if (overlay_enabled) {
+        ret = display_alert_adapter_show_danger_overlay();
+        if (ret != ESP_OK) {
+            return ret;
+        }
     }
 
     s_alert_manager_state.active = true;
@@ -113,14 +122,34 @@ esp_err_t app_alert_manager_clear(app_alert_source_t source)
         return ESP_OK;
     }
 
-    esp_err_t ret = display_alert_adapter_hide_danger_overlay();
-    if (ret != ESP_OK) {
-        return ret;
+    const bool overlay_enabled =
+        !(source == APP_ALERT_SOURCE_TRAFFIC_AUDIO &&
+          !s_alert_manager_state.traffic_audio_overlay_enabled);
+    esp_err_t ret = ESP_OK;
+    if (overlay_enabled) {
+        ret = display_alert_adapter_hide_danger_overlay();
+        if (ret != ESP_OK) {
+            return ret;
+        }
     }
 
     memset(&s_alert_manager_state.active_request, 0,
            sizeof(s_alert_manager_state.active_request));
     s_alert_manager_state.active = false;
     ESP_LOGI(TAG, "退出危险告警");
+    return ESP_OK;
+}
+
+esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled)
+{
+    ESP_RETURN_ON_FALSE(s_alert_manager_state.initialized, ESP_ERR_INVALID_STATE,
+                        TAG, "app alert manager not initialized");
+
+    s_alert_manager_state.traffic_audio_overlay_enabled = enabled;
+    if (!enabled && s_alert_manager_state.active &&
+        s_alert_manager_state.active_request.source ==
+            APP_ALERT_SOURCE_TRAFFIC_AUDIO) {
+        (void)display_alert_adapter_hide_danger_overlay();
+    }
     return ESP_OK;
 }

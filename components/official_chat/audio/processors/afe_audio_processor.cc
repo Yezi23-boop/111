@@ -134,7 +134,7 @@ void AfeAudioProcessor::Initialize(AudioCodecIface *codec, int frame_duration_ms
           self->worker_task_handle_ = nullptr;
           vTaskDelete(nullptr);
         },
-        "afe_proc", 6144, this, 3, &worker_task_handle_);
+        "afe_proc", 4096, this, 3, &worker_task_handle_);
     if (created != pdPASS) {
       ESP_LOGE(kTag, "failed to create AFE processor task");
       afe_iface_->destroy(afe_data_);

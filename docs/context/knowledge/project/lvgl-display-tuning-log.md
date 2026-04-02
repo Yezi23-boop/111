@@ -323,6 +323,130 @@ last_reviewed: 2026-04-01
   - 这是一组“50MHz 上限下的交互顺滑档”，不是“全屏 60FPS 档”
   - 接下来如果继续追帧，优先看 `flush chunk`、`refr period` 和 UI 重绘面积，而不是再虚构更高的总线时钟
 
+### 16. 30FPS 稳定档：启用 TE、收紧 TE 快速放行窗口、并发回到 `2`
+
+- 触发原因：
+  - 用户目标从“更高帧率”收敛为“30 帧稳定、尽量无撕裂”
+  - 本地代码虽然已有 TE 中断、等待点和 `0x35/0x44` 初始化命令，但默认仍处于关闭状态
+  - `co5300_panel_wait_te_signal()` 里原本 `6ms` 的快速放行窗口过宽，容易削弱 TE 同步效果
+- 修改：
+  - `components/co5300_panel/co5300_panel_defaults.h`
+    - `CO5300_PANEL_USE_TE_SIGNAL = 1`
+    - `CO5300_PANEL_OPTIMIZED_PCLK_HZ = 50MHz`
+    - `CO5300_PANEL_MAX_TRANSFER_LINES = 100`
+  - `components/lvgl_port/lv_port_config.h`
+    - `LV_PORT_FIXED_CHUNK_LINES1 = 512`
+    - `LV_PORT_FIXED_CHUNK_LINES2 = 512`
+    - `LV_PORT_FIXED_CHUNK_LINES = 100`
+    - `LV_PORT_MAX_INFLIGHT_CHUNKS = 2`
+  - `components/co5300_panel/co5300_panel.c`
+    - 将 TE 快速放行窗口从 `6000us` 收紧到 `2000us`
+- 当前判断：
+  - 这是一组“30FPS 稳定档”的最小可运行起点，重点在“什么时候发”，而不是继续堆大 chunk 或 inflight
+  - `帧首等待 TE + inflight=2` 适合先做真机 A/B；若撕裂仍明显，再继续看 `chunk` 和等待策略
+- 已验证：
+  - 源码级测试通过：
+    - `tests.test_co5300_panel_defaults_source`
+    - `tests.test_co5300_te_sync_source`
+    - `tests.test_lv_port_chunk_config_source`
+    - `tests.test_lv_port_dma_bounce_source`
+    - `tests.test_lv_port_module_split_source`
+  - `idf.py build` 通过
+
+### 17. TE 已启用但仍有撕裂：优先恢复片内 DMA bounce buffer
+
+- 真机日志证据：
+  - `co5300_panel: TE configured (Mode: 0x00)`
+  - `co5300_panel: CO5300 init OK (TE enabled, mode: 0x00)`
+  - `lv_port: LCD bounce buffer[0] 分配失败，回退到直接发送渲染缓冲`
+- 当前判断：
+  - 这说明 TE 链路已经真的生效，但 `lv_port` 仍在走“直接发送 PSRAM 渲染缓冲”的退化路径
+  - 因此当前撕裂更像不是“没等 TE”，而是“等到了 TE，但 DMA/传输缓冲仍不受控”
+- 收敛修改：
+  - `components/lvgl_port/lv_port_config.h`
+    - `LV_PORT_FIXED_CHUNK_LINES = 64`
+  - `components/co5300_panel/co5300_panel_defaults.h`
+    - `CO5300_PANEL_MAX_TRANSFER_LINES = 64`
+  - 保持不变：
+    - `LV_PORT_FIXED_CHUNK_LINES1 = 512`
+    - `LV_PORT_FIXED_CHUNK_LINES2 = 512`
+    - `LV_PORT_MAX_INFLIGHT_CHUNKS = 2`
+    - `CO5300_PANEL_USE_TE_SIGNAL = 1`
+    - `CO5300_PANEL_OPTIMIZED_PCLK_HZ = 50MHz`
+- 目的：
+  - 优先把两块片内 DMA bounce buffer 真正分配出来
+  - 若启动日志从“分配失败”变成“LCD bounce buffer: 2 x ... bytes (Internal DMA)”，说明这条假设成立
+
+### 18. `64` 行时第 2 块 bounce buffer 仍失败，继续收敛到 `48`
+
+- 真机日志证据：
+  - `LCD bounce buffer[1] 分配失败，回退到直接发送渲染缓冲`
+- 当前判断：
+  - 这说明当前片内 DMA 内存已经够第 1 块，但仍不够第 2 块
+  - 在保持 `inflight=2` 不变的前提下，最小单变量就是继续缩小每块发送缓冲
+- 收敛修改：
+  - `components/lvgl_port/lv_port_config.h`
+    - `LV_PORT_FIXED_CHUNK_LINES = 48`
+  - `components/co5300_panel/co5300_panel_defaults.h`
+    - `CO5300_PANEL_MAX_TRANSFER_LINES = 48`
+- 目的：
+  - 把两块片内 DMA bounce buffer 的总需求从约 `105KB` 再往下压
+  - 观察启动日志是否转成 `LCD bounce buffer: 2 x ... bytes (Internal DMA)`
+
+### 19. 双 bounce buffer 已成功后，单变量验证 `inflight=1`
+
+- 真机日志证据：
+  - `LCD bounce buffer: 2 x 59040 bytes (Internal DMA)`
+- 当前判断：
+  - 这说明“TE + 双 bounce buffer”链路已经健康
+  - 如果屏幕上仍然有撕裂感，最可疑的就不再是内存，而是 `inflight=2` 让两个 chunk 跨到不同扫描时刻
+- A/B 修改：
+  - `components/lvgl_port/lv_port_config.h`
+    - `LV_PORT_MAX_INFLIGHT_CHUNKS = 1`
+  - 保持不变：
+    - `LV_PORT_FIXED_CHUNK_LINES = 48`
+    - `CO5300_PANEL_MAX_TRANSFER_LINES = 48`
+    - `CO5300_PANEL_USE_TE_SIGNAL = 1`
+    - `CO5300_PANEL_OPTIMIZED_PCLK_HZ = 50MHz`
+- 目的：
+  - 只验证“剩余撕裂是否主要来自两个 chunk 同时在飞”
+  - 若撕裂明显下降，就说明后续该围绕 `inflight` 和 TE 等待策略继续优化
+
+### 20. `inflight=1` 反而更差，说明主问题不是“两个 chunk 同时在飞”
+
+- 真机反馈：
+  - `inflight=1` 后“更加撕裂了，而且刷新率感觉变低了”
+- 当前判断：
+  - 这说明当前链路里，串行化 chunk 会把整帧发送时间进一步拉长
+  - TE 已启用、双 bounce buffer 已成功的前提下，单纯降低并发并不能解决剩余撕裂
+  - 后续优化重点应从“chunk 并发数量”转到“TE 等待语义是否真的在等待下一次空白期”
+- 收敛修改：
+  - `components/lvgl_port/lv_port_config.h`
+    - `LV_PORT_MAX_INFLIGHT_CHUNKS` 恢复到 `2`
+  - `sdkconfig`
+    - `CONFIG_LV_DEF_REFR_PERIOD = 33`
+
+### 21. TE 等待策略从“时间窗口猜测”改为“实时电平 + 清空旧 token + 等下一次上升沿”
+
+- 触发证据：
+  - 真机日志已经显示：
+    - `co5300_panel: TE configured (Mode: 0x00)`
+    - `co5300_panel: CO5300 init OK (TE enabled, mode: 0x00)`
+    - `lv_port: LCD bounce buffer: 2 x 59040 bytes (Internal DMA)`
+  - 但用户仍反馈“还是有撕裂感”，说明问题已不再是 TE 没开或 bounce buffer 没站起来
+- 根因判断：
+  - 旧版 `co5300_panel_wait_te_signal()` 只靠“距离上次 TE 中断 < 2000us”做快速放行，并直接 `xSemaphoreTake()`。
+  - 由于这里使用的是二值信号量，若任务错过上一帧 TE 后 token 仍残留，后续等待会立即消费旧 token，名字上叫“wait TE”，实际上并没有等到“下一次”空白期。
+- 修正策略：
+  - `components/co5300_panel/co5300_panel.c`
+    - 先读 `gpio_get_level(CO5300_PANEL_PIN_TE)`；Mode 1 / `N=0` 下，TE 高电平本身就代表当前仍处于 `V-Porch`
+    - 若当前不是高电平，则先 `while (xSemaphoreTake(..., 0) == pdTRUE)` 清空历史旧 token
+    - 清空后再次检查实时电平
+    - 仍不在空白期时，再真正阻塞等待下一次 TE 上升沿
+- 当前判断：
+  - 这次修的是 TE 同步语义本身，而不是再调经验参数
+  - 若此后撕裂仍明显，下一步应继续看“是否需要 scanline 级等待策略”，而不是回头再怀疑 bounce buffer
+
 ## 后续 agent 使用建议
 
 - 后续继续调参前，先读本文，再读 [display-render-touch-transfer-pipeline.md](/D:/esp32S3/111/docs/context/knowledge/project/display-render-touch-transfer-pipeline.md)

@@ -12,7 +12,7 @@ class LvPortChunkConfigSourceTests(unittest.TestCase):
 
         self.assertIn("#define LV_PORT_FIXED_CHUNK_LINES1 512", lv_port_source)
         self.assertIn("#define LV_PORT_FIXED_CHUNK_LINES2 512", lv_port_source)
-        self.assertIn("#define LV_PORT_FIXED_CHUNK_LINES 100", lv_port_source)
+        self.assertIn("#define LV_PORT_FIXED_CHUNK_LINES 48", lv_port_source)
         self.assertIn("#define LV_PORT_MAX_INFLIGHT_CHUNKS 2", lv_port_source)
 
 

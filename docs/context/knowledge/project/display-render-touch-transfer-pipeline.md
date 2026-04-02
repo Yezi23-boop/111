@@ -310,6 +310,45 @@ last_reviewed: 2026-04-01
   - 不污染 `LVGL` 原始渲染缓冲
   - 更容易让 LCD 刷新直接吃到 `Internal + DMA` 内存，减少底层私有 DMA 缓冲申请和隐藏复制成本
 
+### 8.1 TE 同步链路在当前仓库里的正确打开方式
+
+- 当前仓库的 TE 不是“重新设计”，而是“把已有链路打开并收紧参数”：
+  - `components/co5300_panel/co5300_panel_defaults.h`
+    - `CO5300_PANEL_USE_TE_SIGNAL = 1`
+    - `CO5300_PANEL_TE_MODE = 0x00`
+    - `CO5300_PANEL_PIN_TE = 13`
+  - `components/co5300_panel/co5300_panel.c`
+    - 用 `0x35` 打开 TE
+    - 用 `0x44 {0x00, 0x00}` 设置 TE scan line
+    - TE GPIO 采用 `GPIO_INTR_POSEDGE`
+    - `co5300_panel_wait_te_signal()` 不再只依赖“上次 TE 时间窗口猜测”
+    - 先检查 `TE` 实时电平是否仍处于 `V-Porch`
+    - 再清空历史遗留的二值信号量 token，强制等待“下一次”上升沿
+  - `components/lvgl_port/lv_port_display.c`
+    - 只在 `frame_start` 时等待一次 `co5300_panel_wait_te_signal()`
+- 当前判断：
+  - 这条链路更像“30FPS 稳定、尽量无撕裂”的起点，而不是“绝对无撕裂”的终局
+  - 若后续仍看到撕裂，优先继续排：
+    1. `LV_PORT_MAX_INFLIGHT_CHUNKS`
+    2. `LV_PORT_FIXED_CHUNK_LINES`
+    3. 是否已经进入“scanline 级等待策略”而不是只看 TE 脉冲
+  - 在还未拿到真机新证据前，不建议把等待点改成“每个 chunk 都等 TE”，否则大概率先伤刷新率
+
+### 8.2 真机仍有撕裂时先看 bounce buffer 是否真的分配成功
+
+- 当前仓库 `lv_port` 的更稳路径是：
+  1. `LVGL` 在 `PSRAM` 渲染
+  2. flush 时拷到 `Internal + DMA` 的 `bounce buffer`
+  3. 在 bounce buffer 上做 `rgb565 swap`
+  4. 再交给 `esp_lcd_panel_draw_bitmap()`
+- 如果启动日志出现：
+  - `LCD bounce buffer[0] 分配失败，回退到直接发送渲染缓冲`
+- 那就意味着：
+  - TE 即使已经启用，也仍会退化成直接发 `PSRAM` 渲染缓冲
+  - 此时看到的撕裂，优先怀疑“DMA 传输路径没有站起来”，而不是先怀疑 TE 配置本身
+- 当前仓库里最小、最稳的应对方式是：
+  - 把 `LV_PORT_FIXED_CHUNK_LINES` 和 `CO5300_PANEL_MAX_TRANSFER_LINES` 一起收小到更容易分配片内 DMA 缓冲的档位，例如 `64` 或 `48`
+
 ## 八、复用排障清单
 
 当未来再遇到显示异常，建议按下面顺序排：

@@ -27,6 +27,11 @@ typedef enum {
 typedef struct {
     danger_detection_state_t state;
     danger_detection_label_t stable_label;
+    danger_detection_label_t last_detected_label;
+    float last_detected_confidence;
+    float horn_confidence;
+    float siren_confidence;
+    uint32_t alert_sequence;
     esp_err_t last_error;
     bool danger_overlay_active;
 } danger_detection_snapshot_t;
