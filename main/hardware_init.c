@@ -9,6 +9,7 @@
 #include "button_gpio.h"
 #include "driver/gpio.h"
 #include "iot_button.h"
+#include "network_service.h"
 static const char *TAG = "HARDWARE_INIT";
 /* @brief BOOT按钮的GPIO引脚号
  *
@@ -16,19 +17,13 @@ static const char *TAG = "HARDWARE_INIT";
  * 按下时GPIO10变为低电平，松开时为高电平（需要上拉电阻）
  */
 #define BUTTON_GPIO_NUM GPIO_NUM_10
-static void button_press_down_cb(void *arg, void *data)
+static void button_single_click_cb(void *arg, void *data)
 {
-    esp_err_t ret = ESP_OK;
-
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "按键单击！启动AP配网模式...");
+    ESP_LOGI(TAG, "按键单击！启动BLE配网模式...");
     ESP_LOGI(TAG, "========================================");
 
-    ret = wifi_provision_start_apcfg();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "启动AP配网失败: %s", esp_err_to_name(ret));
-    }
+    network_service_request_ble();
 }
 
 static void button_long_press_start_cb(void *arg, void *data)
@@ -39,7 +34,18 @@ static void button_long_press_start_cb(void *arg, void *data)
 static void button_triple_click_cb(void *arg, void *usr_data)
 {
     char *msg = (char *)usr_data;
+    esp_err_t ret = ESP_OK;
+
     ESP_LOGI(TAG, "BUTTON_TRIPLE_CLICK: %s", msg);
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "按键三连击！启动AP配网模式...");
+    ESP_LOGI(TAG, "========================================");
+
+    ret = wifi_provision_start_apcfg();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "启动AP配网失败: %s", esp_err_to_name(ret));
+    }
 }
 
 static void button_init(void)
@@ -71,7 +77,7 @@ static void button_init(void)
         .multiple_clicks.clicks = 3,
     };
 
-    iot_button_register_cb(gpio_btn_handle, BUTTON_PRESS_DOWN, NULL, button_press_down_cb, NULL);
+    iot_button_register_cb(gpio_btn_handle, BUTTON_SINGLE_CLICK, NULL, button_single_click_cb, NULL);
     iot_button_register_cb(gpio_btn_handle, BUTTON_LONG_PRESS_START, NULL, button_long_press_start_cb, NULL);
 
     // 注册三连击事件，使用所有参数

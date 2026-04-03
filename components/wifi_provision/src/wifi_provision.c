@@ -459,6 +459,10 @@ esp_err_t wifi_provision_start_auto(void) {
 
 esp_err_t wifi_provision_start_blecfg(void) {
     wifi_provision_cancel_scheduled_ble_stop();
+    if (current_transport == WIFI_PROVISION_TRANSPORT_AP) {
+        ws_server_stop();
+        wifi_manager_stop_ap();
+    }
     wifi_provision_prepare_ble_service_name();
     current_transport = WIFI_PROVISION_TRANSPORT_BLE;
     is_configuring = false;

@@ -83,3 +83,7 @@
 - 2026-04-02：完成 BLE 配网首轮实机闭环：先通过只擦 `nvs` 分区确认设备会在“无凭据”路径进入 NimBLE 配网，再定位并修复 `ble_gap_adv_set_fields()` 因 advertising payload 超过 31 字节导致的 `rc=4 (BLE_HS_EMSGSIZE)`，将完整设备名移到 scan response，实机已看到 `BLE provisioning advertising: ESP32S3-723C`。
 - 2026-04-02：为 BLE 配网补齐微信小程序联调所需的分包兼容层：固件 `ble_provision_transport` 新增 `JSON + 换行` 的 RX 分片重组，同时保留对旧单包 JSON 写入的兼容；并新增对应知识卡，明确微信小程序 `writeBLECharacteristicValue()` 的 20 字节兼容边界与当前处理方式。
 - 2026-04-02：新增微信小程序 BLE 配网交接配置卡，固化 `E:\eps32_ble` 工程入口、UUID/分片协议基线、真机限制，以及“先确认新固件已刷入再排查小程序”的联调顺序。
+- 2026-04-03：调整 BOOT 按键配网入口映射为“单击强制 BLE、三连击强制 AP”，并让 `wifi_provision_start_blecfg()` 在 AP 活动时先停止 WebServer 与 SoftAP，确保强制切换语义成立；已通过源码测试与 `idf.py build` 验证。
+- 2026-04-03：继续修复按键配网入口的两个回归点：单击事件从 `BUTTON_PRESS_DOWN` 改为 `BUTTON_SINGLE_CLICK` 以避免三连击先误触 BLE，同时新增 `network_service_request_ble()` 清理 `s_portal_requested`，修复 AP -> BLE 后状态仍卡在 `PORTAL_REQUIRED`；已通过源码测试与 `idf.py build` 验证。
+- 2026-04-03：针对板端 `hci inits failed / nimble host init failed`，将 NimBLE 配置收敛到最小 peripheral/server 档，关闭 central/observer/gatt client/BLE 5.x 扩展扫描等非必需能力，并移除 `sdkconfig.defaults` 中对当前 ESP32-S3 目标无效的 `BTDM_CTRL_MODE_*` 键；已通过源码测试、`fullclean` 与 `idf.py build`，尚待真机复验。
+- 2026-04-03锛氶拡瀵光€淏LE HCI 宸叉仮澶嶄絾浠嶆湭鍑虹幇 `BLE host task started` / advertising 鏃ュ織鈥濈幇璞★紝鍦?`ble_provision_transport.c` 鏂板 `nimble_host` 鍒涘缓鎺㈤拡锛氭墦鍗板惎鍔ㄥ墠鍚庣殑鐗囧唴 heap锛屽苟鐢?`xTaskGetHandle("nimble_host")` 妫€鏌?host task 鏄惁鐪熸鍒涘缓锛屽湪闈欓粯澶辫触鏃舵敹鏁涗负鏄惧紡閿欒鍥炴粴锛涘凡閫氳繃婧愮爜娴嬭瘯涓?`idf.py build` 楠岃瘉銆?

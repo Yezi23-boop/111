@@ -47,6 +47,13 @@ class WifiProvisionBleSourceTests(unittest.TestCase):
         self.assertIn("wifi_provision_schedule_ble_stop();", source)
         self.assertIn("wifi_provision_delayed_ble_stop_task", source)
 
+    def test_wifi_provision_start_blecfg_stops_ap_fallback_when_active(self) -> None:
+        source = WIFI_PROVISION_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("if (current_transport == WIFI_PROVISION_TRANSPORT_AP)", source)
+        self.assertIn("ws_server_stop();", source)
+        self.assertIn("wifi_manager_stop_ap();", source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,7 @@ bool network_service_is_service_ready(void);
 esp_err_t network_service_get_ip(char *ip_str, size_t ip_str_len);
 
 void network_service_request_portal(void);
+void network_service_request_ble(void);
 
 #ifdef __cplusplus
 }

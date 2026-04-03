@@ -11,6 +11,25 @@ SDKCONFIG = REPO_ROOT / "sdkconfig"
 
 
 class NonblockingBootSourceTests(unittest.TestCase):
+    def test_hardware_init_button_maps_single_click_to_ble_and_triple_click_to_ap(
+        self,
+    ) -> None:
+        source = HARDWARE_INIT_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('ESP_LOGI(TAG, "按键单击！启动BLE配网模式...");', source)
+        self.assertIn("BUTTON_SINGLE_CLICK", source)
+        self.assertIn("network_service_request_ble();", source)
+        self.assertIn('ESP_LOGI(TAG, "BUTTON_TRIPLE_CLICK: %s", msg);', source)
+        self.assertIn("ret = wifi_provision_start_apcfg();", source)
+        self.assertIn(
+            "iot_button_register_cb(gpio_btn_handle, BUTTON_SINGLE_CLICK, NULL, button_single_click_cb, NULL);",
+            source,
+        )
+        self.assertNotIn(
+            "iot_button_register_cb(gpio_btn_handle, BUTTON_PRESS_DOWN, NULL, button_press_down_cb, NULL);",
+            source,
+        )
+
     def test_hardware_init_no_longer_blocks_waiting_for_wifi(self) -> None:
         source = HARDWARE_INIT_SOURCE.read_text(encoding="utf-8")
 

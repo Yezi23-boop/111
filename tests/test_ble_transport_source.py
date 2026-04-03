@@ -19,6 +19,8 @@ class BleTransportSourceTests(unittest.TestCase):
 
         self.assertIn("ble_provision_transport_reset_runtime_state", source)
         self.assertIn("nimble_port_deinit();", source)
+        self.assertIn('xTaskGetHandle("nimble_host")', source)
+        self.assertIn("nimble host task missing after init", source)
 
     def test_ble_transport_splits_adv_and_scan_response_fields(self) -> None:
         source = BLE_TRANSPORT_SOURCE.read_text(encoding="utf-8")

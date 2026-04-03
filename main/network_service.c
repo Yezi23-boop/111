@@ -196,3 +196,16 @@ esp_err_t network_service_get_ip(char *ip_str, size_t ip_str_len) {
 void network_service_request_portal(void) {
     network_service_enter_portal_required_state();
 }
+
+void network_service_request_ble(void) {
+    esp_err_t ret = wifi_provision_start_blecfg();
+
+    s_portal_requested = false;
+    s_network_ip[0] = '\0';
+    if (ret == ESP_OK) {
+        s_network_state = NETWORK_SERVICE_STATE_BLE_PROVISIONING;
+    } else {
+        ESP_LOGW(TAG, "explicit BLE provisioning start failed: %s",
+                 esp_err_to_name(ret));
+    }
+}

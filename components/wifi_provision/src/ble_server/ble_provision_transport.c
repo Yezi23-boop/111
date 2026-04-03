@@ -3,6 +3,9 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "host/ble_hs.h"
 #include "host/ble_hs_mbuf.h"
 #include "nimble/nimble_port.h"
@@ -51,6 +54,11 @@ static void ble_provision_transport_reset_runtime_state(void);
 static void ble_provision_transport_reset_rx_frame(void);
 static void ble_provision_transport_consume_rx_chunk(const char *chunk,
                                                      size_t chunk_len);
+static size_t ble_provision_transport_get_internal_heap_free(void);
+
+static size_t ble_provision_transport_get_internal_heap_free(void) {
+    return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
 
 static void ble_provision_transport_reset_rx_frame(void) {
     s_rx_frame_len = 0;
@@ -357,6 +365,7 @@ esp_err_t ble_provision_transport_start(
     const char *device_name, ble_provision_transport_rx_cb_t rx_cb,
     ble_provision_transport_state_cb_t state_cb, void *user_data) {
     int rc = 0;
+    TaskHandle_t host_task = NULL;
 
     if (device_name == NULL || rx_cb == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -369,6 +378,8 @@ esp_err_t ble_provision_transport_start(
     s_active = true;
 
     if (!s_initialized) {
+        ESP_LOGI(TAG, "starting NimBLE transport, internal_heap=%u",
+                 (unsigned)ble_provision_transport_get_internal_heap_free());
         rc = nimble_port_init();
         if (rc != ESP_OK) {
             ESP_LOGE(TAG, "nimble init failed, rc=%d", rc);
@@ -409,6 +420,17 @@ esp_err_t ble_provision_transport_start(
 
         ble_store_config_init();
         nimble_port_freertos_init(ble_provision_host_task);
+        host_task = xTaskGetHandle("nimble_host");
+        if (host_task == NULL) {
+            ESP_LOGE(TAG,
+                     "nimble host task missing after init, internal_heap=%u",
+                     (unsigned)ble_provision_transport_get_internal_heap_free());
+            nimble_port_deinit();
+            ble_provision_transport_reset_runtime_state();
+            return ESP_FAIL;
+        }
+        ESP_LOGI(TAG, "nimble host task created, internal_heap=%u",
+                 (unsigned)ble_provision_transport_get_internal_heap_free());
         s_initialized = true;
         return ESP_OK;
     }
