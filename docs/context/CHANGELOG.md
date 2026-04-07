@@ -91,3 +91,4 @@
 - 2026-04-08：继续按用户指定，将 `origin/codex/from-e25e087a` 的提交 `ec490024a5cf225d2fb7d8f1c5949a0dc1aad03a` 中 `components/co5300_panel` 整体移植到当前 `codex/bluetooth`，使面板默认档位回到该提交中的 `TE=0 / PCLK=80MHz / max-transfer-lines=30` 配置。
 - 2026-04-08：按用户要求移除 `lvgl_port` 中未再使用的 `BOUNCE` flush 路径，删除 `LV_PORT_FLUSH_MODE_*` 双分支配置与片内 DMA bounce buffer 状态，只保留直接发送渲染缓冲的单一路径实现，并同步更新对应源码测试。
 - 2026-04-08：继续清理 `lvgl_port` 单路径收敛后的遗留配置，删除已无实际引用的 `LV_PORT_MAX_INFLIGHT_CHUNKS` 宏，并同步精简对应源码测试。
+- 2026-04-08：按用户指定，将 `origin/codex/from-e25e087a` 的提交 `ec490024a5cf225d2fb7d8f1c5949a0dc1aad03a` 中 `components/official_chat` 整体移植到当前 `codex/bluetooth`；当前 `official_chat` 相关源码测试无需额外适配即可通过。

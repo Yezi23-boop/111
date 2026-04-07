@@ -8,6 +8,7 @@
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <esp_timer.h>
+#include <freertos/idf_additions.h>
 
 #include "audio/audio_service.h"
 #include "audio/input_format_utils.h"
@@ -22,6 +23,23 @@ constexpr TickType_t kEncodeStopTimeoutTicks = pdMS_TO_TICKS(1000);
 constexpr int kWakeWordCacheMs = 2000;
 constexpr int kWakeWordDetectFrameMs = 30;
 constexpr size_t kWakeWordEncodeTaskStackBytes = 4096 * 6;
+
+void LogWakeWordHeapState(const char *stage) {
+  const size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  const size_t internal_largest =
+      heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+  const size_t spiram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  const size_t spiram_largest =
+      heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+  ESP_LOGI(kTag,
+           "wake word heap (%s): internal_free=%u internal_largest=%u "
+           "spiram_free=%u spiram_largest=%u",
+           stage != nullptr ? stage : "unknown",
+           static_cast<unsigned>(internal_free),
+           static_cast<unsigned>(internal_largest),
+           static_cast<unsigned>(spiram_free),
+           static_cast<unsigned>(spiram_largest));
+}
 
 void LogEncodeTaskStackHighWater(const char *stage) {
   const auto high_water = uxTaskGetStackHighWaterMark(nullptr);
@@ -117,6 +135,7 @@ bool AfeWakeWord::Initialize(AudioCodecIface *codec, srmodel_list_t *models_list
     return false;
   }
 
+  LogWakeWordHeapState("before-afe-config");
   afe_config_t *afe_config = afe_config_init(input_format, models_,
                                              AFE_TYPE_SR, AFE_MODE_HIGH_PERF);
   if (afe_config == nullptr) {
@@ -143,6 +162,7 @@ bool AfeWakeWord::Initialize(AudioCodecIface *codec, srmodel_list_t *models_list
 
   detection_stop_requested_ = false;
   if (detection_task_handle_ == nullptr) {
+    LogWakeWordHeapState("before-detection-task");
     const BaseType_t created = xTaskCreate(
         [](void *arg) {
           auto *self = static_cast<AfeWakeWord *>(arg);
@@ -153,6 +173,7 @@ bool AfeWakeWord::Initialize(AudioCodecIface *codec, srmodel_list_t *models_list
         "afe_wake", 4096, this, 3, &detection_task_handle_);
     if (created != pdPASS) {
       ESP_LOGE(kTag, "failed to create wake word detection task");
+      LogWakeWordHeapState("detection-task-create-failed");
       afe_iface_->destroy(afe_data_);
       afe_data_ = nullptr;
       afe_iface_ = nullptr;

@@ -14,6 +14,7 @@
 
 #include <esp_crt_bundle.h>
 #include <esp_log.h>
+#include <freertos/idf_additions.h>
 
 #include "system_util.h"
 
@@ -34,6 +35,18 @@ constexpr int64_t kUdpAudioStallTimeoutUs =
     static_cast<int64_t>(CONFIG_OFFICIAL_CHAT_UDP_AUDIO_STALL_TIMEOUT_MS) *
     1000;
 constexpr size_t kMaxTrackedOutboundPayloads = 8;
+
+void LogUdpTaskHeapState(const char *reason) {
+  ESP_LOGI(kTag,
+           "udp task heap (%s): internal_free=%lu internal_largest=%lu spiram_free=%lu spiram_largest=%lu",
+           reason != nullptr ? reason : "unknown",
+           static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+           static_cast<unsigned long>(
+               heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
+           static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+           static_cast<unsigned long>(
+               heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
+}
 
 struct ParsedEndpoint {
   std::string host;
@@ -648,10 +661,12 @@ bool MqttProtocol::ConnectUdpSocket() {
   udp_connected_.store(true);
   ResetUdpAudioStallTracking(false);
   xEventGroupClearBits(event_group_handle_, MQTT_PROTOCOL_RECEIVE_TASK_EXIT_EVENT);
+  LogUdpTaskHeapState("before-create");
   if (xTaskCreate(&MqttProtocol::ReceiveTask, "mqtt_udp_rx",
-                  kUdpReceiveTaskStackBytes, this, kUdpReceiveTaskPriority,
-                  &receive_task_handle_) != pdPASS) {
+                  kUdpReceiveTaskStackBytes, this,
+                  kUdpReceiveTaskPriority, &receive_task_handle_) != pdPASS) {
     ESP_LOGE(kTag, "failed to create udp receive task");
+    LogUdpTaskHeapState("create-failed");
     close(udp_socket_);
     udp_socket_ = -1;
     udp_connected_.store(false);

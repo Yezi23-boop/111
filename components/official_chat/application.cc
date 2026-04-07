@@ -28,10 +28,12 @@ constexpr char kActivationTaskName[] = "official_ota";
 constexpr char kDefaultWebsocketUrl[] = "wss://api.tenclass.net/xiaozhi/v1/";
 constexpr char kDefaultAccessToken[] = "test-token";
 constexpr float kDefaultRecordGainDb = 24.0f;
-constexpr uint32_t kApplicationWorkerTaskStackBytes = 16384;
+constexpr uint32_t kApplicationWorkerTaskStackBytes = 8192;
 constexpr uint32_t kActivationTaskStackBytes = 8192;
 constexpr TickType_t kWorkerStopTimeoutTicks = pdMS_TO_TICKS(1000);
 constexpr TickType_t kActivationStopTimeoutTicks = pdMS_TO_TICKS(2000);
+constexpr TickType_t kWakeWordEnableAfterActivationDelayTicks =
+    pdMS_TO_TICKS(20);
 constexpr int kMaxActivationAttempts = 10;
 constexpr int64_t kGracefulButtonStopTimeoutUs = 3000000;
 constexpr int kGracefulButtonStopDrainQuietMs = 200;
@@ -697,6 +699,15 @@ void Application::HandleStateChanged() {
       CancelGracefulButtonStop("idle");
       SetDownlinkAudioActive(false, "idle");
       audio_service_.EnableVoiceProcessing(false);
+      if (wake_word_init_after_activation_pending_) {
+        wake_word_init_after_activation_pending_ = false;
+        ESP_LOGI(kTag,
+                 "delaying wake word initialization after activation wait_ms=%lu",
+                 static_cast<unsigned long>(
+                     kWakeWordEnableAfterActivationDelayTicks *
+                     portTICK_PERIOD_MS));
+        vTaskDelay(kWakeWordEnableAfterActivationDelayTicks);
+      }
       audio_service_.EnableWakeWordDetection(true);
       audio_service_.ResetDecoder();
       break;
@@ -737,6 +748,9 @@ void Application::HandleActivationDoneEvent() {
   if (!protocol_) {
     InitializeProtocol();
   }
+  // Release activation-only state before idle re-enables wake word/AFE.
+  ota_.reset();
+  wake_word_init_after_activation_pending_ = true;
   if (protocol_) {
     SetDeviceState(DeviceState::kIdle);
   } else {

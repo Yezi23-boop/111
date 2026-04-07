@@ -148,6 +148,7 @@ class Application {
   bool button_stop_tts_stop_seen_ = false;
   bool button_stop_channel_closed_ = false;
   bool button_stop_finalizing_ = false;
+  bool wake_word_init_after_activation_pending_ = false;
   int64_t button_stop_deadline_us_ = 0;
   std::atomic<bool> shutting_down_{false};
 };

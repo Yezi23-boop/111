@@ -6,7 +6,9 @@
 #include <cstring>
 #include <type_traits>
 
+#include <esp_heap_caps.h>
 #include <esp_log.h>
+#include <freertos/idf_additions.h>
 
 #include "audio/input_format_utils.h"
 #include "audio/local_audio_codec_adapter.h"
@@ -49,6 +51,19 @@ void LogTaskStackHighWater(const char *task_name) {
   ESP_LOGI(kTag, "%s stack high watermark: %lu",
            task_name != nullptr ? task_name : "audio_task",
            static_cast<unsigned long>(high_water));
+}
+
+void LogAudioTaskHeapState(const char *stage) {
+  ESP_LOGI(
+      kTag,
+      "audio task heap (%s): internal_free=%u internal_largest=%u spiram_free=%u "
+      "spiram_largest=%u",
+      stage != nullptr ? stage : "unknown",
+      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+      static_cast<unsigned>(
+          heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
+      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+      static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
 }
 
 static_assert(std::is_base_of<AudioCodecIface, LocalAudioCodecAdapter>::value,
@@ -162,6 +177,7 @@ esp_err_t AudioService::Start() {
   if (audio_power_timer_ != nullptr) {
     esp_timer_start_periodic(audio_power_timer_, 1000000);
   }
+  LogAudioTaskHeapState("before-create");
 
   const BaseType_t input_created = xTaskCreate(
       [](void *arg) {
@@ -191,7 +207,7 @@ esp_err_t AudioService::Start() {
       kAudioOutputTaskName, kAudioOutputTaskStackBytes, this, 4,
       &audio_output_task_handle_);
 
-  const BaseType_t opus_created = xTaskCreate(
+  const BaseType_t opus_created = xTaskCreateWithCaps(
       [](void *arg) {
         auto *self = static_cast<AudioService *>(arg);
         LogTaskStackHighWater(kAudioOpusTaskName);
@@ -200,13 +216,14 @@ esp_err_t AudioService::Start() {
         if (self->event_group_ != nullptr) {
           xEventGroupSetBits(self->event_group_, kAsEventOpusTaskExited);
         }
-        vTaskDelete(nullptr);
+        vTaskDeleteWithCaps(nullptr);
       },
       kAudioOpusTaskName, kAudioOpusTaskStackBytes, this, 2,
-      &opus_codec_task_handle_);
+      &opus_codec_task_handle_, MALLOC_CAP_SPIRAM);
 
   if (input_created != pdPASS || output_created != pdPASS ||
       opus_created != pdPASS) {
+    LogAudioTaskHeapState("create-failed");
     ESP_LOGE(kTag,
              "failed to create audio service tasks: in=%ld out=%ld opus=%ld",
              static_cast<long>(input_created), static_cast<long>(output_created),
