@@ -25,7 +25,7 @@ class LvPortModuleSplitSourceTests(unittest.TestCase):
 
         self.assertIn("void lv_port_disp_flush(", display_source)
         self.assertIn("void lv_port_panel_init(", display_source)
-        self.assertNotIn("lv_port_flush_area_chunked_simple", display_source)
+        self.assertIn("lv_port_flush_area_chunked_simple", display_source)
 
         self.assertIn("void lv_port_indev_init(", input_source)
         self.assertIn("void lv_port_touch_init(", input_source)

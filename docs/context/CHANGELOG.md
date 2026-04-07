@@ -87,3 +87,7 @@
 - 2026-04-03：继续修复按键配网入口的两个回归点：单击事件从 `BUTTON_PRESS_DOWN` 改为 `BUTTON_SINGLE_CLICK` 以避免三连击先误触 BLE，同时新增 `network_service_request_ble()` 清理 `s_portal_requested`，修复 AP -> BLE 后状态仍卡在 `PORTAL_REQUIRED`；已通过源码测试与 `idf.py build` 验证。
 - 2026-04-03：针对板端 `hci inits failed / nimble host init failed`，将 NimBLE 配置收敛到最小 peripheral/server 档，关闭 central/observer/gatt client/BLE 5.x 扩展扫描等非必需能力，并移除 `sdkconfig.defaults` 中对当前 ESP32-S3 目标无效的 `BTDM_CTRL_MODE_*` 键；已通过源码测试、`fullclean` 与 `idf.py build`，尚待真机复验。
 - 2026-04-03锛氶拡瀵光€淏LE HCI 宸叉仮澶嶄絾浠嶆湭鍑虹幇 `BLE host task started` / advertising 鏃ュ織鈥濈幇璞★紝鍦?`ble_provision_transport.c` 鏂板 `nimble_host` 鍒涘缓鎺㈤拡锛氭墦鍗板惎鍔ㄥ墠鍚庣殑鐗囧唴 heap锛屽苟鐢?`xTaskGetHandle("nimble_host")` 妫€鏌?host task 鏄惁鐪熸鍒涘缓锛屽湪闈欓粯澶辫触鏃舵敹鏁涗负鏄惧紡閿欒鍥炴粴锛涘凡閫氳繃婧愮爜娴嬭瘯涓?`idf.py build` 楠岃瘉銆?
+- 2026-04-08：按用户指定，将 `origin/codex/from-e25e087a` 的提交 `ec490024a5cf225d2fb7d8f1c5949a0dc1aad03a` 中 `components/lvgl_port` 整体移植到当前 `codex/bluetooth`，用于对齐该提交中的显示 flush 路径与分块发送实现。
+- 2026-04-08：继续按用户指定，将 `origin/codex/from-e25e087a` 的提交 `ec490024a5cf225d2fb7d8f1c5949a0dc1aad03a` 中 `components/co5300_panel` 整体移植到当前 `codex/bluetooth`，使面板默认档位回到该提交中的 `TE=0 / PCLK=80MHz / max-transfer-lines=30` 配置。
+- 2026-04-08：按用户要求移除 `lvgl_port` 中未再使用的 `BOUNCE` flush 路径，删除 `LV_PORT_FLUSH_MODE_*` 双分支配置与片内 DMA bounce buffer 状态，只保留直接发送渲染缓冲的单一路径实现，并同步更新对应源码测试。
+- 2026-04-08：继续清理 `lvgl_port` 单路径收敛后的遗留配置，删除已无实际引用的 `LV_PORT_MAX_INFLIGHT_CHUNKS` 宏，并同步精简对应源码测试。

@@ -7,12 +7,12 @@ PANEL_DEFAULTS = REPO_ROOT / "components" / "co5300_panel" / "co5300_panel_defau
 
 
 class Co5300PanelDefaultsSourceTests(unittest.TestCase):
-    def test_panel_defaults_enable_te_and_respect_50mhz_hardware_ceiling(self) -> None:
+    def test_panel_defaults_match_migrated_legacy_profile(self) -> None:
         source = PANEL_DEFAULTS.read_text(encoding="utf-8")
 
-        self.assertIn("#define CO5300_PANEL_MAX_TRANSFER_LINES 48", source)
-        self.assertIn("#define CO5300_PANEL_USE_TE_SIGNAL 1", source)
-        self.assertIn("#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000)", source)
+        self.assertIn("#define CO5300_PANEL_MAX_TRANSFER_LINES 30", source)
+        self.assertIn("#define CO5300_PANEL_USE_TE_SIGNAL 0", source)
+        self.assertIn("#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (80 * 1000 * 1000)", source)
         self.assertIn("#define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 8", source)
 
 

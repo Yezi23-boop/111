@@ -20,10 +20,7 @@ extern void *s_touch;
 extern int16_t s_last_x;
 extern int16_t s_last_y;
 extern bool s_byte_swap_enabled;
-extern SemaphoreHandle_t s_flush_done_sem;
-extern uint8_t *s_tx_chunk_bufs[LV_PORT_MAX_INFLIGHT_CHUNKS];
-extern size_t s_tx_chunk_buf_size;
-extern uint32_t s_tx_chunk_buf_next;
+extern volatile int s_flush_pending_count;
 
 #if CO5300_PANEL_USE_TE_SIGNAL
 typedef struct

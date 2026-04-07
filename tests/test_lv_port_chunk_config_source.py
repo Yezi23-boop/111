@@ -7,13 +7,19 @@ LV_PORT_CONFIG = REPO_ROOT / "components" / "lvgl_port" / "lv_port_config.h"
 
 
 class LvPortChunkConfigSourceTests(unittest.TestCase):
-    def test_chunk_policy_uses_512_line_tiles_and_100_line_flush_chunks(self) -> None:
+    def test_chunk_policy_uses_512_line_tiles_and_30_line_flush_chunks(self) -> None:
         lv_port_source = LV_PORT_CONFIG.read_text(encoding="utf-8")
 
         self.assertIn("#define LV_PORT_FIXED_CHUNK_LINES1 512", lv_port_source)
         self.assertIn("#define LV_PORT_FIXED_CHUNK_LINES2 512", lv_port_source)
-        self.assertIn("#define LV_PORT_FIXED_CHUNK_LINES 48", lv_port_source)
-        self.assertIn("#define LV_PORT_MAX_INFLIGHT_CHUNKS 2", lv_port_source)
+        self.assertIn("#define LV_PORT_FIXED_CHUNK_LINES 30", lv_port_source)
+
+    def test_chunk_policy_does_not_expose_dual_flush_modes(self) -> None:
+        lv_port_source = LV_PORT_CONFIG.read_text(encoding="utf-8")
+
+        self.assertNotIn("LV_PORT_FLUSH_MODE_LEGACY", lv_port_source)
+        self.assertNotIn("LV_PORT_FLUSH_MODE_BOUNCE", lv_port_source)
+        self.assertNotIn("LV_PORT_FLUSH_MODE", lv_port_source)
 
 
 if __name__ == "__main__":

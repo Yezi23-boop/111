@@ -34,12 +34,12 @@
 #define CO5300_PANEL_MAX_TRANSFER_LINES 30   // 单次传输最大行数（优先确保 inflight=2 时两块片内 DMA bounce buffer 可分配）
 
 /* TE信号配置 */
-#define CO5300_PANEL_USE_TE_SIGNAL 1 // 1=启用TE同步, 0=禁用
+#define CO5300_PANEL_USE_TE_SIGNAL 0 // 1=启用TE同步, 0=禁用
 #define CO5300_PANEL_TE_MODE 0x00    // 0x00=Mode 1 (仅V-Porch, 推荐), 0x01=Mode 2 (V-Porch+H-Porch)
 
 /* ========== 性能优化 ========== */
 
-#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000) // CO5300 当前硬件上限 50MHz；30FPS 稳定档按真实上限配置
+#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (80 * 1000 * 1000) // CO5300 当前硬件上限 50MHz；30FPS 稳定档按真实上限配置
 #define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 8        // 传输队列深度（够用即可，避免过深队列放大抖动）
 
 /* ========== LCD参数 ========== */

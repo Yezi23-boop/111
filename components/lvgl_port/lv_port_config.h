@@ -35,17 +35,6 @@
  * 在 CO5300 `PCLK <= 50MHz` 的硬件上限下，全屏真 60FPS 几乎没有总线余量，
  * 当前优先目标改为“减少每帧块数 + 保持交互顺滑”，而不是继续按错误的 80MHz 假设调参。
  * 当前屏幕 410x502/RGB565 一帧约 411,640 字节，
- * flush chunk 设为 25 行时，全屏约 20 块，块数进一步增加，但更有机会拿到 2 个片内 DMA bounce buffer，
- * 从而避免退化到“直接发送 PSRAM 渲染缓冲”并放大撕裂感。
+ * 固定按 30 行切块，优先保持发送路径简单可控，便于继续围绕分块大小和面板时序做 A/B。
  */
-#define LV_PORT_FIXED_CHUNK_LINES 30 // 固定传输行数（30FPS 稳定档：优先恢复 inflight=2 的片内 DMA bounce buffer）
-
-/**
- * @brief 允许同时在 SPI 队列中的 chunk 数量
- * @details
- * - 设为 1：最稳，但刷新率更低
- * - 设为 2：当前 30FPS 稳定档，优先保留双 bounce buffer 吞吐
- * - 设为 1：已验证会进一步拉长整帧发送时间，导致刷新率下降且撕裂更明显
- * - 继续增大时，可能再次触发条纹、错块或内部 DMA 私有缓冲压力问题
- */
-#define LV_PORT_MAX_INFLIGHT_CHUNKS 2
+#define LV_PORT_FIXED_CHUNK_LINES 30 // 固定传输行数

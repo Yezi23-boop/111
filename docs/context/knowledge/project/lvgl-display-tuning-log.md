@@ -447,6 +447,28 @@ last_reviewed: 2026-04-01
   - 这次修的是 TE 同步语义本身，而不是再调经验参数
   - 若此后撕裂仍明显，下一步应继续看“是否需要 scanline 级等待策略”，而不是回头再怀疑 bounce buffer
 
+### 22. 当前蓝牙分支已移除 `BOUNCE` flush 双路径
+
+- 背景：
+  - 用户明确要求当前分支不再保留 `BOUNCE` 路径
+  - 因此 `components/lvgl_port` 不再维护“LEGACY/BOUNCE 双实现 + 宏开关”的并行结构
+- 当前代码状态：
+  - `components/lvgl_port/lv_port_config.h`
+    - 已删除 `LV_PORT_FLUSH_MODE_LEGACY`
+    - 已删除 `LV_PORT_FLUSH_MODE_BOUNCE`
+    - 已删除 `LV_PORT_FLUSH_MODE` 选择宏
+  - `components/lvgl_port/lv_port.c`
+    - 已删除 `s_flush_done_sem`
+    - 已删除 `s_tx_chunk_bufs`
+    - 已删除 `s_tx_chunk_buf_size`
+    - 已删除 `s_tx_chunk_buf_next`
+  - `components/lvgl_port/lv_port_display.c`
+    - 已删除 bounce buffer 分配与复制逻辑
+    - 只保留直接对 `px_map` 做 `rgb565 swap` 后发送的路径
+- 适用边界：
+  - 本节描述的是当前 `codex/bluetooth` 分支的现状
+  - 文档前文涉及 bounce buffer 的章节属于历史调参记录，代表过去实验结论，不再代表当前分支默认实现
+
 ## 后续 agent 使用建议
 
 - 后续继续调参前，先读本文，再读 [display-render-touch-transfer-pipeline.md](/D:/esp32S3/111/docs/context/knowledge/project/display-render-touch-transfer-pipeline.md)

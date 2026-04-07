@@ -13,10 +13,7 @@ void *s_touch = NULL;
 int16_t s_last_x = 0;
 int16_t s_last_y = 0;
 bool s_byte_swap_enabled = LV_PORT_BYTE_SWAP_ENABLE;
-SemaphoreHandle_t s_flush_done_sem = NULL;
-uint8_t *s_tx_chunk_bufs[LV_PORT_MAX_INFLIGHT_CHUNKS] = {0};
-size_t s_tx_chunk_buf_size = 0;
-uint32_t s_tx_chunk_buf_next = 0;
+volatile int s_flush_pending_count = 0;
 
 #if CO5300_PANEL_USE_TE_SIGNAL
 frame_sync_ctx_t s_frame_ctx = {

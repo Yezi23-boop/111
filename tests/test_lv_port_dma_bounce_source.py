@@ -8,14 +8,18 @@ LV_PORT_DISPLAY = REPO_ROOT / "components" / "lvgl_port" / "lv_port_display.c"
 
 
 class LvPortDmaBounceSourceTests(unittest.TestCase):
-    def test_lv_port_uses_internal_dma_bounce_buffers_before_flush(self) -> None:
+    def test_lv_port_uses_single_flush_path_without_dma_bounce_buffers(self) -> None:
         root_source = LV_PORT_ROOT.read_text(encoding="utf-8")
         display_source = LV_PORT_DISPLAY.read_text(encoding="utf-8")
 
-        self.assertIn("uint8_t *s_tx_chunk_bufs[LV_PORT_MAX_INFLIGHT_CHUNKS]", root_source)
-        self.assertIn("heap_caps_malloc(tx_buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)", display_source)
-        self.assertIn("memcpy(tx_px_map, px_map, color_bytes);", display_source)
-        self.assertIn("return esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, tx_px_map);", display_source)
+        self.assertNotIn("uint8_t *s_tx_chunk_bufs[LV_PORT_MAX_INFLIGHT_CHUNKS]", root_source)
+        self.assertNotIn("s_tx_chunk_buf_size", root_source)
+        self.assertNotIn("s_tx_chunk_buf_next", root_source)
+        self.assertNotIn("heap_caps_malloc(tx_buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)", display_source)
+        self.assertNotIn("memcpy(tx_px_map, px_map, color_bytes);", display_source)
+        self.assertNotIn("return esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, tx_px_map);", display_source)
+        self.assertNotIn("LV_PORT_FLUSH_MODE_BOUNCE", display_source)
+        self.assertNotIn("LV_PORT_FLUSH_MODE_LEGACY", display_source)
 
     def test_lv_port_uses_explicit_partial_render_mode(self) -> None:
         source = LV_PORT_DISPLAY.read_text(encoding="utf-8")
