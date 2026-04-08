@@ -52,13 +52,3 @@ config OFFICIAL_CHAT_UDP_AUDIO_STALL_TIMEOUT_MS
         false mid-sentence stalls.
 
 endmenu
-
-menu "Application Experiments"
-
-config APP_AI_CHAT_EXPERIMENT
-    bool "Build AI chat experiment entry"
-    default n
-    help
-        Build and boot the standalone AI chat experiment entry instead of 111.c.
-
-endmenu

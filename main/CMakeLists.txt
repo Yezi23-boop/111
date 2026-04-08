@@ -1,78 +1,47 @@
-file(GLOB_RECURSE main_common_srcs
-    ${CMAKE_CURRENT_LIST_DIR}/*.c
+set(app_srcs
+    ${CMAKE_CURRENT_LIST_DIR}/app/app_main.c
+    ${CMAKE_CURRENT_LIST_DIR}/app/hardware_init.c
 )
 
-set(official_chat_service_src ${CMAKE_CURRENT_LIST_DIR}/official_chat_service.c)
-list(FIND main_common_srcs ${official_chat_service_src} official_chat_service_index)
-if(official_chat_service_index EQUAL -1)
-    list(APPEND main_common_srcs ${official_chat_service_src})
-endif()
-
-set(ui_font_assets_src ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ui_font_assets.c)
-list(FIND main_common_srcs ${ui_font_assets_src} ui_font_assets_index)
-if(ui_font_assets_index EQUAL -1)
-    list(APPEND main_common_srcs ${ui_font_assets_src})
-endif()
-
-set(cbin_font_bridge_src ${CMAKE_CURRENT_LIST_DIR}/ui/custom/cbin_font_bridge.c)
-list(FIND main_common_srcs ${cbin_font_bridge_src} cbin_font_bridge_index)
-if(cbin_font_bridge_index EQUAL -1)
-    list(APPEND main_common_srcs ${cbin_font_bridge_src})
-endif()
-
-set(ai_chat_view_src ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ai_chat_view.c)
-list(FIND main_common_srcs ${ai_chat_view_src} ai_chat_view_index)
-if(ai_chat_view_index EQUAL -1)
-    list(APPEND main_common_srcs ${ai_chat_view_src})
-endif()
-
-set(danger_detection_service_src ${CMAKE_CURRENT_LIST_DIR}/danger_detection_service.c)
-list(FIND main_common_srcs ${danger_detection_service_src} danger_detection_service_index)
-if(danger_detection_service_index EQUAL -1)
-    list(APPEND main_common_srcs ${danger_detection_service_src})
-endif()
-
-set(app_alert_manager_src ${CMAKE_CURRENT_LIST_DIR}/app_alert_manager.c)
-list(FIND main_common_srcs ${app_alert_manager_src} app_alert_manager_index)
-if(app_alert_manager_index EQUAL -1)
-    list(APPEND main_common_srcs ${app_alert_manager_src})
-endif()
-
-set(audio_alert_player_src ${CMAKE_CURRENT_LIST_DIR}/audio_alert_player.c)
-list(FIND main_common_srcs ${audio_alert_player_src} audio_alert_player_index)
-if(audio_alert_player_index EQUAL -1)
-    list(APPEND main_common_srcs ${audio_alert_player_src})
-endif()
-
-set(display_alert_adapter_src ${CMAKE_CURRENT_LIST_DIR}/display_alert_adapter.c)
-list(FIND main_common_srcs ${display_alert_adapter_src} display_alert_adapter_index)
-if(display_alert_adapter_index EQUAL -1)
-    list(APPEND main_common_srcs ${display_alert_adapter_src})
-endif()
-
-set(danger_detection_view_src ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_view.c)
-list(FIND main_common_srcs ${danger_detection_view_src} danger_detection_view_index)
-if(danger_detection_view_index EQUAL -1)
-    list(APPEND main_common_srcs ${danger_detection_view_src})
-endif()
-
-set(danger_detection_controller_src ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_controller.c)
-list(FIND main_common_srcs ${danger_detection_controller_src} danger_detection_controller_index)
-if(danger_detection_controller_index EQUAL -1)
-    list(APPEND main_common_srcs ${danger_detection_controller_src})
-endif()
-
-list(REMOVE_ITEM main_common_srcs
-    ${CMAKE_CURRENT_LIST_DIR}/111.c
-    ${CMAKE_CURRENT_LIST_DIR}/main_ai_chat_experiment.c
+set(service_srcs
+    ${CMAKE_CURRENT_LIST_DIR}/services/network_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/official_chat_service.c
 )
 
-set(app_entry_src ${CMAKE_CURRENT_LIST_DIR}/111.c)
-if(CONFIG_APP_AI_CHAT_EXPERIMENT)
-    set(app_entry_src ${CMAKE_CURRENT_LIST_DIR}/main_ai_chat_experiment.c)
-endif()
+set(feature_srcs
+    ${CMAKE_CURRENT_LIST_DIR}/features/alerts/app_alert_manager.c
+    ${CMAKE_CURRENT_LIST_DIR}/features/alerts/audio_alert_player.c
+    ${CMAKE_CURRENT_LIST_DIR}/features/alerts/display_alert_adapter.c
+    ${CMAKE_CURRENT_LIST_DIR}/features/audio/audio_app.c
+    ${CMAKE_CURRENT_LIST_DIR}/features/danger_detection/danger_detection_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/features/weather/hptts.c
+    ${CMAKE_CURRENT_LIST_DIR}/features/weather/time_weather.c
+)
 
-set(srcs ${main_common_srcs} ${app_entry_src})
+set(ui_runtime_srcs
+    ${CMAKE_CURRENT_LIST_DIR}/ui/lvgl_task.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ai_chat_view.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ai_ui_controller.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/cbin_font_bridge.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/clock_functions.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/custom.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_controller.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_view.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/scroll_functions.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ui_font_assets.c
+)
+
+file(GLOB_RECURSE ui_generated_srcs
+    ${CMAKE_CURRENT_LIST_DIR}/ui/generated/*.c
+)
+
+set(srcs
+    ${app_srcs}
+    ${service_srcs}
+    ${feature_srcs}
+    ${ui_runtime_srcs}
+    ${ui_generated_srcs}
+)
 
 set(include_dirs
     .

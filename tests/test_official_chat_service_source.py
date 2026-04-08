@@ -1,24 +1,22 @@
-import pathlib
 import unittest
 
+from tests.main_paths import APP_MAIN_SOURCE
+from tests.main_paths import OFFICIAL_CHAT_SERVICE_HEADER
+from tests.main_paths import OFFICIAL_CHAT_SERVICE_SOURCE
+from tests.main_paths import REPO_ROOT
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 OFFICIAL_CHAT_HEADER = REPO_ROOT / "components" / "official_chat" / "include" / "official_chat.h"
 OFFICIAL_CHAT_APP = REPO_ROOT / "components" / "official_chat" / "application.cc"
-SERVICE_HEADER = REPO_ROOT / "main" / "official_chat_service.h"
-SERVICE_SOURCE = REPO_ROOT / "main" / "official_chat_service.c"
-MAIN_ENTRY_SOURCE = REPO_ROOT / "main" / "111.c"
 AI_UI_SOURCE = REPO_ROOT / "main" / "ui" / "custom" / "ai_ui_controller.c"
-AI_EXPERIMENT_UI_SOURCE = REPO_ROOT / "main" / "ai_experiment_ui.c"
 
 
 class OfficialChatServiceSourceTests(unittest.TestCase):
     def test_service_header_and_source_exist(self) -> None:
-        self.assertTrue(SERVICE_HEADER.exists())
-        self.assertTrue(SERVICE_SOURCE.exists())
+        self.assertTrue(OFFICIAL_CHAT_SERVICE_HEADER.exists())
+        self.assertTrue(OFFICIAL_CHAT_SERVICE_SOURCE.exists())
 
     def test_service_wraps_official_chat_lifecycle(self) -> None:
-        source = SERVICE_SOURCE.read_text(encoding="utf-8")
+        source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "official_chat.h"', source)
         self.assertIn("official_chat_create(", source)
@@ -45,8 +43,8 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("official_chat_service_get_last_assistant_text(", source)
 
     def test_service_exposes_small_chat_message_queue(self) -> None:
-        header = SERVICE_HEADER.read_text(encoding="utf-8")
-        source = SERVICE_SOURCE.read_text(encoding="utf-8")
+        header = OFFICIAL_CHAT_SERVICE_HEADER.read_text(encoding="utf-8")
+        source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("official_chat_service_message_role_t", header)
         self.assertIn("official_chat_service_message_t", header)
@@ -82,7 +80,7 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
                       source)
 
     def test_service_shutdown_waits_transport_quiet_period_for_idle_session(self) -> None:
-        source = SERVICE_SOURCE.read_text(encoding="utf-8")
+        source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("official_chat_service_requires_shutdown_quiet_period(",
                       source)
@@ -104,26 +102,19 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn('EmitMessageEvent(OFFICIAL_CHAT_EVENT_ASSISTANT_TEXT', app)
 
     def test_formal_entry_initializes_official_chat_service(self) -> None:
-        source = MAIN_ENTRY_SOURCE.read_text(encoding="utf-8")
+        source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "official_chat_service.h"', source)
+        self.assertIn('#include "services/official_chat_service.h"', source)
         self.assertIn("official_chat_service_init()", source)
 
     def test_ai_ui_controller_uses_service_for_auto_start_and_status(self) -> None:
         source = AI_UI_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "ai_chat_view.h"', source)
-        self.assertIn('#include "official_chat_service.h"', source)
+        self.assertIn('#include "services/official_chat_service.h"', source)
         self.assertIn("official_chat_service_enter_foreground()", source)
         self.assertIn("official_chat_service_get_state()", source)
         self.assertIn("ai_chat_view_reload_messages(", source)
-
-    def test_ai_experiment_ui_reads_cached_conversation_text(self) -> None:
-        source = AI_EXPERIMENT_UI_SOURCE.read_text(encoding="utf-8")
-
-        self.assertIn('#include "ai_chat_view.h"', source)
-        self.assertIn("ai_chat_view_reload_messages(", source)
-
 
 if __name__ == "__main__":
     unittest.main()

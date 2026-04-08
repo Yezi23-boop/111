@@ -2,7 +2,7 @@
 id: lvgl-display-tuning-log
 tags: project, lvgl, display, co5300, tuning, debugging
 summary: 按时间记录 LVGL 9.3 显示异常排查中的每轮参数修改、实测现象与当前结论，供后续 agent 直接复用，避免重复调参。
-last_reviewed: 2026-04-01
+last_reviewed: 2026-04-08
 ---
 
 # LVGL 显示调参实验记录
@@ -24,7 +24,7 @@ last_reviewed: 2026-04-01
   - `CO5300` 在本项目上的 `PCLK` 实测/资料上限按 `50MHz` 收敛
   - 因此“全屏稳定 60 FPS”不再作为当前架构下的现实目标，目标改为“局部交互高帧率 + 主观顺滑”
 - `CO5300_PANEL_OPTIMIZED_PCLK_HZ` 从 `50MHz` 降到 `40MHz` 后，绿色条纹没有明显减少，说明“单纯时钟太快”不是主因
-- `main/lvgl_task.c` 与正常基线提交 `aa165525fddae2eb711da144c90539e33e0b67c` 的核心逻辑一致，目前不认为它是决定性根因
+- `main/ui/lvgl_task.c` 与正常基线提交 `aa165525fddae2eb711da144c90539e33e0b67c` 的核心逻辑一致，目前不认为它是决定性根因
 
 ## 调整记录
 

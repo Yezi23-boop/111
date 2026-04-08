@@ -28,6 +28,28 @@ static esp_err_t ble_provision_protocol_copy_json(cJSON *root, char *buffer,
     return ESP_OK;
 }
 
+static esp_err_t ble_provision_protocol_create_wifi_scan_root(
+    char *buffer, size_t buffer_len, const char *state, cJSON **root_out) {
+    cJSON *root = NULL;
+    esp_err_t ret = ESP_FAIL;
+
+    if (buffer == NULL || buffer_len == 0 || state == NULL || root_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_AddStringToObject(root, "evt", "wifi_scan");
+    cJSON_AddStringToObject(root, "state", state);
+
+    *root_out = root;
+    ret = ESP_OK;
+    return ret;
+}
+
 esp_err_t ble_provision_protocol_parse_request(const char *data,
                                                ble_prov_request_t *request) {
     cJSON *root = NULL;
@@ -56,6 +78,8 @@ esp_err_t ble_provision_protocol_parse_request(const char *data,
         request->cmd = BLE_PROV_CMD_HELLO;
     } else if (strcmp(cmd->valuestring, "status") == 0) {
         request->cmd = BLE_PROV_CMD_STATUS;
+    } else if (strcmp(cmd->valuestring, "scan_wifi") == 0) {
+        request->cmd = BLE_PROV_CMD_SCAN_WIFI;
     } else if (strcmp(cmd->valuestring, "start_ap_fallback") == 0) {
         request->cmd = BLE_PROV_CMD_START_AP_FALLBACK;
     } else if (strcmp(cmd->valuestring, "set_wifi") == 0) {
@@ -99,6 +123,95 @@ esp_err_t ble_provision_protocol_format_hello(char *buffer, size_t buffer_len,
     cJSON_AddStringToObject(root, "name", device_name);
     cJSON_AddNumberToObject(root, "ver", 1);
     cJSON_AddStringToObject(root, "fallback", "ap");
+
+    ret = ble_provision_protocol_copy_json(root, buffer, buffer_len);
+    cJSON_Delete(root);
+    return ret;
+}
+
+esp_err_t ble_provision_protocol_format_wifi_scan_started(char *buffer,
+                                                          size_t buffer_len) {
+    cJSON *root = NULL;
+    esp_err_t ret = ble_provision_protocol_create_wifi_scan_root(
+        buffer, buffer_len, "started", &root);
+
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = ble_provision_protocol_copy_json(root, buffer, buffer_len);
+    cJSON_Delete(root);
+    return ret;
+}
+
+esp_err_t ble_provision_protocol_format_wifi_scan_batch(
+    char *buffer, size_t buffer_len, const ble_prov_wifi_scan_item_t *items,
+    size_t item_count, bool more) {
+    cJSON *root = NULL;
+    cJSON *item_array = NULL;
+    esp_err_t ret = ble_provision_protocol_create_wifi_scan_root(
+        buffer, buffer_len, "batch", &root);
+
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    item_array = cJSON_AddArrayToObject(root, "items");
+    if (item_array == NULL) {
+        cJSON_Delete(root);
+        return ESP_ERR_NO_MEM;
+    }
+
+    for (size_t index = 0; index < item_count; ++index) {
+        cJSON *item = cJSON_CreateObject();
+        if (item == NULL) {
+            cJSON_Delete(root);
+            return ESP_ERR_NO_MEM;
+        }
+
+        cJSON_AddStringToObject(item, "ssid", items[index].ssid);
+        cJSON_AddNumberToObject(item, "rssi", items[index].rssi);
+        cJSON_AddBoolToObject(item, "encrypted", items[index].encrypted);
+        cJSON_AddItemToArray(item_array, item);
+    }
+
+    cJSON_AddBoolToObject(root, "more", more);
+    ret = ble_provision_protocol_copy_json(root, buffer, buffer_len);
+    cJSON_Delete(root);
+    return ret;
+}
+
+esp_err_t ble_provision_protocol_format_wifi_scan_done(char *buffer,
+                                                       size_t buffer_len,
+                                                       size_t total) {
+    cJSON *root = NULL;
+    esp_err_t ret = ble_provision_protocol_create_wifi_scan_root(
+        buffer, buffer_len, "done", &root);
+
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    cJSON_AddNumberToObject(root, "total", (double)total);
+    ret = ble_provision_protocol_copy_json(root, buffer, buffer_len);
+    cJSON_Delete(root);
+    return ret;
+}
+
+esp_err_t ble_provision_protocol_format_wifi_scan_failed(char *buffer,
+                                                         size_t buffer_len,
+                                                         const char *reason) {
+    cJSON *root = NULL;
+    esp_err_t ret = ble_provision_protocol_create_wifi_scan_root(
+        buffer, buffer_len, "failed", &root);
+
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    if (reason != NULL && reason[0] != '\0') {
+        cJSON_AddStringToObject(root, "reason", reason);
+    }
 
     ret = ble_provision_protocol_copy_json(root, buffer, buffer_len);
     cJSON_Delete(root);

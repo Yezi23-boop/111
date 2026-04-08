@@ -2,7 +2,7 @@
 id: project-repo-overview
 tags: project, architecture, modules, lvgl, audio, wifi, esp32-s3
 summary: 当前仓库的模块地图、启动链路和构建依赖摘要，便于定位 UI、音频和配网相关改动。
-last_reviewed: 2026-03-11
+last_reviewed: 2026-04-08
 ---
 
 # 当前仓库概览
@@ -14,27 +14,32 @@ last_reviewed: 2026-03-11
 
 ## 启动链路
 
-- 应用入口在 `main/111.c`。
-- `app_main()` 先调用 `hardware_init()`，再创建 `lvgl_task`、`time_and_weather` 和后台 `network_service`。
-- `main/hardware_init.c` 当前负责初始化 `NVS`、音频 SPIFFS、SD 卡、音频编解码器、按键和 `wifi_provision`，但不再阻塞等待 Wi-Fi 连接成功。
-- `main/network_service.c` 在 UI 启动后于后台继续执行：
+- 应用入口在 `main/app/app_main.c`。
+- `app_main()` 先调用 `app/hardware_init.c` 中的 `hardware_init()`，再创建 `ui/lvgl_task.c` 中的 `lvgl_task`，并启动后台 `services/network_service.c` 与 `services/official_chat_service.c`。
+- `main/app/hardware_init.c` 当前负责初始化 `NVS`、音频 SPIFFS、SD 卡、音频编解码器、按键和 `wifi_provision`，但不再阻塞等待 Wi-Fi 连接成功。
+- `main/services/network_service.c` 在 UI 启动后于后台继续执行：
   - `wifi_provision_start_auto()`
   - STA 联网状态轮询
   - `api.tenclass.net` / `mqtt.xiaozhi.me` 服务就绪探测
+- `main/features/weather/time_weather.c` 当前仍保留时间天气任务实现，但正式入口里的任务创建保持注释状态。
 - 当前仓库的正式启动模型已经从“联网成功后再进 UI”切换为“硬件 ready 后先起 UI，联网后台继续”，这样没网时也能先使用手表基础功能。
 
 ## 模块地图
 
+- `main/app`：应用入口与板级初始化。
+- `main/services`：后台联网状态机与 `official_chat` 生命周期服务。
+- `main/features/alerts`、`main/features/danger_detection`、`main/features/audio`、`main/features/weather`：业务特性与提醒链路。
 - `main/ui/generated`、`main/ui/custom`：GUI Guider 生成页面和自定义 UI 逻辑。
+- `main/ui/lvgl_task.c`：LVGL 运行时任务和 UI 轮询接缝。
 - `components/lvgl_port`：LVGL 显示与输入桥接层。
 - `components/co5300_panel`：`CO5300` 面板驱动和 `TE` 同步处理。
 - `components/touch_ft5x06`：`FT5x06` 触摸驱动。
 - `components/audio_codec`：音频编解码器与 I2S 相关初始化封装。
 - `components/mp3_player`：基于 `esp-audio-player` 的播放封装。
-- `components/mp3_player` 当前保留为独立底层播放器组件，已不再由 `main/time_weather.c` 在启动时隐式初始化。
+- `components/mp3_player` 当前保留为独立底层播放器组件，已不再由 `main/features/weather/time_weather.c` 在启动时隐式初始化。
 - `components/wifi_provision`：按钮触发、AP 配网页面和连接状态回调。
 - `components/sd_card`：SD 卡挂载和文件访问。
-- `main/time_weather.c`、`main/audio_app.c`：时间天气和音频初始化相关应用逻辑；配网与联网主链路在 `components/wifi_provision` 与 `main/hardware_init.c`。
+- `main/features/weather/time_weather.c`、`main/features/audio/audio_app.c`：时间天气和音频初始化相关应用逻辑；配网与联网主链路在 `components/wifi_provision` 与 `main/app/hardware_init.c`。
 - `components/wifi_provision/CMakeLists.txt` 把 `html/apcfg.html` 直接嵌入固件；`components/sd_card/sd_manager.c` 把 SD 卡挂载到 `/sdcard` 并显式放到 `SPI3_HOST` 以避开屏幕的 `SPI2_HOST`。
 
 ## 板级与总线要点
@@ -48,8 +53,8 @@ last_reviewed: 2026-03-11
 ## 排查优先级建议
 
 - 显示/触摸问题先看 `components/lvgl_port`、`components/co5300_panel`、`components/touch_ft5x06` 和 `main/ui`。
-- 音频播放问题先看 `main/audio_app.c`、`components/audio_codec`、`components/mp3_player` 和存储路径。
-- 配网/联网问题先看 `main/hardware_init.c`、`components/wifi_provision` 和 `components/wifi_provision/src/wifi_driver/wifi_manager.c`。
+- 音频播放问题先看 `main/features/audio/audio_app.c`、`components/audio_codec`、`components/mp3_player` 和存储路径。
+- 配网/联网问题先看 `main/app/hardware_init.c`、`main/services/network_service.c`、`components/wifi_provision` 和 `components/wifi_provision/src/wifi_driver/wifi_manager.c`。
 
 ## 约束提示
 

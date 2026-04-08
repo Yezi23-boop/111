@@ -2,7 +2,7 @@
 id: display-render-touch-transfer-pipeline
 tags: project, lvgl, display, touch, co5300, ft5x06, qspi, dma, rendering
 summary: 记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。
-last_reviewed: 2026-04-01
+last_reviewed: 2026-04-08
 ---
 
 # 显示渲染、传输与触摸输入链路
@@ -21,15 +21,15 @@ last_reviewed: 2026-04-01
 
 ### 1. 系统启动顺序
 
-- `main/111.c`
+- `main/app/app_main.c`
   - 先调用 `hardware_init()`
   - 再创建 `lvgl_task`
   - 然后启动 `network_service` 和 `official_chat_service`
-- `main/hardware_init.c`
+- `main/app/hardware_init.c`
   - 先初始化 `NVS`
   - 再初始化 `audio_app` / `SD` / `audio_codec`
   - 最后初始化 `Wi-Fi`
-- `main/lvgl_task.c`
+- `main/ui/lvgl_task.c`
   - 在独立任务中调用 `lv_port_init_small()`
   - 然后执行 `setup_ui()` / `events_init()`
   - 最后在循环里反复调用 `lv_timer_handler()`
@@ -44,7 +44,7 @@ last_reviewed: 2026-04-01
 
 ### 1. LVGL 入口
 
-- `main/lvgl_task.c` 中 `lv_port_init_small()` 完成 `lv_init()`、面板、触摸、显示缓冲、输入设备和 tick 初始化。
+- `main/ui/lvgl_task.c` 中 `lv_port_init_small()` 完成 `lv_init()`、面板、触摸、显示缓冲、输入设备和 tick 初始化。
 - `lv_timer_handler()` 驱动：
   - 对脏区域做失效管理
   - 进行对象绘制

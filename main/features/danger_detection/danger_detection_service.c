@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "app_alert_manager.h"
+#include "features/alerts/app_alert_manager.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"

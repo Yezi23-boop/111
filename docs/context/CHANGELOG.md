@@ -1,5 +1,12 @@
 # 上下文库变更记录
 
+- 2026-04-08：将 `main` 目录整理为 `app/services/features/ui` 分层结构，正式入口改为 `main/app/app_main.c`，并同步更新启动链路、AI 页面入口与仓库概览类知识卡。
+- 2026-04-08：删除 `main` 目录中的 AI 实验入口链路，移除 `ai_experiment_ui.c/.h`、`main_ai_chat_experiment.c` 及其 `CMake/Kconfig/测试` 挂钩，主工程仅保留 `111.c` 正式入口。
+- 2026-04-08：补充 BLE 终态延时关闭任务栈溢出知识卡，固化 `ble_stop_delay` 在调用 `ble_provision_transport_stop()/ble_gap_terminate()` 时 2048 字节栈不足、当前仓库已提升到 4096 的结论。
+- 2026-04-08：补充微信小程序 BLE notify 字节缓冲拆帧知识卡，固化“先按 `Uint8Array` 累积、再按 `\n` 拆帧、最后解码 JSON”以及连接建立/重置/卸载时必须同时清空 `notifyByteBuffer` 与 `notifyTextBuffer` 的规则，避免板端已分片上行而小程序仍持续等待 `hello/status/wifi_scan` 回包。
+- 2026-04-08：修复 BLE 扫 Wi-Fi 列表首轮实现中的 4 个回归点：将 BLE `wifi_scan batch` 从 3 条收敛到 1 条以满足当前 `256` 字节 JSON 上限；补齐 `wifi_manager_scan()` 内部失败到 BLE `scan_failed` 终态的回传；修正同 SSID 去重时“任一条加密即视为加密”的聚合逻辑；并把小程序手动输入隐藏网络时的默认加密状态收回到 `true`。
+- 2026-04-08：为自定义 BLE 配网新增 `scan_wifi` 能力知识卡，固化“设备端扫描附近 2.4G Wi-Fi -> BLE 分批回传列表 -> 小程序点选 SSID 后再 `set_wifi`”的协议格式、去重排序规则，以及小程序自动扫描/手动重扫/手动输入 SSID 的交互边界。
+- 2026-04-08：根据真机日志中 `ble_gap_adv_start()` 返回 `BLE_ERR_INV_HCI_CMD_PARMS` 的现象，补充并固化 BLE 配网所需的 controller 最小能力：`CONFIG_BT_CTRL_BLE_SCAN=y` 与 `CONFIG_BT_CTRL_BLE_MASTER=y`。
 - 2026-04-02：补充 BLE 配网“终态 notify 冲刷窗口”知识卡，并在 `wifi_provision.c` 中记录 `connected` 回包后延迟关闭 BLE transport 的稳定性处理，避免微信小程序漏收最后一条成功通知。
 - 2026-04-02：修复 BLE 配网首轮实现中的 AP 兜底状态闭环、`wifi_provision_init()` 错误传播与 NimBLE 初始化失败回滚，确保无凭据时 BLE 主路径和 AP 兜底路径不会互相抢占并保持可重试。
 - 2026-04-02：新增 BLE 配网与微信小程序方案知识卡，确定“自定义 BLE GATT 主路径 + 现有 AP 网页兜底 + 先固件后小程序”的实施边界与可行性结论。
@@ -92,3 +99,6 @@
 - 2026-04-08：按用户要求移除 `lvgl_port` 中未再使用的 `BOUNCE` flush 路径，删除 `LV_PORT_FLUSH_MODE_*` 双分支配置与片内 DMA bounce buffer 状态，只保留直接发送渲染缓冲的单一路径实现，并同步更新对应源码测试。
 - 2026-04-08：继续清理 `lvgl_port` 单路径收敛后的遗留配置，删除已无实际引用的 `LV_PORT_MAX_INFLIGHT_CHUNKS` 宏，并同步精简对应源码测试。
 - 2026-04-08：按用户指定，将 `origin/codex/from-e25e087a` 的提交 `ec490024a5cf225d2fb7d8f1c5949a0dc1aad03a` 中 `components/official_chat` 整体移植到当前 `codex/bluetooth`；当前 `official_chat` 相关源码测试无需额外适配即可通过。
+- 2026-04-08：修复 BLE 配网自定义 128-bit UUID 在 NimBLE 下的字节序错误，避免微信小程序已连接但 `getBLEDeviceServices` 报“未找到目标服务”；新增 `ble-provisioning-nimble-uuid-byte-order.md` 知识卡。
+- 2026-04-08：修复 BLE 配网 notify 回包无分隔符的问题，改为通过 `ble_gatts_notify_custom()` 发送以 `\n` 结尾的 JSON，避免微信小程序在 `wifi_scan` 多条 notify 场景下粘包解析失败。
+- 2026-04-08：继续收敛 BLE 上行兼容性，设备端 notify 改为 `20` 字节安全分片发送，解决微信小程序在未协商更大 MTU 时仍收不到完整 `hello/status/wifi_scan` 回包的问题。

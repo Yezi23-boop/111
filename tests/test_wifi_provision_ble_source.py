@@ -47,6 +47,13 @@ class WifiProvisionBleSourceTests(unittest.TestCase):
         self.assertIn("wifi_provision_schedule_ble_stop();", source)
         self.assertIn("wifi_provision_delayed_ble_stop_task", source)
 
+    def test_wifi_provision_uses_larger_ble_stop_task_stack(self) -> None:
+        source = WIFI_PROVISION_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("#define BLE_STOP_TASK_STACK_SIZE 4096", source)
+        self.assertIn('"ble_stop_delay"', source)
+        self.assertIn("BLE_STOP_TASK_STACK_SIZE, NULL, 2,", source)
+
     def test_wifi_provision_start_blecfg_stops_ap_fallback_when_active(self) -> None:
         source = WIFI_PROVISION_SOURCE.read_text(encoding="utf-8")
 

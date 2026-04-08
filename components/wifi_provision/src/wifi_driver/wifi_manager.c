@@ -354,25 +354,55 @@ esp_err_t wifi_manager_stop_ap(void) {
 static void scan_task(void *pv_parameters) {
     wifi_scan_task_ctx_t *ctx = (wifi_scan_task_ctx_t *)pv_parameters;
     wifi_scan_config_t scan_config = {0};
+    esp_err_t scan_ret = ESP_OK;
+    uint16_t ap_num = 0;
+    wifi_ap_record_t *ap_records = NULL;
 
-    if (esp_wifi_scan_start(&scan_config, true) == ESP_OK) {
-        uint16_t ap_num = 0;
-        esp_wifi_scan_get_ap_num(&ap_num);
-        if (ap_num > 0) {
-            wifi_ap_record_t *ap_records =
-                malloc(sizeof(wifi_ap_record_t) * ap_num);
-            if (ap_records != NULL) {
-                esp_wifi_scan_get_ap_records(&ap_num, ap_records);
-                if (ctx->cb != NULL) {
-                    ctx->cb(ap_records, ap_num);
-                }
-                free(ap_records);
-            }
-        } else if (ctx->cb != NULL) {
-            ctx->cb(NULL, 0);
+    scan_ret = esp_wifi_scan_start(&scan_config, true);
+    if (scan_ret != ESP_OK) {
+        if (ctx->cb != NULL) {
+            ctx->cb(NULL, 0, scan_ret);
         }
+        goto cleanup;
     }
 
+    scan_ret = esp_wifi_scan_get_ap_num(&ap_num);
+    if (scan_ret != ESP_OK) {
+        if (ctx->cb != NULL) {
+            ctx->cb(NULL, 0, scan_ret);
+        }
+        goto cleanup;
+    }
+
+    if (ap_num == 0) {
+        if (ctx->cb != NULL) {
+            ctx->cb(NULL, 0, ESP_OK);
+        }
+        goto cleanup;
+    }
+
+    ap_records = malloc(sizeof(wifi_ap_record_t) * ap_num);
+    if (ap_records == NULL) {
+        if (ctx->cb != NULL) {
+            ctx->cb(NULL, 0, ESP_ERR_NO_MEM);
+        }
+        goto cleanup;
+    }
+
+    scan_ret = esp_wifi_scan_get_ap_records(&ap_num, ap_records);
+    if (scan_ret != ESP_OK) {
+        if (ctx->cb != NULL) {
+            ctx->cb(NULL, 0, scan_ret);
+        }
+        goto cleanup;
+    }
+
+    if (ctx->cb != NULL) {
+        ctx->cb(ap_records, ap_num, ESP_OK);
+    }
+
+cleanup:
+    free(ap_records);
     xSemaphoreGive(scan_semaphore);
     scan_task_handle = NULL;
     free(ctx);
@@ -380,6 +410,8 @@ static void scan_task(void *pv_parameters) {
 }
 
 esp_err_t wifi_manager_scan(p_wifi_scan_callback callback) {
+    BaseType_t task_ret = pdPASS;
+
     if (xSemaphoreTake(scan_semaphore, 0) == pdTRUE) {
         wifi_scan_task_ctx_t *ctx = malloc(sizeof(wifi_scan_task_ctx_t));
         if (ctx == NULL) {
@@ -388,7 +420,14 @@ esp_err_t wifi_manager_scan(p_wifi_scan_callback callback) {
         }
 
         ctx->cb = callback;
-        xTaskCreate(scan_task, "wifi_scan", 4096, ctx, 5, &scan_task_handle);
+        task_ret =
+            xTaskCreate(scan_task, "wifi_scan", 4096, ctx, 5, &scan_task_handle);
+        if (task_ret != pdPASS) {
+            free(ctx);
+            xSemaphoreGive(scan_semaphore);
+            scan_task_handle = NULL;
+            return ESP_FAIL;
+        }
         return ESP_OK;
     }
     return ESP_ERR_INVALID_STATE;

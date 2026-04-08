@@ -1,14 +1,13 @@
-import pathlib
 import unittest
 
+from tests.main_paths import AUDIO_APP_SOURCE
+from tests.main_paths import REPO_ROOT
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 AUDIO_CODEC_HEADER = REPO_ROOT / "components" / "audio_codec" / "include" / "audio_codec.h"
 AUDIO_PLATFORM_HEADER = REPO_ROOT / "components" / "audio_codec" / "include" / "audio_platform_config.h"
 AUDIO_CODEC_SOURCE = REPO_ROOT / "components" / "audio_codec" / "audio_codec.c"
 AUDIO_CODEC_BUS_SOURCE = REPO_ROOT / "components" / "audio_codec" / "audio_codec_bus.c"
 AUDIO_CODEC_CMAKE = REPO_ROOT / "components" / "audio_codec" / "CMakeLists.txt"
-AUDIO_APP_SOURCE = REPO_ROOT / "main" / "audio_app.c"
 MP3_PLAYER_SOURCE = REPO_ROOT / "components" / "mp3_player" / "mp3_player.c"
 I2C_MANAGER_HEADER = REPO_ROOT / "components" / "i2c_manager" / "include" / "i2c_manager.h"
 

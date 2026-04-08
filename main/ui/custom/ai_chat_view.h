@@ -7,8 +7,8 @@
 
 #include "esp_err.h"
 #include "lvgl.h"
-#include "network_service.h"
-#include "official_chat_service.h"
+#include "services/network_service.h"
+#include "services/official_chat_service.h"
 
 #ifdef __cplusplus
 extern "C" {

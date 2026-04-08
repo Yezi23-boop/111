@@ -2,7 +2,7 @@
 id: storage-and-provisioning-paths
 tags: project, storage, sd, spiffs, wifi, provisioning, html
 summary: 当前仓库的存储路径、SD 总线选择和 AP 配网页面嵌入方式摘要。
-last_reviewed: 2026-03-11
+last_reviewed: 2026-04-08
 ---
 
 # 存储与配网路径
@@ -56,5 +56,5 @@ last_reviewed: 2026-03-11
 
 ## 适用边界
 
-- 本文基于 `components/sd_card/sd_manager.c`、`components/wifi_provision/CMakeLists.txt`、`components/wifi_provision/src/wifi_provision.c`、`main/lvgl_task.c` 和 `main/time_weather.c` 的当前实现整理。
+- 本文基于 `components/sd_card/sd_manager.c`、`components/wifi_provision/CMakeLists.txt`、`components/wifi_provision/src/wifi_provision.c`、`main/ui/lvgl_task.c` 和 `main/features/weather/time_weather.c` 的当前实现整理。
 - 若后续把配网页面改为 SPIFFS、网络下载或外置文件系统，需同步更新本文。

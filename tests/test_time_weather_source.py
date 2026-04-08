@@ -1,9 +1,6 @@
-import pathlib
 import unittest
 
-
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-TIME_WEATHER_SOURCE = REPO_ROOT / "main" / "time_weather.c"
+from tests.main_paths import TIME_WEATHER_SOURCE
 
 
 class TimeWeatherSourceTests(unittest.TestCase):

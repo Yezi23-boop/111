@@ -52,12 +52,15 @@ last_reviewed: 2026-04-02
 - `CONFIG_BT_ENABLED=y`
 - `CONFIG_BT_ENABLED=y`
 - `CONFIG_BT_NIMBLE_ENABLED=y`
+- `CONFIG_BT_CTRL_BLE_SCAN=y`
+- `CONFIG_BT_CTRL_BLE_MASTER=y`
 
 原因：
 
 - 当前目标只有 BLE 配网，没经典蓝牙需求。
 - 这套配置对 `ESP32-S3` 的 RAM 压力更小。
 - 与当前仓库已有的 `Wi-Fi + LVGL + audio` 组合更容易共存。
+- 当前仓库如果只保留 Host 侧 peripheral/broadcaster，而 Controller 侧关闭 `CONFIG_BT_CTRL_BLE_SCAN` 或 `CONFIG_BT_CTRL_BLE_MASTER`，真机可能在 `ble_gap_adv_start()` 时返回 `BLE_ERR_INV_HCI_CMD_PARMS`。
 
 ## 资源与风险
 

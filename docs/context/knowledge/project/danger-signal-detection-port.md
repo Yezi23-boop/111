@@ -2,7 +2,7 @@
 id: danger-signal-detection-port
 tags: project, audio, traffic-inference, lvgl, alert, esp32-s3
 summary: 记录危险音频识别移植、option_6 页面生命周期、统一提醒链路和资源释放边界。
-last_reviewed: 2026-04-01
+last_reviewed: 2026-04-08
 ---
 
 # 危险信号识别移植
@@ -18,7 +18,7 @@ last_reviewed: 2026-04-01
 ## 识别与提醒链路
 
 - 识别组件保留为独立 `components/traffic_inference`，内部继续使用 `audio_codec_init() -> audio_codec_read() -> 抽主麦通道 -> 24k 到 16k 重采样 -> 滑窗推理 -> 后处理告警`。
-- `main/danger_detection_service.c` 负责注册 `traffic_inference_postprocess_set_alert_callback()`，并将告警映射成项目内状态快照。
+- `main/features/danger_detection/danger_detection_service.c` 负责注册 `traffic_inference_postprocess_set_alert_callback()`，并将告警映射成项目内状态快照。
 - 告警提升链路为 `traffic_inference -> danger_detection_service -> app_alert_manager -> {display_alert_adapter, audio_alert_player}`。
 - `app_alert_manager_raise()` 会在危险态首次进入时显示顶层危险覆盖层，并通过 `audio_alert_player_play_warning_once()` 播放一次提示音。
 - `app_alert_manager_clear()` 会在后处理发出 clear 时关闭危险覆盖层。

@@ -5,6 +5,7 @@
 
 #include "wifi_provision.h"
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -23,7 +24,10 @@
 #define TAG "wifi_prov"
 #define BLE_STATUS_JSON_LEN 256
 #define BLE_NOTIFY_FLUSH_DELAY_MS 600
+#define BLE_STOP_TASK_STACK_SIZE 4096
 #define WIFI_PROVISION_AP_URL "http://192.168.100.1/"
+#define WIFI_SCAN_MAX_VISIBLE_ITEMS 12
+#define WIFI_SCAN_BATCH_SIZE 1
 
 extern const uint8_t apcfg_html_start[] asm("_binary_apcfg_html_start");
 extern const uint8_t apcfg_html_end[] asm("_binary_apcfg_html_end");
@@ -51,6 +55,24 @@ static bool s_provision_task_started = false;
 static TaskHandle_t s_ble_stop_task_handle = NULL;
 
 void ws_receive_handle(const char *data, int len);
+static void wifi_scan_handle(wifi_ap_record_t *ap, int ap_count,
+                             esp_err_t scan_result);
+
+static int wifi_provision_compare_scan_items_desc(const void *left,
+                                                  const void *right);
+static size_t wifi_provision_collect_scan_items(
+    const wifi_ap_record_t *ap, int ap_count, ble_prov_wifi_scan_item_t *items,
+    size_t max_items);
+static void wifi_provision_send_web_scan_results(
+    const ble_prov_wifi_scan_item_t *items, size_t item_count);
+static void wifi_provision_send_ble_wifi_scan_started(void);
+static esp_err_t wifi_provision_send_ble_wifi_scan_batch(
+    const ble_prov_wifi_scan_item_t *items, size_t item_count, bool more);
+static void wifi_provision_send_ble_wifi_scan_done(size_t total);
+static void wifi_provision_send_ble_wifi_scan_failed(const char *reason);
+static void wifi_provision_ble_wifi_scan_handle(wifi_ap_record_t *ap,
+                                                int ap_count,
+                                                esp_err_t scan_result);
 
 static void wifi_provision_cancel_scheduled_ble_stop(void) {
     if (s_ble_stop_task_handle == NULL) {
@@ -83,7 +105,8 @@ static void wifi_provision_schedule_ble_stop(void) {
     }
 
     task_ret = xTaskCreatePinnedToCore(wifi_provision_delayed_ble_stop_task,
-                                       "ble_stop_delay", 2048, NULL, 2,
+                                       "ble_stop_delay",
+                                       BLE_STOP_TASK_STACK_SIZE, NULL, 2,
                                        &s_ble_stop_task_handle, 1);
     if (task_ret != pdPASS) {
         s_ble_stop_task_handle = NULL;
@@ -168,6 +191,205 @@ static void wifi_provision_send_ble_status(const char *state, const char *ssid,
     }
 }
 
+static int wifi_provision_compare_scan_items_desc(const void *left,
+                                                  const void *right) {
+    const ble_prov_wifi_scan_item_t *left_item =
+        (const ble_prov_wifi_scan_item_t *)left;
+    const ble_prov_wifi_scan_item_t *right_item =
+        (const ble_prov_wifi_scan_item_t *)right;
+
+    if (left_item->rssi == right_item->rssi) {
+        return strcmp(left_item->ssid, right_item->ssid);
+    }
+
+    return right_item->rssi - left_item->rssi;
+}
+
+static size_t wifi_provision_collect_scan_items(
+    const wifi_ap_record_t *ap, int ap_count, ble_prov_wifi_scan_item_t *items,
+    size_t max_items) {
+    size_t item_count = 0;
+
+    if (ap == NULL || ap_count <= 0 || items == NULL || max_items == 0) {
+        return 0;
+    }
+
+    memset(items, 0, sizeof(*items) * max_items);
+
+    for (int index = 0; index < ap_count; ++index) {
+        const char *ssid = (const char *)ap[index].ssid;
+        bool encrypted = ap[index].authmode != WIFI_AUTH_OPEN;
+        size_t existing_index = max_items;
+        size_t weakest_index = 0;
+
+        if (ssid[0] == '\0') {
+            continue;
+        }
+
+        for (size_t item_index = 0; item_index < item_count; ++item_index) {
+            if (strcmp(items[item_index].ssid, ssid) == 0) {
+                existing_index = item_index;
+                break;
+            }
+        }
+
+        if (existing_index < item_count) {
+            bool combined_encrypted =
+                items[existing_index].encrypted || encrypted;
+            if (ap[index].rssi > items[existing_index].rssi) {
+                items[existing_index].rssi = ap[index].rssi;
+            }
+            items[existing_index].encrypted = combined_encrypted;
+            continue;
+        }
+
+        if (item_count < max_items) {
+            snprintf(items[item_count].ssid, sizeof(items[item_count].ssid),
+                     "%s", ssid);
+            items[item_count].rssi = ap[index].rssi;
+            items[item_count].encrypted = encrypted;
+            ++item_count;
+            continue;
+        }
+
+        for (size_t item_index = 1; item_index < item_count; ++item_index) {
+            if (items[item_index].rssi < items[weakest_index].rssi) {
+                weakest_index = item_index;
+            }
+        }
+
+        if (ap[index].rssi <= items[weakest_index].rssi) {
+            continue;
+        }
+
+        snprintf(items[weakest_index].ssid, sizeof(items[weakest_index].ssid),
+                 "%s", ssid);
+        items[weakest_index].rssi = ap[index].rssi;
+        items[weakest_index].encrypted = encrypted;
+    }
+
+    if (item_count > 1) {
+        qsort(items, item_count, sizeof(items[0]),
+              wifi_provision_compare_scan_items_desc);
+    }
+
+    return item_count;
+}
+
+static void wifi_provision_send_web_scan_results(
+    const ble_prov_wifi_scan_item_t *items, size_t item_count) {
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return;
+    }
+
+    cJSON *wifi_list = cJSON_AddArrayToObject(root, "wifi_list");
+    if (wifi_list == NULL) {
+        cJSON_Delete(root);
+        return;
+    }
+
+    for (size_t index = 0; index < item_count; ++index) {
+        cJSON *ap_item = cJSON_CreateObject();
+        if (ap_item == NULL) {
+            continue;
+        }
+
+        cJSON_AddStringToObject(ap_item, "ssid", items[index].ssid);
+        cJSON_AddNumberToObject(ap_item, "rssi", items[index].rssi);
+        cJSON_AddBoolToObject(ap_item, "encrypted", items[index].encrypted);
+        cJSON_AddItemToArray(wifi_list, ap_item);
+    }
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    if (json_str != NULL) {
+        ws_server_send((uint8_t *)json_str, strlen(json_str));
+        cJSON_free(json_str);
+    }
+    cJSON_Delete(root);
+}
+
+static void wifi_provision_send_ble_wifi_scan_started(void) {
+    char payload[BLE_STATUS_JSON_LEN] = {0};
+
+    if (ble_provision_protocol_format_wifi_scan_started(payload,
+                                                        sizeof(payload)) ==
+        ESP_OK) {
+        wifi_provision_send_ble_payload(payload);
+    }
+}
+
+static esp_err_t wifi_provision_send_ble_wifi_scan_batch(
+    const ble_prov_wifi_scan_item_t *items, size_t item_count, bool more) {
+    char payload[BLE_STATUS_JSON_LEN] = {0};
+    esp_err_t ret = ble_provision_protocol_format_wifi_scan_batch(
+        payload, sizeof(payload), items, item_count, more);
+
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "格式化 BLE Wi-Fi 扫描 batch 失败: %s",
+                 esp_err_to_name(ret));
+        return ret;
+    }
+
+    wifi_provision_send_ble_payload(payload);
+    return ESP_OK;
+}
+
+static void wifi_provision_send_ble_wifi_scan_done(size_t total) {
+    char payload[BLE_STATUS_JSON_LEN] = {0};
+
+    if (ble_provision_protocol_format_wifi_scan_done(payload, sizeof(payload),
+                                                     total) == ESP_OK) {
+        wifi_provision_send_ble_payload(payload);
+    }
+}
+
+static void wifi_provision_send_ble_wifi_scan_failed(const char *reason) {
+    char payload[BLE_STATUS_JSON_LEN] = {0};
+
+    if (ble_provision_protocol_format_wifi_scan_failed(payload,
+                                                       sizeof(payload),
+                                                       reason) == ESP_OK) {
+        wifi_provision_send_ble_payload(payload);
+    }
+}
+
+static void wifi_provision_ble_wifi_scan_handle(wifi_ap_record_t *ap,
+                                                int ap_count,
+                                                esp_err_t scan_result) {
+    ble_prov_wifi_scan_item_t items[WIFI_SCAN_MAX_VISIBLE_ITEMS] = {0};
+    size_t item_count = 0;
+
+    if (scan_result != ESP_OK) {
+        ESP_LOGW(TAG, "BLE Wi-Fi 扫描失败: %s", esp_err_to_name(scan_result));
+        wifi_provision_send_ble_wifi_scan_failed("scan_failed");
+        return;
+    }
+
+    item_count = wifi_provision_collect_scan_items(ap, ap_count, items,
+                                                   WIFI_SCAN_MAX_VISIBLE_ITEMS);
+
+    ESP_LOGI(TAG, "BLE Wi-Fi 扫描完成: raw=%d visible=%u", ap_count,
+             (unsigned)item_count);
+
+    for (size_t offset = 0; offset < item_count; offset += WIFI_SCAN_BATCH_SIZE) {
+        size_t batch_count = item_count - offset;
+        bool more = false;
+
+        if (batch_count > WIFI_SCAN_BATCH_SIZE) {
+            batch_count = WIFI_SCAN_BATCH_SIZE;
+        }
+        more = (offset + batch_count) < item_count;
+        if (wifi_provision_send_ble_wifi_scan_batch(items + offset, batch_count,
+                                                    more) != ESP_OK) {
+            wifi_provision_send_ble_wifi_scan_failed("scan_failed");
+            return;
+        }
+    }
+
+    wifi_provision_send_ble_wifi_scan_done(item_count);
+}
+
 static esp_err_t wifi_provision_switch_to_ap_fallback(void) {
     esp_err_t ret = ESP_OK;
 
@@ -225,6 +447,20 @@ static void wifi_provision_ble_receive_cb(const char *data, size_t len,
         case BLE_PROV_CMD_STATUS:
             wifi_provision_send_ble_status(wifi_provision_get_ble_state_string(),
                                            current_ssid, NULL, NULL, NULL);
+            break;
+        case BLE_PROV_CMD_SCAN_WIFI:
+            ESP_LOGI(TAG, "收到 BLE Wi-Fi 扫描请求");
+            ret = wifi_manager_scan(wifi_provision_ble_wifi_scan_handle);
+            if (ret == ESP_OK) {
+                wifi_provision_send_ble_wifi_scan_started();
+            } else if (ret == ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(TAG, "BLE Wi-Fi 扫描请求被拒绝: scan busy");
+                wifi_provision_send_ble_wifi_scan_failed("scan_busy");
+            } else {
+                ESP_LOGE(TAG, "启动 BLE Wi-Fi 扫描失败: %s",
+                         esp_err_to_name(ret));
+                wifi_provision_send_ble_wifi_scan_failed("scan_start_failed");
+            }
             break;
         case BLE_PROV_CMD_SET_WIFI:
             snprintf(current_ssid, sizeof(current_ssid), "%s", request.ssid);
@@ -353,32 +589,23 @@ static void internal_wifi_cb(WIFI_STATE state) {
     }
 }
 
-void wifi_scan_handle(wifi_ap_record_t *ap, int ap_count) {
-    cJSON *root = cJSON_CreateObject();
-    if (root == NULL) {
+static void wifi_scan_handle(wifi_ap_record_t *ap, int ap_count,
+                             esp_err_t scan_result) {
+    ble_prov_wifi_scan_item_t items[WIFI_SCAN_MAX_VISIBLE_ITEMS] = {0};
+    size_t item_count = 0;
+
+    if (scan_result != ESP_OK) {
+        ESP_LOGW(TAG, "AP 页面 Wi-Fi 扫描失败: %s", esp_err_to_name(scan_result));
+        wifi_provision_send_web_scan_results(NULL, 0);
         return;
     }
 
-    cJSON *wifi_list = cJSON_AddArrayToObject(root, "wifi_list");
-    for (int i = 0; i < ap_count; ++i) {
-        cJSON *ap_item = cJSON_CreateObject();
-        if (ap_item == NULL) {
-            continue;
-        }
+    item_count = wifi_provision_collect_scan_items(ap, ap_count, items,
+                                                   WIFI_SCAN_MAX_VISIBLE_ITEMS);
 
-        cJSON_AddStringToObject(ap_item, "ssid", (const char *)ap[i].ssid);
-        cJSON_AddNumberToObject(ap_item, "rssi", ap[i].rssi);
-        cJSON_AddBoolToObject(ap_item, "encrypted",
-                              ap[i].authmode != WIFI_AUTH_OPEN);
-        cJSON_AddItemToArray(wifi_list, ap_item);
-    }
-
-    char *json_str = cJSON_PrintUnformatted(root);
-    if (json_str != NULL) {
-        ws_server_send((uint8_t *)json_str, strlen(json_str));
-        cJSON_free(json_str);
-    }
-    cJSON_Delete(root);
+    ESP_LOGI(TAG, "AP 页面 Wi-Fi 扫描完成: raw=%d visible=%u", ap_count,
+             (unsigned)item_count);
+    wifi_provision_send_web_scan_results(items, item_count);
 }
 
 void ws_receive_handle(const char *data, int len) {
@@ -392,7 +619,11 @@ void ws_receive_handle(const char *data, int len) {
     cJSON *scan_js = cJSON_GetObjectItem(root, "scan");
     if (scan_js != NULL && cJSON_IsString(scan_js) &&
         strcmp(scan_js->valuestring, "start") == 0) {
-        wifi_manager_scan(wifi_scan_handle);
+        esp_err_t scan_ret = wifi_manager_scan(wifi_scan_handle);
+        if (scan_ret != ESP_OK) {
+            ESP_LOGW(TAG, "AP 页面触发 Wi-Fi 扫描失败: %s",
+                     esp_err_to_name(scan_ret));
+        }
     }
 
     cJSON *ssid_js = cJSON_GetObjectItem(root, "ssid");

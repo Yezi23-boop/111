@@ -1,24 +1,25 @@
 ---
 id: nonblocking-boot-network-service
 tags: [project, boot, wifi, network-service, esp32s3, official-chat]
-summary: 记录当前仓库把正式主流程从阻塞联网切换到后台联网的第一步实现，作为 AI 融入 UI 的启动底座。
-last_reviewed: 2026-03-31
+summary: 记录当前仓库把正式主流程从阻塞联网切换到后台联网后的当前启动底座，以及重整后的 main 目录位置。
+last_reviewed: 2026-04-08
 ---
 
 # 非阻塞启动与后台联网服务
 
 ## 结论
 
-- `D:\esp32S3\111\main\hardware_init.c` 已不再阻塞等待 Wi‑Fi 连接成功。
-- `D:\esp32S3\111\main\111.c` 现在会在硬件初始化完成后立即启动：
-  - `lvgl_task`
-  - `time_and_weather`
-  - `network_service`
-- `D:\esp32S3\111\main\network_service.c` 负责在后台继续执行：
+- `D:\esp32S3\111\main\app\hardware_init.c` 已不再阻塞等待 Wi‑Fi 连接成功。
+- `D:\esp32S3\111\main\app\app_main.c` 当前会在硬件初始化完成后立即启动：
+  - `ui/lvgl_task.c` 中的 `lvgl_task`
+  - `services/network_service.c`
+  - `services/official_chat_service.c` 的初始化
+- `D:\esp32S3\111\main\features\weather\time_weather.c` 任务实现仍在，但正式入口里的任务创建当前保持注释。
+- `D:\esp32S3\111\main\services\network_service.c` 负责在后台继续执行：
   - `wifi_provision_start_auto()`
   - 联网状态轮询
   - `api.tenclass.net` / `mqtt.xiaozhi.me` DNS 与服务就绪探测
-- 在临时“无 UI 干扰”的验证模式下，可以继续使用 `D:\esp32S3\111\main\111.c` 作为入口，但注释掉：
+- 在临时“无 UI 干扰”的验证模式下，可以继续使用 `D:\esp32S3\111\main\app\app_main.c` 作为入口，但注释掉：
   - `lvgl_task`
   - `time_and_weather`
   - 与之相关的启动延时
@@ -66,15 +67,16 @@ last_reviewed: 2026-03-31
 
 - 这一步只是在正式主流程里搭好后台联网底座。
 - 还没有正式 AI 页面。
-- 还没有把 `official_chat` 并回 `main/111.c`。
+- `official_chat` 的正式入口生命周期已经并回 `main/app/app_main.c`，但是否前台激活仍由 AI 页面控制。
 - 还没有处理 AI 与音乐播放器的音频 owner 协调。
 - 临时“无 UI”验证模式不适合长期保留，只用于隔离显示/UI 干扰，单独观察 `official_chat`、音频链和网络链。
 
 ## 证据文件
 
-- `D:\esp32S3\111\main\111.c`
-- `D:\esp32S3\111\main\hardware_init.c`
-- `D:\esp32S3\111\main\hardware_init.h`
-- `D:\esp32S3\111\main\network_service.c`
-- `D:\esp32S3\111\main\network_service.h`
+- `D:\esp32S3\111\main\app\app_main.c`
+- `D:\esp32S3\111\main\app\hardware_init.c`
+- `D:\esp32S3\111\main\app\hardware_init.h`
+- `D:\esp32S3\111\main\services\network_service.c`
+- `D:\esp32S3\111\main\services\network_service.h`
+- `D:\esp32S3\111\main\services\official_chat_service.c`
 - `D:\esp32S3\111\tests\test_nonblocking_boot_source.py`

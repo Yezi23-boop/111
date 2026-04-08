@@ -2,7 +2,7 @@
 id: display-touch-audio-bus-map
 tags: project, display, touch, audio, bus, i2c, i2s, qspi
 summary: 当前仓库显示、触摸、音频与配网模块对应的总线、引脚和排障入口图。
-last_reviewed: 2026-03-11
+last_reviewed: 2026-04-08
 ---
 
 # 显示、触摸、音频与总线映射
@@ -15,7 +15,7 @@ last_reviewed: 2026-03-11
 - `components/audio_codec`：负责 `ES8311 + ES7210` 的控制面 `I2C`、数据面 `I2S0` 和功放控制。
 - `components/mp3_player`：负责播放器封装。
 - `components/wifi_provision`：负责 AP 配网流程、Web 页面和状态回调。
-- `main/hardware_init.c`：负责把存储、音频、按键和 Wi-Fi 初始化串起来。
+- `main/app/hardware_init.c`：负责把存储、音频、按键和 Wi-Fi 初始化串起来。
 
 ## 总线映射
 

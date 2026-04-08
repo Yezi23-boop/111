@@ -1,6 +1,7 @@
 #ifndef BLE_PROVISION_PROTOCOL_H
 #define BLE_PROVISION_PROTOCOL_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "esp_err.h"
@@ -14,6 +15,7 @@ typedef enum {
     BLE_PROV_CMD_HELLO,
     BLE_PROV_CMD_STATUS,
     BLE_PROV_CMD_SET_WIFI,
+    BLE_PROV_CMD_SCAN_WIFI,
     BLE_PROV_CMD_START_AP_FALLBACK,
 } ble_prov_cmd_t;
 
@@ -22,6 +24,12 @@ typedef struct {
     char ssid[33];
     char password[65];
 } ble_prov_request_t;
+
+typedef struct {
+    char ssid[33];
+    int rssi;
+    bool encrypted;
+} ble_prov_wifi_scan_item_t;
 
 esp_err_t ble_provision_protocol_parse_request(const char *data,
                                                ble_prov_request_t *request);
@@ -33,6 +41,17 @@ esp_err_t ble_provision_protocol_format_status(char *buffer, size_t buffer_len,
                                                const char *ip,
                                                const char *reason,
                                                const char *url);
+esp_err_t ble_provision_protocol_format_wifi_scan_started(char *buffer,
+                                                          size_t buffer_len);
+esp_err_t ble_provision_protocol_format_wifi_scan_batch(
+    char *buffer, size_t buffer_len, const ble_prov_wifi_scan_item_t *items,
+    size_t item_count, bool more);
+esp_err_t ble_provision_protocol_format_wifi_scan_done(char *buffer,
+                                                       size_t buffer_len,
+                                                       size_t total);
+esp_err_t ble_provision_protocol_format_wifi_scan_failed(char *buffer,
+                                                         size_t buffer_len,
+                                                         const char *reason);
 
 #ifdef __cplusplus
 }

@@ -1,12 +1,12 @@
-import pathlib
 import unittest
 
+from tests.main_paths import APP_MAIN_SOURCE
+from tests.main_paths import HARDWARE_INIT_SOURCE
+from tests.main_paths import NETWORK_SERVICE_HEADER
+from tests.main_paths import NETWORK_SERVICE_SOURCE
+from tests.main_paths import REPO_ROOT
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-HARDWARE_INIT_SOURCE = REPO_ROOT / "main" / "hardware_init.c"
-MAIN_ENTRY_SOURCE = REPO_ROOT / "main" / "111.c"
-NETWORK_SERVICE_SOURCE = REPO_ROOT / "main" / "network_service.c"
-NETWORK_SERVICE_HEADER = REPO_ROOT / "main" / "network_service.h"
+
 SDKCONFIG = REPO_ROOT / "sdkconfig"
 
 
@@ -38,9 +38,9 @@ class NonblockingBootSourceTests(unittest.TestCase):
         self.assertIn("wifi_provision_init(", source)
 
     def test_formal_entry_starts_background_network_service(self) -> None:
-        source = MAIN_ENTRY_SOURCE.read_text(encoding="utf-8")
+        source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "network_service.h"', source)
+        self.assertIn('#include "services/network_service.h"', source)
         self.assertIn("network_service_start()", source)
         self.assertIn(
             'xTaskCreatePinnedToCore(lvgl_task, "lvgl_task"',
@@ -55,10 +55,9 @@ class NonblockingBootSourceTests(unittest.TestCase):
         self.assertNotIn("network_service_is_service_ready()", source)
         self.assertNotIn("official_chat_service_enter_foreground()", source)
 
-    def test_sdkconfig_uses_formal_entry_instead_of_ai_experiment(self) -> None:
+    def test_sdkconfig_does_not_enable_removed_ai_experiment_entry(self) -> None:
         source = SDKCONFIG.read_text(encoding="utf-8")
 
-        self.assertIn("# CONFIG_APP_AI_CHAT_EXPERIMENT is not set", source)
         self.assertNotIn("CONFIG_APP_AI_CHAT_EXPERIMENT=y", source)
 
     def test_network_service_exists_and_probes_ai_service_readiness(self) -> None:

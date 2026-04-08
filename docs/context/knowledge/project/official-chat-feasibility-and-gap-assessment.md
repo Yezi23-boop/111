@@ -2,7 +2,7 @@
 id: official-chat-feasibility-and-gap-assessment
 tags: [project, official-chat, esp32s3, migration, review, wifi, audio]
 summary: 评估当前 111 仓库接入 official_chat 的可实现程度，并对比 idf-xiaozhi 与 idf-EDGE_lmpulse 的关键运行时差异、剩余风险和推荐落地顺序。
-last_reviewed: 2026-03-31
+last_reviewed: 2026-04-08
 ---
 
 # official_chat 可实现性与差距评估
@@ -32,16 +32,13 @@ last_reviewed: 2026-03-31
 
 ### 2. 本地联网链路已能复用
 
-- 当前实验入口在 `D:\esp32S3\111\main\main_ai_chat_experiment.c`。
+- 当前正式入口已收敛到 `D:\esp32S3\111\main\app\app_main.c`，实验入口链路已删除。
 - 启动顺序已经是：
-  1. `nvs_flash_init`
-  2. `wifi_provision_init(NULL)`
-  3. `wifi_provision_start_auto()`
-  4. 等待 `wifi_provision_is_connected()`
-  5. `audio_codec_init()`
-  6. `official_chat_create()`
-  7. `official_chat_start()`
-- 这意味着 `official_chat` 现在不会再接管第二套 Wi-Fi 生命周期，而是明确复用本地配网。
+  1. `hardware_init()`
+  2. `lvgl_task`
+  3. `network_service_start()`
+  4. `official_chat_service_init()`
+- 这意味着 `official_chat` 现在不会再接管第二套 Wi-Fi 生命周期，而是通过 `network_service` 和本地配网层延后进入前台。
 
 ### 3. 语音模型与基础配置已进入构建链路
 
@@ -97,9 +94,9 @@ last_reviewed: 2026-03-31
 
 ### 3. 入口策略不同
 
-- 当前仓库为了降低风险，把 AI 对话放在独立入口 `main_ai_chat_experiment.c`。
-- 这和 `idf-EDGE_lmpulse` 文档里记录的 direct-main 路线不同。
-- 当前取舍是先验证最小链路，不直接冲击正式 UI 主流程。
+- 当前仓库已经回到正式入口 `main/app/app_main.c + official_chat_service` 路线。
+- 这比最早的独立实验入口更接近产品主流程，但 AI 会话是否前台化仍由正式 AI 页面控制。
+- 当前取舍是保留正式 UI 主流程，只把 `official_chat` 生命周期沉到 service 层。
 
 ## 当前仓库与移植仓库的主要差异
 
@@ -192,7 +189,7 @@ last_reviewed: 2026-03-31
 
 ### 3. UI 主流程整合风险
 
-- 当前实验入口尚未和 `main/111.c` 正式合流。
+- 当前 `official_chat` 生命周期已并回 `main/app/app_main.c`，但正式 UI 与音频 owner 的长期整合仍有风险。
 - 一旦切回 direct-main 路线，就要重新评估：
   - 启动时序
   - 任务优先级
@@ -212,9 +209,9 @@ last_reviewed: 2026-03-31
 
 ## 证据文件
 
-- `D:\esp32S3\111\main\main_ai_chat_experiment.c`
-- `D:\esp32S3\111\main\111.c`
-- `D:\esp32S3\111\main\hardware_init.c`
+- `D:\esp32S3\111\main\app\app_main.c`
+- `D:\esp32S3\111\main\app\hardware_init.c`
+- `D:\esp32S3\111\main\services\official_chat_service.c`
 - `D:\esp32S3\111\components\official_chat\CMakeLists.txt`
 - `D:\esp32S3\111\components\official_chat\application.cc`
 - `D:\esp32S3\111\components\official_chat\include\official_chat.h`

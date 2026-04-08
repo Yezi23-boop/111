@@ -1,10 +1,7 @@
-import pathlib
 import unittest
 
-
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-NETWORK_SERVICE_HEADER = REPO_ROOT / "main" / "network_service.h"
-NETWORK_SERVICE_SOURCE = REPO_ROOT / "main" / "network_service.c"
+from tests.main_paths import NETWORK_SERVICE_HEADER
+from tests.main_paths import NETWORK_SERVICE_SOURCE
 
 
 class NetworkServiceBleSourceTests(unittest.TestCase):

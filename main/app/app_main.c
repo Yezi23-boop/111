@@ -6,11 +6,11 @@
 #include "events_init.h"
 #include "esp_timer.h"
 #include "esp_freertos_hooks.h"
-#include "time_weather.h"
-#include "lvgl_task.h"
+#include "features/weather/time_weather.h"
+#include "ui/lvgl_task.h"
 #include "hardware_init.h"
-#include "network_service.h"
-#include "official_chat_service.h"
+#include "services/network_service.h"
+#include "services/official_chat_service.h"
 
 TaskHandle_t lvgl_task_handle = NULL;
 TaskHandle_t lvgl_time_handle = NULL;

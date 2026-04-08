@@ -2,14 +2,14 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "wifi_provision.h"
-#include "audio_app.h"
+#include "features/audio/audio_app.h"
 #include "sd_manager.h"
 #include "audio_codec.h"
 #include "i2c_manager.h"
 #include "button_gpio.h"
 #include "driver/gpio.h"
 #include "iot_button.h"
-#include "network_service.h"
+#include "services/network_service.h"
 static const char *TAG = "HARDWARE_INIT";
 /* @brief BOOT按钮的GPIO引脚号
  *

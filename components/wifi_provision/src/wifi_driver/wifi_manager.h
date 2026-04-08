@@ -14,7 +14,8 @@ typedef enum {
 } WIFI_STATE;
 
 typedef void (*p_wifi_state_callback)(WIFI_STATE state);
-typedef void (*p_wifi_scan_callback)(wifi_ap_record_t *ap, int ap_count);
+typedef void (*p_wifi_scan_callback)(wifi_ap_record_t *ap, int ap_count,
+                                     esp_err_t scan_result);
 
 void wifi_manager_init(p_wifi_state_callback callback);
 

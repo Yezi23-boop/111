@@ -3,8 +3,8 @@
 #include "ai_chat_view.h"
 #include "esp_log.h"
 #include "gui_guider.h"
-#include "network_service.h"
-#include "official_chat_service.h"
+#include "services/network_service.h"
+#include "services/official_chat_service.h"
 
 static const char *TAG = "ai_ui";
 

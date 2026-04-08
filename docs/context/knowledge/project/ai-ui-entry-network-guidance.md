@@ -2,7 +2,7 @@
 id: ai-ui-entry-network-guidance
 tags: [project, ui, official-chat, lvgl, gui-guider, network-service]
 summary: 记录当前仓库在替换 GUI Guider 新导出层并升级到 LVGL 9.3 后，如何保持主菜单 AI 图标继续跳转到 hand-written AI 页面，以及当前 AI 页面布局与联网引导方案。
-last_reviewed: 2026-04-01
+last_reviewed: 2026-04-08
 ---
 
 # AI 页面入口与未联网引导
@@ -29,7 +29,7 @@ last_reviewed: 2026-04-01
   - `D:\esp32S3\111\main\ui\custom\ai_ui_controller.h`
   - `D:\esp32S3\111\main\ui\custom\ai_ui_controller.c`
 - 初始化接缝：
-  - `D:\esp32S3\111\main\lvgl_task.c`
+  - `D:\esp32S3\111\main\ui\lvgl_task.c`
   - `D:\esp32S3\111\main\ui\custom\custom.h`
 
 ## 当前页面行为
@@ -52,12 +52,12 @@ last_reviewed: 2026-04-01
     - 若仍处于 `connecting / listening / speaking`，先调用 `official_chat_stop_listening()`
     - 再等待一段传输静默窗口后才真正 `official_chat_destroy()`
     - 这样可以避免 speaking 态直接销毁 `official_chat` 时触发 `esp_mqtt_client_destroy()` 与 lwIP 互斥崩溃
-- 正式入口 `main/111.c` 当前只负责：
+- 正式入口 `main/app/app_main.c` 当前只负责：
   - 启动 `lvgl_task`
   - 启动后台 `network_service`
   - 初始化 `official_chat_service`
   - 不再在主菜单阶段自动调用 `official_chat_service_enter_foreground()`
-- 正式入口 `main/111.c` 当前已恢复 `lvgl_task` 创建；此前若屏幕完全不亮且串口里没有 `co5300_panel / lv_port` 日志，首查点就是 `lvgl_task` 是否仍被临时注释。
+- 正式入口 `main/app/app_main.c` 当前已恢复 `lvgl_task` 创建；此前若屏幕完全不亮且串口里没有 `co5300_panel / lv_port` 日志，首查点就是 `lvgl_task` 是否仍被临时注释。
 - 页面状态文案会进一步映射 `official_chat_service`：
   - `IDLE` -> `待唤醒`
   - `LISTENING` -> `聆听中`
@@ -82,13 +82,13 @@ last_reviewed: 2026-04-01
   - `secondary_action_text = NULL`
   - `secondary_action_cb = NULL`
   - 因此本轮没有额外给实验页补 `official_chat_service_shutdown()` 交互
-- `main/CMakeLists.txt` 现已显式把 `main/ui/custom/ai_chat_view.c` 加入 `main` 组件，避免新 hand-written 视图文件仅依赖 glob 收集时在正式 UI 链路下出现链接缺符号。
+- `main/CMakeLists.txt` 现已显式维护 `app/services/features/ui` 的 hand-written 源码清单，并仅对 `main/ui/generated/*.c` 保留 glob 收集，避免入口与服务文件继续混在根目录或重复注册。
 - `ui_font_assets` 若因 `assets` 分区内容非法而回退到编译字体，`title/body/meta` 三类中文文本当前都应继续走 `lv_font_SourceHanSerifSC_Regular_22`，避免 AI 页出现中文方框；若仍看到 `invalid assets package`，优先重新执行完整 `idf.py flash` 以确保 `0x1310000` 的 `assets` 分区与当前构建一致。
 
 ## official_chat_service 位置
 
-- `D:\esp32S3\111\main\official_chat_service.h`
-- `D:\esp32S3\111\main\official_chat_service.c`
+- `D:\esp32S3\111\main\services\official_chat_service.h`
+- `D:\esp32S3\111\main\services\official_chat_service.c`
 
 该服务负责：
 

@@ -7,7 +7,7 @@ last_reviewed: 2026-04-02
 
 # 微信小程序 BLE 配网接手配置
 
-- 小程序工程位于 `E:\eps32_ble`，主页面是 `miniprogram/pages/index/index.*`，BLE 协议封装在 `miniprogram/utils/ble-provision.js`。
+- 小程序工程位于 `C:\Users\ye\Desktop\eps32_ble`，主页面是 `miniprogram/pages/index/index.*`，BLE 协议封装在 `miniprogram/utils/ble-provision.js`。
 - 当前协议基线固定为自定义 128-bit GATT：
   - Service: `1C5ADFB4-6B3F-BFF4-EA4A-820304901A02`
   - RX: `1C5ADFB5-6B3F-BFF4-EA4A-820304901A02`

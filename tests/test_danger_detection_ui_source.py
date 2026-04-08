@@ -1,8 +1,7 @@
-import pathlib
 import unittest
 
-
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+from tests.main_paths import LVGL_TASK_SOURCE
+from tests.main_paths import REPO_ROOT
 
 
 class DangerDetectionUiSourceTests(unittest.TestCase):
@@ -10,9 +9,7 @@ class DangerDetectionUiSourceTests(unittest.TestCase):
         events_source = (
             REPO_ROOT / "main" / "ui" / "generated" / "events_init.c"
         ).read_text(encoding="utf-8")
-        lvgl_task_source = (REPO_ROOT / "main" / "lvgl_task.c").read_text(
-            encoding="utf-8"
-        )
+        lvgl_task_source = LVGL_TASK_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("screen_main_option_6_event_handler", events_source)
         self.assertIn("danger_detection_ui_open()", events_source)

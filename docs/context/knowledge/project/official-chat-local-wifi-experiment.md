@@ -1,19 +1,19 @@
 ---
 id: official-chat-local-wifi-experiment
 tags: [project, official-chat, wifi-provision, esp32s3, audio, experiment]
-summary: 当前仓库已将 official_chat 接到本地 wifi_provision，并通过独立实验入口接通最小 AI 对话链路与简易独立实验页。
-last_reviewed: 2026-03-31
+summary: 记录当前仓库曾通过独立实验入口验证 official_chat 接入本地 wifi_provision 的最小 AI 对话链路；该实验入口已在后续收敛到正式主流程。
+last_reviewed: 2026-04-08
 ---
 
-# official_chat 本地 Wi-Fi 实验入口
+# official_chat 本地 Wi-Fi 实验入口（历史记录）
 
 ## 结论
 
 - 当前仓库已经引入本地组件 `components/official_chat` 和 `components/utils`。
 - `official_chat` 不再依赖 `hal_wifi`，运行时统一调用本地 `wifi_provision_*` helper。
 - 当前仓库的 `wifi_provision` 继续作为唯一 Wi-Fi owner，保留既有 AP 配网页行为和 `192.168.100.1` 地址。
-- AI 对话实验入口独立放在 `main/main_ai_chat_experiment.c`，默认关闭，不影响正式入口 `main/111.c`。
-- 当前实验入口已改成“单独的简易 AI 页面”，不再依赖正式主菜单或 `gui_guider` 页面结构。
+- 当时的 AI 对话实验入口独立放在 `main/main_ai_chat_experiment.c`，用于隔离验证，不影响正式入口。
+- 截至 `2026-04-08`，该实验入口链路已从仓库删除，正式主流程收敛到 `main/app/app_main.c + official_chat_service`。
 
 ## 本轮关键实现
 
@@ -109,9 +109,9 @@ last_reviewed: 2026-03-31
 
 ## 当前边界
 
-- 默认固件入口仍然是 `main/111.c`，不会自动启用 AI 对话实验。
-- 本轮保证最小可编译、可启动链路、本地配网复用和独立实验页显示；不要求先并回正式 UI。
-- `official_chat` 运行时是否能在当前硬件上完整完成激活、协议连接、语音上下行，还需要真机烧录验证。
+- 本文主要保留“独立实验入口”阶段的迁移经验，不再描述当前默认构建入口。
+- 当前默认固件入口已是 `main/app/app_main.c`，不会再编译或启用 `main_ai_chat_experiment.c`。
+- `official_chat` 运行时是否能在当前硬件上完整完成激活、协议连接、语音上下行，仍需以正式主流程真机验证为准。
 
 ## 显示内存压力修正
 

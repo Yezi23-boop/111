@@ -6,7 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "get_time.h"
-#include "clock_functions.h"
+#include "ui/custom/clock_functions.h"
 
 void time_and_weather(void *pvParameters)
 {

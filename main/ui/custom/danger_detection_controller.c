@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "app_alert_manager.h"
-#include "danger_detection_service.h"
+#include "features/alerts/app_alert_manager.h"
+#include "features/danger_detection/danger_detection_service.h"
 #include "danger_detection_view.h"
 #include "esp_log.h"
 #include "lvgl.h"

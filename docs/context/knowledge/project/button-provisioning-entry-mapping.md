@@ -2,7 +2,7 @@
 id: button-provisioning-entry-mapping
 tags: [project, ble, provisioning, ap, button, esp32-s3]
 summary: 记录当前仓库 BOOT 按键与配网入口的映射：单击强制进入 BLE 配网，三连击强制进入 AP 网页兜底，并补充从 AP 切回 BLE 时的资源收口要求。
-last_reviewed: 2026-04-03
+last_reviewed: 2026-04-08
 ---
 
 # 配网按键入口映射
@@ -11,7 +11,7 @@ last_reviewed: 2026-04-03
   - 单击：强制进入 BLE 配网
   - 三连击：强制进入 AP 网页兜底
 - 对应实现位于：
-  - `main/hardware_init.c`
+  - `main/app/hardware_init.c`
   - `components/wifi_provision/src/wifi_provision.c`
 - 单击回调不再绑定 `BUTTON_PRESS_DOWN`，而是改为绑定 `espressif__button` 组件提供的 `BUTTON_SINGLE_CLICK`，避免三连击过程中的第一次按下提前触发 BLE。
 - 单击回调不再直接调用 `wifi_provision_start_blecfg()`，而是调用 `network_service_request_ble()`。

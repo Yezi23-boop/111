@@ -5,7 +5,7 @@
 
 #include "esp_log.h"
 #include "gui_guider.h"
-#include "official_chat_service.h"
+#include "services/official_chat_service.h"
 #include "ui_font_assets.h"
 
 static const char *TAG = "ai_chat_view";

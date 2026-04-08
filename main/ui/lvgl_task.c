@@ -10,18 +10,18 @@
 #include "printf_esp32.h"
 #include "esp_timer.h"
 #include "esp_freertos_hooks.h"
-#include "hptts.h"
-#include "time_weather.h"
+#include "features/weather/hptts.h"
+#include "features/weather/time_weather.h"
 #include "nvs_flash.h"
 #include "lvgl_task.h"
-#include "audio_app.h" // 引入音频应用头文件
+#include "features/audio/audio_app.h" // 引入音频应用头文件
 #include "get_time.h"
 #include "driver/gpio.h"
 #include "iot_button.h"
 #include "button_gpio.h"
-#include "ai_ui_controller.h"
-#include "danger_detection_controller.h"
-#include "display_alert_adapter.h"
+#include "ui/custom/ai_ui_controller.h"
+#include "ui/custom/danger_detection_controller.h"
+#include "features/alerts/display_alert_adapter.h"
 // 前置声明
 void lvgl_bottomr_init(void);
 

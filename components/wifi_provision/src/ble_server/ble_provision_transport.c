@@ -16,6 +16,8 @@
 
 #define BLE_PROVISION_MAX_JSON_LEN 256
 #define BLE_PROVISION_RX_FRAME_LEN (BLE_PROVISION_MAX_JSON_LEN + 32)
+#define BLE_PROVISION_NOTIFY_CHUNK_LEN 20
+#define BLE_PROVISION_NOTIFY_CHUNK_DELAY_MS 15
 
 static const char *TAG = "ble_prov";
 void ble_store_config_init(void);
@@ -40,14 +42,14 @@ static char s_rx_frame_buffer[BLE_PROVISION_RX_FRAME_LEN] = {0};
 static size_t s_rx_frame_len = 0;
 
 static const ble_uuid128_t s_service_uuid = BLE_UUID128_INIT(
-    0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf,
-    0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02);
+    0x02, 0x1a, 0x90, 0x04, 0x03, 0x82, 0x4a, 0xea,
+    0xf4, 0xbf, 0x3f, 0x6b, 0xb4, 0xdf, 0x5a, 0x1c);
 static const ble_uuid128_t s_rx_uuid = BLE_UUID128_INIT(
-    0xb5, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf,
-    0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02);
+    0x02, 0x1a, 0x90, 0x04, 0x03, 0x82, 0x4a, 0xea,
+    0xf4, 0xbf, 0x3f, 0x6b, 0xb5, 0xdf, 0x5a, 0x1c);
 static const ble_uuid128_t s_tx_uuid = BLE_UUID128_INIT(
-    0xb6, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf,
-    0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02);
+    0x02, 0x1a, 0x90, 0x04, 0x03, 0x82, 0x4a, 0xea,
+    0xf4, 0xbf, 0x3f, 0x6b, 0xb6, 0xdf, 0x5a, 0x1c);
 
 static void ble_provision_transport_advertise(void);
 static void ble_provision_transport_reset_runtime_state(void);
@@ -341,6 +343,9 @@ esp_err_t ble_provision_transport_get_device_name(char *device_name,
 }
 
 esp_err_t ble_provision_transport_notify_json(const char *json_payload) {
+    char framed_payload[BLE_PROVISION_MAX_JSON_LEN + 2] = {0};
+    struct os_mbuf *txom = NULL;
+    size_t payload_len = 0;
     int rc = 0;
 
     if (json_payload == NULL) {
@@ -352,10 +357,40 @@ esp_err_t ble_provision_transport_notify_json(const char *json_payload) {
         return ESP_OK;
     }
 
-    rc = ble_gatts_notify(s_conn_handle, s_tx_val_handle);
-    if (rc != 0) {
-        ESP_LOGW(TAG, "BLE notify failed, rc=%d", rc);
-        return ESP_FAIL;
+    payload_len = strlen(json_payload);
+    if (payload_len + 2 > sizeof(framed_payload)) {
+        ESP_LOGW(TAG, "BLE notify payload too long, len=%u",
+                 (unsigned)payload_len);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    memcpy(framed_payload, json_payload, payload_len);
+    framed_payload[payload_len++] = '\n';
+    framed_payload[payload_len] = '\0';
+
+    for (size_t offset = 0; offset < payload_len;
+         offset += BLE_PROVISION_NOTIFY_CHUNK_LEN) {
+        size_t chunk_len = payload_len - offset;
+
+        if (chunk_len > BLE_PROVISION_NOTIFY_CHUNK_LEN) {
+            chunk_len = BLE_PROVISION_NOTIFY_CHUNK_LEN;
+        }
+
+        txom = ble_hs_mbuf_from_flat(framed_payload + offset, chunk_len);
+        if (txom == NULL) {
+            ESP_LOGW(TAG, "BLE notify mbuf alloc failed");
+            return ESP_ERR_NO_MEM;
+        }
+
+        rc = ble_gatts_notify_custom(s_conn_handle, s_tx_val_handle, txom);
+        if (rc != 0) {
+            ESP_LOGW(TAG, "BLE notify failed, rc=%d", rc);
+            return ESP_FAIL;
+        }
+
+        if (offset + chunk_len < payload_len) {
+            vTaskDelay(pdMS_TO_TICKS(BLE_PROVISION_NOTIFY_CHUNK_DELAY_MS));
+        }
     }
 
     return ESP_OK;
