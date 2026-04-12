@@ -1,11 +1,13 @@
 set(app_srcs
     ${CMAKE_CURRENT_LIST_DIR}/app/app_main.c
     ${CMAKE_CURRENT_LIST_DIR}/app/hardware_init.c
+    ${CMAKE_CURRENT_LIST_DIR}/app/board_power.c
 )
 
 set(service_srcs
     ${CMAKE_CURRENT_LIST_DIR}/services/network_service.c
     ${CMAKE_CURRENT_LIST_DIR}/services/official_chat_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/power_service.c
 )
 
 set(feature_srcs
@@ -62,6 +64,7 @@ idf_component_register(
         traffic_inference
         wifi_provision
         official_chat
+        axp2101
         78__xiaozhi_fonts
         chmorgan__esp-audio-player
         nvs_flash

@@ -1,5 +1,13 @@
 # 上下文库变更记录
 
+- 2026-04-10：新增 `AXP2101` 电源组件实现知识卡，固化 `REG30` 受控 ADC 使能、`board_power` 未采样/陈旧态语义、`power_service` 双缓冲发布与主链路接入位置。
+- 2026-04-09：根据管脚对照页与按键原理图片段补充板级映射，确认 `RTC_INT -> GPIO39`、`QMI_INT1 -> GPIO21`，并收敛 `GPIO10` 为 `SYS_OUT` 镜像信号而非 `PWRON` 原始网络。
+- 2026-04-10：落地 AXP2101 第一阶段只读电源基座，新增 `components/axp2101`、`board_power`、`power_service`，并将电源状态接入主启动链路。
+- 2026-04-10：新增 `AXP2101` 电源管理组件设计文档，固化三层混合架构、只读第一阶段边界、初始化时序、共享 I2C 风险与后续 IRQ/RTC 演进路径。
+- 2026-04-09：根据 AXP2101 原理图片段补充板级硬证据，确认 `AXP_IRQ -> EXIO5`、`IRQ` 上拉到 `VCC_RTC`、`PWROK -> CHIP_PU`、`RTCLDO -> VCC_RTC`、`VBACKUP -> VBAT2`，并收紧 PMIC/唤醒链路的软件边界判断。
+- 2026-04-09：新增 `AXP2101` 深度梳理知识卡，固化其在当前手表板上的供电路径、功能块、关键寄存器组、datasheet 不一致点与分阶段接入边界。
+- 2026-04-08：确认 `ESP32-S3-Touch-AMOLED-2.06.pdf` 已在仓库根目录且与桌面源文件一致，板级硬件映射知识卡后续默认只指向仓库内副本。
+- 2026-04-08：新增 `AXP2101` 接入分层知识卡，固化当前仓库下“先共享 I2C 只读探测、后补 GPIO/板级策略、最后才放开 PMIC 控制寄存器”的阶段边界。
 - 2026-04-08：将 `main` 目录整理为 `app/services/features/ui` 分层结构，正式入口改为 `main/app/app_main.c`，并同步更新启动链路、AI 页面入口与仓库概览类知识卡。
 - 2026-04-08：删除 `main` 目录中的 AI 实验入口链路，移除 `ai_experiment_ui.c/.h`、`main_ai_chat_experiment.c` 及其 `CMake/Kconfig/测试` 挂钩，主工程仅保留 `111.c` 正式入口。
 - 2026-04-08：补充 BLE 终态延时关闭任务栈溢出知识卡，固化 `ble_stop_delay` 在调用 `ble_provision_transport_stop()/ble_gap_terminate()` 时 2048 字节栈不足、当前仓库已提升到 4096 的结论。
@@ -102,3 +110,4 @@
 - 2026-04-08：修复 BLE 配网自定义 128-bit UUID 在 NimBLE 下的字节序错误，避免微信小程序已连接但 `getBLEDeviceServices` 报“未找到目标服务”；新增 `ble-provisioning-nimble-uuid-byte-order.md` 知识卡。
 - 2026-04-08：修复 BLE 配网 notify 回包无分隔符的问题，改为通过 `ble_gatts_notify_custom()` 发送以 `\n` 结尾的 JSON，避免微信小程序在 `wifi_scan` 多条 notify 场景下粘包解析失败。
 - 2026-04-08：继续收敛 BLE 上行兼容性，设备端 notify 改为 `20` 字节安全分片发送，解决微信小程序在未协商更大 MTU 时仍收不到完整 `hello/status/wifi_scan` 回包的问题。
+- 2026-04-10: 新增 `knowledge/project/esp-idf-i2c-master-driver-overview.md`，总结 ESP-IDF 5.3+ 新版 I2C master bus 驱动的对象模型、API 分层与共享总线注意事项。

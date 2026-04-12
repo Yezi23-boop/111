@@ -5,6 +5,7 @@
 #include "features/audio/audio_app.h"
 #include "sd_manager.h"
 #include "audio_codec.h"
+#include "board_power.h"
 #include "i2c_manager.h"
 #include "button_gpio.h"
 #include "driver/gpio.h"
@@ -170,6 +171,14 @@ esp_err_t hardware_init(void)
     {
         ESP_LOGI(TAG, "Audio system initialized successfully");
         audio_codec_set_volume(60);
+    }
+
+    // 4. 初始化板级电源观测
+    ESP_LOGI(TAG, "Initializing Board Power...");
+    ret = board_power_init();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Board power init failed: %s", esp_err_to_name(ret));
     }
 
     // // 5. 扫描I2C总线

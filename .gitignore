@@ -20,7 +20,7 @@ dependencies.lock
 .Trashes
 ehthumbs.db
 Thumbs.db
-
+tests
 # 临时文件
 *.tmp
 *.temp

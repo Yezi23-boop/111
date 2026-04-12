@@ -47,3 +47,9 @@ HPTTS_HEADER = WEATHER_DIR / "hptts.h"
 
 LVGL_TASK_SOURCE = UI_DIR / "lvgl_task.c"
 LVGL_TASK_HEADER = UI_DIR / "lvgl_task.h"
+
+BOARD_POWER_SOURCE = APP_DIR / "board_power.c"
+BOARD_POWER_HEADER = APP_DIR / "board_power.h"
+
+POWER_SERVICE_SOURCE = SERVICES_DIR / "power_service.c"
+POWER_SERVICE_HEADER = SERVICES_DIR / "power_service.h"

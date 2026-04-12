@@ -2,7 +2,7 @@
 id: qmi8658c-minimal-probe
 tags: esp32-s3, imu, qmi8658c, i2c, probe, wearable
 summary: QMI8658C 在当前板上的最小探测地址、共享总线风险和后续接入顺序摘要。
-last_reviewed: 2026-03-11
+last_reviewed: 2026-04-09
 ---
 
 # QMI8658C 最小探测
@@ -12,6 +12,7 @@ last_reviewed: 2026-03-11
 - 原理图明确存在 `QMI8658C`
 - 原理图文本中已标出 `0x6B`
 - `QMI_INT1`、`QMI_INT2` 信号在原理图中存在
+- 新补充的管脚对照页可直接确认：`QMI_INT1 -> GPIO21`
 - 当前代码中未发现 `QMI8658C` 驱动接入
 - 该器件与触摸、音频控制面共用 `GPIO14/15` 这组 `I2C`
 
@@ -53,6 +54,7 @@ last_reviewed: 2026-03-11
 
 - 第一阶段：设备存在性 + 原始数据
 - 第二阶段：姿态/活动识别
+- 第二阶段优先中断线：`QMI_INT1(GPIO21)`
 - 第三阶段：手表 UI 或健康数据联动
 
 ## 适用边界

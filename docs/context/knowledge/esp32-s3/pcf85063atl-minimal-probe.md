@@ -2,7 +2,7 @@
 id: pcf85063atl-minimal-probe
 tags: esp32-s3, rtc, pcf85063atl, i2c, probe, wakeup
 summary: PCF85063ATL 在当前板上的最小探测地址、用途边界和接入顺序摘要。
-last_reviewed: 2026-03-11
+last_reviewed: 2026-04-09
 ---
 
 # PCF85063ATL 最小探测
@@ -11,6 +11,7 @@ last_reviewed: 2026-03-11
 
 - 原理图明确存在 `PCF85063ATL`
 - 原理图还能看到 `RTC_INT`、32.768 kHz 晶振与 `ESP32_SCL/SDA`
+- 新补充的管脚对照页可直接确认：`RTC_INT -> GPIO39`
 - 当前代码中未发现 `PCF85063ATL` 驱动接入
 - 官方资料显示其 I2C 从地址为 `0x51`
 
@@ -47,7 +48,7 @@ last_reviewed: 2026-03-11
 - 第一阶段优先做本地 RTC 保时与读时
 - 第二阶段再做：
   - 闹钟
-  - `RTC_INT` 中断
+  - `RTC_INT(GPIO39)` 中断
   - 离线启动时间基准
 
 ## 适用边界

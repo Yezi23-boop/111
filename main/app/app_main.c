@@ -11,6 +11,7 @@
 #include "hardware_init.h"
 #include "services/network_service.h"
 #include "services/official_chat_service.h"
+#include "services/power_service.h"
 
 TaskHandle_t lvgl_task_handle = NULL;
 TaskHandle_t lvgl_time_handle = NULL;
@@ -30,6 +31,15 @@ void app_main(void)
         // 先创建lvgl任务，确保LVGL端口初始化完成
         xTaskCreatePinnedToCore(lvgl_task, "lvgl_task", 1024 * 10, NULL, 6,
                                 &lvgl_task_handle, 1);
+
+        if (power_service_init() != ESP_OK)
+        {
+            ESP_LOGW("MAIN", "Power service init failed");
+        }
+        else if (power_service_start() != ESP_OK)
+        {
+            ESP_LOGW("MAIN", "Power service start failed");
+        }
 
         // 延迟一段时间，确保LVGL初始化完成
         // vTaskDelay(pdMS_TO_TICKS(1000));
