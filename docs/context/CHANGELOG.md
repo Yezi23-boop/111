@@ -1,5 +1,8 @@
 # 上下文库变更记录
 
+- 2026-04-13：新增手表项目低功耗管理架构知识卡，收敛 `Active / Idle-Dim / Standby / Deep Sleep` 四态路线、`power_policy` 分层建议，以及 `RTC + AXP2101` 的阶段化接入顺序。
+- 2026-04-13：为 `power_service` 的电源状态日志增加 `20mV` 电压抖动阈值，避免 `battery_mv/system_mv` 的细小 ADC 波动按 1 秒频率持续刷出 `power state changed`。
+- 2026-04-13：补强 AXP2101 第一阶段可观测性，启动成功后会打印首帧 `Board power boot snapshot`，`power_service` 仅在电源状态变化时输出 `power state changed`，避免成功路径完全静默。
 - 2026-04-10：新增 `AXP2101` 电源组件实现知识卡，固化 `REG30` 受控 ADC 使能、`board_power` 未采样/陈旧态语义、`power_service` 双缓冲发布与主链路接入位置。
 - 2026-04-09：根据管脚对照页与按键原理图片段补充板级映射，确认 `RTC_INT -> GPIO39`、`QMI_INT1 -> GPIO21`，并收敛 `GPIO10` 为 `SYS_OUT` 镜像信号而非 `PWRON` 原始网络。
 - 2026-04-10：落地 AXP2101 第一阶段只读电源基座，新增 `components/axp2101`、`board_power`、`power_service`，并将电源状态接入主启动链路。

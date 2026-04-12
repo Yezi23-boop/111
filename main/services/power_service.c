@@ -8,6 +8,7 @@
 
 static const char *TAG = "POWER_SERVICE";
 static const TickType_t k_failure_log_throttle_ticks = pdMS_TO_TICKS(5000);
+static const uint16_t k_voltage_jitter_threshold_mv = 20;
 
 static TaskHandle_t s_task_handle = NULL;
 static board_power_state_t s_state_buffers[2] = {
@@ -51,6 +52,12 @@ static void power_service_copy_cached_state(void)
     taskEXIT_CRITICAL(&s_lock);
 }
 
+static bool power_service_mv_changed(uint16_t lhs, uint16_t rhs)
+{
+    uint16_t delta = lhs > rhs ? (lhs - rhs) : (rhs - lhs);
+    return delta >= k_voltage_jitter_threshold_mv;
+}
+
 static bool power_service_state_equal(const board_power_state_t *lhs,
                                       const board_power_state_t *rhs)
 {
@@ -61,9 +68,34 @@ static bool power_service_state_equal(const board_power_state_t *lhs,
            lhs->discharging == rhs->discharging &&
            lhs->external_power_present == rhs->external_power_present &&
            lhs->battery_present == rhs->battery_present &&
-           lhs->battery_mv == rhs->battery_mv &&
-           lhs->system_mv == rhs->system_mv &&
+           !power_service_mv_changed(lhs->battery_mv, rhs->battery_mv) &&
+           !power_service_mv_changed(lhs->system_mv, rhs->system_mv) &&
            lhs->battery_percent == rhs->battery_percent;
+}
+
+static void power_service_log_state_change(const board_power_state_t *state)
+{
+    if (state == NULL) {
+        ESP_LOGI(TAG, "power state changed: unavailable");
+        return;
+    }
+
+    if (state->battery_data_valid) {
+        ESP_LOGI(TAG,
+                 "power state changed: available=%d stale=%d ext=%d bat=%d chg=%d dchg=%d vbat=%umV vsys=%umV soc=%u%%",
+                 state->available, state->snapshot_stale,
+                 state->external_power_present, state->battery_present,
+                 state->charging, state->discharging, state->battery_mv,
+                 state->system_mv, state->battery_percent);
+        return;
+    }
+
+    ESP_LOGI(TAG,
+             "power state changed: available=%d stale=%d ext=%d bat=%d chg=%d dchg=%d vbat=%umV vsys=%umV soc=unknown",
+             state->available, state->snapshot_stale,
+             state->external_power_present, state->battery_present,
+             state->charging, state->discharging, state->battery_mv,
+             state->system_mv);
 }
 
 static void power_service_store_state(const board_power_state_t *next_state,
@@ -137,8 +169,11 @@ static void power_service_task(void *pv_parameter)
             s_last_failure_log_tick = 0;
             power_service_store_state(&next_state, &state_changed, &callback,
                                       &published_state);
-            if (state_changed && callback != NULL) {
-                callback(published_state);
+            if (state_changed) {
+                power_service_log_state_change(published_state);
+                if (callback != NULL) {
+                    callback(published_state);
+                }
             }
         } else {
             power_service_prepare_failure_state(&next_state);
@@ -148,8 +183,11 @@ static void power_service_task(void *pv_parameter)
             const board_power_state_t *published_state = NULL;
             power_service_store_state(&next_state, &state_changed, &callback,
                                       &published_state);
-            if (state_changed && callback != NULL) {
-                callback(published_state);
+            if (state_changed) {
+                power_service_log_state_change(published_state);
+                if (callback != NULL) {
+                    callback(published_state);
+                }
             }
 
             ++s_failure_count;

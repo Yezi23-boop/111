@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-10T00:44:24.060312+00:00",
+  "generated_at_utc": "2026-04-12T17:26:45.586193+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 57,
+  "doc_count": 59,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-10：新增 `AXP2101` 电源组件实现知识卡，固化 `REG30` 受控 ADC 使能、`board_power` 未采样/陈旧态语义、`power_service` 双缓冲发布与主链路接入位置。",
+      "summary": "- 2026-04-13：新增手表项目低功耗管理架构知识卡，收敛 `Active / Idle-Dim / Standby / Deep Sleep` 四态路线、`power_policy` 分层建议，以及 `RTC + AXP2101` 的阶段化接入顺序。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-10T00:29:38.614413+00:00",
-      "token_count": 2082
+      "mtime_utc": "2026-04-12T17:01:37.968009+00:00",
+      "token_count": 2150
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -308,9 +308,9 @@
       ],
       "summary": "AXP2101 第一阶段只读电源组件的实际落地文件、状态语义、轮询策略和主链路接入位置。",
       "id": "axp2101-power-component-implementation",
-      "last_reviewed": "2026-04-10",
-      "mtime_utc": "2026-04-10T00:29:38.613908+00:00",
-      "token_count": 292
+      "last_reviewed": "2026-04-13",
+      "mtime_utc": "2026-04-12T16:47:14.874289+00:00",
+      "token_count": 344
     },
     {
       "path": "docs/context/knowledge/project/ble-provisioning-advertising-payload-limit.md",
@@ -539,6 +539,22 @@
       "last_reviewed": "2026-03-11",
       "mtime_utc": "2026-03-11T10:19:04.458599+00:00",
       "token_count": 259
+    },
+    {
+      "path": "docs/context/knowledge/project/esp-idf-i2c-master-driver-overview.md",
+      "title": "ESP-IDF 新版 I2C master 驱动概览",
+      "tags": [
+        "project",
+        "esp-idf",
+        "i2c",
+        "driver",
+        "esp32-s3"
+      ],
+      "summary": "ESP-IDF 5.3+ 新版 I2C master bus 驱动的对象模型、常用 API 与共享总线注意事项。",
+      "id": "esp-idf-i2c-master-driver-overview",
+      "last_reviewed": "2026-04-10",
+      "mtime_utc": "2026-04-10T00:45:10.110626+00:00",
+      "token_count": 313
     },
     {
       "path": "docs/context/knowledge/project/hardware-capability-gap-map.md",
@@ -882,6 +898,24 @@
       "last_reviewed": "2026-04-02",
       "mtime_utc": "2026-04-07T16:22:11.340950+00:00",
       "token_count": 215
+    },
+    {
+      "path": "docs/context/knowledge/project/watch-low-power-management-architecture.md",
+      "title": "手表项目低功耗管理架构",
+      "tags": [
+        "project",
+        "power",
+        "low-power",
+        "axp2101",
+        "rtc",
+        "lvgl",
+        "wifi"
+      ],
+      "summary": "当前手表项目低功耗管理的推荐状态机、模块分层、实施顺序与硬件边界。",
+      "id": "watch-low-power-management-architecture",
+      "last_reviewed": "2026-04-13",
+      "mtime_utc": "2026-04-12T17:01:37.968009+00:00",
+      "token_count": 211
     },
     {
       "path": "docs/context/knowledge/project/wechat-miniapp-ble-notify-byte-buffer.md",

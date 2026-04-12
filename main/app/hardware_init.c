@@ -18,6 +18,33 @@ static const char *TAG = "HARDWARE_INIT";
  * 按下时GPIO10变为低电平，松开时为高电平（需要上拉电阻）
  */
 #define BUTTON_GPIO_NUM GPIO_NUM_10
+
+static void board_power_log_boot_snapshot(const board_power_state_t *state)
+{
+    if (state == NULL)
+    {
+        ESP_LOGW(TAG, "Board power boot snapshot unavailable");
+        return;
+    }
+
+    if (state->battery_data_valid)
+    {
+        ESP_LOGI(TAG,
+                 "Board power boot snapshot: available=%d stale=%d ext=%d bat=%d chg=%d dchg=%d vbat=%umV vsys=%umV soc=%u%%",
+                 state->available, state->snapshot_stale,
+                 state->external_power_present, state->battery_present,
+                 state->charging, state->discharging, state->battery_mv,
+                 state->system_mv, state->battery_percent);
+        return;
+    }
+
+    ESP_LOGI(TAG,
+             "Board power boot snapshot: available=%d stale=%d ext=%d bat=%d chg=%d dchg=%d vbat=%umV vsys=%umV soc=unknown",
+             state->available, state->snapshot_stale,
+             state->external_power_present, state->battery_present,
+             state->charging, state->discharging, state->battery_mv,
+             state->system_mv);
+}
 static void button_single_click_cb(void *arg, void *data)
 {
     ESP_LOGI(TAG, "========================================");
@@ -179,6 +206,19 @@ esp_err_t hardware_init(void)
     if (ret != ESP_OK)
     {
         ESP_LOGW(TAG, "Board power init failed: %s", esp_err_to_name(ret));
+    }
+    else
+    {
+        board_power_state_t state = {0};
+        ret = board_power_refresh(&state);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Board power boot snapshot refresh failed: %s", esp_err_to_name(ret));
+        }
+        else
+        {
+            board_power_log_boot_snapshot(&state);
+        }
     }
 
     // // 5. 扫描I2C总线

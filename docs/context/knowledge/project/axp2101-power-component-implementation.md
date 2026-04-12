@@ -2,7 +2,7 @@
 id: axp2101-power-component-implementation
 tags: project, axp2101, power, pmic, implementation
 summary: AXP2101 第一阶段只读电源组件的实际落地文件、状态语义、轮询策略和主链路接入位置。
-last_reviewed: 2026-04-10
+last_reviewed: 2026-04-13
 ---
 
 # AXP2101 电源组件实现落点
@@ -55,6 +55,9 @@ last_reviewed: 2026-04-10
 
 - `power_service` 默认 `1s` 轮询。
 - 连续失败后退避到 `2s / 5s`，并对失败日志做 `5s` 节流。
+- 状态变化日志对 `battery_mv/system_mv` 采用 `20mV` 抖动阈值：
+  - 小于 `20mV` 的 ADC 细小波动不算状态变化
+  - 语义字段如 `external_power_present/battery_present/charging/discharging/snapshot_stale/battery_percent` 仍按精确变化触发日志
 - 发布层使用双缓冲切换：
   - 先写非活动缓冲
   - 再切换活动索引
@@ -65,6 +68,7 @@ last_reviewed: 2026-04-10
 
 - `main/app/hardware_init.c`
   - 在 `audio_codec_init()` 之后调用 `board_power_init()`
+  - 在 `board_power_init()` 成功后立即执行一次 `board_power_refresh()` 并打印启动首帧电源快照
   - 初始化失败仅记日志，不阻塞后续启动
 - `main/app/app_main.c`
   - 在 `lvgl_task` 创建后启动 `power_service`
@@ -78,4 +82,9 @@ last_reviewed: 2026-04-10
 
 - `uv run python -m unittest tests.test_axp2101_power_source tests.test_board_power_source tests.test_power_service_source tests.test_power_integration_source -v` 通过。
 - 在 `ESP-IDF 5.5.3` 环境下执行 `idf.py build` 通过。
+- 监控日志可观测性已补强：
+  - 启动阶段会打印一条 `Board power boot snapshot`
+  - `power_service` 仅在电源状态真实变化时打印 `power state changed`
+  - `battery_mv/system_mv` 小于 `20mV` 的抖动不会触发日志
+  - 成功路径不会按 1 秒轮询频率刷屏
 - 这一阶段尚未做真机 USB 插拔、IRQ、RTC 联动验证，因此“共享 I2C 不回归”和“AXP 状态随外部电源变化”仍需板端复验。
