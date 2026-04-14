@@ -382,10 +382,11 @@
     </div>
 
     <script>
+        // WebSocket 网关地址：固定使用当前主机 /ws 端点。
         var gateway = `ws://${window.location.hostname}/ws`;
-        var websocket;
-        let scanTimeId;
-        let connectTimeId;  // 连接超时计时器
+        var websocket;       // WebSocket 连接对象
+        let scanTimeId;      // 扫描超时计时器
+        let connectTimeId;   // 连接超时计时器
 
         window.addEventListener('load', onLoad);
 
@@ -423,7 +424,7 @@
         }
 
         function onMessage(event) {
-            const data = JSON.parse(event.data);
+            const data = JSON.parse(event.data); // 服务器统一使用 JSON 协议
             console.log('Received:', data);
 
             // 处理WiFi列表
@@ -447,7 +448,7 @@
             listEl.innerHTML = '';
 
             // 按信号强度排序并去重（同名SSID只保留信号最强的）
-            const uniqueWifi = {};
+            const uniqueWifi = {}; // 以 SSID 为 key 去重
             wifiList.forEach(wifi => {
                 if (!uniqueWifi[wifi.ssid] || uniqueWifi[wifi.ssid].rssi < wifi.rssi) {
                     uniqueWifi[wifi.ssid] = wifi;

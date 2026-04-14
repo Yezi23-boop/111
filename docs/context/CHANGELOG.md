@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-04-13：按 main 分层与配网/电源链路上下文，为 `main/app`、`main/assets`、`main/features`、`main/services`、`components/axp2101`、`components/wifi_provision` 共 43 个文件补充变量级中文注释，覆盖启动链路、配网状态机、BLE 协议、AXP2101 快照与告警流程语义。
+- 2026-04-13：为 `components/lvgl_port`、`components/co5300_panel`、`components/audio_codec` 全部源码与头文件补充关键变量/参数中文注释，统一标注 flush 分块、TE 同步、I2S/I2C 映射和接口语义，便于后续维护与排障。
 - 2026-04-13：新增手表项目低功耗管理架构知识卡，收敛 `Active / Idle-Dim / Standby / Deep Sleep` 四态路线、`power_policy` 分层建议，以及 `RTC + AXP2101` 的阶段化接入顺序。
 - 2026-04-13：为 `power_service` 的电源状态日志增加 `20mV` 电压抖动阈值，避免 `battery_mv/system_mv` 的细小 ADC 波动按 1 秒频率持续刷出 `power state changed`。
 - 2026-04-13：补强 AXP2101 第一阶段可观测性，启动成功后会打印首帧 `Board power boot snapshot`，`power_service` 仅在电源状态变化时输出 `power state changed`，避免成功路径完全静默。
@@ -114,3 +116,6 @@
 - 2026-04-08：修复 BLE 配网 notify 回包无分隔符的问题，改为通过 `ble_gatts_notify_custom()` 发送以 `\n` 结尾的 JSON，避免微信小程序在 `wifi_scan` 多条 notify 场景下粘包解析失败。
 - 2026-04-08：继续收敛 BLE 上行兼容性，设备端 notify 改为 `20` 字节安全分片发送，解决微信小程序在未协商更大 MTU 时仍收不到完整 `hello/status/wifi_scan` 回包的问题。
 - 2026-04-10: 新增 `knowledge/project/esp-idf-i2c-master-driver-overview.md`，总结 ESP-IDF 5.3+ 新版 I2C master bus 驱动的对象模型、API 分层与共享总线注意事项。
+- 2026-04-13：新增最小 UI 低功耗刷新策略：`5s` 无交互后将 `lvgl_task` 调度从活跃态 `MIN(next_call,16ms)` 切到空闲态 `MAX(next_call,100ms)`，并通过 CO5300 `0x51` 亮度命令把空闲亮度降到用户亮度的 `40%`，同时保留强制高刷开关与触摸恢复高刷路径。
+- 2026-04-13：修复 UI 低功耗策略接入过程中 `co5300_panel.c / ui_refresh_policy.c / lvgl_task.c / lv_port_input.c` 被截断后的构建阻塞，恢复 CO5300 完整驱动并补回亮度接口，同时固化 `lvgl_task.c` 中 FreeRTOS 头必须早于 GUI/LVGL 头的包含顺序。
+- 2026-04-13：修复 CO5300 QSPI 亮度命令路径，`co5300_panel` 不再对 `panel_io` 裸发 `0x51`，改为复用 `esp_lcd_panel_co5300_set_brightness()`，对齐参考仓库与官方驱动的 QSPI opcode 编码方式，恢复手动亮度与 idle dim 生效条件。

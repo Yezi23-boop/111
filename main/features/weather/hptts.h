@@ -4,6 +4,11 @@
 #include "esp_err.h"
 #include "esp_http_client.h"
 extern struct tm timeinfo;
+
+/*
+ * 心知天气实时数据结构
+ * 字段均为指向 JSON 节点字符串的指针，生命周期受 cJSON 解析对象影响。
+ */
 typedef struct
 {
     char *id;
@@ -17,9 +22,11 @@ typedef struct
     char *temperature;
     char *last_update;
 } user_seniverse_now_config_t;
-// 函数声明
+// HTTP 客户端事件回调：接收并拼接天气接口返回的数据。
 esp_err_t _http_event_handler(esp_http_client_event_t *evt);
+// 发起天气 HTTP 请求。
 void http_rest_with_url(void);
-void esp_wait_sntp_sync(void); // 新增SNTP同步函数声明
+// 阻塞等待 SNTP 完成初次授时。
+void esp_wait_sntp_sync(void);
 
 #endif // HPTTS_H

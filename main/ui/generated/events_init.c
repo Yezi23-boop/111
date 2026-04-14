@@ -17,6 +17,7 @@
 
 #include "custom.h" // 包含自定义函数的头文件
 #include "danger_detection_controller.h"
+#include "ui_refresh_policy.h"
 static int32_t status_bar_y_pos;
 static int32_t start_y;
 static bool is_dragging;
@@ -208,6 +209,7 @@ static void screen_main_Brightness_event_handler (lv_event_t *e)
     {
         // 获取滑动条的当前值
         int32_t slider_value = lv_slider_get_value(guider_ui.screen_main_Brightness);
+        ui_refresh_policy_set_user_brightness_percent(slider_value);
 
         // 计算旋转角度：将0-100的值映射到0-360度
         int32_t rotation_angle = (slider_value * 360) / 100;

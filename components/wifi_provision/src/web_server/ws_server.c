@@ -141,7 +141,7 @@ esp_err_t handle_ws_req(httpd_req_t *r)
      * 接收WebSocket数据帧 - 两阶段读取模式
      *------------------------------------------------------------------------*/
 
-    httpd_ws_frame_t ws_pkt; // WebSocket帧结构体
+    httpd_ws_frame_t ws_pkt; // WebSocket 帧结构体
     esp_err_t err;
 
     // 清零结构体（很重要，特别是len字段）
@@ -162,7 +162,7 @@ esp_err_t handle_ws_req(httpd_req_t *r)
     ESP_LOGI(TAG, "WebSocket帧长度: %d字节", ws_pkt.len);
 
     // 分配缓冲区（+1用于字符串结束符）
-    uint8_t *buf = malloc(ws_pkt.len + 1);
+    uint8_t *buf = malloc(ws_pkt.len + 1); // +1 预留字符串结束符
     if (buf == NULL)
     {
         ESP_LOGE(TAG, "内存分配失败");

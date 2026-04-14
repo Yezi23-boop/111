@@ -16,9 +16,9 @@
 
 static const char *TAG = "axp2101";
 
-static bool s_ready = false;
-static bool s_voltage_adc_ready = false;
-static uint8_t s_voltage_adc_mask = 0;
+static bool s_ready = false;             // 驱动是否已初始化
+static bool s_voltage_adc_ready = false; // ADC 通道是否已完成能力使能
+static uint8_t s_voltage_adc_mask = 0;   // 最近一次写入的 ADC 通道掩码
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
 static i2c_master_dev_handle_t s_dev_handle = NULL;
@@ -32,7 +32,8 @@ static uint16_t axp2101_decode_h6l8(const uint8_t *data);
 
 esp_err_t axp2101_init(void)
 {
-    if (s_ready) {
+    if (s_ready)
+    {
         return ESP_OK;
     }
 
@@ -72,22 +73,26 @@ esp_err_t axp2101_probe(bool *present)
                         "shared i2c bus is not ready");
 
     esp_err_t ret = i2c_master_probe(bus_handle, AXP2101_I2C_ADDR_7BIT, 50);
-    if (ret == ESP_OK) {
+    if (ret == ESP_OK)
+    {
         *present = true;
         return ESP_OK;
     }
-    if (ret == ESP_ERR_NOT_FOUND || ret == ESP_FAIL) {
+    if (ret == ESP_ERR_NOT_FOUND || ret == ESP_FAIL)
+    {
         return ESP_OK;
     }
     return ret;
 #else
     uint8_t value = 0;
     esp_err_t ret = axp2101_read_bytes(AXP2101_REG_STATUS0, &value, 1);
-    if (ret == ESP_OK) {
+    if (ret == ESP_OK)
+    {
         *present = true;
         return ESP_OK;
     }
-    if (ret == ESP_ERR_NOT_FOUND || ret == ESP_FAIL) {
+    if (ret == ESP_ERR_NOT_FOUND || ret == ESP_FAIL)
+    {
         return ESP_OK;
     }
     return ret;
@@ -101,10 +106,10 @@ esp_err_t axp2101_read_snapshot(axp2101_snapshot_t *snapshot)
     ESP_RETURN_ON_ERROR(axp2101_init(), TAG, "init failed before snapshot");
 
     axp2101_snapshot_t out = {0};
-    uint8_t raw[2] = {0};
-    uint8_t status0 = 0;
-    uint8_t status2 = 0;
-    uint8_t percent = 0;
+    uint8_t raw[2] = {0}; // 双字节电压原始数据缓存
+    uint8_t status0 = 0;  // STATUS0 原始值
+    uint8_t status2 = 0;  // STATUS2 原始值
+    uint8_t percent = 0;  // 电量百分比原始值
 
     ESP_RETURN_ON_ERROR(axp2101_read_bytes(AXP2101_REG_STATUS0, &status0, 1),
                         TAG, "read status0 failed");
@@ -122,7 +127,8 @@ esp_err_t axp2101_read_snapshot(axp2101_snapshot_t *snapshot)
     ESP_RETURN_ON_ERROR(axp2101_ensure_voltage_adc_channels(), TAG,
                         "enable voltage adc channels failed");
 
-    if (out.battery_present) {
+    if (out.battery_present)
+    {
         ESP_RETURN_ON_ERROR(
             axp2101_read_bytes(AXP2101_REG_BATTERY_H, raw, sizeof(raw)), TAG,
             "read battery voltage failed");
@@ -131,17 +137,22 @@ esp_err_t axp2101_read_snapshot(axp2101_snapshot_t *snapshot)
             axp2101_read_bytes(AXP2101_REG_BAT_PERCENT, &percent, 1), TAG,
             "read battery percentage failed");
         out.battery_percent = (int8_t)percent;
-    } else {
+    }
+    else
+    {
         out.battery_mv = 0;
         out.battery_percent = -1;
     }
 
-    if (out.vbus_good) {
+    if (out.vbus_good)
+    {
         ESP_RETURN_ON_ERROR(
             axp2101_read_bytes(AXP2101_REG_VBUS_H, raw, sizeof(raw)), TAG,
             "read vbus voltage failed");
         out.vbus_mv = axp2101_decode_h6l8(raw);
-    } else {
+    }
+    else
+    {
         out.vbus_mv = 0;
     }
 
@@ -213,7 +224,8 @@ static esp_err_t axp2101_read_bytes(uint8_t reg, uint8_t *data, size_t len)
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (AXP2101_I2C_ADDR_7BIT << 1) | I2C_MASTER_READ,
                           true);
-    if (len > 1) {
+    if (len > 1)
+    {
         i2c_master_read(cmd, data, len - 1, I2C_MASTER_ACK);
     }
     i2c_master_read_byte(cmd, &data[len - 1], I2C_MASTER_NACK);
@@ -259,12 +271,13 @@ static esp_err_t axp2101_write_bytes(uint8_t reg, const uint8_t *data, size_t le
 
 static esp_err_t axp2101_ensure_voltage_adc_channels(void)
 {
-    uint8_t current = 0;
-    uint8_t desired = 0;
+    uint8_t current = 0; // 当前 ADC 通道配置
+    uint8_t desired = 0; // 期望 ADC 通道配置（补齐 BAT/VBUS/VSYS）
 
     if (s_voltage_adc_ready &&
         (s_voltage_adc_mask & AXP2101_ADC_CHANNEL_VOLTAGE_MASK) ==
-            AXP2101_ADC_CHANNEL_VOLTAGE_MASK) {
+            AXP2101_ADC_CHANNEL_VOLTAGE_MASK)
+    {
         return ESP_OK;
     }
 
@@ -272,7 +285,8 @@ static esp_err_t axp2101_ensure_voltage_adc_channels(void)
         axp2101_read_bytes(AXP2101_REG_ADC_CHANNEL_CTRL, &current, 1), TAG,
         "read adc channel ctrl failed");
     desired = current | AXP2101_ADC_CHANNEL_VOLTAGE_MASK;
-    if (desired != current) {
+    if (desired != current)
+    {
         ESP_RETURN_ON_ERROR(axp2101_write_bytes(AXP2101_REG_ADC_CHANNEL_CTRL,
                                                 &desired, 1),
                             TAG, "write adc channel ctrl failed");

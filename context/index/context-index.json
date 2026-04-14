@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-12T17:26:45.586193+00:00",
+  "generated_at_utc": "2026-04-14T16:47:17.717397+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 59,
+  "doc_count": 60,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-13：新增手表项目低功耗管理架构知识卡，收敛 `Active / Idle-Dim / Standby / Deep Sleep` 四态路线、`power_policy` 分层建议，以及 `RTC + AXP2101` 的阶段化接入顺序。",
+      "summary": "- 2026-04-13：按 main 分层与配网/电源链路上下文，为 `main/app`、`main/assets`、`main/features`、`main/services`、`components/axp2101`、`components/wifi_provision` 共 43 个文件补充变量级中文注释，覆盖启动链路、配网状态机、BLE 协议、",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-12T17:01:37.968009+00:00",
-      "token_count": 2150
+      "mtime_utc": "2026-04-13T06:06:44.711655+00:00",
+      "token_count": 2267
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -898,6 +898,23 @@
       "last_reviewed": "2026-04-02",
       "mtime_utc": "2026-04-07T16:22:11.340950+00:00",
       "token_count": 215
+    },
+    {
+      "path": "docs/context/knowledge/project/ui-refresh-policy-idle-dim.md",
+      "title": "UI 空闲降频与 dim 策略",
+      "tags": [
+        "project",
+        "lvgl",
+        "ui",
+        "power",
+        "brightness",
+        "touch"
+      ],
+      "summary": "记录当前仓库 UI 空闲降频、亮度 dim 与强制高刷开关的最小实现策略。",
+      "id": "ui-refresh-policy-idle-dim",
+      "last_reviewed": "2026-04-13",
+      "mtime_utc": "2026-04-12T19:20:49.310957+00:00",
+      "token_count": 212
     },
     {
       "path": "docs/context/knowledge/project/watch-low-power-management-architecture.md",

@@ -1,7 +1,7 @@
 # ESP-IDF 构建输出
 build/
 sdkconfig.old
-
+.agents
 # 组件管理器下载的依赖项（不应提交到版本控制）
 managed_components/
 dependencies.lock

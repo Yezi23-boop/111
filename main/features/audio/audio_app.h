@@ -22,7 +22,7 @@ extern "C"
 
     /**
      * @brief 开始录音
-     * @param filename 保存的文件名 (例如 "/sdcard/record.wav")
+     * @param filename 保存的文件路径 (例如 "/sdcard/record.wav")
      * @return esp_err_t
      */
     esp_err_t audio_app_start_record(const char *filename);

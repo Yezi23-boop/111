@@ -1,11 +1,20 @@
 #pragma once
 
-#define LCD_WIDTH 410  // LCD宽度(像素)
-#define LCD_HEIGHT 502 // LCD高度(像素)
+/*
+ * LVGL 端口层静态配置
+ * - 这里放与显示尺寸、缓冲策略、颜色字节序相关的编译期参数。
+ * - 修改后通常需要重新编译并观察刷新性能与内存占用。
+ */
 
-#define LV_PORT_FIXED_CHUNK_LINES1 512 // LVGL 片内渲染缓冲高度（滑动优先档：尽量减少 tile 边界带来的切割感）
-#define LV_PORT_FIXED_CHUNK_LINES2 512 // LVGL 片外渲染缓冲高度（滑动优先档：接近整屏，减少手势滚动时的分片感）
-#define LV_PORT_FIXED_CHUNK_LINES23 0  // 控制ram开关
+#define LCD_WIDTH 410  // LCD 水平分辨率（像素）
+#define LCD_HEIGHT 502 // LCD 垂直分辨率（像素）
+
+// lv_port_disp_init_small 使用的缓冲行数（通常用于片内/DMA 优先策略）
+#define LV_PORT_FIXED_CHUNK_LINES1 512
+// lv_port_disp_init_single 使用的缓冲行数（通常用于 PSRAM 大块缓冲策略）
+#define LV_PORT_FIXED_CHUNK_LINES2 512
+// 显示路径选择开关：非 0 使用 small 路径，0 使用 single 路径
+#define LV_PORT_FIXED_CHUNK_LINES23 0
 /**
  * @brief 字节交换配置
  * @details 用于处理RGB565格式的字节序问题

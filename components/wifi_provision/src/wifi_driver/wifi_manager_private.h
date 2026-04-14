@@ -9,10 +9,10 @@
  */
 typedef struct
 {
-    char ap_ssid[32];
-    char ap_password[64];
-    char ap_ip[16];
-    int max_retry;
+    char ap_ssid[32];     // AP 门户模式 SSID
+    char ap_password[64]; // AP 门户模式密码
+    char ap_ip[16];       // AP 网关 IPv4 字符串
+    int max_retry;        // STA 断线自动重连最大次数
 } wifi_manager_config_internal_t;
 
 /**

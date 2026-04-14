@@ -78,16 +78,17 @@ static void button_triple_click_cb(void *arg, void *usr_data)
 
 static void button_init(void)
 {
+    // long_press_time/short_press_time 由 button 组件以毫秒解释。
     button_config_t gpio_btn_cfg = {
         .long_press_time = 1500,
         .short_press_time = 180,
     };
 
     button_gpio_config_t gpio_cfg = {
-        .gpio_num = BUTTON_GPIO_NUM,
-        .active_level = 1,
-        .enable_power_save = true,
-        .disable_pull = false,
+        .gpio_num = BUTTON_GPIO_NUM, // 物理按键 GPIO
+        .active_level = 1,           // 高电平触发按键按下
+        .enable_power_save = true,   // 允许按钮驱动低功耗策略
+        .disable_pull = false,       // 保留内部上下拉配置能力
     };
 
     button_handle_t gpio_btn_handle = NULL;
@@ -100,7 +101,7 @@ static void button_init(void)
     // 定义用户数据（注意：确保该数据在回调执行时依然有效，通常使用全局变量或静态变量）
     static char *user_msg = "Hello from Triple Click!";
 
-    // 定义事件参数：3次点击
+    // 多击参数：三连击用于显式切到 AP 配网。
     button_event_args_t args = {
         .multiple_clicks.clicks = 3,
     };
@@ -133,6 +134,7 @@ static void wifi_provision_cb(wifi_provision_state_t state)
  */
 static esp_err_t hardware_nvs_init(void)
 {
+    // 首次初始化失败若由分页或版本差异导致，先擦除后重建 NVS。
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
     {
@@ -161,7 +163,7 @@ esp_err_t hardware_init(void)
         return ret;
     }
 
-    // 2. 初始化音频SPIFFS (录音/播放需要)
+    // 2. 初始化音频应用资源（录音/播放与文件路径准备）。
     ESP_LOGI(TAG, "Initializing Audio SPIFFS...");
     ret = audio_app_init(); // 假设这里包含了 audio_spiffs_init 类似的功能，根据上下文推断
     if (ret != ESP_OK)
@@ -187,7 +189,7 @@ esp_err_t hardware_init(void)
     //     sd_manager_list_dir("/sdcard/mp3");
     // }
 
-    // 4. 初始化音频编解码器
+    // 4. 初始化音频编解码器（I2C 控制面 + I2S 数据面）。
     ESP_LOGI(TAG, "Initializing Audio Codec...");
     ret = audio_codec_init();
     if (ret != ESP_OK)
@@ -200,7 +202,7 @@ esp_err_t hardware_init(void)
         audio_codec_set_volume(60);
     }
 
-    // 4. 初始化板级电源观测
+    // 5. 初始化板级电源观测（AXP2101），用于电量状态发布。
     ESP_LOGI(TAG, "Initializing Board Power...");
     ret = board_power_init();
     if (ret != ESP_OK)
@@ -225,7 +227,7 @@ esp_err_t hardware_init(void)
     // ESP_LOGI(TAG, "Scanning I2C Bus...");
     // i2c_manager_scan();
 
-    // 6. WiFi初始化
+    // 6. 初始化配网入口与 Wi-Fi 管理。
     ESP_LOGI(TAG, "Initializing WiFi...");
     button_init();
     ret = wifi_provision_init(wifi_provision_cb);

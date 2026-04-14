@@ -1,8 +1,10 @@
 
 /**
  * @file lv_port.h
- * @brief LVGL移植层头文件
- * @details 定义LVGL在ESP32平台的初始化接口（简约命名）
+ * @brief LVGL 移植层对外接口
+ * @details
+ * - 该头文件只暴露端口层初始化入口，隐藏显示/触摸/tick 的内部状态。
+ * - 适合上层应用在启动阶段一次性调用。
  */
 
 #ifndef _LV_PORT_H_
@@ -12,7 +14,17 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-// 初始化函数
-void lv_port_init_small(void); // 片内
+/**
+ * @brief 初始化 LVGL 端口层
+ * @details
+ * 调用顺序固定为：
+ * 1) lv_init
+ * 2) 面板初始化
+ * 3) 触摸初始化
+ * 4) 显示缓冲注册（单缓冲或双缓冲）
+ * 5) 输入设备注册
+ * 6) tick 定时器启动
+ */
+void lv_port_init_small(void);
 
 #endif

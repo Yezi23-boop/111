@@ -13,12 +13,13 @@
 #define TAG "danger_detection"
 #define DANGER_DETECTION_STOP_TIMEOUT_MS 2000U
 
-typedef struct {
-    bool initialized;
-    bool callback_registered;
-    bool runtime_started;
-    danger_detection_snapshot_t snapshot;
-    portMUX_TYPE lock;
+typedef struct
+{
+    bool initialized;                     // 服务是否完成初始化
+    bool callback_registered;             // 后处理告警回调是否已注册
+    bool runtime_started;                 // 音频运行时是否已启动
+    danger_detection_snapshot_t snapshot; // 对外发布的快照
+    portMUX_TYPE lock;                    // 快照临界区锁
 } danger_detection_service_state_t;
 
 static danger_detection_service_state_t s_service_state = {
@@ -42,14 +43,15 @@ static danger_detection_service_state_t s_service_state = {
 static danger_detection_label_t danger_detection_map_label(
     traffic_inference_postprocess_stable_label_t label)
 {
-    switch (label) {
-        case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_HORN:
-            return DANGER_DETECTION_LABEL_HORN;
-        case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_SIREN:
-            return DANGER_DETECTION_LABEL_SIREN;
-        case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE:
-        default:
-            return DANGER_DETECTION_LABEL_NONE;
+    switch (label)
+    {
+    case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_HORN:
+        return DANGER_DETECTION_LABEL_HORN;
+    case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_SIREN:
+        return DANGER_DETECTION_LABEL_SIREN;
+    case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE:
+    default:
+        return DANGER_DETECTION_LABEL_NONE;
     }
 }
 
@@ -57,18 +59,19 @@ static danger_detection_state_t danger_detection_map_runtime_state(
     traffic_audio_runtime_state_t runtime_state,
     danger_detection_state_t fallback)
 {
-    switch (runtime_state) {
-        case TRAFFIC_AUDIO_RUNTIME_STATE_STARTING:
-            return DANGER_DETECTION_STATE_STARTING;
-        case TRAFFIC_AUDIO_RUNTIME_STATE_RUNNING:
-            return DANGER_DETECTION_STATE_RUNNING;
-        case TRAFFIC_AUDIO_RUNTIME_STATE_STOPPING:
-            return DANGER_DETECTION_STATE_STOPPING;
-        case TRAFFIC_AUDIO_RUNTIME_STATE_FAILED:
-            return DANGER_DETECTION_STATE_ERROR;
-        case TRAFFIC_AUDIO_RUNTIME_STATE_IDLE:
-        default:
-            return fallback;
+    switch (runtime_state)
+    {
+    case TRAFFIC_AUDIO_RUNTIME_STATE_STARTING:
+        return DANGER_DETECTION_STATE_STARTING;
+    case TRAFFIC_AUDIO_RUNTIME_STATE_RUNNING:
+        return DANGER_DETECTION_STATE_RUNNING;
+    case TRAFFIC_AUDIO_RUNTIME_STATE_STOPPING:
+        return DANGER_DETECTION_STATE_STOPPING;
+    case TRAFFIC_AUDIO_RUNTIME_STATE_FAILED:
+        return DANGER_DETECTION_STATE_ERROR;
+    case TRAFFIC_AUDIO_RUNTIME_STATE_IDLE:
+    default:
+        return fallback;
     }
 }
 
@@ -87,11 +90,14 @@ static void danger_detection_on_alert(
 {
     (void)user_data;
 
-    if (alert == NULL) {
+    if (alert == NULL)
+    {
         return;
     }
 
-    if (alert->action == TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_RAISE) {
+    if (alert->action == TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_RAISE)
+    {
+        // RAISE: 进入危险告警，触发提示音/覆盖层并更新快照。
         app_alert_request_t request = {
             .source = APP_ALERT_SOURCE_TRAFFIC_AUDIO,
             .severity = APP_ALERT_SEVERITY_DANGER,
@@ -113,8 +119,11 @@ static void danger_detection_on_alert(
         s_service_state.snapshot.alert_sequence += 1U;
         s_service_state.snapshot.danger_overlay_active = true;
         taskEXIT_CRITICAL(&s_service_state.lock);
-    } else if (alert->action ==
-               TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_CLEAR) {
+    }
+    else if (alert->action ==
+             TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_CLEAR)
+    {
+        // CLEAR: 关闭告警与覆盖层，快照恢复 NONE。
         (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
 
         taskENTER_CRITICAL(&s_service_state.lock);
@@ -127,12 +136,14 @@ static void danger_detection_on_alert(
 
 esp_err_t danger_detection_service_init(void)
 {
-    if (s_service_state.initialized) {
+    if (s_service_state.initialized)
+    {
         return ESP_OK;
     }
 
     esp_err_t ret = app_alert_manager_init();
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
         return ret;
     }
@@ -155,22 +166,24 @@ esp_err_t danger_detection_service_init(void)
 esp_err_t danger_detection_service_start(void)
 {
     esp_err_t ret = danger_detection_service_init();
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         return ret;
     }
 
     taskENTER_CRITICAL(&s_service_state.lock);
     const bool already_running = s_service_state.runtime_started;
     taskEXIT_CRITICAL(&s_service_state.lock);
-    if (already_running) {
+    if (already_running)
+    {
         return ESP_OK;
     }
 
     traffic_audio_runtime_config_t config = {
         .input_chunk_frames = 0U,
-        .read_timeout_ms = 250U,
-        .task_stack_size = 8192U,
-        .task_priority = 5U,
+        .read_timeout_ms = 250U,  // 音频读取超时阈值
+        .task_stack_size = 8192U, // 运行时任务栈大小
+        .task_priority = 5U,      // 运行时任务优先级
     };
 
     danger_detection_set_state(DANGER_DETECTION_STATE_STARTING, ESP_OK);
@@ -186,7 +199,8 @@ esp_err_t danger_detection_service_start(void)
 
     ret = traffic_inference_postprocess_set_alert_callback(
         danger_detection_on_alert, NULL);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
         return ret;
     }
@@ -196,7 +210,8 @@ esp_err_t danger_detection_service_start(void)
     taskEXIT_CRITICAL(&s_service_state.lock);
 
     ret = traffic_audio_runtime_start(&config);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         (void)traffic_inference_postprocess_set_alert_callback(NULL, NULL);
         taskENTER_CRITICAL(&s_service_state.lock);
         s_service_state.callback_registered = false;
@@ -214,7 +229,8 @@ esp_err_t danger_detection_service_start(void)
 
 esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
 {
-    if (!s_service_state.initialized) {
+    if (!s_service_state.initialized)
+    {
         return ESP_OK;
     }
 
@@ -223,7 +239,8 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     const bool callback_registered = s_service_state.callback_registered;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
-    if (!runtime_started && !callback_registered) {
+    if (!runtime_started && !callback_registered)
+    {
         danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);
         return ESP_OK;
     }
@@ -232,16 +249,19 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
 
     esp_err_t ret = ESP_OK;
-    if (runtime_started) {
+    if (runtime_started)
+    {
         ret = traffic_audio_runtime_stop(timeout_ms == 0U
                                              ? DANGER_DETECTION_STOP_TIMEOUT_MS
                                              : timeout_ms);
     }
 
-    if (callback_registered) {
+    if (callback_registered)
+    {
         esp_err_t clear_ret =
             traffic_inference_postprocess_set_alert_callback(NULL, NULL);
-        if (ret == ESP_OK && clear_ret != ESP_OK) {
+        if (ret == ESP_OK && clear_ret != ESP_OK)
+        {
             ret = clear_ret;
         }
     }
@@ -258,7 +278,8 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     s_service_state.snapshot.danger_overlay_active = false;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
         return ret;
     }
@@ -278,7 +299,8 @@ danger_detection_snapshot_t danger_detection_service_get_snapshot(void)
     runtime_started = s_service_state.runtime_started;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
-    if (runtime_started) {
+    if (runtime_started)
+    {
         traffic_audio_runtime_state_t runtime_state =
             traffic_audio_runtime_get_state();
         const traffic_inference_postprocess_snapshot_t postprocess_snapshot =
@@ -288,7 +310,8 @@ danger_detection_snapshot_t danger_detection_service_get_snapshot(void)
         snapshot.horn_confidence = postprocess_snapshot.horn_score;
         snapshot.siren_confidence = postprocess_snapshot.siren_score;
         if (runtime_state == TRAFFIC_AUDIO_RUNTIME_STATE_FAILED &&
-            snapshot.last_error == ESP_OK) {
+            snapshot.last_error == ESP_OK)
+        {
             snapshot.last_error = ESP_FAIL;
         }
     }

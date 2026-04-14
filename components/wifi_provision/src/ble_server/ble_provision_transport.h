@@ -7,23 +7,27 @@
 #include "esp_err.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-typedef void (*ble_provision_transport_rx_cb_t)(const char *data, size_t len,
-                                                void *user_data);
-typedef void (*ble_provision_transport_state_cb_t)(bool connected,
-                                                   void *user_data);
+    typedef void (*ble_provision_transport_rx_cb_t)(const char *data, size_t len,
+                                                    void *user_data);
+    typedef void (*ble_provision_transport_state_cb_t)(bool connected,
+                                                       void *user_data);
 
-esp_err_t ble_provision_transport_start(
-    const char *device_name, ble_provision_transport_rx_cb_t rx_cb,
-    ble_provision_transport_state_cb_t state_cb, void *user_data);
-esp_err_t ble_provision_transport_stop(void);
-bool ble_provision_transport_is_active(void);
-bool ble_provision_transport_is_connected(void);
-esp_err_t ble_provision_transport_notify_json(const char *json_payload);
-esp_err_t ble_provision_transport_get_device_name(char *device_name,
-                                                  size_t device_name_len);
+    // 启动 BLE GATT 传输层并开始广播。
+    esp_err_t ble_provision_transport_start(
+        const char *device_name, ble_provision_transport_rx_cb_t rx_cb,
+        ble_provision_transport_state_cb_t state_cb, void *user_data);
+    // 停止广播并断开当前连接。
+    esp_err_t ble_provision_transport_stop(void);
+    bool ble_provision_transport_is_active(void);
+    bool ble_provision_transport_is_connected(void);
+    // 发送一条 JSON 通知（内部会按 20 字节分片）。
+    esp_err_t ble_provision_transport_notify_json(const char *json_payload);
+    esp_err_t ble_provision_transport_get_device_name(char *device_name,
+                                                      size_t device_name_len);
 
 #ifdef __cplusplus
 }

@@ -16,10 +16,11 @@
 #define ALERT_PLAYER_TASK_PRIORITY 4U
 #define ALERT_PLAYER_VOLUME_PERCENT 75
 
-typedef struct {
-    TaskHandle_t task_handle;
-    bool initialized;
-    bool playing;
+typedef struct
+{
+    TaskHandle_t task_handle; // 当前播放任务句柄
+    bool initialized;         // 模块是否已完成初始化
+    bool playing;             // 是否有播放任务正在运行
 } audio_alert_player_state_t;
 
 static audio_alert_player_state_t s_player_state = {
@@ -32,22 +33,27 @@ static void audio_alert_player_task(void *arg)
 {
     (void)arg;
 
+    // 写入长度以字节为单位；样本点数量需乘以单样本位宽。
     const size_t pcm_bytes = kTishiyinpinPcmSampleCount * sizeof(int16_t);
 
     ESP_LOGI(TAG, "warning playback started bytes=%u rate=%u",
              (unsigned int)pcm_bytes,
              (unsigned int)kTishiyinpinPcmSampleRate);
 
-    (void)audio_codec_set_pa_enable(true);
-    (void)audio_codec_set_mute(false);
-    (void)audio_codec_set_volume(ALERT_PLAYER_VOLUME_PERCENT);
+    (void)audio_codec_set_pa_enable(true);                     // 打开功放
+    (void)audio_codec_set_mute(false);                         // 取消静音
+    (void)audio_codec_set_volume(ALERT_PLAYER_VOLUME_PERCENT); // 设置告警播报音量
 
     esp_err_t ret = audio_codec_write(kTishiyinpinPcmData, pcm_bytes);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         ESP_LOGE(TAG, "warning playback failed: %s", esp_err_to_name(ret));
-    } else {
+    }
+    else
+    {
         ret = audio_codec_flush_output();
-        if (ret != ESP_OK) {
+        if (ret != ESP_OK)
+        {
             ESP_LOGW(TAG, "warning output flush failed: %s",
                      esp_err_to_name(ret));
         }
@@ -70,7 +76,8 @@ esp_err_t audio_alert_player_play_warning_once(void)
     ESP_RETURN_ON_FALSE(s_player_state.initialized, ESP_ERR_INVALID_STATE, TAG,
                         "audio alert player not initialized");
 
-    if (s_player_state.playing) {
+    if (s_player_state.playing)
+    {
         ESP_LOGI(TAG, "warning playback already active");
         return ESP_OK;
     }
@@ -82,7 +89,8 @@ esp_err_t audio_alert_player_play_warning_once(void)
                                           NULL,
                                           ALERT_PLAYER_TASK_PRIORITY,
                                           &s_player_state.task_handle);
-    if (task_created != pdPASS) {
+    if (task_created != pdPASS)
+    {
         s_player_state.playing = false;
         s_player_state.task_handle = NULL;
         ESP_LOGE(TAG, "failed to create warning playback task");

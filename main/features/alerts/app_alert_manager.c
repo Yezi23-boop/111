@@ -10,11 +10,12 @@
 
 #define TAG "app_alert_manager"
 
-typedef struct {
-    bool initialized;
-    bool active;
-    bool traffic_audio_overlay_enabled;
-    app_alert_request_t active_request;
+typedef struct
+{
+    bool initialized;                   // 管理器是否已初始化
+    bool active;                        // 当前是否存在活动告警
+    bool traffic_audio_overlay_enabled; // 是否允许危险音触发屏幕红色覆盖层
+    app_alert_request_t active_request; // 当前活动告警的来源与标签
 } app_alert_manager_state_t;
 
 static app_alert_manager_state_t s_alert_manager_state = {
@@ -30,14 +31,15 @@ static app_alert_manager_state_t s_alert_manager_state = {
 
 static const char *app_alert_label_to_zh(app_alert_label_t label)
 {
-    switch (label) {
-        case APP_ALERT_LABEL_HORN:
-            return "喇叭";
-        case APP_ALERT_LABEL_SIREN:
-            return "警笛";
-        case APP_ALERT_LABEL_NONE:
-        default:
-            return "无";
+    switch (label)
+    {
+    case APP_ALERT_LABEL_HORN:
+        return "喇叭";
+    case APP_ALERT_LABEL_SIREN:
+        return "警笛";
+    case APP_ALERT_LABEL_NONE:
+    default:
+        return "无";
     }
 }
 
@@ -45,17 +47,20 @@ esp_err_t app_alert_manager_init(void)
 {
     esp_err_t ret;
 
-    if (s_alert_manager_state.initialized) {
+    if (s_alert_manager_state.initialized)
+    {
         return ESP_OK;
     }
 
     ret = audio_alert_player_init();
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         return ret;
     }
 
     ret = display_alert_adapter_init();
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         return ret;
     }
 
@@ -78,32 +83,38 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
     ESP_RETURN_ON_FALSE(s_alert_manager_state.initialized, ESP_ERR_INVALID_STATE,
                         TAG, "app alert manager not initialized");
 
+    // 同一来源重复上报时只更新标签，避免重复拉起 UI 动画和提示音。
     const bool same_source_active =
         s_alert_manager_state.active &&
         s_alert_manager_state.active_request.source == request->source;
+    // 允许通过开关单独屏蔽 traffic_audio 覆盖层，但保留告警状态机。
     const bool overlay_enabled =
         !(request->source == APP_ALERT_SOURCE_TRAFFIC_AUDIO &&
           !s_alert_manager_state.traffic_audio_overlay_enabled);
 
     s_alert_manager_state.active_request = *request;
 
-    if (same_source_active) {
+    if (same_source_active)
+    {
         ESP_LOGI(TAG, "更新危险告警 类别=%s",
                  app_alert_label_to_zh(request->label));
         return ESP_OK;
     }
 
     esp_err_t ret = ESP_OK;
-    if (overlay_enabled) {
+    if (overlay_enabled)
+    {
         ret = display_alert_adapter_show_danger_overlay();
-        if (ret != ESP_OK) {
+        if (ret != ESP_OK)
+        {
             return ret;
         }
     }
 
     s_alert_manager_state.active = true;
     ret = audio_alert_player_play_warning_once();
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         ESP_LOGW(TAG, "warning audio playback start failed: %s",
                  esp_err_to_name(ret));
     }
@@ -118,7 +129,8 @@ esp_err_t app_alert_manager_clear(app_alert_source_t source)
                         TAG, "app alert manager not initialized");
 
     if (!s_alert_manager_state.active ||
-        s_alert_manager_state.active_request.source != source) {
+        s_alert_manager_state.active_request.source != source)
+    {
         return ESP_OK;
     }
 
@@ -126,9 +138,11 @@ esp_err_t app_alert_manager_clear(app_alert_source_t source)
         !(source == APP_ALERT_SOURCE_TRAFFIC_AUDIO &&
           !s_alert_manager_state.traffic_audio_overlay_enabled);
     esp_err_t ret = ESP_OK;
-    if (overlay_enabled) {
+    if (overlay_enabled)
+    {
         ret = display_alert_adapter_hide_danger_overlay();
-        if (ret != ESP_OK) {
+        if (ret != ESP_OK)
+        {
             return ret;
         }
     }
@@ -148,7 +162,8 @@ esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled)
     s_alert_manager_state.traffic_audio_overlay_enabled = enabled;
     if (!enabled && s_alert_manager_state.active &&
         s_alert_manager_state.active_request.source ==
-            APP_ALERT_SOURCE_TRAFFIC_AUDIO) {
+            APP_ALERT_SOURCE_TRAFFIC_AUDIO)
+    {
         (void)display_alert_adapter_hide_danger_overlay();
     }
     return ESP_OK;

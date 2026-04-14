@@ -1,49 +1,88 @@
 #pragma once
 
-#include "esp_err.h"
 #include <stdbool.h>
+#include <stdint.h>
+
+#include "esp_err.h"
 #include "esp_lcd_panel_io.h"
-// 增量改动：包含默认配置文件以支持条件编译
-// 原因：TE信号相关的条件编译需要CO5300_PANEL_USE_TE_SIGNAL宏定义
+
+/*
+ * CO5300 面板适配层：
+ * - 负责封装面板初始化和运行期控制能力；
+ * - 对上层（LVGL、业务模块）暴露稳定的最小接口；
+ * - 集中管理 TE 同步、亮度控制与传输完成回调。
+ */
+
+// 引入默认配置，供条件编译宏（如 CO5300_PANEL_USE_TE_SIGNAL）使用。
 #include "co5300_panel_defaults.h"
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-    // 单一初始化接口：内部自管句柄
+    /**
+     * @brief 初始化 CO5300 面板
+     * @return
+     * - ESP_OK: 初始化成功
+     * - 其他错误码: SPI/IO/面板命令初始化失败
+     */
     esp_err_t co5300_panel_init(void);
 
-    // 提供底层句柄（只读用途），便于其它组件集成（如 LVGL）。
-    // 如未初始化或句柄无效，返回 ESP_ERR_INVALID_STATE。
-    struct esp_lcd_panel_io_t; // fwd decl to avoid leaking headers
-    struct esp_lcd_panel_t;    // fwd decl
-    esp_err_t co5300_panel_get_raw(struct esp_lcd_panel_io_t **io, struct esp_lcd_panel_t **panel);
+    // 前向声明，避免在头文件暴露完整底层结构定义。
+    struct esp_lcd_panel_io_t;
+    struct esp_lcd_panel_t;
 
-    // 增量改动：重新添加TE同步相关接口
-    // 原因：
-    // - 用户要求启用TE信号同步功能，需要提供等待TE信号的API
-    // - TE同步API允许LVGL在合适的时机进行显示刷新，避免撕裂现象
-    // - 使用条件编译确保只在启用TE时提供相关接口
+    /**
+     * @brief 获取底层 panel/io 句柄
+     * @param io 输出参数，可为 NULL；返回面板 IO 句柄（不转移所有权）
+     * @param panel 输出参数，可为 NULL；返回 panel 句柄（不转移所有权）
+     */
+    esp_err_t co5300_panel_get_raw(struct esp_lcd_panel_io_t **io,
+                                   struct esp_lcd_panel_t **panel);
+
 #if CO5300_PANEL_USE_TE_SIGNAL
     /**
-     * @brief 等待TE信号
-     * 
-     * 阻塞等待下一个TE信号到达，用于同步显示刷新
-     * 
-     * @param timeout_ms 超时时间（毫秒），0表示无限等待
-     * @return 
-     *     - ESP_OK: 成功等到TE信号
-     *     - ESP_ERR_TIMEOUT: 等待超时
-     *     - ESP_ERR_INVALID_STATE: TE功能未启用或未初始化
+     * @brief 等待下一次 TE 信号
+     * @param timeout_ms 超时时间（毫秒）；0 表示无限等待
+     * @return
+     * - ESP_OK: 成功等到 TE
+     * - ESP_ERR_TIMEOUT: 超时
+     * - ESP_ERR_INVALID_STATE: TE 未启用或未初始化
      */
     esp_err_t co5300_panel_wait_te_signal(uint32_t timeout_ms);
 #endif
 
-    // 注册传输完成回调：用于在颜色数据传输完成时回调
-    // 回调类型与结构来自 ESP-IDF 的 esp_lcd_panel_io.h
-    // user_ctx 可传入 LVGL 的 disp_drv 指针以便回调中调用 lv_disp_flush_ready
-    esp_err_t co5300_panel_register_color_done_callback(const esp_lcd_panel_io_callbacks_t *cbs, void *user_ctx);
+    /**
+     * @brief 注册颜色传输完成回调
+     * @param cbs 回调函数集合，通常只使用 on_color_trans_done
+     * @param user_ctx 回调上下文指针，生命周期需覆盖回调使用期
+     */
+    esp_err_t co5300_panel_register_color_done_callback(
+        const esp_lcd_panel_io_callbacks_t *cbs,
+        void *user_ctx);
+
+    /**
+     * @brief 设置亮度寄存器值
+     * @param value 亮度寄存器原始值，范围 0~255
+     */
+    esp_err_t co5300_panel_set_brightness(uint8_t value);
+
+    /**
+     * @brief 获取当前缓存的亮度寄存器值（0~255）
+     */
+    uint8_t co5300_panel_get_brightness(void);
+
+    /**
+     * @brief 按百分比设置亮度
+     * @param percent 亮度百分比（0~100，超出会被钳位）
+     */
+    esp_err_t co5300_panel_set_brightness_percent(uint8_t percent);
+
+    /**
+     * @brief 获取当前亮度百分比（0~100）
+     */
+    uint8_t co5300_panel_get_brightness_percent(void);
 
 #ifdef __cplusplus
 }

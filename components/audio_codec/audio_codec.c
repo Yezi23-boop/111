@@ -1,3 +1,12 @@
+/**
+ * @file audio_codec.c
+ * @brief 音频 codec 统一适配层实现
+ * @details
+ * - 控制面：通过 I2C 管理 ES8311/ES7210 寄存器
+ * - 数据面：通过 I2S TX/RX 通道传输 PCM
+ * - 对上层提供初始化、读写、音量、静音和增益控制接口
+ */
+
 #include <string.h>
 
 #include "audio_codec_bus.h"
@@ -15,31 +24,34 @@
 
 static const char *TAG = "audio_codec";
 
-static const audio_codec_ctrl_if_t *s_playback_ctrl_if = NULL;
-static const audio_codec_ctrl_if_t *s_record_ctrl_if = NULL;
-static const audio_codec_gpio_if_t *s_gpio_if = NULL;
-static const audio_codec_if_t *s_playback_codec_if = NULL;
-static const audio_codec_if_t *s_record_codec_if = NULL;
-static const audio_codec_data_if_t *s_data_if = NULL;
-static esp_codec_dev_handle_t s_playback_dev = NULL;
-static esp_codec_dev_handle_t s_record_dev = NULL;
+/* 控制面/数据面接口对象（由 esp_codec_dev 框架创建） */
+static const audio_codec_ctrl_if_t *s_playback_ctrl_if = NULL; // ES8311 I2C 控制接口
+static const audio_codec_ctrl_if_t *s_record_ctrl_if = NULL;   // ES7210 I2C 控制接口
+static const audio_codec_gpio_if_t *s_gpio_if = NULL;          // 公共 GPIO 控制接口（PA 使能等）
+static const audio_codec_if_t *s_playback_codec_if = NULL;     // ES8311 codec 抽象接口
+static const audio_codec_if_t *s_record_codec_if = NULL;       // ES7210 codec 抽象接口
+static const audio_codec_data_if_t *s_data_if = NULL;          // I2S 数据接口
+static esp_codec_dev_handle_t s_playback_dev = NULL;           // 播放设备句柄
+static esp_codec_dev_handle_t s_record_dev = NULL;             // 录音设备句柄
 
-static int s_current_volume = 30;
-static int s_input_sample_rate = AUDIO_PLATFORM_HW_SAMPLE_RATE;
-static int s_output_sample_rate = AUDIO_PLATFORM_HW_SAMPLE_RATE;
-static int s_physical_rx_slots = 4;
-static const char *s_logical_input_format = AUDIO_PLATFORM_ADC_CHANNEL_FORMAT;
-static int s_logical_input_channels = AUDIO_PLATFORM_HW_INPUT_CHANNELS;
-static bool s_input_reference = true;
-static int s_output_channels = AUDIO_PLATFORM_HW_OUTPUT_CHANNELS;
-static int s_bits_per_sample = AUDIO_PLATFORM_HW_BITS_PER_SAMPLE;
-static const uint8_t s_tx_silence_preload[2048] = {0};
+/* 运行时音频参数（可被初始化流程与读写流程复用） */
+static int s_current_volume = 30;                                              // 当前缓存音量（0~100）
+static int s_input_sample_rate = AUDIO_PLATFORM_HW_SAMPLE_RATE;                // 录音采样率（Hz）
+static int s_output_sample_rate = AUDIO_PLATFORM_HW_SAMPLE_RATE;               // 播放采样率（Hz）
+static int s_physical_rx_slots = 4;                                            // RX 物理时隙数（TDM）
+static const char *s_logical_input_format = AUDIO_PLATFORM_ADC_CHANNEL_FORMAT; // 逻辑输入格式标签
+static int s_logical_input_channels = AUDIO_PLATFORM_HW_INPUT_CHANNELS;        // 逻辑输入通道数
+static bool s_input_reference = true;                                          // 是否包含参考通道
+static int s_output_channels = AUDIO_PLATFORM_HW_OUTPUT_CHANNELS;              // 输出通道数
+static int s_bits_per_sample = AUDIO_PLATFORM_HW_BITS_PER_SAMPLE;              // 采样位宽（bit）
+static const uint8_t s_tx_silence_preload[2048] = {0};                         // TX flush 使用的静音预装缓冲
 
 #define ES8311_CODEC_ADDR 0x30
 #define ES7210_ADC_ADDR 0x80
 
 static int audio_codec_get_tx_slot_channels(void)
 {
+    // TX 至少按双声道时隙工作，避免单声道配置下的 slot 对齐问题。
     return s_output_channels > 1 ? s_output_channels : 2;
 }
 
@@ -144,6 +156,7 @@ static esp_err_t audio_codec_read_with_timeout_slice(
 
     if (ticks_to_wait == portMAX_DELAY)
     {
+        // 无限等待模式：一次性读满目标长度。
         int ret = esp_codec_dev_read(dev, buffer, (int)bytes);
         if (ret != ESP_CODEC_DEV_OK)
         {
@@ -160,7 +173,7 @@ static esp_err_t audio_codec_read_with_timeout_slice(
     start_ticks = xTaskGetTickCount();
     while (transferred < bytes)
     {
-        size_t chunk_bytes = bytes - transferred;
+        size_t chunk_bytes = bytes - transferred; // 本轮计划读取字节数
         int ret = 0;
 
         if ((xTaskGetTickCount() - start_ticks) >= ticks_to_wait &&
@@ -207,6 +220,7 @@ static esp_err_t audio_i2c_init(void)
 
 static const audio_codec_ctrl_if_t *audio_codec_new_shared_i2c_ctrl(uint8_t addr)
 {
+    // addr 使用 codec 驱动约定的地址格式（与总线扫描显示风格可能不同）。
     audio_codec_i2c_cfg_t i2c_cfg = {
         .port = I2C_MANAGER_PORT,
         .addr = addr,
@@ -251,6 +265,7 @@ static esp_err_t audio_codec_init_default_interfaces(void)
 
 static esp_err_t audio_es8311_init(void)
 {
+    // 播放链路采样参数：决定 DAC 端 I2S 工作格式。
     esp_codec_dev_hw_gain_t hw_gain = {
         .pa_voltage = 5.0,
         .codec_dac_voltage = 3.3,
@@ -303,6 +318,7 @@ static esp_err_t audio_es8311_init(void)
 
 static esp_err_t audio_es7210_init(void)
 {
+    // 录音链路采样参数：channel 表示物理时隙数，channel_mask 决定实际采集通道。
     esp_codec_dev_sample_info_t sample_info = {
         .sample_rate = s_input_sample_rate,
         .channel = s_physical_rx_slots,
@@ -366,9 +382,9 @@ esp_err_t audio_codec_init(void)
         return ret;
     }
 
-    i2s_cfg.rx_handle = audio_codec_bus_get_rx_handle();
-    i2s_cfg.tx_handle = audio_codec_bus_get_tx_handle();
-    i2s_cfg.port = audio_codec_bus_get_port();
+    i2s_cfg.rx_handle = audio_codec_bus_get_rx_handle(); // 录音 RX 通道
+    i2s_cfg.tx_handle = audio_codec_bus_get_tx_handle(); // 播放 TX 通道
+    i2s_cfg.port = audio_codec_bus_get_port();           // 绑定 I2S 端口
     if (i2s_cfg.rx_handle == NULL || i2s_cfg.tx_handle == NULL)
     {
         ret = ESP_ERR_INVALID_STATE;
@@ -419,6 +435,7 @@ init_failed:
 
 esp_err_t audio_codec_deinit(void)
 {
+    // 释放顺序遵循“先 device，再接口对象，再总线”，避免悬挂引用。
     if (s_playback_dev != NULL)
     {
         esp_codec_dev_close(s_playback_dev);
@@ -482,7 +499,7 @@ esp_err_t audio_codec_read(void *buffer, size_t bytes, size_t *bytes_read,
     esp_err_t ret = audio_codec_read_with_timeout_slice(
         s_record_dev, buffer, bytes, bytes_read, ticks_to_wait,
         audio_codec_get_read_slice_bytes());
-    size_t actual_bytes = bytes_read != NULL ? *bytes_read : bytes;
+    size_t actual_bytes = bytes_read != NULL ? *bytes_read : bytes; // 实际读取长度
 
     if (ret == ESP_OK && buffer != NULL &&
         !audio_codec_channel_order_is_identity())
@@ -527,9 +544,9 @@ esp_err_t audio_codec_write(const void *buffer, size_t bytes)
 esp_err_t audio_codec_flush_output(void)
 {
     esp_err_t ret = ESP_OK;
-    i2s_chan_handle_t tx_handle = audio_codec_bus_get_tx_handle();
-    size_t preload_bytes = 0;
-    size_t bytes_loaded = 0;
+    i2s_chan_handle_t tx_handle = audio_codec_bus_get_tx_handle(); // TX 通道句柄
+    size_t preload_bytes = 0;                                      // 计划预装静音字节数
+    size_t bytes_loaded = 0;                                       // 实际预装成功字节数
 
     if (tx_handle == NULL)
     {

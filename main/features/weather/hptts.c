@@ -20,8 +20,8 @@
 
 #define MAX_HTTP_OUTPUT_BUFFER 1024 // HTTP响应缓冲区最大长度
 
-static const char *TAG = "HTTP_CLIENT";           // HTTP相关日志标签
-static int user_cjson_parse_now(char *json_data); // 天气JSON解析函数声明
+static const char *TAG = "HTTP_CLIENT";           // HTTP 相关日志标签
+static int user_cjson_parse_now(char *json_data); // 天气 JSON 解析函数声明
 
 /**
  * @brief HTTP客户端事件处理函数
@@ -99,7 +99,8 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
  */
 void http_rest_with_url(void)
 {
-    char local_response_buffer[MAX_HTTP_OUTPUT_BUFFER] = {0}; // 响应数据缓冲区
+    // 本地响应缓存：作为 HTTP 事件回调 user_data 传入。
+    char local_response_buffer[MAX_HTTP_OUTPUT_BUFFER] = {0};
     esp_http_client_config_t config = {
         .url = "https://api.seniverse.com/v3/weather/now.json?key=SYEUrFRiIVQow_1OX&location=guangzhou&language=zh-Hans&unit=c",
         .method = HTTP_METHOD_GET,
@@ -133,6 +134,7 @@ void http_rest_with_url(void)
 }
 
 // 全局天气数据结构体
+// 最近一次解析出的天气快照（字符串字段直接指向 cJSON 节点值）。
 user_seniverse_now_config_t user_now_config;
 
 /**
@@ -148,7 +150,7 @@ static int user_cjson_parse_now(char *json_data)
     cJSON *location = NULL;
     cJSON *now = NULL;
 
-    root = cJSON_Parse(json_data); // 解析JSON字符串
+    root = cJSON_Parse(json_data); // 解析 JSON 字符串
     if (!root)
     {
         ESP_LOGI(TAG, "JSON解析失败: [%s]\n", cJSON_GetErrorPtr());
@@ -194,7 +196,7 @@ static int user_cjson_parse_now(char *json_data)
 
     user_now_config.last_update = cJSON_GetObjectItem(item, "last_update")->valuestring;
 
-    // 时间格式转换
+    // 时间格式转换：ISO8601 -> "YYYY-MM-DD HH:MM:SS"
     char formatted_time[64] = {0};
     char year[5] = {0}, month[3] = {0}, day[3] = {0}, hour[3] = {0}, minute[3] = {0}, second[3] = {0};
 

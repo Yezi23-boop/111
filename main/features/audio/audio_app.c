@@ -18,11 +18,11 @@
 
 static const char *TAG = "audio_app";
 
-// 录音任务句柄
+// 录音任务句柄（NULL 表示任务未运行）。
 static TaskHandle_t s_record_task_handle = NULL;
-// 录音状态标志
+// 录音状态标志，由控制接口与录音任务共享。
 static volatile bool s_is_recording = false;
-// 录音文件名
+// 当前录音输出路径缓存。
 static char s_record_filename[128] = {0};
 
 // WAV文件头结构体
@@ -54,8 +54,8 @@ static void generate_wav_header(wav_header_t *header, uint32_t data_len, uint32_
     header->audio_fmt = 1; // PCM
     header->channels = channels;
     header->sample_rate = sample_rate;
-    header->byte_rate = sample_rate * channels * bits / 8;
-    header->block_align = channels * bits / 8;
+    header->byte_rate = sample_rate * channels * bits / 8; // 每秒字节数
+    header->block_align = channels * bits / 8;             // 单帧字节对齐
     header->bits_per_sample = bits;
     memcpy(header->data_tag, "data", 4);
     header->data_len = data_len;
@@ -83,7 +83,7 @@ static void record_task(void *arg)
     audio_codec_set_record_gain(36.0f);
 
     // 申请缓冲区
-    size_t buf_size = 4096 * 1; // 可调节为2048/4096以平衡时延与I/O
+    size_t buf_size = 4096 * 1; // 读写分片大小：影响 I/O 开销与实时性
     // uint8_t *buffer = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     uint8_t *buffer = (uint8_t *)malloc(buf_size);
     if (buffer == NULL)
@@ -96,7 +96,7 @@ static void record_task(void *arg)
     }
 
     size_t total_bytes = 0;
-    const TickType_t read_timeout_ticks = pdMS_TO_TICKS(100);
+    const TickType_t read_timeout_ticks = pdMS_TO_TICKS(100); // 单次读超时阈值
 
     while (s_is_recording)
     {
@@ -178,8 +178,7 @@ esp_err_t audio_app_stop_record(void)
     ESP_LOGI(TAG, "请求停止录音...");
     s_is_recording = false;
 
-    // 等待任务结束（简单处理，实际可能需要信号量同步）
-    // 这里不wait也行，任务会自动删除
+    // 当前策略为“置位停止标记后由任务自然退出并自删”。
 
     return ESP_OK;
 }

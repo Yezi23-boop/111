@@ -1,3 +1,6 @@
+# wifi_provision 组件构建脚本
+# - 统一配网协调（BLE 配网、AP 门户、STA 凭据连接）
+# - 依赖 http_server / esp_wifi / bt / lwip / json
 idf_component_register(
     SRCS 
         "src/ble_server/ble_provision_protocol.c"

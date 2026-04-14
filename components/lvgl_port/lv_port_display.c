@@ -20,8 +20,15 @@ static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_
 static esp_err_t lv_port_flush_area_chunked_simple(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 static void lv_port_rounder_event_cb(lv_event_t *e);
 
+/**
+ * @brief 初始化 small 路径显示缓冲
+ * @details
+ * - 优先尝试片内 DMA 内存，失败后回退 PSRAM。
+ * - 使用双缓冲 PARTIAL 渲染模式，减少刷新等待带来的 UI 停顿。
+ */
 void lv_port_disp_init_small(void)
 {
+    // 单块缓冲像素数 = 屏宽 * 片高。
     const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES1;
 
     ESP_LOGI(LV_PORT_TAG,
@@ -46,7 +53,7 @@ void lv_port_disp_init_small(void)
              esp_ptr_external_ram(disp1) ? "PSRAM" : "Internal",
              esp_ptr_external_ram(disp2) ? "PSRAM" : "Internal");
 
-    s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
+    s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT); // 创建 LVGL 显示对象
 
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(s_display, lv_port_disp_flush);
@@ -60,9 +67,15 @@ void lv_port_disp_init_small(void)
     const esp_lcd_panel_io_callbacks_t cbs = {
         .on_color_trans_done = lvgl_port_flush_ready_callback,
     };
+    // 注册底层传输完成回调，flush 结束时由回调触发 lv_display_flush_ready。
     co5300_panel_register_color_done_callback(&cbs, s_display);
 }
 
+/**
+ * @brief 初始化 single 路径显示缓冲
+ * @details
+ * 使用两块 PSRAM 缓冲，适合较大分块、降低片内内存压力。
+ */
 void lv_port_disp_init_single(void)
 {
     const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES2;
@@ -90,7 +103,7 @@ void lv_port_disp_init_single(void)
              esp_ptr_external_ram(disp_buf1) ? "PSRAM" : "Internal",
              esp_ptr_external_ram(disp_buf2) ? "PSRAM" : "Internal");
 
-    s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
+    s_display = lv_display_create(LCD_WIDTH, LCD_HEIGHT); // 创建 LVGL 显示对象
 
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(s_display, lv_port_disp_flush);
@@ -120,7 +133,7 @@ static bool IRAM_ATTR lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t p
     (void)edata;
     if (s_flush_pending_count > 0)
     {
-        s_flush_pending_count--;
+        s_flush_pending_count--; // 每完成一个 DMA 分块就递减
     }
 
     if (s_flush_pending_count == 0)
@@ -128,7 +141,7 @@ static bool IRAM_ATTR lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t p
 #if CO5300_PANEL_USE_TE_SIGNAL
         s_frame_ctx.frame_start = true;
 #endif
-        lv_display_t *disp = (lv_display_t *)user_ctx;
+        lv_display_t *disp = (lv_display_t *)user_ctx; // 注册回调时传入的 LVGL display
         lv_display_flush_ready(disp);
         return true;
     }
@@ -149,20 +162,28 @@ static void lv_port_rounder_event_cb(lv_event_t *e)
     uint16_t y1 = area->y1;
     uint16_t y2 = area->y2;
 
+    // 将更新区域对齐到偶数边界，避免 RGB565 / 总线传输中出现奇偶边界伪影。
     area->x1 = (x1 >> 1) << 1;
     area->y1 = (y1 >> 1) << 1;
     area->x2 = ((x2 >> 1) << 1) + 1;
     area->y2 = ((y2 >> 1) << 1) + 1;
 }
 
+/**
+ * @brief LVGL flush 回调
+ * @param disp LVGL display 对象
+ * @param area 待刷新的矩形区域（含边界）
+ * @param px_map 区域像素数据首地址（RGB565）
+ */
 void lv_port_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     esp_err_t ret = ESP_OK;
 
 #if LV_PORT_CHUNKED_TRANSFER_ENABLE
-    uint32_t area_height = area->y2 - area->y1 + 1;
+    uint32_t area_height = area->y2 - area->y1 + 1; // 刷新区域高度（行）
     if (area_height > LV_PORT_FIXED_CHUNK_LINES)
     {
+        // 预先计算分块总数，回调里按块递减到 0 再通知 flush 完成。
         s_flush_pending_count = (area_height + LV_PORT_FIXED_CHUNK_LINES - 1) / LV_PORT_FIXED_CHUNK_LINES;
         ret = lv_port_flush_area_chunked_simple(disp, area, px_map);
     }
@@ -211,26 +232,29 @@ static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_
     s_frame_ctx.flush_count++;
 #endif
 
+    // 当前刷新的像素总数，用于 RGB565 字节交换。
     uint32_t pixel_count = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
     if (s_byte_swap_enabled)
     {
         lv_draw_sw_rgb565_swap(px_map, pixel_count);
     }
 
+    // 注意：esp_lcd_panel_draw_bitmap 的右下角坐标是“开区间”，因此 x2/y2 需 +1。
     return esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
 }
 
 static esp_err_t lv_port_flush_area_chunked_simple(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    uint32_t area_width = area->x2 - area->x1 + 1;
-    uint32_t area_height = area->y2 - area->y1 + 1;
-    uint32_t bytes_per_line = area_width * sizeof(uint16_t);
-    uint32_t chunk_lines = LV_PORT_FIXED_CHUNK_LINES;
+    uint32_t area_width = area->x2 - area->x1 + 1;           // 区域宽度（像素）
+    uint32_t area_height = area->y2 - area->y1 + 1;          // 区域高度（行）
+    uint32_t bytes_per_line = area_width * sizeof(uint16_t); // 每行字节数（RGB565）
+    uint32_t chunk_lines = LV_PORT_FIXED_CHUNK_LINES;        // 目标分块行数
 
     ESP_LOGD(LV_PORT_TAG, "Chunked transfer: %lux%lu area, %lu lines per chunk", area_width, area_height, chunk_lines);
 
     for (uint32_t y_offset = 0; y_offset < area_height; y_offset += chunk_lines)
     {
+        // 当前分块实际行数：最后一块可能小于 chunk_lines。
         uint32_t current_chunk_lines =
             (y_offset + chunk_lines > area_height) ? (area_height - y_offset) : chunk_lines;
 
@@ -241,7 +265,7 @@ static esp_err_t lv_port_flush_area_chunked_simple(lv_display_t *disp, const lv_
             .y2 = area->y1 + y_offset + current_chunk_lines - 1,
         };
 
-        uint8_t *chunk_px_map = px_map + (y_offset * bytes_per_line);
+        uint8_t *chunk_px_map = px_map + (y_offset * bytes_per_line); // 当前分块像素起始地址
         esp_err_t ret = lv_port_flush_area_with_sync(disp, &chunk_area, chunk_px_map);
         if (ret != ESP_OK)
         {
@@ -255,6 +279,7 @@ static esp_err_t lv_port_flush_area_chunked_simple(lv_display_t *disp, const lv_
 
 void lv_port_panel_init(void)
 {
+    // 初始化 CO5300 面板并提取通用 panel 句柄，供 LVGL flush 路径直接使用。
     if (co5300_panel_init() == ESP_OK)
     {
         struct esp_lcd_panel_io_t *io = NULL;
