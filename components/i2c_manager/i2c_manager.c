@@ -9,13 +9,17 @@
 
 static const char *TAG = "i2c_manager";
 
-static bool s_ready = false;
-static const i2c_port_t s_i2c_port = I2C_MANAGER_PORT;
+static bool s_ready = false;                    // 共享 I2C 总线是否已初始化。
+static const i2c_port_t s_i2c_port = I2C_MANAGER_PORT; // 共享 I2C 端口号。
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
-static i2c_master_bus_handle_t s_bus_handle = NULL;
+static i2c_master_bus_handle_t s_bus_handle = NULL; // IDF 5.3+ 下的 master bus 句柄。
 #endif
 
+/**
+ * @brief 初始化共享 I2C 总线。
+ * @return `ESP_OK` 表示初始化成功或之前已初始化；其他错误表示底层驱动安装失败。
+ */
 esp_err_t i2c_manager_init(void)
 {
     if (s_ready) {
@@ -60,6 +64,10 @@ esp_err_t i2c_manager_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 释放共享 I2C 总线。
+ * @return `ESP_OK` 表示成功；其他错误表示底层驱动删除失败。
+ */
 esp_err_t i2c_manager_deinit(void)
 {
     if (!s_ready) {
@@ -80,6 +88,10 @@ esp_err_t i2c_manager_deinit(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 扫描当前 I2C 总线上的设备。
+ * @return `ESP_OK` 表示扫描流程完成；其他错误表示总线尚未初始化。
+ */
 esp_err_t i2c_manager_scan(void)
 {
     if (!s_ready) {
@@ -112,6 +124,10 @@ esp_err_t i2c_manager_scan(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 获取当前共享 I2C 端口号。
+ * @return 当前共享 I2C 端口。
+ */
 i2c_port_t i2c_manager_get_port(void)
 {
     if (!s_ready) {
@@ -121,6 +137,10 @@ i2c_port_t i2c_manager_get_port(void)
 }
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
+/**
+ * @brief 获取 IDF 5.3+ 下的 I2C master bus 句柄。
+ * @return 已初始化时返回总线句柄；未初始化时返回 NULL。
+ */
 i2c_master_bus_handle_t i2c_manager_get_bus_handle(void)
 {
     if (!s_ready) {

@@ -28,7 +28,8 @@
 
 static const char *TAG = "co5300_panel";
 
-/* ========== TE信号初始化命令 ========== */
+/* TE 相关初始化命令：
+ * 这些命令用于把面板切到当前仓库约定的 TE 模式，并显式配置扫描线和亮度寄存器初值。 */
 
 #if CO5300_PANEL_USE_TE_SIGNAL
 static const co5300_lcd_init_cmd_t te_enable_init_cmds[] = {
@@ -48,24 +49,27 @@ static const co5300_lcd_init_cmd_t te_enable_init_cmds[] = {
 };
 #endif
 
-/* ========== 全局变量 ========== */
-
-static esp_lcd_panel_io_handle_t s_io_handle = NULL; // 面板 IO 句柄（发送命令/像素）
-static esp_lcd_panel_handle_t s_panel_handle = NULL; // 面板设备句柄（reset/init/draw）
+static esp_lcd_panel_io_handle_t s_io_handle = NULL; // 面板 IO 句柄，负责发送命令和像素数据。
+static esp_lcd_panel_handle_t s_panel_handle = NULL; // 面板设备句柄，负责 reset/init/draw 等操作。
 
 #if CO5300_PANEL_USE_TE_SIGNAL
-static SemaphoreHandle_t s_te_semaphore = NULL;      // TE 中断到任务态的同步信号量
-static volatile int64_t s_last_te_timestamp = 0;     // 最近一次 TE 上升沿时间戳（us）
-static volatile uint32_t s_te_interrupt_counter = 0; // TE 中断计数
+static SemaphoreHandle_t s_te_semaphore = NULL;      // TE 中断到任务态的同步信号量。
+static volatile int64_t s_last_te_timestamp = 0;     // 最近一次 TE 上升沿时间戳，单位为微秒。
+static volatile uint32_t s_te_interrupt_counter = 0; // TE 中断计数，仅用于调试观测。
 #define TE_FILTER_THRESHOLD 500
 #endif
 
-static bool s_initialized = false;  // 面板是否已完成初始化
-static uint8_t s_brightness = 0xFF; // 亮度寄存器缓存值（0~255）
-
-/* ========== 中断处理 ========== */
+static bool s_initialized = false;  // 面板是否已完成初始化。
+static uint8_t s_brightness = 0xFF; // 亮度寄存器缓存值，范围为 0~255。
 
 #if CO5300_PANEL_USE_TE_SIGNAL
+/**
+ * @brief TE GPIO 中断处理函数。
+ * @param[in] arg 未使用。
+ * @return 无返回值。
+ *
+ * @note 运行在 ISR 上下文中，只允许执行时间戳记录和信号量释放这类短路径操作。
+ */
 static void IRAM_ATTR te_gpio_isr_handler(void *arg)
 {
     (void)arg;
@@ -86,8 +90,13 @@ static void IRAM_ATTR te_gpio_isr_handler(void *arg)
 }
 #endif
 
-/* ========== 回调函数 ========== */
-
+/**
+ * @brief 默认颜色传输完成回调。
+ * @param[in] panel_io 面板 IO 句柄。
+ * @param[in] edata 事件数据。
+ * @param[in] user_ctx 用户上下文。
+ * @return 当前始终返回 false，表示无需在 ISR 退出时触发任务切换。
+ */
 static bool default_color_trans_done_cb(esp_lcd_panel_io_handle_t panel_io,
                                         esp_lcd_panel_io_event_data_t *edata,
                                         void *user_ctx)
@@ -98,8 +107,11 @@ static bool default_color_trans_done_cb(esp_lcd_panel_io_handle_t panel_io,
     return false;
 }
 
-/* ========== 公共API ========== */
-
+/**
+ * @brief 按寄存器原始值设置亮度。
+ * @param[in] value 亮度寄存器原始值，范围为 0~255。
+ * @return `ESP_OK` 表示设置成功；其他错误表示面板尚未初始化或底层写入失败。
+ */
 esp_err_t co5300_panel_set_brightness(uint8_t value)
 {
     if (!s_initialized || s_panel_handle == NULL)
@@ -112,11 +124,20 @@ esp_err_t co5300_panel_set_brightness(uint8_t value)
     return co5300_panel_set_brightness_percent(brightness_percent);
 }
 
+/**
+ * @brief 获取当前缓存的亮度寄存器值。
+ * @return 当前缓存亮度，范围为 0~255。
+ */
 uint8_t co5300_panel_get_brightness(void)
 {
     return s_brightness;
 }
 
+/**
+ * @brief 按百分比设置亮度。
+ * @param[in] percent 亮度百分比，范围为 0~100，超出会被钳位。
+ * @return `ESP_OK` 表示设置成功；其他错误表示面板尚未初始化或底层写入失败。
+ */
 esp_err_t co5300_panel_set_brightness_percent(uint8_t percent)
 {
     if (!s_initialized || s_panel_handle == NULL)
@@ -146,11 +167,19 @@ esp_err_t co5300_panel_set_brightness_percent(uint8_t percent)
     return ESP_OK;
 }
 
+/**
+ * @brief 获取当前缓存亮度对应的百分比。
+ * @return 当前亮度百分比，范围为 0~100。
+ */
 uint8_t co5300_panel_get_brightness_percent(void)
 {
     return (uint8_t)(((uint32_t)s_brightness * 100U + 127U) / 255U);
 }
 
+/**
+ * @brief 初始化 CO5300 面板。
+ * @return `ESP_OK` 表示初始化成功或之前已初始化；其他错误表示总线、GPIO 或面板初始化失败。
+ */
 esp_err_t co5300_panel_init(void)
 {
     if (s_initialized)
@@ -200,7 +229,7 @@ esp_err_t co5300_panel_init(void)
 #endif
 
     ESP_LOGI(TAG, "Initialize QSPI bus on host %d", CO5300_PANEL_HOST);
-    // max_transfer_sz 决定 DMA 分配上限，需要覆盖“屏宽 * 单次最大传输行 * 2字节”。
+    // `max_transfer_sz` 决定 DMA 分配上限，需要覆盖“屏宽 * 单次最大传输行 * 2 字节”。
     const spi_bus_config_t buscfg = CO5300_PANEL_BUS_QSPI_CONFIG(
         CO5300_PANEL_PIN_PCLK,
         CO5300_PANEL_PIN_D0,
@@ -222,7 +251,7 @@ esp_err_t co5300_panel_init(void)
 
     co5300_vendor_config_t vendor_config = {
 #if CO5300_PANEL_USE_TE_SIGNAL
-        .init_cmds = te_enable_init_cmds, // 启用 TE 的初始化命令表
+        .init_cmds = te_enable_init_cmds,
         .init_cmds_size = sizeof(te_enable_init_cmds) / sizeof(co5300_lcd_init_cmd_t),
 #else
         .init_cmds = NULL,
@@ -233,10 +262,10 @@ esp_err_t co5300_panel_init(void)
         },
     };
     const esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = CO5300_PANEL_PIN_RST,       // 面板硬复位引脚
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,   // 像素通道顺序
-        .bits_per_pixel = CO5300_PANEL_BIT_PER_PIXEL, // 像素位宽（RGB565）
-        .vendor_config = (void *)&vendor_config,      // CO5300 私有配置
+        .reset_gpio_num = CO5300_PANEL_PIN_RST,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .bits_per_pixel = CO5300_PANEL_BIT_PER_PIXEL,
+        .vendor_config = (void *)&vendor_config,
     };
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_co5300(s_io_handle, &panel_config, &s_panel_handle),
                         TAG, "New panel failed");
@@ -258,6 +287,11 @@ esp_err_t co5300_panel_init(void)
 }
 
 #if CO5300_PANEL_USE_TE_SIGNAL
+/**
+ * @brief 等待下一次 TE 信号。
+ * @param[in] timeout_ms 等待超时，单位为毫秒；传 0 表示无限等待。
+ * @return `ESP_OK` 表示成功等到 TE；`ESP_ERR_TIMEOUT` 表示超时；其他错误表示 TE 尚未初始化。
+ */
 esp_err_t co5300_panel_wait_te_signal(uint32_t timeout_ms)
 {
     if (!s_initialized || s_te_semaphore == NULL)
@@ -291,6 +325,12 @@ esp_err_t co5300_panel_wait_te_signal(uint32_t timeout_ms)
 }
 #endif
 
+/**
+ * @brief 获取底层 panel/io 句柄。
+ * @param[out] io 输出面板 IO 句柄，可为 NULL。
+ * @param[out] panel 输出面板句柄，可为 NULL。
+ * @return `ESP_OK` 表示成功；其他错误表示当前面板尚未初始化。
+ */
 esp_err_t co5300_panel_get_raw(struct esp_lcd_panel_io_t **io, struct esp_lcd_panel_t **panel)
 {
     if (!s_initialized || s_io_handle == NULL || s_panel_handle == NULL)
@@ -301,16 +341,22 @@ esp_err_t co5300_panel_get_raw(struct esp_lcd_panel_io_t **io, struct esp_lcd_pa
 
     if (io != NULL)
     {
-        *io = s_io_handle; // 返回共享 IO 句柄，不转移所有权
+        *io = s_io_handle;
     }
     if (panel != NULL)
     {
-        *panel = s_panel_handle; // 返回共享 panel 句柄，不转移所有权
+        *panel = s_panel_handle;
     }
 
     return ESP_OK;
 }
 
+/**
+ * @brief 注册颜色传输完成回调。
+ * @param[in] cbs 回调函数集合。
+ * @param[in] user_ctx 用户上下文，底层会在回调时原样透传。
+ * @return `ESP_OK` 表示注册成功；其他错误表示当前面板尚未初始化或参数非法。
+ */
 esp_err_t co5300_panel_register_color_done_callback(const esp_lcd_panel_io_callbacks_t *cbs,
                                                     void *user_ctx)
 {
@@ -326,6 +372,6 @@ esp_err_t co5300_panel_register_color_done_callback(const esp_lcd_panel_io_callb
         return ESP_ERR_INVALID_ARG;
     }
 
-    // user_ctx 会在回调执行时原样传回，调用方需保证其生命周期有效。
+    // `user_ctx` 会在回调执行时原样传回，调用方需保证其生命周期覆盖整个注册期间。
     return esp_lcd_panel_io_register_event_callbacks(s_io_handle, cbs, user_ctx);
 }

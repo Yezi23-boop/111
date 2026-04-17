@@ -20,28 +20,37 @@
  */
 
 static const char *TAG = "official_chat_srv";
-static const size_t kLastUserTextMaxBytes = 192;
-static const size_t kLastAssistantTextMaxBytes = 256;
-static const size_t kMessageHistoryCapacity = 8;
-static const uint32_t kShutdownTransportQuietPeriodMs = 1500;
-static const uint32_t kShutdownWaitTimeoutMs = 4000;
+static const size_t kLastUserTextMaxBytes = 192;              /* 最近一条用户文本缓存上限，单位为字节。 */
+static const size_t kLastAssistantTextMaxBytes = 256;         /* 最近一条助手文本缓存上限，单位为字节。 */
+static const size_t kMessageHistoryCapacity = 8;              /* 固定消息历史容量；满后丢弃最旧条目。 */
+static const uint32_t kShutdownTransportQuietPeriodMs = 1500; /* 关闭前等待传输层静默的窗口，单位为毫秒。 */
+static const uint32_t kShutdownWaitTimeoutMs = 4000;          /* 同步关闭接口的最大等待时间，单位为毫秒。 */
 
-static TaskHandle_t s_service_task_handle = NULL;                 // 服务任务句柄
-static official_chat_handle_t s_chat_handle = NULL;               // 底层 official_chat 会话句柄
-static volatile bool s_foreground_requested = false;              // UI 是否请求前台会话
-static volatile bool s_shutdown_requested = false;                // 是否已请求进入关闭流程
-static volatile bool s_shutdown_stop_requested = false;           // 关闭流程中是否已触发 stop_listening
-static volatile TickType_t s_shutdown_destroy_deadline_ticks = 0; // quiet period 截止 tick
+static TaskHandle_t s_service_task_handle = NULL;                 /* 服务任务句柄，只在初始化阶段写入，其他路径只读。 */
+static official_chat_handle_t s_chat_handle = NULL;               /* 底层会话句柄，仅服务任务负责创建和销毁。 */
+static volatile bool s_foreground_requested = false;              /* UI 线程写入前台意图，服务任务轮询读取。 */
+static volatile bool s_shutdown_requested = false;                /* 关闭请求标志，由 UI/API 写入，服务任务消费。 */
+static volatile bool s_shutdown_stop_requested = false;           /* 标记关闭流程中是否已发送 stop_listening。 */
+static volatile TickType_t s_shutdown_destroy_deadline_ticks = 0; /* quiet period 截止 tick，仅服务任务推进。 */
 static volatile official_chat_service_state_t s_service_state =
     OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
-static volatile esp_err_t s_last_error = ESP_OK;
-static StaticSemaphore_t s_text_mutex_buffer;
-static SemaphoreHandle_t s_text_mutex = NULL;
-static char s_last_user_text[192] = {0};                           // 最近用户文本缓存
-static char s_last_assistant_text[256] = {0};                      // 最近助手文本缓存
-static official_chat_service_message_t s_message_history[8] = {0}; // 固定容量消息历史
-static size_t s_message_count = 0;                                 // 当前历史条目数
+static volatile esp_err_t s_last_error = ESP_OK;                   /* 最近一次底层错误码，事件回调写入，查询接口只读。 */
+static StaticSemaphore_t s_text_mutex_buffer;                      /* 静态互斥锁存储，避免初始化时额外堆分配。 */
+static SemaphoreHandle_t s_text_mutex = NULL;                      /* 文本缓存保护锁，事件回调与 UI 查询共用。 */
+static char s_last_user_text[192] = {0};                           /* 最近用户文本快照，由事件回调更新。 */
+static char s_last_assistant_text[256] = {0};                      /* 最近助手文本快照，由事件回调更新。 */
+static official_chat_service_message_t s_message_history[8] = {0}; /* 固定容量历史消息快照，仅在持锁下访问。 */
+static size_t s_message_count = 0;                                 /* 当前有效历史条目数，仅在持锁下读写。 */
 
+/**
+ * @brief 获取文本缓存互斥锁。
+ *
+ * 事件回调和 UI 查询接口会并发访问最近文本与消息历史，因此所有相关读写都必须先持有该锁。
+ *
+ * @return 无返回值。
+ *
+ * @note 仅允许在任务上下文调用；该函数会阻塞等待锁，不可在 ISR 中使用。
+ */
 static void official_chat_service_lock(void)
 {
     /* 文本缓存会被事件回调与 UI 查询同时访问，因此统一用互斥锁保护。 */
@@ -51,6 +60,13 @@ static void official_chat_service_lock(void)
     }
 }
 
+/**
+ * @brief 释放文本缓存互斥锁。
+ *
+ * @return 无返回值。
+ *
+ * @note 调用方必须已经成功持有 `s_text_mutex`。
+ */
 static void official_chat_service_unlock(void)
 {
     if (s_text_mutex != NULL)
@@ -59,6 +75,13 @@ static void official_chat_service_unlock(void)
     }
 }
 
+/**
+ * @brief 在持锁前提下清空所有文本缓存和消息历史。
+ *
+ * @return 无返回值。
+ *
+ * @note 仅允许在已经持有 `s_text_mutex` 的前提下调用。
+ */
 static void official_chat_service_clear_cached_text_locked(void)
 {
     memset(s_last_user_text, 0, sizeof(s_last_user_text));
@@ -67,6 +90,18 @@ static void official_chat_service_clear_cached_text_locked(void)
     s_message_count = 0;
 }
 
+/**
+ * @brief 在持锁前提下更新最近文本缓存。
+ *
+ * 该辅助函数统一处理空指针保护和安全截断，避免事件回调在多个分支里重复维护字符串拷贝逻辑。
+ *
+ * @param[out] target 目标缓存。
+ * @param[in] target_size 目标缓存长度，单位为字节。
+ * @param[in] text 要缓存的文本；为 NULL 时直接返回。
+ * @return 无返回值。
+ *
+ * @note 仅允许在已经持有 `s_text_mutex` 的前提下调用。
+ */
 static void official_chat_service_store_text_locked(char *target,
                                                     size_t target_size,
                                                     const char *text)
@@ -79,6 +114,17 @@ static void official_chat_service_store_text_locked(char *target,
     snprintf(target, target_size, "%s", text);
 }
 
+/**
+ * @brief 在持锁前提下压入一条历史消息。
+ *
+ * 固定容量历史的目标是给 UI 提供最近若干条对话快照，而不是完整持久化日志，因此容量打满时会丢弃最旧条目。
+ *
+ * @param[in] role 消息角色。
+ * @param[in] text 消息文本；为 NULL 时会退化为空字符串。
+ * @return 无返回值。
+ *
+ * @note 仅允许在已经持有 `s_text_mutex` 的前提下调用。
+ */
 static void official_chat_service_enqueue_message_locked(
     official_chat_service_message_role_t role, const char *text)
 {
@@ -103,6 +149,20 @@ static void official_chat_service_enqueue_message_locked(
     s_message_count++;
 }
 
+/**
+ * @brief 在持锁前提下把缓存文本复制给调用方。
+ *
+ * 返回值显式区分“当前没有文本”与“参数非法”，避免 UI 误把空字符串当成一次有效回复。
+ *
+ * @param[in] source 内部缓存源字符串。
+ * @param[out] buffer 输出缓冲区。
+ * @param[in] size 输出缓冲区长度，单位为字节。
+ * @return `ESP_OK` 表示成功复制；
+ *         `ESP_ERR_NOT_FOUND` 表示当前没有可用文本；
+ *         `ESP_ERR_INVALID_ARG` 表示输出参数非法。
+ *
+ * @note 仅允许在已经持有 `s_text_mutex` 的前提下调用。
+ */
 static esp_err_t official_chat_service_copy_text_locked(const char *source,
                                                         char *buffer,
                                                         size_t size)
@@ -125,6 +185,14 @@ static esp_err_t official_chat_service_copy_text_locked(const char *source,
     return has_text ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
+/**
+ * @brief 把底层 `official_chat` 状态映射成服务层状态。
+ *
+ * 服务层状态比底层更稳定，目的是给 UI 提供有限且可预测的状态集合，避免页面直接耦合底层细节。
+ *
+ * @param[in] state 底层会话状态。
+ * @return 对应的服务层状态枚举。
+ */
 static official_chat_service_state_t map_official_chat_state(
     official_chat_state_t state)
 {
@@ -148,6 +216,14 @@ static official_chat_service_state_t map_official_chat_state(
     }
 }
 
+/**
+ * @brief 判断当前底层状态在销毁前是否需要 quiet period。
+ *
+ * 当传输层或音频链路仍可能活跃时，立即销毁句柄会放大竞争和尾包丢失风险，因此需要先等待收敛窗口。
+ *
+ * @param[in] state 当前底层会话状态。
+ * @return true 表示销毁前需要额外等待。
+ */
 static bool official_chat_service_requires_shutdown_quiet_period(
     official_chat_state_t state)
 {
@@ -158,9 +234,16 @@ static bool official_chat_service_requires_shutdown_quiet_period(
            state == OFFICIAL_CHAT_STATE_SPEAKING;
 }
 
+/**
+ * @brief 统一发起异步关闭请求。
+ *
+ * 该入口只设置共享标志并唤醒服务任务，真正的准备关闭、等待 quiet period 和销毁动作都放在服务任务里完成，
+ * 以保证生命周期只由一个上下文推进。
+ *
+ * @return 无返回值。
+ */
 static void official_chat_service_request_shutdown_internal(void)
 {
-    /* 通过 abort delay 唤醒服务任务，让关闭请求尽快生效。 */
     s_foreground_requested = false;
     s_shutdown_requested = true;
     s_shutdown_stop_requested = false;
@@ -172,6 +255,11 @@ static void official_chat_service_request_shutdown_internal(void)
     }
 }
 
+/**
+ * @brief 把服务状态转换成日志和 UI 可直接展示的字符串。
+ * @param state 服务层状态枚举。
+ * @return 状态字符串。
+ */
 const char *official_chat_service_state_to_string(
     official_chat_service_state_t state)
 {
@@ -199,6 +287,16 @@ const char *official_chat_service_state_to_string(
     }
 }
 
+/**
+ * @brief 底层官方聊天事件回调。
+ * @param event 底层上报的事件。
+ * @param user_data 未使用。
+ *
+ * 事件回调只负责两件事：
+ * 1. 同步服务状态；
+ * 2. 缓存最近文本和消息历史。
+ * 真正的生命周期管理仍由后台服务任务统一控制。
+ */
 static void official_chat_service_event_cb(const official_chat_event_t *event,
                                            void *user_data)
 {
@@ -259,6 +357,10 @@ static void official_chat_service_event_cb(const official_chat_event_t *event,
     }
 }
 
+/*
+ * 创建并启动底层聊天实例。
+ * 所有配置都在服务层集中指定，避免页面或控制器各自维护一份会话参数。
+ */
 static esp_err_t official_chat_service_start_internal(void)
 {
     /* 启动参数由服务层集中指定，避免页面或控制器分散管理底层配置。 */
@@ -305,6 +407,16 @@ static esp_err_t official_chat_service_start_internal(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 官方聊天后台服务任务。
+ * @param arg 未使用，保留任务签名。
+ *
+ * 后台任务负责：
+ * - 等待前台请求；
+ * - 等待网络可用；
+ * - 创建底层实例；
+ * - 执行带 quiet period 的安全关闭。
+ */
 static void official_chat_service_task(void *arg)
 {
     (void)arg;
@@ -457,6 +569,10 @@ static void official_chat_service_task(void *arg)
     }
 }
 
+/**
+ * @brief 初始化官方聊天后台服务。
+ * @return ESP_OK 表示已初始化或本次初始化成功。
+ */
 esp_err_t official_chat_service_init(void)
 {
     if (s_service_task_handle != NULL)
@@ -484,6 +600,11 @@ esp_err_t official_chat_service_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 标记聊天页进入前台。
+ *
+ * 该操作不会立即阻塞等待网络或实例启动，只是向后台任务声明“允许拉起会话”。
+ */
 void official_chat_service_enter_foreground(void)
 {
     s_shutdown_requested = false;
@@ -492,21 +613,37 @@ void official_chat_service_enter_foreground(void)
     s_foreground_requested = true;
 }
 
+/**
+ * @brief 标记聊天页离开前台。
+ *
+ * 留在后台的实例是否关闭，由上层后续显式调用 shutdown 接口决定。
+ */
 void official_chat_service_leave_foreground(void)
 {
     s_foreground_requested = false;
 }
 
+/**
+ * @brief 请求异步关闭聊天实例。
+ */
 void official_chat_service_request_shutdown(void)
 {
     official_chat_service_request_shutdown_internal();
 }
 
+/**
+ * @brief 查询是否存在待处理的关闭请求。
+ * @return true 表示后台任务仍在执行关闭流程。
+ */
 bool official_chat_service_is_shutdown_pending(void)
 {
     return s_shutdown_requested;
 }
 
+/**
+ * @brief 同步等待聊天实例关闭完成。
+ * @return 超时返回 `ESP_ERR_TIMEOUT`。
+ */
 esp_err_t official_chat_service_shutdown(void)
 {
     official_chat_service_request_shutdown_internal();
@@ -532,16 +669,28 @@ esp_err_t official_chat_service_shutdown(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 获取当前服务层状态。
+ * @return 聊天服务状态枚举。
+ */
 official_chat_service_state_t official_chat_service_get_state(void)
 {
     return s_service_state;
 }
 
+/**
+ * @brief 获取最近一次底层错误。
+ * @return 错误码，`ESP_OK` 表示当前未记录错误。
+ */
 esp_err_t official_chat_service_get_last_error(void)
 {
     return s_last_error;
 }
 
+/**
+ * @brief 获取当前缓存消息条数。
+ * @return 固定容量消息历史中当前有效条目数。
+ */
 size_t official_chat_service_get_message_count(void)
 {
     size_t message_count = 0;
@@ -553,6 +702,12 @@ size_t official_chat_service_get_message_count(void)
     return message_count;
 }
 
+/**
+ * @brief 按索引读取一条历史消息快照。
+ * @param index 消息索引，越大表示越新的消息。
+ * @param out_message 输出参数。
+ * @return 越界时返回 `ESP_ERR_NOT_FOUND`。
+ */
 esp_err_t official_chat_service_get_message(
     size_t index, official_chat_service_message_t *out_message)
 {
@@ -573,6 +728,12 @@ esp_err_t official_chat_service_get_message(
     return ret;
 }
 
+/**
+ * @brief 获取最近一条用户文本。
+ * @param buffer 输出缓冲区。
+ * @param size 输出缓冲区长度。
+ * @return 无缓存文本时返回 `ESP_ERR_NOT_FOUND`。
+ */
 esp_err_t official_chat_service_get_last_user_text(char *buffer, size_t size)
 {
     official_chat_service_lock();
@@ -582,6 +743,12 @@ esp_err_t official_chat_service_get_last_user_text(char *buffer, size_t size)
     return ret;
 }
 
+/**
+ * @brief 获取最近一条助手文本。
+ * @param buffer 输出缓冲区。
+ * @param size 输出缓冲区长度。
+ * @return 无缓存文本时返回 `ESP_ERR_NOT_FOUND`。
+ */
 esp_err_t official_chat_service_get_last_assistant_text(char *buffer,
                                                         size_t size)
 {

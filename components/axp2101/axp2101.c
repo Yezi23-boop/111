@@ -16,12 +16,12 @@
 
 static const char *TAG = "axp2101";
 
-static bool s_ready = false;             // 驱动是否已初始化
-static bool s_voltage_adc_ready = false; // ADC 通道是否已完成能力使能
-static uint8_t s_voltage_adc_mask = 0;   // 最近一次写入的 ADC 通道掩码
+static bool s_ready = false;             // 驱动是否已初始化。
+static bool s_voltage_adc_ready = false; // ADC 通道是否已完成能力使能。
+static uint8_t s_voltage_adc_mask = 0;   // 最近一次写入的 ADC 通道掩码。
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
-static i2c_master_dev_handle_t s_dev_handle = NULL;
+static i2c_master_dev_handle_t s_dev_handle = NULL; // IDF 5.3+ 下的 I2C 设备句柄。
 #endif
 
 static esp_err_t axp2101_read_bytes(uint8_t reg, uint8_t *data, size_t len);
@@ -30,6 +30,10 @@ static esp_err_t axp2101_ensure_voltage_adc_channels(void);
 static uint16_t axp2101_decode_h5l8(const uint8_t *data);
 static uint16_t axp2101_decode_h6l8(const uint8_t *data);
 
+/**
+ * @brief 初始化 AXP2101 驱动。
+ * @return `ESP_OK` 表示成功或之前已初始化；其他错误表示 I2C 设备创建失败。
+ */
 esp_err_t axp2101_init(void)
 {
     if (s_ready)
@@ -59,6 +63,11 @@ esp_err_t axp2101_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 探测 AXP2101 是否应答。
+ * @param[out] present true 表示探测到器件。
+ * @return `ESP_OK` 表示探测流程完成；其他错误表示总线访问失败。
+ */
 esp_err_t axp2101_probe(bool *present)
 {
     ESP_RETURN_ON_FALSE(present != NULL, ESP_ERR_INVALID_ARG, TAG,
@@ -99,6 +108,11 @@ esp_err_t axp2101_probe(bool *present)
 #endif
 }
 
+/**
+ * @brief 读取一次 AXP2101 电源快照。
+ * @param[out] snapshot 输出快照。
+ * @return `ESP_OK` 表示成功；其他错误表示寄存器读取失败。
+ */
 esp_err_t axp2101_read_snapshot(axp2101_snapshot_t *snapshot)
 {
     ESP_RETURN_ON_FALSE(snapshot != NULL, ESP_ERR_INVALID_ARG, TAG,
@@ -106,10 +120,10 @@ esp_err_t axp2101_read_snapshot(axp2101_snapshot_t *snapshot)
     ESP_RETURN_ON_ERROR(axp2101_init(), TAG, "init failed before snapshot");
 
     axp2101_snapshot_t out = {0};
-    uint8_t raw[2] = {0}; // 双字节电压原始数据缓存
-    uint8_t status0 = 0;  // STATUS0 原始值
-    uint8_t status2 = 0;  // STATUS2 原始值
-    uint8_t percent = 0;  // 电量百分比原始值
+    uint8_t raw[2] = {0}; // 双字节电压原始数据缓存。
+    uint8_t status0 = 0;  // STATUS0 原始值。
+    uint8_t status2 = 0;  // STATUS2 原始值。
+    uint8_t percent = 0;  // 电量百分比原始值。
 
     ESP_RETURN_ON_ERROR(axp2101_read_bytes(AXP2101_REG_STATUS0, &status0, 1),
                         TAG, "read status0 failed");
@@ -164,6 +178,11 @@ esp_err_t axp2101_read_snapshot(axp2101_snapshot_t *snapshot)
     return ESP_OK;
 }
 
+/**
+ * @brief 读取 IRQ 状态寄存器。
+ * @param[out] status 输出 IRQ 原始状态。
+ * @return `ESP_OK` 表示成功；其他错误表示寄存器读取失败。
+ */
 esp_err_t axp2101_read_irq_status(axp2101_irq_status_t *status)
 {
     ESP_RETURN_ON_FALSE(status != NULL, ESP_ERR_INVALID_ARG, TAG,
@@ -182,6 +201,11 @@ esp_err_t axp2101_read_irq_status(axp2101_irq_status_t *status)
     return ESP_OK;
 }
 
+/**
+ * @brief 清除 IRQ 状态寄存器。
+ * @param[in] status 待清除的 IRQ 原始状态。
+ * @return `ESP_OK` 表示成功；其他错误表示寄存器写入失败。
+ */
 esp_err_t axp2101_clear_irq_status(const axp2101_irq_status_t *status)
 {
     ESP_RETURN_ON_FALSE(status != NULL, ESP_ERR_INVALID_ARG, TAG,
@@ -202,6 +226,13 @@ esp_err_t axp2101_clear_irq_status(const axp2101_irq_status_t *status)
     return ESP_OK;
 }
 
+/**
+ * @brief 从 AXP2101 读取连续寄存器。
+ * @param[in] reg 起始寄存器地址。
+ * @param[out] data 输出缓冲区。
+ * @param[in] len 读取长度，单位为字节。
+ * @return `ESP_OK` 表示成功；其他错误表示 I2C 访问失败。
+ */
 static esp_err_t axp2101_read_bytes(uint8_t reg, uint8_t *data, size_t len)
 {
     ESP_RETURN_ON_FALSE(data != NULL, ESP_ERR_INVALID_ARG, TAG,
@@ -237,6 +268,15 @@ static esp_err_t axp2101_read_bytes(uint8_t reg, uint8_t *data, size_t len)
 #endif
 }
 
+/**
+ * @brief 向 AXP2101 写入寄存器。
+ * @param[in] reg 目标寄存器地址。
+ * @param[in] data 待写入数据。
+ * @param[in] len 写入长度，单位为字节。
+ * @return `ESP_OK` 表示成功；其他错误表示 I2C 访问失败或当前写入长度不受支持。
+ *
+ * @note 当前实现仅支持单字节写入，因为当前主链路只需要配置少量控制寄存器。
+ */
 static esp_err_t axp2101_write_bytes(uint8_t reg, const uint8_t *data, size_t len)
 {
     ESP_RETURN_ON_FALSE(data != NULL, ESP_ERR_INVALID_ARG, TAG,
@@ -269,10 +309,14 @@ static esp_err_t axp2101_write_bytes(uint8_t reg, const uint8_t *data, size_t le
 #endif
 }
 
+/**
+ * @brief 确保电压相关 ADC 通道已开启。
+ * @return `ESP_OK` 表示成功；其他错误表示寄存器读写失败。
+ */
 static esp_err_t axp2101_ensure_voltage_adc_channels(void)
 {
-    uint8_t current = 0; // 当前 ADC 通道配置
-    uint8_t desired = 0; // 期望 ADC 通道配置（补齐 BAT/VBUS/VSYS）
+    uint8_t current = 0; // 当前 ADC 通道配置。
+    uint8_t desired = 0; // 期望 ADC 通道配置，需补齐 BAT/VBUS/VSYS。
 
     if (s_voltage_adc_ready &&
         (s_voltage_adc_mask & AXP2101_ADC_CHANNEL_VOLTAGE_MASK) ==
@@ -297,12 +341,22 @@ static esp_err_t axp2101_ensure_voltage_adc_channels(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 解析 H5L8 格式电压寄存器值。
+ * @param[in] data 两字节原始寄存器数据。
+ * @return 解码后的原始数值。
+ */
 static uint16_t axp2101_decode_h5l8(const uint8_t *data)
 {
     uint16_t raw = (((uint16_t)(data[0] & 0x1Fu)) << 8) | (uint16_t)data[1];
     return raw;
 }
 
+/**
+ * @brief 解析 H6L8 格式电压寄存器值。
+ * @param[in] data 两字节原始寄存器数据。
+ * @return 解码后的原始数值。
+ */
 static uint16_t axp2101_decode_h6l8(const uint8_t *data)
 {
     uint16_t raw = (((uint16_t)(data[0] & 0x3Fu)) << 8) | (uint16_t)data[1];

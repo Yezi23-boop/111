@@ -17,8 +17,8 @@ namespace official_chat {
 namespace {
 
 constexpr char kTag[] = "official_assets";
-constexpr char kAssetsPartitionLabel[] = "assets";
-constexpr int kHttpBufferSize = 1024;
+constexpr char kAssetsPartitionLabel[] = "assets"; /**< 约定在 partition-table 中必须包含的静态资源分区名称。 */
+constexpr int kHttpBufferSize = 1024;              /**< HTTP 的接收和发送缓冲区大小，单位为字节，用于适配有限的 RAM 资源。 */
 
 }  // namespace
 
@@ -27,9 +27,11 @@ AssetsRuntime::Result AssetsRuntime::CheckAndApplyPendingDownload(
   Settings settings("assets", true);
   std::string download_url = settings.GetString("download_url");
   if (download_url.empty()) {
+    // 队列中无待下载的任务，保持现状退出。
     return {};
   }
 
+  // 开始前先清除配置内 URL，避免下载失败时导致重复读取进入死循环。
   settings.EraseKey("download_url");
   return DownloadAndApply(download_url, std::move(progress_callback));
 }

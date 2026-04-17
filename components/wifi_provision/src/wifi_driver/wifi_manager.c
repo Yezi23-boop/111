@@ -27,16 +27,16 @@
 #define WIFI_PROVISION_NVS_KEY_SSID "ssid"
 #define WIFI_PROVISION_NVS_KEY_PASSWORD "password"
 
-static wifi_manager_config_internal_t g_config = WIFI_MANAGER_DEFAULT_CONFIG(); // 内部默认配置
-static int sta_connect_count = 0;                                               // 当前 STA 自动重试计数
-static esp_netif_t *ap_netif = NULL;                                            // AP netif 句柄
-static p_wifi_state_callback wifi_state_cb = NULL;                              // 上层状态回调
-static bool is_sta_connected = false;                                           // STA 是否已拿到 IP
-static char stored_ssid[sizeof(((wifi_config_t *)0)->sta.ssid)] = {0};          // 缓存的 SSID
-static char stored_password[sizeof(((wifi_config_t *)0)->sta.password)] = {0};  // 缓存的密码
+static wifi_manager_config_internal_t g_config = WIFI_MANAGER_DEFAULT_CONFIG(); // 内部默认配置。
+static int sta_connect_count = 0;                                               // 当前 STA 自动重试计数。
+static esp_netif_t *ap_netif = NULL;                                            // AP netif 句柄，仅初始化后长期复用。
+static p_wifi_state_callback wifi_state_cb = NULL;                              // 上层状态回调，事件路径调用。
+static bool is_sta_connected = false;                                           // STA 是否已拿到 IP。
+static char stored_ssid[sizeof(((wifi_config_t *)0)->sta.ssid)] = {0};          // 缓存的 SSID。
+static char stored_password[sizeof(((wifi_config_t *)0)->sta.password)] = {0};  // 缓存的密码。
 
-static SemaphoreHandle_t scan_semaphore = NULL; // 扫描互斥信号量（防并发扫描）
-static TaskHandle_t scan_task_handle = NULL;    // 扫描任务句柄
+static SemaphoreHandle_t scan_semaphore = NULL; // 扫描互斥信号量，用于拒绝并发扫描。
+static TaskHandle_t scan_task_handle = NULL;    // 扫描任务句柄，非 NULL 表示已有扫描在运行。
 
 typedef struct
 {
@@ -58,6 +58,13 @@ static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data);
 static void scan_task(void *pv_parameters);
 
+/**
+ * @brief 确保 NVS 已可用。
+ *
+ * Wi-Fi 凭据保存在 NVS 中；若因分页耗尽或版本升级导致初始化失败，会先擦除再重建。
+ *
+ * @return `ESP_OK` 表示 NVS 已可用；其他错误表示初始化或擦除失败。
+ */
 static esp_err_t wifi_manager_ensure_nvs_ready(void)
 {
     esp_err_t ret = nvs_flash_init();
@@ -82,6 +89,19 @@ static esp_err_t wifi_manager_ensure_nvs_ready(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 安全复制 SSID 和密码。
+ *
+ * 该辅助函数统一处理空指针回退，避免多个路径各自拼接凭据字符串。
+ *
+ * @param[out] ssid_dst SSID 输出缓冲区。
+ * @param[in] ssid_dst_len SSID 输出缓冲区长度。
+ * @param[out] password_dst 密码输出缓冲区。
+ * @param[in] password_dst_len 密码输出缓冲区长度。
+ * @param[in] ssid 源 SSID。
+ * @param[in] password 源密码。
+ * @return 无返回值。
+ */
 static void wifi_manager_copy_credentials(char *ssid_dst, size_t ssid_dst_len,
                                           char *password_dst,
                                           size_t password_dst_len,
@@ -93,6 +113,10 @@ static void wifi_manager_copy_credentials(char *ssid_dst, size_t ssid_dst_len,
              password != NULL ? password : "");
 }
 
+/**
+ * @brief 从 NVS 加载已保存的 Wi-Fi 凭据。
+ * @return `ESP_OK` 表示加载成功或当前没有已保存凭据；其他错误表示 NVS 读取失败。
+ */
 static esp_err_t wifi_manager_load_credentials_from_nvs(void)
 {
     nvs_handle_t handle = 0;
@@ -145,6 +169,12 @@ cleanup:
     return ret;
 }
 
+/**
+ * @brief 将 Wi-Fi 凭据持久化到 NVS。
+ * @param[in] ssid 目标 SSID。
+ * @param[in] password 目标密码。
+ * @return `ESP_OK` 表示保存成功；其他错误表示 NVS 写入失败。
+ */
 static esp_err_t wifi_manager_store_credentials_to_nvs(const char *ssid,
                                                        const char *password)
 {
@@ -183,6 +213,18 @@ cleanup:
     return ret;
 }
 
+/**
+ * @brief Wi-Fi/IP 事件统一处理入口。
+ *
+ * 该函数负责把底层事件翻译成有限的服务状态，并维护自动重试计数，
+ * 避免上层直接依赖 ESP-IDF 的原始事件枚举。
+ *
+ * @param[in] arg 未使用。
+ * @param[in] event_base 事件基类。
+ * @param[in] event_id 事件 ID。
+ * @param[in] event_data 事件附带数据。
+ * @return 无返回值。
+ */
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data)
 {
@@ -250,6 +292,13 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
+/**
+ * @brief 初始化 Wi-Fi 管理器。
+ * @param[in] callback 状态变化回调。
+ * @return 无返回值。
+ *
+ * @note 当前实现使用 `ESP_ERROR_CHECK`；初始化失败会直接触发断言而不是静默返回错误。
+ */
 void wifi_manager_init(p_wifi_state_callback callback)
 {
     wifi_state_cb = callback;
@@ -279,6 +328,12 @@ void wifi_manager_init(p_wifi_state_callback callback)
     ESP_LOGI(TAG, "Wi-Fi 管理器初始化成功");
 }
 
+/**
+ * @brief 按显式 SSID/密码发起 STA 连接。
+ * @param[in] ssid 目标 SSID。
+ * @param[in] password 目标密码。
+ * @return `ESP_OK` 表示连接请求已下发；其他错误表示参数非法或底层配置失败。
+ */
 esp_err_t wifi_manager_connect(const char *ssid, const char *password)
 {
     if (ssid == NULL || password == NULL || ssid[0] == '\0')
@@ -306,6 +361,10 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
     return esp_wifi_connect();
 }
 
+/**
+ * @brief 使用已保存凭据或 fallback 配置发起连接。
+ * @return `ESP_OK` 表示连接请求已下发；`ESP_ERR_INVALID_STATE` 表示当前无可用凭据。
+ */
 esp_err_t wifi_manager_connect_saved(void)
 {
     const char *ssid = stored_ssid;
@@ -330,6 +389,10 @@ esp_err_t wifi_manager_connect_saved(void)
     return wifi_manager_connect(ssid, password);
 }
 
+/**
+ * @brief 切换到 APSTA 并启动 AP 门户配置。
+ * @return `ESP_OK` 表示 AP 门户已就绪；其他错误表示 AP 或 DHCP 配置失败。
+ */
 esp_err_t wifi_manager_ap(void)
 {
     wifi_mode_t mode = WIFI_MODE_NULL;
@@ -394,14 +457,26 @@ esp_err_t wifi_manager_ap(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 停止 AP 模式并回到纯 STA 模式。
+ * @return 底层 `esp_wifi_set_mode()` 返回值。
+ */
 esp_err_t wifi_manager_stop_ap(void)
 {
     return esp_wifi_set_mode(WIFI_MODE_STA);
 }
 
+/**
+ * @brief 扫描任务主体。
+ *
+ * 扫描独立放到任务里执行，是为了避免阻塞调用方，并统一收口扫描回调和资源释放路径。
+ *
+ * @param[in] pv_parameters 扫描上下文。
+ * @return 无返回值。
+ */
 static void scan_task(void *pv_parameters)
 {
-    wifi_scan_task_ctx_t *ctx = (wifi_scan_task_ctx_t *)pv_parameters; // 扫描回调上下文
+    wifi_scan_task_ctx_t *ctx = (wifi_scan_task_ctx_t *)pv_parameters;
     wifi_scan_config_t scan_config = {0};
     esp_err_t scan_ret = ESP_OK;
     uint16_t ap_num = 0;
@@ -469,6 +544,11 @@ cleanup:
     vTaskDelete(NULL);
 }
 
+/**
+ * @brief 触发一次异步 Wi-Fi 扫描。
+ * @param[in] callback 扫描结果回调。
+ * @return `ESP_OK` 表示扫描任务已创建；`ESP_ERR_INVALID_STATE` 表示已有扫描在进行。
+ */
 esp_err_t wifi_manager_scan(p_wifi_scan_callback callback)
 {
     BaseType_t task_ret = pdPASS;
@@ -497,6 +577,12 @@ esp_err_t wifi_manager_scan(p_wifi_scan_callback callback)
     return ESP_ERR_INVALID_STATE;
 }
 
+/**
+ * @brief 获取当前 STA IP。
+ * @param[out] ip_str 输出缓冲区。
+ * @param[in] ip_str_len 输出缓冲区长度，至少 16 字节。
+ * @return `ESP_OK` 表示成功；其他错误表示当前未连接或参数非法。
+ */
 esp_err_t wifi_manager_get_ip(char *ip_str, size_t ip_str_len)
 {
     if (!is_sta_connected || ip_str == NULL || ip_str_len < 16)
@@ -519,16 +605,31 @@ esp_err_t wifi_manager_get_ip(char *ip_str, size_t ip_str_len)
     return ESP_FAIL;
 }
 
+/**
+ * @brief 查询当前 STA 是否已连接。
+ * @return true 表示已经拿到有效 IP。
+ */
 bool wifi_manager_is_connected(void)
 {
     return is_sta_connected;
 }
 
+/**
+ * @brief 设置 Wi-Fi 省电模式。
+ * @param[in] enable true 表示开启省电。
+ * @return 底层 `esp_wifi_set_ps()` 返回值。
+ */
 esp_err_t wifi_manager_set_power_save(bool enable)
 {
     return esp_wifi_set_ps(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
 }
 
+/**
+ * @brief 保存 Wi-Fi 凭据到缓存和 NVS。
+ * @param[in] ssid 目标 SSID。
+ * @param[in] password 目标密码。
+ * @return `ESP_OK` 表示保存成功；其他错误表示参数非法或 NVS 写入失败。
+ */
 esp_err_t wifi_manager_set_credentials(const char *ssid,
                                        const char *password)
 {
@@ -543,11 +644,19 @@ esp_err_t wifi_manager_set_credentials(const char *ssid,
     return wifi_manager_store_credentials_to_nvs(ssid, password);
 }
 
+/**
+ * @brief 查询当前是否已有可用 Wi-Fi 凭据。
+ * @return true 表示缓存或 fallback 配置中存在可用凭据。
+ */
 bool wifi_manager_has_credentials(void)
 {
     return stored_ssid[0] != '\0' || wifi_manager_get_fallback_ssid()[0] != '\0';
 }
 
+/**
+ * @brief 获取编译期 fallback SSID。
+ * @return fallback SSID；未配置时返回空字符串。
+ */
 static const char *wifi_manager_get_fallback_ssid(void)
 {
 #if defined(CONFIG_WIFI_SSID)
@@ -557,6 +666,10 @@ static const char *wifi_manager_get_fallback_ssid(void)
 #endif
 }
 
+/**
+ * @brief 获取编译期 fallback 密码。
+ * @return fallback 密码；未配置时返回空字符串。
+ */
 static const char *wifi_manager_get_fallback_password(void)
 {
 #if defined(CONFIG_WIFI_PASSWD)

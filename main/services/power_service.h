@@ -15,6 +15,7 @@ extern "C"
 {
 #endif
 
+    /* 电源状态变化回调，运行在电源服务后台任务上下文。 */
     /* 回调参数和 get_state 返回值都是服务层拥有的只读快照视图，
      * 如需长期持有请自行复制。 */
     typedef void (*power_state_changed_cb_t)(const board_power_state_t *state);

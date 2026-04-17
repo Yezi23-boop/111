@@ -1,5 +1,12 @@
 # 上下文库变更记录
 
+- 2026-04-15：继续按最新 `embedded-c-cpp-comment-style` 规则清理主链路手写源码，覆盖 `touch_ft5x06`、`lvgl_port`、`co5300_panel`、`wifi_provision`、`wifi_manager`、`sd_manager`、`i2c_manager`、`get_time`、`mp3_player` 等主要文件，统一收敛 `Doxygen` 函数头、普通实现注释标记和关键共享状态说明。
+- 2026-04-15：压缩 `AGENTS.md` 新增的代码注释规范表述，保留默认约束并移除冗长模板与示例，便于 agent 快速执行。
+- 2026-04-15：为 `AGENTS.md` 新增默认生效的嵌入式 `C/C++` 代码注释规范，明确 `Doxygen` 函数头、普通说明注释标记、关键变量/常量解释、禁止逐行翻译式注释，以及“未经用户明确允许不得因补注释而扩大为重构”。
+- 2026-04-15：为 `embedded-c-cpp-comment-style` 增补注释标记约定，明确 `/** */` 仅用于 Doxygen，普通说明注释优先可用 `//`，多行原因说明可用 `/* */`。
+- 2026-04-15：收紧 `embedded-c-cpp-comment-style` 技能的改动边界，明确默认只处理注释；若注释无法解决可读性问题，必须先获用户明确允许，才可做最小重构。
+- 2026-04-15：按 `skill-creator` 指南补强 `.agents/skills/embedded-c-cpp-comment-style`，扩展触发描述、生成 `agents/openai.yaml` 并通过 `quick_validate.py` 校验。
+- 2026-04-15：新增 `.agents/skills/embedded-c-cpp-comment-style` 技能，并沉淀对应知识卡，统一约束嵌入式 `C/C++` 代码注释采用 `Doxygen` 函数头、原因说明注释以及关键变量/常量解释风格。
 - 2026-04-13：按 main 分层与配网/电源链路上下文，为 `main/app`、`main/assets`、`main/features`、`main/services`、`components/axp2101`、`components/wifi_provision` 共 43 个文件补充变量级中文注释，覆盖启动链路、配网状态机、BLE 协议、AXP2101 快照与告警流程语义。
 - 2026-04-13：为 `components/lvgl_port`、`components/co5300_panel`、`components/audio_codec` 全部源码与头文件补充关键变量/参数中文注释，统一标注 flush 分块、TE 同步、I2S/I2C 映射和接口语义，便于后续维护与排障。
 - 2026-04-13：新增手表项目低功耗管理架构知识卡，收敛 `Active / Idle-Dim / Standby / Deep Sleep` 四态路线、`power_policy` 分层建议，以及 `RTC + AXP2101` 的阶段化接入顺序。

@@ -22,19 +22,19 @@
 static const char *TAG = "ble_prov";
 void ble_store_config_init(void);
 
-static ble_provision_transport_rx_cb_t s_rx_cb = NULL;
-static ble_provision_transport_state_cb_t s_state_cb = NULL;
-static void *s_user_data = NULL;
+static ble_provision_transport_rx_cb_t s_rx_cb = NULL;       // 收到完整 JSON 帧后的回调。
+static ble_provision_transport_state_cb_t s_state_cb = NULL; // BLE 连接状态变化回调。
+static void *s_user_data = NULL;                             // 透传给回调的用户上下文。
 
-static bool s_initialized = false;    // NimBLE 栈是否已初始化
-static bool s_synced = false;         // GAP 同步是否完成
-static bool s_active = false;         // 当前是否允许对外广播
-static bool s_connected = false;      // 是否已有 BLE 客户端连接
-static bool s_notify_enabled = false; // 对端是否打开 notify 订阅
+static bool s_initialized = false;    // NimBLE 栈是否已初始化。
+static bool s_synced = false;         // GAP 同步是否完成。
+static bool s_active = false;         // 当前是否允许对外广播。
+static bool s_connected = false;      // 是否已有 BLE 客户端连接。
+static bool s_notify_enabled = false; // 对端是否打开 notify 订阅。
 static uint8_t s_own_addr_type = BLE_OWN_ADDR_PUBLIC;
-static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE; // 当前连接句柄
-static uint16_t s_rx_val_handle = 0;                     // RX characteristic value handle
-static uint16_t s_tx_val_handle = 0;                     // TX characteristic value handle
+static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE; // 当前连接句柄。
+static uint16_t s_rx_val_handle = 0;                     // RX characteristic value handle。
+static uint16_t s_tx_val_handle = 0;                     // TX characteristic value handle。
 static char s_device_name[20] = "ESP32S3";
 static char s_last_payload[BLE_PROVISION_MAX_JSON_LEN] =
     "{\"evt\":\"status\",\"state\":\"idle\"}";
@@ -58,17 +58,31 @@ static void ble_provision_transport_consume_rx_chunk(const char *chunk,
                                                      size_t chunk_len);
 static size_t ble_provision_transport_get_internal_heap_free(void);
 
+/**
+ * @brief 获取当前内部 SRAM 余量。
+ * @return 当前内部 SRAM 可用字节数。
+ */
 static size_t ble_provision_transport_get_internal_heap_free(void)
 {
     return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 }
 
+/**
+ * @brief 重置当前待组帧的 BLE RX 缓冲。
+ * @return 无返回值。
+ */
 static void ble_provision_transport_reset_rx_frame(void)
 {
     s_rx_frame_len = 0;
     s_rx_frame_buffer[0] = '\0';
 }
 
+/**
+ * @brief 将一帧完整 RX 负载分发给上层回调。
+ * @param[in] payload 完整 JSON 文本。
+ * @param[in] payload_len 文本长度，单位为字节。
+ * @return 无返回值。
+ */
 static void ble_provision_transport_dispatch_rx_payload(const char *payload,
                                                         size_t payload_len)
 {
@@ -94,6 +108,15 @@ static void ble_provision_transport_dispatch_rx_payload(const char *payload,
     s_rx_cb(framed_payload, payload_len, s_user_data);
 }
 
+/**
+ * @brief 消费一个 BLE 写入分片并尝试组装成完整 JSON 帧。
+ *
+ * 当前实现按换行符 `\n` 分帧，以兼容默认 MTU 下的 20B 分片上报。
+ *
+ * @param[in] chunk 本次收到的分片数据。
+ * @param[in] chunk_len 分片长度，单位为字节。
+ * @return 无返回值。
+ */
 static void ble_provision_transport_consume_rx_chunk(const char *chunk,
                                                      size_t chunk_len)
 {
@@ -141,6 +164,14 @@ static void ble_provision_transport_consume_rx_chunk(const char *chunk,
     }
 }
 
+/**
+ * @brief GATT 访问回调。
+ * @param[in] conn_handle 当前连接句柄。
+ * @param[in] attr_handle 当前属性句柄。
+ * @param[in] ctxt GATT 访问上下文。
+ * @param[in] arg 未使用。
+ * @return 0 表示成功；其他 BLE ATT 错误码表示读写失败。
+ */
 static int ble_provision_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                                    struct ble_gatt_access_ctxt *ctxt,
                                    void *arg)
@@ -206,12 +237,23 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
     {0},
 };
 
+/**
+ * @brief NimBLE reset 回调。
+ * @param[in] reason reset 原因码。
+ * @return 无返回值。
+ */
 static void ble_provision_on_reset(int reason)
 {
     ESP_LOGW(TAG, "nimble reset, reason=%d", reason);
     s_synced = false;
 }
 
+/**
+ * @brief GAP 事件回调。
+ * @param[in] event GAP 事件对象。
+ * @param[in] arg 未使用。
+ * @return 当前始终返回 0。
+ */
 static int ble_provision_gap_event(struct ble_gap_event *event, void *arg)
 {
     (void)arg;
@@ -268,6 +310,12 @@ static int ble_provision_gap_event(struct ble_gap_event *event, void *arg)
     }
 }
 
+/**
+ * @brief 启动或重启 BLE 广播。
+ * @return 无返回值。
+ *
+ * @note 仅在 NimBLE 已同步且传输层处于 active 状态时真正启动广播。
+ */
 static void ble_provision_transport_advertise(void)
 {
     struct ble_gap_adv_params adv_params = {0};
@@ -321,6 +369,10 @@ static void ble_provision_transport_advertise(void)
     ESP_LOGI(TAG, "BLE provisioning advertising: %s", s_device_name);
 }
 
+/**
+ * @brief NimBLE 同步完成回调。
+ * @return 无返回值。
+ */
 static void ble_provision_on_sync(void)
 {
     int rc = 0;
@@ -336,6 +388,11 @@ static void ble_provision_on_sync(void)
     ble_provision_transport_advertise();
 }
 
+/**
+ * @brief NimBLE host 任务入口。
+ * @param[in] param 未使用。
+ * @return 无返回值。
+ */
 static void ble_provision_host_task(void *param)
 {
     (void)param;
@@ -345,6 +402,10 @@ static void ble_provision_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
+/**
+ * @brief 重置 BLE 传输层运行时状态。
+ * @return 无返回值。
+ */
 static void ble_provision_transport_reset_runtime_state(void)
 {
     s_initialized = false;
@@ -362,16 +423,30 @@ static void ble_provision_transport_reset_runtime_state(void)
     ble_provision_transport_reset_rx_frame();
 }
 
+/**
+ * @brief 查询 BLE 传输层是否处于活动状态。
+ * @return true 表示当前允许广播或保持连接。
+ */
 bool ble_provision_transport_is_active(void)
 {
     return s_active;
 }
 
+/**
+ * @brief 查询当前是否已有 BLE 客户端连接。
+ * @return true 表示存在有效 BLE 连接。
+ */
 bool ble_provision_transport_is_connected(void)
 {
     return s_connected;
 }
 
+/**
+ * @brief 获取当前 BLE 广播名。
+ * @param[out] device_name 输出缓冲区。
+ * @param[in] device_name_len 输出缓冲区长度，单位为字节。
+ * @return `ESP_OK` 表示成功；参数非法时返回错误。
+ */
 esp_err_t ble_provision_transport_get_device_name(char *device_name,
                                                   size_t device_name_len)
 {
@@ -384,6 +459,15 @@ esp_err_t ble_provision_transport_get_device_name(char *device_name,
     return ESP_OK;
 }
 
+/**
+ * @brief 向当前 BLE 客户端发送一帧 JSON 状态消息。
+ * @param[in] json_payload JSON 文本。
+ * @return `ESP_OK` 表示成功或当前无需发送；
+ *         `ESP_ERR_INVALID_ARG` 表示参数非法；
+ *         `ESP_ERR_INVALID_SIZE` 表示消息过长；
+ *         `ESP_ERR_NO_MEM` 表示 mbuf 分配失败；
+ *         其他错误表示通知发送失败。
+ */
 esp_err_t ble_provision_transport_notify_json(const char *json_payload)
 {
     char framed_payload[BLE_PROVISION_MAX_JSON_LEN + 2] = {0};
@@ -447,6 +531,14 @@ esp_err_t ble_provision_transport_notify_json(const char *json_payload)
     return ESP_OK;
 }
 
+/**
+ * @brief 启动 BLE GATT 配网传输层。
+ * @param[in] device_name BLE 广播名。
+ * @param[in] rx_cb 收到完整 JSON 帧后的回调。
+ * @param[in] state_cb 连接状态变化回调，可为 NULL。
+ * @param[in] user_data 用户透传上下文。
+ * @return `ESP_OK` 表示成功；其他错误表示 NimBLE、GATT 或广播初始化失败。
+ */
 esp_err_t ble_provision_transport_start(
     const char *device_name, ble_provision_transport_rx_cb_t rx_cb,
     ble_provision_transport_state_cb_t state_cb, void *user_data)
@@ -539,6 +631,10 @@ esp_err_t ble_provision_transport_start(
     return ESP_OK;
 }
 
+/**
+ * @brief 停止 BLE 广播并断开当前连接。
+ * @return `ESP_OK` 表示停止成功。
+ */
 esp_err_t ble_provision_transport_stop(void)
 {
     s_active = false;

@@ -17,6 +17,8 @@ extern "C"
 {
 #endif
 
+    /* 面向上层的网络服务状态：
+     * 既描述当前联网方式，也描述云端依赖是否真正可用。 */
     typedef enum
     {
         NETWORK_SERVICE_STATE_OFFLINE = 0,      /* 尚未启动服务任务。 */
@@ -32,22 +34,44 @@ extern "C"
      * OFFLINE -> CONNECTING/BLE_PROVISIONING -> WIFI_READY -> SERVICE_READY
      * 失败或兜底时可转到 PORTAL_REQUIRED。 */
 
-    /* 启动后台网络状态机；重复调用安全。 */
+    /**
+     * @brief 启动后台网络状态机。
+     * @return `ESP_OK` 表示任务已启动或之前已启动；其他错误表示任务创建失败。
+     */
     esp_err_t network_service_start(void);
 
-    /* 获取服务层当前状态，供 UI 或上层业务轮询。 */
+    /**
+     * @brief 获取当前网络服务状态。
+     * @return 服务层状态枚举。
+     */
     network_service_state_t network_service_get_state(void);
 
-    /* 只有在 Wi-Fi 可用且业务探测通过后才返回 true。 */
+    /**
+     * @brief 判断云端业务依赖是否真正可用。
+     * @return true 表示 Wi-Fi 已连通且关键业务探测通过。
+     */
     bool network_service_is_service_ready(void);
 
-    /* 获取当前 IPv4 字符串；未连接时返回 `ESP_ERR_INVALID_STATE`。 */
+    /**
+     * @brief 获取当前缓存的 IPv4 地址。
+     * @param[out] ip_str 输出缓冲区。
+     * @param[in] ip_str_len 输出缓冲区长度，单位为字节。
+     * @return `ESP_OK` 表示已成功复制；
+     *         `ESP_ERR_INVALID_ARG` 表示参数非法；
+     *         `ESP_ERR_INVALID_STATE` 表示当前尚未拿到有效 IP。
+     */
     esp_err_t network_service_get_ip(char *ip_str, size_t ip_str_len);
 
-    /* 主动切换到 AP 门户配网，常用于用户在 UI 中点击“重新配网”。 */
+    /**
+     * @brief 主动切换到 AP 门户配网。
+     * @return 无返回值。
+     */
     void network_service_request_portal(void);
 
-    /* 主动切换到 BLE 配网。 */
+    /**
+     * @brief 主动切换到 BLE 配网。
+     * @return 无返回值。
+     */
     void network_service_request_ble(void);
 
 #ifdef __cplusplus

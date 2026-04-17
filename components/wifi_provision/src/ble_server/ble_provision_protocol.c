@@ -5,6 +5,16 @@
 
 #include "cJSON.h"
 
+/**
+ * @brief 将 cJSON 对象序列化到输出缓冲区。
+ *
+ * BLE 链路负载预算很紧张，因此这里使用紧凑 JSON，避免冗余空白进一步压缩有效载荷。
+ *
+ * @param[in] root 待序列化的 cJSON 根对象。
+ * @param[out] buffer 输出缓冲区。
+ * @param[in] buffer_len 输出缓冲区长度，单位为字节。
+ * @return `ESP_OK` 表示成功；其他错误表示参数非法、内存不足或缓冲区长度不够。
+ */
 static esp_err_t ble_provision_protocol_copy_json(cJSON *root, char *buffer,
                                                   size_t buffer_len)
 {
@@ -32,6 +42,14 @@ static esp_err_t ble_provision_protocol_copy_json(cJSON *root, char *buffer,
     return ESP_OK;
 }
 
+/**
+ * @brief 创建 Wi-Fi 扫描响应的公共 JSON 根对象。
+ * @param[out] buffer 输出缓冲区，仅用于参数合法性检查。
+ * @param[in] buffer_len 输出缓冲区长度，单位为字节。
+ * @param[in] state 扫描状态字符串。
+ * @param[out] root_out 输出创建好的 cJSON 根对象。
+ * @return `ESP_OK` 表示成功；其他错误表示参数非法或内存不足。
+ */
 static esp_err_t ble_provision_protocol_create_wifi_scan_root(
     char *buffer, size_t buffer_len, const char *state, cJSON **root_out)
 {
@@ -57,6 +75,12 @@ static esp_err_t ble_provision_protocol_create_wifi_scan_root(
     return ret;
 }
 
+/**
+ * @brief 解析一帧 BLE 配网 JSON 请求。
+ * @param[in] data JSON 文本。
+ * @param[out] request 解析后的请求结构。
+ * @return `ESP_OK` 表示成功；其他错误表示字段缺失、类型错误或 JSON 非法。
+ */
 esp_err_t ble_provision_protocol_parse_request(const char *data,
                                                ble_prov_request_t *request)
 {
@@ -128,6 +152,13 @@ esp_err_t ble_provision_protocol_parse_request(const char *data,
     return ESP_OK;
 }
 
+/**
+ * @brief 格式化 BLE hello 响应。
+ * @param[out] buffer 输出缓冲区。
+ * @param[in] buffer_len 输出缓冲区长度，单位为字节。
+ * @param[in] device_name 当前 BLE 广播名。
+ * @return `ESP_OK` 表示成功；其他错误表示参数非法、内存不足或缓冲区不够。
+ */
 esp_err_t ble_provision_protocol_format_hello(char *buffer, size_t buffer_len,
                                               const char *device_name)
 {
@@ -155,6 +186,12 @@ esp_err_t ble_provision_protocol_format_hello(char *buffer, size_t buffer_len,
     return ret;
 }
 
+/**
+ * @brief 格式化“开始扫描 Wi-Fi”响应。
+ * @param[out] buffer 输出缓冲区。
+ * @param[in] buffer_len 输出缓冲区长度，单位为字节。
+ * @return `ESP_OK` 表示成功；其他错误表示参数非法、内存不足或缓冲区不够。
+ */
 esp_err_t ble_provision_protocol_format_wifi_scan_started(char *buffer,
                                                           size_t buffer_len)
 {
@@ -172,6 +209,15 @@ esp_err_t ble_provision_protocol_format_wifi_scan_started(char *buffer,
     return ret;
 }
 
+/**
+ * @brief 格式化一批 Wi-Fi 扫描结果。
+ * @param[out] buffer 输出缓冲区。
+ * @param[in] buffer_len 输出缓冲区长度，单位为字节。
+ * @param[in] items 扫描结果数组。
+ * @param[in] item_count 当前批次条目数。
+ * @param[in] more true 表示后续仍有更多批次。
+ * @return `ESP_OK` 表示成功；其他错误表示参数非法、内存不足或缓冲区不够。
+ */
 esp_err_t ble_provision_protocol_format_wifi_scan_batch(
     char *buffer, size_t buffer_len, const ble_prov_wifi_scan_item_t *items,
     size_t item_count, bool more)
@@ -214,6 +260,13 @@ esp_err_t ble_provision_protocol_format_wifi_scan_batch(
     return ret;
 }
 
+/**
+ * @brief 格式化 Wi-Fi 扫描完成响应。
+ * @param[out] buffer 输出缓冲区。
+ * @param[in] buffer_len 输出缓冲区长度，单位为字节。
+ * @param[in] total 扫描结果总数。
+ * @return `ESP_OK` 表示成功；其他错误表示参数非法、内存不足或缓冲区不够。
+ */
 esp_err_t ble_provision_protocol_format_wifi_scan_done(char *buffer,
                                                        size_t buffer_len,
                                                        size_t total)
@@ -233,6 +286,13 @@ esp_err_t ble_provision_protocol_format_wifi_scan_done(char *buffer,
     return ret;
 }
 
+/**
+ * @brief 格式化 Wi-Fi 扫描失败响应。
+ * @param[out] buffer 输出缓冲区。
+ * @param[in] buffer_len 输出缓冲区长度，单位为字节。
+ * @param[in] reason 失败原因。
+ * @return `ESP_OK` 表示成功；其他错误表示参数非法、内存不足或缓冲区不够。
+ */
 esp_err_t ble_provision_protocol_format_wifi_scan_failed(char *buffer,
                                                          size_t buffer_len,
                                                          const char *reason)
@@ -256,6 +316,17 @@ esp_err_t ble_provision_protocol_format_wifi_scan_failed(char *buffer,
     return ret;
 }
 
+/**
+ * @brief 格式化 BLE 状态响应。
+ * @param[out] buffer 输出缓冲区。
+ * @param[in] buffer_len 输出缓冲区长度，单位为字节。
+ * @param[in] state 状态字符串。
+ * @param[in] ssid 当前 SSID，可为 NULL。
+ * @param[in] ip 当前 IP，可为 NULL。
+ * @param[in] reason 失败原因，可为 NULL。
+ * @param[in] url AP 兜底 URL，可为 NULL。
+ * @return `ESP_OK` 表示成功；其他错误表示参数非法、内存不足或缓冲区不够。
+ */
 esp_err_t ble_provision_protocol_format_status(char *buffer, size_t buffer_len,
                                                const char *state,
                                                const char *ssid,

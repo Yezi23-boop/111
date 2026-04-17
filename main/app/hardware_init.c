@@ -11,14 +11,25 @@
 #include "driver/gpio.h"
 #include "iot_button.h"
 #include "services/network_service.h"
-static const char *TAG = "HARDWARE_INIT";
-/* @brief BOOT按钮的GPIO引脚号
- *
- * ESP32-S3开发板上的BOOT按钮默认连接到GPIO10
- * 按下时GPIO10变为低电平，松开时为高电平（需要上拉电阻）
+
+/*
+ * 硬件初始化实现说明：
+ * - 这里收敛主工程对 NVS、音频、存储、PMIC、按键和配网入口的依赖顺序；
+ * - 目标是把“开机后必须具备的基础能力”一次性准备好；
+ * - 真正的联网状态推进交给 `network_service`，避免初始化阶段长时间阻塞。
  */
+
+static const char *TAG = "HARDWARE_INIT";
+/* 当前板型上 BOOT 键接在 GPIO10；该值决定配网入口监听的物理按键。 */
 #define BUTTON_GPIO_NUM GPIO_NUM_10
 
+/**
+ * @brief 打印开机时采集到的第一份板级电源快照。
+ * @param[in] state 电源状态快照，可为 NULL。
+ * @return 无返回值。
+ *
+ * 该日志主要用于确认 PMIC 是否已正常工作，以及 UI 初始电量展示是否有可信来源。
+ */
 static void board_power_log_boot_snapshot(const board_power_state_t *state)
 {
     if (state == NULL)
@@ -45,6 +56,13 @@ static void board_power_log_boot_snapshot(const board_power_state_t *state)
              state->charging, state->discharging, state->battery_mv,
              state->system_mv);
 }
+
+/**
+ * @brief 单击 BOOT 键时请求 BLE 配网。
+ * @param[in] arg 未使用。
+ * @param[in] data 未使用。
+ * @return 无返回值。
+ */
 static void button_single_click_cb(void *arg, void *data)
 {
     ESP_LOGI(TAG, "========================================");
@@ -54,11 +72,25 @@ static void button_single_click_cb(void *arg, void *data)
     network_service_request_ble();
 }
 
+/**
+ * @brief 长按开始回调。
+ * @param[in] arg 未使用。
+ * @param[in] data 未使用。
+ * @return 无返回值。
+ *
+ * 当前仅保留日志，用于后续扩展长按配网或恢复出厂等动作。
+ */
 static void button_long_press_start_cb(void *arg, void *data)
 {
     ESP_LOGI(TAG, "BUTTON_LONG_PRESS_START");
 }
 
+/**
+ * @brief 三连击 BOOT 键时请求 AP 配网门户。
+ * @param[in] arg 未使用。
+ * @param[in] usr_data 用户透传日志字符串。
+ * @return 无返回值。
+ */
 static void button_triple_click_cb(void *arg, void *usr_data)
 {
     char *msg = (char *)usr_data;
@@ -76,19 +108,28 @@ static void button_triple_click_cb(void *arg, void *usr_data)
     }
 }
 
+/**
+ * @brief 初始化板载 BOOT 按键及其多击回调。
+ * @return 无返回值。
+ *
+ * 当前交互约定：
+ * - 单击进入 BLE 配网；
+ * - 三连击进入 AP 配网；
+ * - 长按仅记录日志，作为后续扩展挂点。
+ */
 static void button_init(void)
 {
-    // long_press_time/short_press_time 由 button 组件以毫秒解释。
+    /* 这些阈值由 button 组件按毫秒解释，直接决定单击/长按判定灵敏度。 */
     button_config_t gpio_btn_cfg = {
         .long_press_time = 1500,
         .short_press_time = 180,
     };
 
     button_gpio_config_t gpio_cfg = {
-        .gpio_num = BUTTON_GPIO_NUM, // 物理按键 GPIO
-        .active_level = 1,           // 高电平触发按键按下
-        .enable_power_save = true,   // 允许按钮驱动低功耗策略
-        .disable_pull = false,       // 保留内部上下拉配置能力
+        .gpio_num = BUTTON_GPIO_NUM, /* 物理按键 GPIO。 */
+        .active_level = 1,           /* 当前硬件接法下，高电平表示按下。 */
+        .enable_power_save = true,   /* 允许按钮驱动进入低功耗策略。 */
+        .disable_pull = false,       /* 保留内部上下拉配置能力。 */
     };
 
     button_handle_t gpio_btn_handle = NULL;
@@ -98,10 +139,10 @@ static void button_init(void)
         ESP_LOGE(TAG, "Button create failed");
     }
 
-    // 定义用户数据（注意：确保该数据在回调执行时依然有效，通常使用全局变量或静态变量）
+    /* 回调用户数据必须拥有静态生命周期，避免多击事件到达时指针已失效。 */
     static char *user_msg = "Hello from Triple Click!";
 
-    // 多击参数：三连击用于显式切到 AP 配网。
+    /* 三连击被保留为显式切换 AP 配网门户的人工入口。 */
     button_event_args_t args = {
         .multiple_clicks.clicks = 3,
     };
@@ -109,14 +150,13 @@ static void button_init(void)
     iot_button_register_cb(gpio_btn_handle, BUTTON_SINGLE_CLICK, NULL, button_single_click_cb, NULL);
     iot_button_register_cb(gpio_btn_handle, BUTTON_LONG_PRESS_START, NULL, button_long_press_start_cb, NULL);
 
-    // 注册三连击事件，使用所有参数
     iot_button_register_cb(gpio_btn_handle, BUTTON_MULTIPLE_CLICK, &args, button_triple_click_cb, user_msg);
 }
 /**
- * @brief WiFi事件回调函数
- * @param ev WiFi事件类型
+ * @brief 处理配网模块上报的 Wi-Fi 状态变化。
+ * @param[in] state 配网状态枚举。
+ * @return 无返回值。
  */
-
 static void wifi_provision_cb(wifi_provision_state_t state)
 {
     if (state == WIFI_PROVISION_STATE_CONNECTED)
@@ -128,13 +168,14 @@ static void wifi_provision_cb(wifi_provision_state_t state)
         ESP_LOGW(TAG, "WiFi Disconnected");
     }
 }
+
 /**
- * @brief NVS闪存初始化
- * @return esp_err_t 初始化结果
+ * @brief 初始化 NVS。
+ * @return `ESP_OK` 表示初始化成功；其他错误表示 NVS 不可用。
  */
 static esp_err_t hardware_nvs_init(void)
 {
-    // 首次初始化失败若由分页或版本差异导致，先擦除后重建 NVS。
+    /* 若因分页耗尽或版本不兼容失败，先擦除后重建 NVS。 */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
     {
@@ -146,15 +187,18 @@ static esp_err_t hardware_nvs_init(void)
 }
 
 /**
- * @brief 硬件层统一初始化
- * @details 初始化NVS、WiFi组件、SPIFFS、SD卡、I2C总线和音频编解码器，但不阻塞等待WiFi连接成功
- * @return esp_err_t ESP_OK: 基础硬件初始化成功; 其他: 初始化失败
+ * @brief 统一初始化基础硬件能力。
+ *
+ * 该入口负责准备 NVS、音频资源、SD、codec、板级电源和配网入口，
+ * 但不会阻塞等待 Wi-Fi 真正连通。
+ *
+ * @return `ESP_OK` 表示基础硬件初始化成功；
+ *         其他错误表示关键初始化失败。
  */
 esp_err_t hardware_init(void)
 {
     esp_err_t ret;
 
-    // 1. NVS初始化
     ESP_LOGI(TAG, "Initializing NVS...");
     ret = hardware_nvs_init();
     if (ret != ESP_OK)
@@ -163,33 +207,22 @@ esp_err_t hardware_init(void)
         return ret;
     }
 
-    // 2. 初始化音频应用资源（录音/播放与文件路径准备）。
+    /* 音频应用层先准备目录和控制入口；即使失败，也不阻断整机启动。 */
     ESP_LOGI(TAG, "Initializing Audio SPIFFS...");
-    ret = audio_app_init(); // 假设这里包含了 audio_spiffs_init 类似的功能，根据上下文推断
+    ret = audio_app_init();
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Audio SPIFFS init failed: %s", esp_err_to_name(ret));
-        // 非致命错误，继续
     }
 
-    // 3. 初始化SD卡
     ESP_LOGI(TAG, "Initializing SD Card...");
     ret = sd_manager_init();
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "SD Card init failed: %s", esp_err_to_name(ret));
-        // 非致命错误，继续
     }
-    // else
-    // {
-    //     // SD卡初始化成功后，打印目录内容进行调试
-    //     ESP_LOGI(TAG, "Listing SD Card root directory:");
-    //     sd_manager_list_dir("/sdcard");
-    //     ESP_LOGI(TAG, "Listing /sdcard/mp3 directory:");
-    //     sd_manager_list_dir("/sdcard/mp3");
-    // }
 
-    // 4. 初始化音频编解码器（I2C 控制面 + I2S 数据面）。
+    /* codec 初始化失败会影响录音和播报，但不一定要阻断整机其余能力。 */
     ESP_LOGI(TAG, "Initializing Audio Codec...");
     ret = audio_codec_init();
     if (ret != ESP_OK)
@@ -202,7 +235,7 @@ esp_err_t hardware_init(void)
         audio_codec_set_volume(60);
     }
 
-    // 5. 初始化板级电源观测（AXP2101），用于电量状态发布。
+    /* 板级电源快照用于 UI 电量展示和后续功耗策略观察。 */
     ESP_LOGI(TAG, "Initializing Board Power...");
     ret = board_power_init();
     if (ret != ESP_OK)
@@ -223,11 +256,7 @@ esp_err_t hardware_init(void)
         }
     }
 
-    // // 5. 扫描I2C总线
-    // ESP_LOGI(TAG, "Scanning I2C Bus...");
-    // i2c_manager_scan();
-
-    // 6. 初始化配网入口与 Wi-Fi 管理。
+    /* 配网入口必须在启动结束前可用，便于用户从冷启动直接进入配网。 */
     ESP_LOGI(TAG, "Initializing WiFi...");
     button_init();
     ret = wifi_provision_init(wifi_provision_cb);

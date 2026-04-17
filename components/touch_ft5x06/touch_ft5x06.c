@@ -1,62 +1,62 @@
-// 触摸屏驱动头文件
-#include "touch_ft5x06.h" // FT5x06/FT3168触摸控制器接口定义
-#include "i2c_manager.h"  // I2C总线管理器
-#include "esp_log.h"      // ESP-IDF日志系统
-#include "esp_check.h"    // ESP错误检查宏
+#include "touch_ft5x06.h"
+#include "i2c_manager.h"
+#include "esp_log.h"
+#include "esp_check.h"
 #include "esp_idf_version.h"
-#include "driver/gpio.h"  // GPIO驱动
+#include "driver/gpio.h"
 #include "driver/i2c.h"
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
 #include "driver/i2c_master.h"
 #endif
-#include "co5300_panel_defaults.h" // 显示屏分辨率定义
-#include "freertos/FreeRTOS.h"     // FreeRTOS实时操作系统
-#include "freertos/task.h"         // FreeRTOS任务管理
+#include "co5300_panel_defaults.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-static const char *TAG = "touch_ft5x06"; // 日志标签
+static const char *TAG = "touch_ft5x06";
 
-// FT5x06/FT3168寄存器和常量定义(两者寄存器兼容)
-#define FT5X06_ADDR 0x38            // FT5x06/FT3168的I2C地址(7位)
-#define FT5X06_REG_NUM_TOUCHES 0x02 // 触摸点数量寄存器地址
-#define FT5X06_REG_TOUCH1_XH 0x03   // 第一个触摸点X坐标高字节寄存器
-#define FT5X06_MAX_TOUCHES 5        // 最大支持触摸点数(FT3168支持10点,此处读取1点)
+// FT5x06/FT3168 在当前寄存器路径上兼容，驱动复用同一组寄存器定义。
+#define FT5X06_ADDR 0x38            // FT5x06/FT3168 的 7 位 I2C 地址。
+#define FT5X06_REG_NUM_TOUCHES 0x02 // 当前触点数量寄存器地址。
+#define FT5X06_REG_TOUCH1_XH 0x03   // 第一个触点坐标寄存器起始地址。
+#define FT5X06_MAX_TOUCHES 5        // 当前驱动最多处理的触点数；LVGL 主链路实际只消费单点。
 
-// 注意: FT3168事件类型检测有限,主要通过INT引脚和触摸点数量判断
-// FT5x06的详细事件标志(bit7-6)在FT3168上可能不可靠,故不使用
+/* FT3168 在事件类型位上的兼容性不稳定，当前驱动只依赖触点数量和坐标，
+ * 避免把不同芯片型号上不可靠的事件编码引入上层状态机。 */
 
-// 触摸点数据结构
 typedef struct
 {
-    uint16_t x;    // X坐标
-    uint16_t y;    // Y坐标
-    uint8_t event; // 触摸事件类型
-    uint8_t id;    // 触摸点ID
+    uint16_t x;    /**< X 坐标。 */
+    uint16_t y;    /**< Y 坐标。 */
+    uint8_t event; /**< 触摸事件类型；当前实现未使用，仅保留兼容字段。 */
+    uint8_t id;    /**< 触点 ID；当前实现未使用。 */
 } touch_point_t;
 
-// FT5x06设备控制结构体
 typedef struct
 {
-    int rst_gpio;
-    int int_gpio;
-    uint16_t max_x;
-    uint16_t max_y;
-    uint8_t point_num;
-    touch_point_t points[FT5X06_MAX_TOUCHES];
+    int rst_gpio;                             /**< 复位脚 GPIO。 */
+    int int_gpio;                             /**< 中断脚 GPIO；当前轮询链路保留但未使用。 */
+    uint16_t max_x;                           /**< 屏幕 X 方向最大分辨率。 */
+    uint16_t max_y;                           /**< 屏幕 Y 方向最大分辨率。 */
+    uint8_t point_num;                        /**< 最近一次读取到的触点数量。 */
+    touch_point_t points[FT5X06_MAX_TOUCHES]; /**< 最近一次读取到的触点缓存。 */
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
-    i2c_master_dev_handle_t dev_handle;
+    i2c_master_dev_handle_t dev_handle; /**< IDF 5.3+ 下的 I2C 设备句柄。 */
 #endif
 } touch_ft5x06_t;
 
-// 全局静态变量
-static touch_ft5x06_t *s_touch = NULL; // 触摸控制器实例指针
+static touch_ft5x06_t *s_touch = NULL; // 触摸控制器实例指针，由驱动初始化创建并长期持有。
 
 /**
- * @brief 从FT5x06读取寄存器数据
- * @param touch 触摸控制器结构体指针
- * @param reg 寄存器地址
- * @param data 读取数据缓冲区
- * @param len 读取数据长度
- * @return ESP_OK:成功, 其他:失败
+ * @brief 从 FT5x06 读取寄存器数据。
+ *
+ * 该辅助函数统一兼容 IDF 5.3+ 的 `i2c_master` 新接口和旧版命令链接口，
+ * 避免上层触摸解析逻辑分叉维护两套总线代码。
+ *
+ * @param[in] touch 触摸控制器结构体指针。
+ * @param[in] reg 寄存器地址。
+ * @param[out] data 读取数据缓冲区。
+ * @param[in] len 读取数据长度，单位为字节。
+ * @return `ESP_OK` 表示成功；其他错误表示 I2C 访问失败。
  */
 static esp_err_t touch_ft5x06_i2c_read(touch_ft5x06_t *touch, uint8_t reg, uint8_t *data, size_t len)
 {
@@ -64,86 +64,70 @@ static esp_err_t touch_ft5x06_i2c_read(touch_ft5x06_t *touch, uint8_t reg, uint8
     ESP_RETURN_ON_FALSE(data != NULL, ESP_ERR_INVALID_ARG, TAG, "data is null");
     ESP_RETURN_ON_FALSE(len > 0, ESP_ERR_INVALID_ARG, TAG, "len must be > 0");
 
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
     ESP_RETURN_ON_FALSE(touch->dev_handle != NULL, ESP_ERR_INVALID_STATE, TAG,
                         "touch i2c device not ready");
     return i2c_master_transmit_receive(touch->dev_handle, &reg, sizeof(reg),
                                        data, len, 500);
-#else
-    i2c_port_t port = i2c_manager_get_port();
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (FT5X06_ADDR << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, reg, true);
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (FT5X06_ADDR << 1) | I2C_MASTER_READ, true);
-    if (len > 1)
-    {
-        i2c_master_read(cmd, data, len - 1, I2C_MASTER_ACK);
-    }
-    i2c_master_read_byte(cmd, &data[len - 1], I2C_MASTER_NACK);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(port, cmd, pdMS_TO_TICKS(500));
-    i2c_cmd_link_delete(cmd);
-    return ret;
-#endif
 }
 
 /**
- * @brief 复位FT5x06触摸控制器
- * @param touch 触摸控制器结构体指针
- * @return ESP_OK:成功
+ * @brief 复位 FT5x06 触摸控制器。
+ *
+ * 复位脉冲和后续等待窗口是上电时序的一部分；过早开始寄存器访问会放大冷启动读失败概率。
+ *
+ * @param[in] touch 触摸控制器结构体指针。
+ * @return `ESP_OK` 表示复位流程完成。
  */
 static esp_err_t touch_ft5x06_reset(touch_ft5x06_t *touch)
 {
     if (touch->rst_gpio >= 0)
-    {                                       // 检查复位引脚是否有效
-        gpio_set_level(touch->rst_gpio, 0); // 拉低复位引脚
-        vTaskDelay(pdMS_TO_TICKS(10));      // 延时10ms
-        gpio_set_level(touch->rst_gpio, 1); // 拉高复位引脚
-        vTaskDelay(pdMS_TO_TICKS(200));     // 延时200ms等待芯片启动
+    {
+        gpio_set_level(touch->rst_gpio, 0);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level(touch->rst_gpio, 1);
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
-    return ESP_OK; // 返回成功
+    return ESP_OK;
 }
 
 /**
- * @brief 初始化FT5x06触摸控制器
- * @return ESP_OK:成功, 其他:失败
+ * @brief 初始化 FT5x06/FT3168 触摸控制器。
+ *
+ * 当前驱动依赖共享 I2C 总线和板级分辨率配置；初始化成功后，LVGL 输入层只通过读点接口取坐标。
+ *
+ * @return `ESP_OK` 表示初始化成功或之前已初始化；其他错误表示 I2C、GPIO 或设备注册失败。
  */
 esp_err_t touch_ft5x06_init(void)
 {
-    esp_err_t ret; // 错误码变量
+    esp_err_t ret;
 
     if (s_touch)
-    {                  // 如果已初始化
-        return ESP_OK; // 直接返回成功
+    {
+        return ESP_OK;
     }
 
-    // 初始化I2C总线管理器(多次调用安全)
+    // 触摸和其他外设共用 I2C 总线，因此先确保共享总线管理器已就绪。
     ESP_RETURN_ON_ERROR(i2c_manager_init(), TAG, "i2c manager init failed");
 
-    // 分配触摸控制器结构体内存(并清零)
     s_touch = calloc(1, sizeof(touch_ft5x06_t));
     ESP_RETURN_ON_FALSE(s_touch, ESP_ERR_NO_MEM, TAG, "alloc touch failed");
 
-    // 配置复位引脚
-    s_touch->rst_gpio = TOUCH_FT5X06_RST_GPIO; // 设置复位引脚号(GPIO9)
+    s_touch->rst_gpio = TOUCH_FT5X06_RST_GPIO;
     if (s_touch->rst_gpio >= 0)
-    { // 如果引脚有效
+    {
         gpio_config_t rst_cfg = {
-            .mode = GPIO_MODE_OUTPUT,                 // 输出模式
-            .pin_bit_mask = BIT64(s_touch->rst_gpio), // 引脚位掩码
-            .pull_up_en = GPIO_PULLUP_DISABLE,        // 禁用上拉
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,    // 禁用下拉
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = BIT64(s_touch->rst_gpio),
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
         };
         ESP_GOTO_ON_ERROR(gpio_config(&rst_cfg), err, TAG, "RST GPIO config failed");
     }
 
-    // 设置触摸屏分辨率(从显示屏配置获取)
-    s_touch->max_x = CO5300_PANEL_H_RES; // 水平分辨率
-    s_touch->max_y = CO5300_PANEL_V_RES; // 垂直分辨率
+    // 触摸坐标范围直接复用面板分辨率，避免显示链和输入链维护两份边界。
+    s_touch->max_x = CO5300_PANEL_H_RES;
+    s_touch->max_y = CO5300_PANEL_V_RES;
 
-    // 复位芯片
     ESP_GOTO_ON_ERROR(touch_ft5x06_reset(s_touch), err, TAG, "reset failed");
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
@@ -160,79 +144,77 @@ esp_err_t touch_ft5x06_init(void)
         err, TAG, "add FT5x06 device failed");
 #endif
 
-    ESP_LOGI(TAG, "FT5x06/FT3168 initialized successfully"); // 记录初始化成功日志
-    return ESP_OK;                                           // 返回成功
+    ESP_LOGI(TAG, "FT5x06/FT3168 initialized successfully");
+    return ESP_OK;
 
-err: // 错误处理标签
+err:
     if (s_touch)
     {
         free(s_touch);
         s_touch = NULL;
     }
-    return ret; // 返回错误码
+    return ret;
 }
 
 /**
- * @brief 读取触摸点坐标
- * @param x 输出X坐标数组
- * @param y 输出Y坐标数组
- * @param num_points 输出触摸点数量
- * @param max_points 最大读取点数
- * @return ESP_OK:成功, 其他:失败
+ * @brief 读取当前触摸点坐标。
+ *
+ * 读失败时当前实现会退化为“无触摸”并返回 `ESP_OK`，
+ * 这是为了避免共享 I2C 总线短暂忙碌时把普通轮询路径放大成错误刷屏。
+ *
+ * @param[out] x 输出 X 坐标数组。
+ * @param[out] y 输出 Y 坐标数组。
+ * @param[out] num_points 输出触摸点数量。
+ * @param[in] max_points 调用方可接收的最大点数。
+ * @return `ESP_OK` 表示读取流程完成；参数或状态非法时返回错误。
  */
 esp_err_t touch_ft5x06_read_points(uint16_t *x, uint16_t *y, uint8_t *num_points, uint8_t max_points)
 {
-    // 检查是否已初始化
     ESP_RETURN_ON_FALSE(s_touch, ESP_ERR_INVALID_STATE, TAG, "not initialized");
-    // 检查参数是否有效
     ESP_RETURN_ON_FALSE(x && y && num_points, ESP_ERR_INVALID_ARG, TAG, "invalid args");
 
-    uint8_t data[4]; // 数据缓冲区(存储触摸点数据)
+    uint8_t data[4];
 
-    // 读取触摸点数量寄存器,如果失败则静默返回无触摸(避免频繁报错)
     esp_err_t ret = touch_ft5x06_i2c_read(s_touch, FT5X06_REG_NUM_TOUCHES, data, 1);
     if (ret != ESP_OK)
     {
-        *num_points = 0; // I2C忙碌或超时,返回无触摸
-        return ESP_OK;   // 不报错,避免日志刷屏
+        *num_points = 0;
+        return ESP_OK;
     }
 
-    uint8_t point_count = data[0] & 0x0F; // 取低4位作为触摸点数量
+    uint8_t point_count = data[0] & 0x0F;
     if (point_count == 0 || point_count > FT5X06_MAX_TOUCHES)
-    {                    // 如果无触摸或超过最大值
-        *num_points = 0; // 触摸点数量设为0
-        return ESP_OK;   // 返回成功
+    {
+        *num_points = 0;
+        return ESP_OK;
     }
 
-    // 读取第一个触摸点的坐标数据(4字节:X高字节,X低字节,Y高字节,Y低字节)
     ret = touch_ft5x06_i2c_read(s_touch, FT5X06_REG_TOUCH1_XH, data, 4);
     if (ret != ESP_OK)
     {
-        *num_points = 0; // 读取失败,返回无触摸
-        return ESP_OK;   // 静默处理
+        *num_points = 0;
+        return ESP_OK;
     }
 
-    // 提取X坐标(bit3-0为高4位,data[1]为低8位,共12位)
     x[0] = ((data[0] & 0x0F) << 8) | data[1];
-    // 提取Y坐标(bit3-0为高4位,data[3]为低8位,共12位)
     y[0] = ((data[2] & 0x0F) << 8) | data[3];
-    // 返回实际触摸点数(不超过调用者要求的最大值)
     *num_points = (point_count > max_points) ? max_points : point_count;
 
-    return ESP_OK; // 返回成功
+    return ESP_OK;
 }
 
 /**
- * @brief 获取触摸控制器句柄
- * @param out_handle 输出句柄指针
- * @return ESP_OK:成功, 其他:失败
+ * @brief 获取内部触摸控制器句柄。
+ *
+ * 该接口主要供端口层在初始化后保留句柄，不建议业务层直接依赖底层结构体定义。
+ *
+ * @param[out] out_handle 输出句柄指针。
+ * @return `ESP_OK` 表示成功；参数非法或尚未初始化时返回错误。
  */
 esp_err_t touch_ft5x06_get_handle(void **out_handle)
 {
-    // 检查输出指针是否有效
     ESP_RETURN_ON_FALSE(out_handle, ESP_ERR_INVALID_ARG, TAG, "invalid arg");
-    // 检查是否已初始化
     ESP_RETURN_ON_FALSE(s_touch, ESP_ERR_INVALID_STATE, TAG, "not initialized");
-    *out_handle = s_touch; // 返回触摸控制器句柄
-    return ESP_OK;         // 返回成功
+    *out_handle = s_touch;
+    return ESP_OK;
 }

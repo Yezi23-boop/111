@@ -5,16 +5,29 @@
 #include "application.h"
 #include "settings.h"
 
+/**
+ * @brief 不透明 C 句柄结构体定义。
+ *
+ * 包装真正的由 C++ 实现的 Application 对象，对外部调用者隐藏底层复杂性。
+ */
 struct official_chat_handle {
   official_chat::Application app;
 };
 
 namespace {
 
+/**
+ * @brief 判断空字符串保护函数。
+ * @return 字符串未定义或长度为0时返回 true。
+ */
 bool IsNullOrEmpty(const char *value) {
   return value == nullptr || value[0] == '\0';
 }
 
+/**
+ * @brief 辅助存取 NVS KV 值的内部函数。
+ * 如果值有效则写入设置，如果为空则抹除该字段。
+ */
 void SetOptionalString(official_chat::Settings *settings, const char *key,
                        const char *value) {
   if (settings == nullptr || key == nullptr || key[0] == '\0') {

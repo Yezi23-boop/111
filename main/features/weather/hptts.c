@@ -20,6 +20,13 @@
 
 #define MAX_HTTP_OUTPUT_BUFFER 1024 // HTTP响应缓冲区最大长度
 
+/*
+ * 天气接口实现说明：
+ * - 使用 ESP HTTP Client 访问心知天气接口；
+ * - 事件回调负责拼接分片响应，结束后再统一做 JSON 解析；
+ * - 解析结果写入全局天气快照，供其他模块读取最新值。
+ */
+
 static const char *TAG = "HTTP_CLIENT";           // HTTP 相关日志标签
 static int user_cjson_parse_now(char *json_data); // 天气 JSON 解析函数声明
 
@@ -141,6 +148,9 @@ user_seniverse_now_config_t user_now_config;
  * @brief 解析心知天气实时天气JSON数据
  * @param json_data 心知天气API返回的原始JSON字符串
  * @return 0表示解析成功，-1表示失败
+ *
+ * 注意：当前 `user_now_config` 中的字符串字段直接引用 cJSON 节点内容，
+ * 若后续改成长期持有数据，需要改为深拷贝而不是直接保存指针。
  */
 static int user_cjson_parse_now(char *json_data)
 {

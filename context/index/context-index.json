@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-14T16:47:17.717397+00:00",
+  "generated_at_utc": "2026-04-14T18:08:06.409061+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 60,
+  "doc_count": 61,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-13：按 main 分层与配网/电源链路上下文，为 `main/app`、`main/assets`、`main/features`、`main/services`、`components/axp2101`、`components/wifi_provision` 共 43 个文件补充变量级中文注释，覆盖启动链路、配网状态机、BLE 协议、",
+      "summary": "- 2026-04-15：继续按最新 `embedded-c-cpp-comment-style` 规则清理主链路手写源码，覆盖 `touch_ft5x06`、`lvgl_port`、`co5300_panel`、`wifi_provision`、`wifi_manager`、`sd_manager`、`i2c_manager`、`get_time`、`mp",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-13T06:06:44.711655+00:00",
-      "token_count": 2267
+      "mtime_utc": "2026-04-14T18:05:19.758118+00:00",
+      "token_count": 2367
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -524,6 +524,23 @@
       "token_count": 237
     },
     {
+      "path": "docs/context/knowledge/project/embedded-c-cpp-comment-style-skill.md",
+      "title": "embedded-c-cpp-comment-style 技能",
+      "tags": [
+        "project",
+        "skill",
+        "embedded",
+        "c-cpp",
+        "comments",
+        "doxygen"
+      ],
+      "summary": "仓库新增 embedded-c-cpp-comment-style 技能，用于约束 agent 为嵌入式 C/C++ 代码生成说明型注释，强调 Doxygen 函数头、原因说明和关键变量/常量解释。",
+      "id": "embedded-c-cpp-comment-style-skill",
+      "last_reviewed": "2026-04-15",
+      "mtime_utc": "2026-04-14T17:29:40.892173+00:00",
+      "token_count": 149
+    },
+    {
       "path": "docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md",
       "title": "ESP32/MCU 嵌入式 C/C++ 工程规则",
       "tags": [
@@ -537,8 +554,8 @@
       "summary": "本仓库默认采用的 ESP32/MCU 嵌入式 C/C++ 工程规则，覆盖分层、接口、复杂度、资源、安全和算法/AI 模块边界。",
       "id": "embedded-c-cpp-engineering-rules",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-03-11T10:19:04.458599+00:00",
-      "token_count": 259
+      "mtime_utc": "2026-04-14T17:31:45.798395+00:00",
+      "token_count": 275
     },
     {
       "path": "docs/context/knowledge/project/esp-idf-i2c-master-driver-overview.md",

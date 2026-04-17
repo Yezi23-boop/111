@@ -35,9 +35,18 @@ namespace official_chat {
 namespace {
 
 constexpr char kTag[] = "official_ota";
-constexpr int kHttpBufferSize = 1024;
-constexpr char kDefaultLanguageCode[] = "zh-CN";
+constexpr int kHttpBufferSize = 1024;                /**< HTTP 的接收和发送缓冲区大小，单位为字节，用于适配有限的 RAM 资源。 */
+constexpr char kDefaultLanguageCode[] = "zh-CN";     /**< 设备在出厂或者未设置语言时的默认识别配置使用。 */
 
+/**
+ * @brief 按后缀拼装完整有效的网络 URL 请求目标。
+ * 
+ * 因为外部配置或系统配置结尾可能会出现或缺乏 '/'，统一容错处理。
+ * 
+ * @param[in] base 基地址 URL
+ * @param[in] suffix 需要添加请求路径或者是文件名
+ * @return 组装成功有效的可调用地址。
+ */
 std::string JoinUrl(const std::string &base, const char *suffix) {
   if (base.empty()) {
     return {};

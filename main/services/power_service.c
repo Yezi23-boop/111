@@ -14,22 +14,29 @@
  */
 
 static const char *TAG = "POWER_SERVICE";
-static const TickType_t k_failure_log_throttle_ticks = pdMS_TO_TICKS(5000);
-static const uint16_t k_voltage_jitter_threshold_mv = 20;
+static const TickType_t k_failure_log_throttle_ticks = pdMS_TO_TICKS(5000); /* 失败日志节流窗口，单位为 tick。 */
+static const uint16_t k_voltage_jitter_threshold_mv = 20; /* 电压抖动忽略阈值，单位为毫伏。 */
 
-static TaskHandle_t s_task_handle = NULL; // 后台采样任务句柄
+static TaskHandle_t s_task_handle = NULL; /* 后台采样任务句柄，仅启动阶段写入。 */
 static board_power_state_t s_state_buffers[2] = {
     {.battery_percent = UINT8_MAX},
     {.battery_percent = UINT8_MAX},
 };
-static power_state_changed_cb_t s_callback = NULL; // 状态变化回调
+static power_state_changed_cb_t s_callback = NULL; /* 状态变化回调，在采样任务上下文调用。 */
 static bool s_initialized = false;
 static bool s_started = false;
-static uint32_t s_failure_count = 0;
-static TickType_t s_last_failure_log_tick = 0;
-static uint8_t s_active_state_index = 0; // 当前发布缓冲索引（0 或 1）
-static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t s_failure_count = 0;         /* 连续刷新失败次数，用于退避。 */
+static TickType_t s_last_failure_log_tick = 0; /* 最近一次打印失败日志的 tick。 */
+static uint8_t s_active_state_index = 0;     /* 当前发布缓冲索引，只能为 0 或 1。 */
+static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED; /* 保护双缓冲切换与回调指针。 */
 
+/**
+ * @brief 构造一份“尚未采样成功”的默认电源状态。
+ *
+ * 该状态用于初始化阶段和彻底失败路径，目的是让上层能明确区分“未知”与“真实的 0% 电量”。
+ *
+ * @return 默认电源状态快照。
+ */
 static board_power_state_t power_service_make_unsampled_state(void)
 {
     board_power_state_t state = {0};
@@ -38,12 +45,24 @@ static board_power_state_t power_service_make_unsampled_state(void)
     return state;
 }
 
+/**
+ * @brief 判断缓存状态是否代表一次历史上的成功采样。
+ * @param[in] cached_state 待判断的缓存快照。
+ * @return true 表示当前缓存可被视为“上次已知状态”。
+ */
 static bool power_service_cached_state_has_history(
     const board_power_state_t *cached_state)
 {
     return cached_state != NULL && cached_state->available;
 }
 
+/**
+ * @brief 用当前板级缓存初始化双缓冲状态。
+ *
+ * 启动服务前先把两份缓冲同步成同一份快照，可以避免首次读取时因为活动缓冲未初始化而读到不一致内容。
+ *
+ * @return 无返回值。
+ */
 static void power_service_copy_cached_state(void)
 {
     const board_power_state_t *cached_state = board_power_get_cached_state();
@@ -62,13 +81,27 @@ static void power_service_copy_cached_state(void)
     taskEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 判断两次电压采样差值是否值得视为状态变化。
+ * @param[in] lhs 第一个电压值，单位为毫伏。
+ * @param[in] rhs 第二个电压值，单位为毫伏。
+ * @return true 表示差值超过抖动阈值。
+ */
 static bool power_service_mv_changed(uint16_t lhs, uint16_t rhs)
 {
-    /* 小幅电压抖动在电池设备上很常见，不值得触发 UI 全量刷新。 */
     uint16_t delta = lhs > rhs ? (lhs - rhs) : (rhs - lhs);
     return delta >= k_voltage_jitter_threshold_mv;
 }
 
+/**
+ * @brief 比较两份电源状态是否存在“有效变化”。
+ *
+ * 该比较会忽略小于抖动阈值的电压变化，避免 UI 因轻微 ADC 波动频繁刷新。
+ *
+ * @param[in] lhs 第一份状态。
+ * @param[in] rhs 第二份状态。
+ * @return true 表示两份状态对上层而言等价。
+ */
 static bool power_service_state_equal(const board_power_state_t *lhs,
                                       const board_power_state_t *rhs)
 {
@@ -84,6 +117,7 @@ static bool power_service_state_equal(const board_power_state_t *lhs,
            lhs->battery_percent == rhs->battery_percent;
 }
 
+/* 统一格式化电源状态变化日志，便于追踪快照质量与电量字段可信度。 */
 static void power_service_log_state_change(const board_power_state_t *state)
 {
     if (state == NULL)
@@ -111,6 +145,17 @@ static void power_service_log_state_change(const board_power_state_t *state)
              state->system_mv);
 }
 
+/**
+ * @brief 将新状态发布到双缓冲，并判断是否需要通知观察者。
+ *
+ * 先写入非活动缓冲，再原子切换活动索引，这样读取方即使和采样任务并发执行，也只会看到完整快照。
+ *
+ * @param[in] next_state 候选的新状态。
+ * @param[out] state_changed 输出是否发生有效变化。
+ * @param[out] callback 输出当前应调用的回调；无变化时返回 NULL。
+ * @param[out] published_state 输出最终发布的状态指针。
+ * @return 无返回值。
+ */
 static void power_service_store_state(const board_power_state_t *next_state,
                                       bool *state_changed,
                                       power_state_changed_cb_t *callback,
@@ -138,6 +183,11 @@ static void power_service_store_state(const board_power_state_t *next_state,
     taskEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 受节流控制地打印采样失败日志。
+ * @param[in] ret 本次失败的错误码。
+ * @return 无返回值。
+ */
 static void power_service_log_failure(esp_err_t ret)
 {
     TickType_t now = xTaskGetTickCount();
@@ -152,6 +202,15 @@ static void power_service_log_failure(esp_err_t ret)
     }
 }
 
+/**
+ * @brief 为采样失败路径构造降级状态。
+ *
+ * 若历史上存在成功采样，则优先复用最近一次快照并标记为 stale；
+ * 若从未成功采样，则回退到统一的 unsampled 状态。
+ *
+ * @param[out] state 输出降级后的状态。
+ * @return 无返回值。
+ */
 static void power_service_prepare_failure_state(board_power_state_t *state)
 {
     const board_power_state_t *cached_state = board_power_get_cached_state();
@@ -171,6 +230,14 @@ static void power_service_prepare_failure_state(board_power_state_t *state)
     }
 }
 
+/**
+ * @brief 电源服务后台轮询任务。
+ * @param pv_parameter 未使用，保留任务签名。
+ *
+ * 该任务周期刷新板级电源快照：
+ * - 成功时按需发布状态变化；
+ * - 失败时退避重试，并尽量保留历史快照。
+ */
 static void power_service_task(void *pv_parameter)
 {
     (void)pv_parameter;
@@ -231,6 +298,10 @@ static void power_service_task(void *pv_parameter)
     }
 }
 
+/**
+ * @brief 初始化电源服务内部状态。
+ * @return ESP_OK 表示初始化成功或已初始化。
+ */
 esp_err_t power_service_init(void)
 {
     if (s_initialized)
@@ -246,6 +317,10 @@ esp_err_t power_service_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 启动电源服务后台任务。
+ * @return ESP_OK 表示任务已启动或之前已启动。
+ */
 esp_err_t power_service_start(void)
 {
     esp_err_t ret = power_service_init();
@@ -273,6 +348,10 @@ esp_err_t power_service_start(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 注册电源状态变化回调。
+ * @param cb 回调函数，可为 NULL 表示取消监听。
+ */
 void power_service_register_callback(power_state_changed_cb_t cb)
 {
     taskENTER_CRITICAL(&s_lock);
@@ -280,6 +359,10 @@ void power_service_register_callback(power_state_changed_cb_t cb)
     taskEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 获取当前发布中的电源状态快照。
+ * @return 服务层拥有的只读快照指针。
+ */
 const board_power_state_t *power_service_get_state(void)
 {
     const board_power_state_t *state = NULL;

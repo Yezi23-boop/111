@@ -11,15 +11,22 @@
 #include "traffic_inference_postprocess.h"
 
 #define TAG "danger_detection"
-#define DANGER_DETECTION_STOP_TIMEOUT_MS 2000U
+#define DANGER_DETECTION_STOP_TIMEOUT_MS 2000U /* 默认停止等待时间，单位为毫秒。 */
+
+/*
+ * 危险检测服务实现说明：
+ * - 统一协调交通声音运行时、后处理告警回调和应用级告警管理器；
+ * - 对外发布快照时，会把运行时状态与后处理分数整合到同一结构；
+ * - 快照通过临界区保护，避免 UI 在读取时看到半更新状态。
+ */
 
 typedef struct
 {
-    bool initialized;                     // 服务是否完成初始化
-    bool callback_registered;             // 后处理告警回调是否已注册
-    bool runtime_started;                 // 音频运行时是否已启动
-    danger_detection_snapshot_t snapshot; // 对外发布的快照
-    portMUX_TYPE lock;                    // 快照临界区锁
+    bool initialized;                     /**< 服务是否完成初始化。 */
+    bool callback_registered;             /**< 后处理告警回调是否已注册。 */
+    bool runtime_started;                 /**< 音频运行时是否已启动。 */
+    danger_detection_snapshot_t snapshot; /**< 对外发布的快照。 */
+    portMUX_TYPE lock;                    /**< 快照临界区锁，保护共享状态一致性。 */
 } danger_detection_service_state_t;
 
 static danger_detection_service_state_t s_service_state = {
@@ -40,6 +47,11 @@ static danger_detection_service_state_t s_service_state = {
     .lock = portMUX_INITIALIZER_UNLOCKED,
 };
 
+/**
+ * @brief 将后处理稳定标签映射成服务层标签。
+ * @param[in] label 后处理稳定标签。
+ * @return 服务层对外标签。
+ */
 static danger_detection_label_t danger_detection_map_label(
     traffic_inference_postprocess_stable_label_t label)
 {
@@ -55,6 +67,16 @@ static danger_detection_label_t danger_detection_map_label(
     }
 }
 
+/**
+ * @brief 将运行时状态映射成服务层状态。
+ *
+ * 对于底层未提供明确语义的状态，保留调用方传入的回退状态，
+ * 以避免采样链路短暂波动时把上层状态意外重置。
+ *
+ * @param[in] runtime_state 底层运行时状态。
+ * @param[in] fallback 无明确映射时保留的服务层状态。
+ * @return 服务层状态枚举。
+ */
 static danger_detection_state_t danger_detection_map_runtime_state(
     traffic_audio_runtime_state_t runtime_state,
     danger_detection_state_t fallback)
@@ -75,6 +97,12 @@ static danger_detection_state_t danger_detection_map_runtime_state(
     }
 }
 
+/**
+ * @brief 统一更新服务状态和最近错误码。
+ * @param[in] state 新的服务状态。
+ * @param[in] last_error 最近错误码。
+ * @return 无返回值。
+ */
 static void danger_detection_set_state(danger_detection_state_t state,
                                        esp_err_t last_error)
 {
@@ -84,6 +112,17 @@ static void danger_detection_set_state(danger_detection_state_t state,
     taskEXIT_CRITICAL(&s_service_state.lock);
 }
 
+/**
+ * @brief 后处理告警回调。
+ * @param[in] alert 后处理上报的告警动作。
+ * @param[in] user_data 未使用。
+ * @return 无返回值。
+ *
+ * RAISE 会触发应用级告警并更新快照；
+ * CLEAR 会撤销应用级告警并把稳定标签恢复为 NONE。
+ *
+ * @note 回调可能由底层运行时线程触发，因此共享快照更新必须走临界区。
+ */
 static void danger_detection_on_alert(
     const traffic_inference_postprocess_alert_t *alert,
     void *user_data)
@@ -97,7 +136,7 @@ static void danger_detection_on_alert(
 
     if (alert->action == TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_RAISE)
     {
-        // RAISE: 进入危险告警，触发提示音/覆盖层并更新快照。
+        /* RAISE 要同步推进应用级告警和本地快照，避免 UI 与提示音状态脱节。 */
         app_alert_request_t request = {
             .source = APP_ALERT_SOURCE_TRAFFIC_AUDIO,
             .severity = APP_ALERT_SEVERITY_DANGER,
@@ -123,7 +162,7 @@ static void danger_detection_on_alert(
     else if (alert->action ==
              TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_CLEAR)
     {
-        // CLEAR: 关闭告警与覆盖层，快照恢复 NONE。
+        /* CLEAR 只撤销当前告警表现，不重置整个服务生命周期状态。 */
         (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
 
         taskENTER_CRITICAL(&s_service_state.lock);
@@ -134,6 +173,10 @@ static void danger_detection_on_alert(
     }
 }
 
+/**
+ * @brief 初始化危险检测服务。
+ * @return `ESP_OK` 表示初始化成功或已初始化；其他错误表示依赖模块初始化失败。
+ */
 esp_err_t danger_detection_service_init(void)
 {
     if (s_service_state.initialized)
@@ -163,6 +206,10 @@ esp_err_t danger_detection_service_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 启动危险检测运行时。
+ * @return 若运行时已在运行，则直接返回 `ESP_OK`；其他错误表示回调注册或运行时启动失败。
+ */
 esp_err_t danger_detection_service_start(void)
 {
     esp_err_t ret = danger_detection_service_init();
@@ -181,9 +228,9 @@ esp_err_t danger_detection_service_start(void)
 
     traffic_audio_runtime_config_t config = {
         .input_chunk_frames = 0U,
-        .read_timeout_ms = 250U,  // 音频读取超时阈值
-        .task_stack_size = 8192U, // 运行时任务栈大小
-        .task_priority = 5U,      // 运行时任务优先级
+        .read_timeout_ms = 250U,  /* 音频读取超时阈值，单位为毫秒。 */
+        .task_stack_size = 8192U, /* 运行时任务栈大小，单位为字节。 */
+        .task_priority = 5U,      /* 运行时任务优先级。 */
     };
 
     danger_detection_set_state(DANGER_DETECTION_STATE_STARTING, ESP_OK);
@@ -227,6 +274,11 @@ esp_err_t danger_detection_service_start(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 停止危险检测运行时。
+ * @param[in] timeout_ms 停止运行时允许等待的超时，单位为毫秒；传 0 使用默认值。
+ * @return 停止底层运行时或注销回调失败时返回错误。
+ */
 esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
 {
     if (!s_service_state.initialized)
@@ -289,6 +341,14 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     return ESP_OK;
 }
 
+/**
+ * @brief 获取当前危险检测快照。
+ * @return 线程安全复制出的快照值。
+ *
+ * 若运行时仍在运行，会额外拉取最新运行时状态和 horn/siren 分数补全快照。
+ *
+ * @note 函数先复制共享快照，再在锁外查询运行时细节，避免长时间占用临界区。
+ */
 danger_detection_snapshot_t danger_detection_service_get_snapshot(void)
 {
     danger_detection_snapshot_t snapshot;

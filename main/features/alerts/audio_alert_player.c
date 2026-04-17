@@ -16,6 +16,13 @@
 #define ALERT_PLAYER_TASK_PRIORITY 4U
 #define ALERT_PLAYER_VOLUME_PERCENT 75
 
+/*
+ * 告警提示音播放器实现说明：
+ * - 播放逻辑放在独立任务中，避免阻塞告警上报线程；
+ * - 当前只支持单次播放固定 PCM 资源；
+ * - 通过 `playing` 标志去重，避免多个告警源同时重复拉起同一提示音。
+ */
+
 typedef struct
 {
     TaskHandle_t task_handle; // 当前播放任务句柄
@@ -29,6 +36,10 @@ static audio_alert_player_state_t s_player_state = {
     .playing = false,
 };
 
+/**
+ * @brief 实际执行 PCM 播放的后台任务。
+ * @param arg 未使用，保留任务签名。
+ */
 static void audio_alert_player_task(void *arg)
 {
     (void)arg;
@@ -65,12 +76,20 @@ static void audio_alert_player_task(void *arg)
     vTaskDelete(NULL);
 }
 
+/**
+ * @brief 初始化告警提示音播放器。
+ * @return 当前实现始终返回 `ESP_OK`，保留接口便于后续扩展资源装载。
+ */
 esp_err_t audio_alert_player_init(void)
 {
     s_player_state.initialized = true;
     return ESP_OK;
 }
 
+/**
+ * @brief 异步触发一次危险提示音播放。
+ * @return 若已有播放任务运行，则直接返回 `ESP_OK`。
+ */
 esp_err_t audio_alert_player_play_warning_once(void)
 {
     ESP_RETURN_ON_FALSE(s_player_state.initialized, ESP_ERR_INVALID_STATE, TAG,

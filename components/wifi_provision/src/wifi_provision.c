@@ -32,7 +32,7 @@
 extern const uint8_t apcfg_html_start[] asm("_binary_apcfg_html_start");
 extern const uint8_t apcfg_html_end[] asm("_binary_apcfg_html_end");
 
-static EventGroupHandle_t prov_ev_group = NULL;
+static EventGroupHandle_t prov_ev_group = NULL; // 配网事件组，由后台任务等待连接结果。
 
 #define PROV_WIFI_CONNECTED_BIT BIT0
 #define PROV_WIFI_FAIL_BIT BIT1
@@ -45,15 +45,15 @@ typedef enum
     WIFI_PROVISION_TRANSPORT_BLE,
 } wifi_provision_transport_t;
 
-static char current_ssid[33] = {0};
-static char current_password[65] = {0};
-static bool is_configuring = false;              // 当前是否在执行一次配网连接流程
-static wifi_provision_cb_t user_callback = NULL; // 上层状态回调
-static char ble_service_name[20] = "ESP32S3";    // BLE 广播设备名
+static char current_ssid[33] = {0};              // 当前待连接 SSID 缓存。
+static char current_password[65] = {0};          // 当前待连接密码缓存。
+static bool is_configuring = false;              // 当前是否在执行一次配网连接流程。
+static wifi_provision_cb_t user_callback = NULL; // 上层状态回调。
+static char ble_service_name[20] = "ESP32S3";    // BLE 广播设备名。
 static wifi_provision_transport_t current_transport =
     WIFI_PROVISION_TRANSPORT_NONE;
-static bool s_provision_task_started = false;      // 配网任务是否已创建
-static TaskHandle_t s_ble_stop_task_handle = NULL; // BLE 延时停止任务句柄
+static bool s_provision_task_started = false;      // 配网任务是否已创建。
+static TaskHandle_t s_ble_stop_task_handle = NULL; // BLE 延时停止任务句柄。
 
 void ws_receive_handle(const char *data, int len);
 static void wifi_scan_handle(wifi_ap_record_t *ap, int ap_count,
@@ -75,6 +75,10 @@ static void wifi_provision_ble_wifi_scan_handle(wifi_ap_record_t *ap,
                                                 int ap_count,
                                                 esp_err_t scan_result);
 
+/**
+ * @brief 取消已调度的 BLE 延时停止任务。
+ * @return 无返回值。
+ */
 static void wifi_provision_cancel_scheduled_ble_stop(void)
 {
     if (s_ble_stop_task_handle == NULL)
@@ -86,6 +90,13 @@ static void wifi_provision_cancel_scheduled_ble_stop(void)
     s_ble_stop_task_handle = NULL;
 }
 
+/**
+ * @brief BLE 延时停止任务。
+ * @param[in] arg 未使用。
+ * @return 无返回值。
+ *
+ * @note 这里延迟关闭 BLE，是为了给终态通知留出发送窗口，避免连接刚成功就把 BLE 传输层立刻关掉。
+ */
 static void wifi_provision_delayed_ble_stop_task(void *arg)
 {
     (void)arg;
@@ -102,6 +113,10 @@ static void wifi_provision_delayed_ble_stop_task(void *arg)
     vTaskDelete(NULL);
 }
 
+/**
+ * @brief 调度 BLE 延时停止任务。
+ * @return 无返回值。
+ */
 static void wifi_provision_schedule_ble_stop(void)
 {
     BaseType_t task_ret = pdPASS;
@@ -123,6 +138,13 @@ static void wifi_provision_schedule_ble_stop(void)
     }
 }
 
+/**
+ * @brief 向 AP 门户前端发送状态 JSON。
+ * @param[in] status 状态字符串。
+ * @param[in] ssid 当前 SSID，可为 NULL。
+ * @param[in] ip 当前 IP，可为 NULL。
+ * @return 无返回值。
+ */
 static void send_status_to_web(const char *status, const char *ssid,
                                const char *ip)
 {
@@ -149,6 +171,10 @@ static void send_status_to_web(const char *status, const char *ssid,
     cJSON_Delete(root);
 }
 
+/**
+ * @brief 根据 STA MAC 准备 BLE 广播名。
+ * @return 无返回值。
+ */
 static void wifi_provision_prepare_ble_service_name(void)
 {
     uint8_t mac[6] = {0};
@@ -160,6 +186,10 @@ static void wifi_provision_prepare_ble_service_name(void)
     }
 }
 
+/**
+ * @brief 获取当前 BLE 配网状态字符串。
+ * @return 适合发给 BLE 客户端的状态字符串。
+ */
 static const char *wifi_provision_get_ble_state_string(void)
 {
     if (wifi_manager_is_connected())
@@ -185,6 +215,11 @@ static const char *wifi_provision_get_ble_state_string(void)
     return "idle";
 }
 
+/**
+ * @brief 向 BLE 传输层发送 JSON 负载。
+ * @param[in] payload JSON 文本。
+ * @return 无返回值。
+ */
 static void wifi_provision_send_ble_payload(const char *payload)
 {
     if (!ble_provision_transport_is_active())
@@ -194,6 +229,10 @@ static void wifi_provision_send_ble_payload(const char *payload)
     ble_provision_transport_notify_json(payload);
 }
 
+/**
+ * @brief 发送 BLE hello 消息。
+ * @return 无返回值。
+ */
 static void wifi_provision_send_ble_hello(void)
 {
     char payload[BLE_STATUS_JSON_LEN] = {0};
@@ -205,6 +244,15 @@ static void wifi_provision_send_ble_hello(void)
     }
 }
 
+/**
+ * @brief 发送 BLE 状态消息。
+ * @param[in] state 状态字符串。
+ * @param[in] ssid 当前 SSID，可为 NULL。
+ * @param[in] ip 当前 IP，可为 NULL。
+ * @param[in] reason 失败原因，可为 NULL。
+ * @param[in] url AP 兜底 URL，可为 NULL。
+ * @return 无返回值。
+ */
 static void wifi_provision_send_ble_status(const char *state, const char *ssid,
                                            const char *ip, const char *reason,
                                            const char *url)
@@ -452,6 +500,10 @@ static void wifi_provision_ble_wifi_scan_handle(wifi_ap_record_t *ap,
     wifi_provision_send_ble_wifi_scan_done(item_count);
 }
 
+/**
+ * @brief 切换到 AP 兜底配网。
+ * @return `ESP_OK` 表示切换成功；其他错误表示 AP 或 Web 门户启动失败。
+ */
 static esp_err_t wifi_provision_switch_to_ap_fallback(void)
 {
     esp_err_t ret = ESP_OK;
@@ -491,6 +543,13 @@ static esp_err_t wifi_provision_switch_to_ap_fallback(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 处理 BLE 收到的配网请求。
+ * @param[in] data 请求 JSON。
+ * @param[in] len JSON 长度。
+ * @param[in] user_data 未使用。
+ * @return 无返回值。
+ */
 static void wifi_provision_ble_receive_cb(const char *data, size_t len,
                                           void *user_data)
 {
@@ -582,12 +641,25 @@ static void wifi_provision_ble_receive_cb(const char *data, size_t len,
     }
 }
 
+/**
+ * @brief BLE 连接状态回调。
+ * @param[in] connected 是否已连接。
+ * @param[in] user_data 未使用。
+ * @return 无返回值。
+ */
 static void wifi_provision_ble_state_cb(bool connected, void *user_data)
 {
     (void)connected;
     (void)user_data;
 }
 
+/**
+ * @brief 配网后台任务。
+ * @param[in] arg 未使用。
+ * @return 无返回值。
+ *
+ * @note 该任务统一等待连接成功/失败事件，避免 BLE/AP 两条路径各自维护一套收尾逻辑。
+ */
 static void wifi_provision_task(void *arg)
 {
     (void)arg;
@@ -633,6 +705,11 @@ static void wifi_provision_task(void *arg)
     }
 }
 
+/**
+ * @brief `wifi_manager` 状态回调适配层。
+ * @param[in] state Wi-Fi 管理器状态。
+ * @return 无返回值。
+ */
 static void internal_wifi_cb(WIFI_STATE state)
 {
     switch (state)
@@ -709,6 +786,12 @@ static void wifi_scan_handle(wifi_ap_record_t *ap, int ap_count,
     wifi_provision_send_web_scan_results(items, item_count);
 }
 
+/**
+ * @brief AP 门户收到的 WebSocket 请求处理入口。
+ * @param[in] data 请求 JSON。
+ * @param[in] len JSON 长度。
+ * @return 无返回值。
+ */
 void ws_receive_handle(const char *data, int len)
 {
     (void)len;
@@ -758,6 +841,11 @@ void ws_receive_handle(const char *data, int len)
     cJSON_Delete(root);
 }
 
+/**
+ * @brief 初始化配网协调器。
+ * @param[in] callback 上层状态回调。
+ * @return `ESP_OK` 表示成功或之前已初始化；其他错误表示事件组或后台任务创建失败。
+ */
 esp_err_t wifi_provision_init(wifi_provision_cb_t callback)
 {
     BaseType_t task_ret = pdPASS;
@@ -793,6 +881,10 @@ esp_err_t wifi_provision_init(wifi_provision_cb_t callback)
     return ESP_OK;
 }
 
+/**
+ * @brief 根据当前凭据状态自动选择启动路径。
+ * @return `ESP_OK` 表示流程已启动；其他错误表示底层启动失败。
+ */
 esp_err_t wifi_provision_start_auto(void)
 {
     if (wifi_provision_has_credentials())
@@ -804,6 +896,10 @@ esp_err_t wifi_provision_start_auto(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 启动 BLE 配网广播。
+ * @return 底层 BLE 传输层启动结果。
+ */
 esp_err_t wifi_provision_start_blecfg(void)
 {
     wifi_provision_cancel_scheduled_ble_stop();
@@ -821,6 +917,10 @@ esp_err_t wifi_provision_start_blecfg(void)
                                          wifi_provision_ble_state_cb, NULL);
 }
 
+/**
+ * @brief 停止 BLE 配网广播。
+ * @return 底层 BLE 传输层停止结果。
+ */
 esp_err_t wifi_provision_stop_blecfg(void)
 {
     wifi_provision_cancel_scheduled_ble_stop();
@@ -831,6 +931,10 @@ esp_err_t wifi_provision_stop_blecfg(void)
     return ble_provision_transport_stop();
 }
 
+/**
+ * @brief 启动 AP 配网模式。
+ * @return `ESP_OK` 表示成功；其他错误表示 AP 兜底启动失败。
+ */
 esp_err_t wifi_provision_start_apcfg(void)
 {
     ESP_LOGI(TAG, "启动 AP 配网模式...");

@@ -20,12 +20,20 @@ namespace official_chat {
 namespace {
 
 constexpr char kTag[] = "official_mcp";
-constexpr char kProtocolVersion[] = "2024-11-05";
+constexpr char kProtocolVersion[] = "2024-11-05"; /**< 支持的最新 MCP 协议版本号。 */
 constexpr char kToolGetDeviceStatus[] = "self.get_device_status";
 constexpr char kToolGetSpeakerVolume[] = "self.audio_speaker.get_volume";
 constexpr char kToolSetSpeakerVolume[] = "self.audio_speaker.set_volume";
 constexpr char kToolGetNetworkStatus[] = "self.system.get_network_status";
 
+/**
+ * @brief 将设备枚举状态转化为字符串说明
+ *
+ * 为 JSON RPC 的可观测内容做枚举的直观解析输出。
+ *
+ * @param[in] state 要转换的当前设备运行时枚举值
+ * @return 恒有字符串字面量返回 ("idle", "connecting", etc.)
+ */
 const char *DeviceStateToString(DeviceState state) {
   switch (state) {
     case DeviceState::kIdle:
@@ -42,6 +50,14 @@ const char *DeviceStateToString(DeviceState state) {
   }
 }
 
+/**
+ * @brief 为受支持的内置工具生成符合 JSON schema 规范的描述模板。
+ *
+ * 主要是提供在 JSON RPC 交互中的 Tool 结构描述。
+ * 
+ * @param[in] tool_name 工具名称枚举
+ * @return 组装完成的 schema cJSON 树对象。生命周期交由调用方清理，可能返回不包含具体 property 的基础 object。
+ */
 cJSON *CreateToolSchema(const std::string &tool_name) {
   cJSON *schema = cJSON_CreateObject();
   cJSON_AddStringToObject(schema, "type", "object");
@@ -71,6 +87,14 @@ cJSON *CreateToolSchema(const std::string &tool_name) {
   return schema;
 }
 
+/**
+ * @brief 输出 cJSON 数据到 C 字符串并在转储之后立即删除 json 树对象
+ *
+ * 因为经常是转储为 std::string 然后发往回调，避免写错 delete 导致内存泄漏，利用 RAII 处理。
+ * 
+ * @param[in,out] json 准备解析和删除的根指针。
+ * @return String 成功时内容字符串。如果是 Null 或者分配报错，会返回默认的 "{}"。
+ */
 std::string JsonToStringAndDelete(cJSON *json) {
   char *json_str = cJSON_PrintUnformatted(json);
   std::string output = json_str != nullptr ? json_str : "{}";

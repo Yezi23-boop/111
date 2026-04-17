@@ -26,13 +26,28 @@
 #include "ui/custom/danger_detection_controller.h"
 #include "ui_refresh_policy.h"
 
+/*
+ * UI 主任务实现说明：
+ * 1. 该任务是 LVGL 前台线程，所有需要直接操作 LVGL 对象树的逻辑都应尽量汇聚到这里；
+ * 2. 告警覆盖层、危险检测轮询和刷新节流都在主循环串行执行，避免跨线程直接改 UI；
+ * 3. 录音按钮保留在本文件，是因为它依赖 `now_time`、音频应用和 LVGL 控件状态的同步更新。
+ */
+
 void lvgl_bottomr_init(void);
 
 static const char *TAG = "lvgl_task";
-int next_call = 0;
-lv_ui guider_ui;
-static TaskHandle_t cpu_monitor_task_handle = NULL;
+int next_call = 0; /* 最近一次 `lv_timer_handler()` 返回值，单位为毫秒。 */
+lv_ui guider_ui;   /* GUI Guider 生成的全局 UI 树实例，仅 UI 线程负责初始化。 */
+static TaskHandle_t cpu_monitor_task_handle = NULL; /* 低频调试任务句柄。 */
 
+/**
+ * @brief 低频 CPU 监视任务。
+ * @param[in] arg 未使用，保留为 FreeRTOS 任务签名。
+ * @return 无返回值。
+ *
+ * 当前只保留一个低频挂点，方便后续按需打印内存或调度统计，
+ * 避免把调试日志直接塞进高频 UI 主循环。
+ */
 static void cpu_monitor_task(void *arg)
 {
     (void)arg;
@@ -45,6 +60,19 @@ static void cpu_monitor_task(void *arg)
     }
 }
 
+/**
+ * @brief LVGL 前台主任务入口。
+ * @param[in] pvParameter 未使用，保留为系统任务签名。
+ * @return 无返回值。
+ *
+ * 启动顺序上先初始化显示端口，再创建 UI、控制器和事件绑定。
+ * 之后主循环固定做三类事情：
+ * 1. 处理跨线程投递到 UI 线程的请求；
+ * 2. 驱动 LVGL timer；
+ * 3. 结合刷新策略决定下一轮延时，平衡流畅度与空闲功耗。
+ *
+ * @note 该任务是本模块唯一允许直接操作 LVGL 对象树的上下文。
+ */
 void lvgl_task(void *pvParameter)
 {
     (void)pvParameter;
@@ -83,6 +111,18 @@ void lvgl_task(void *pvParameter)
     }
 }
 
+/**
+ * @brief 录音按钮点击事件处理。
+ * @param[in] e LVGL 事件对象。
+ * @return 无返回值。
+ *
+ * 该回调只处理单击切换：
+ * - 若当前正在录音，则停止录音并恢复按钮外观；
+ * - 若当前未录音，则按当前时间生成文件名并启动录音。
+ * 文件名使用时间戳，是为了避免连续录音覆盖旧文件。
+ *
+ * @note 回调运行在 LVGL 事件上下文中，不应在这里做长时间阻塞操作。
+ */
 static void record_btn_event_handler(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -119,6 +159,13 @@ static void record_btn_event_handler(lv_event_t *e)
     }
 }
 
+/**
+ * @brief 在当前活动屏幕创建一个居中的录音按钮。
+ * @return 无返回值。
+ *
+ * 该函数属于手写测试/调试入口，不参与 GUI Guider 生成页面结构。
+ * 按钮文本与背景色由 `record_btn_event_handler()` 随录音状态同步切换。
+ */
 void lvgl_bottomr_init(void)
 {
     lv_obj_t *scr = lv_screen_active();

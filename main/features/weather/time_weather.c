@@ -8,6 +8,17 @@
 #include "get_time.h"
 #include "ui/custom/clock_functions.h"
 
+/*
+ * 时间后台任务实现说明：
+ * - 先等待首轮 SNTP 同步，避免 UI 一上电就显示无效时间；
+ * - 之后以 1s 节拍循环，但只在较低频率下更新 UI，减少不必要刷新；
+ * - 当前任务主要服务于数字时钟，天气刷新逻辑尚未接入此循环。
+ */
+
+/**
+ * @brief 时间与天气后台任务入口。
+ * @param pvParameters 未使用，保留任务签名。
+ */
 void time_and_weather(void *pvParameters)
 {
     (void)pvParameters;

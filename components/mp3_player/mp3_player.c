@@ -9,7 +9,11 @@
 
 static const char *TAG = "mp3_player";
 
-// 音频播放器回调函数
+/**
+ * @brief 音频播放器事件回调。
+ * @param[in] ctx 播放器事件上下文。
+ * @return 无返回值。
+ */
 static void audio_player_callback(audio_player_cb_ctx_t *ctx)
 {
     switch (ctx->audio_event)
@@ -38,7 +42,11 @@ static void audio_player_callback(audio_player_cb_ctx_t *ctx)
     }
 }
 
-// 静音控制回调
+/**
+ * @brief 静音控制回调。
+ * @param[in] setting 目标静音状态。
+ * @return 底层 `audio_codec_set_mute()` 返回值。
+ */
 static esp_err_t audio_mute_callback(AUDIO_PLAYER_MUTE_SETTING setting)
 {
     bool mute = (setting == AUDIO_PLAYER_MUTE);
@@ -46,7 +54,14 @@ static esp_err_t audio_mute_callback(AUDIO_PLAYER_MUTE_SETTING setting)
     return audio_codec_set_mute(mute);
 }
 
-// I2S写入回调
+/**
+ * @brief 音频数据写入回调。
+ * @param[in] audio_buffer 待输出音频数据。
+ * @param[in] len 数据长度，单位为字节。
+ * @param[out] bytes_written 实际写入字节数。
+ * @param[in] timeout_ms 超时参数，当前实现未使用。
+ * @return `ESP_OK` 表示写入成功；其他错误表示底层 codec 写入失败。
+ */
 static esp_err_t audio_write_callback(void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms)
 {
     (void)timeout_ms;
@@ -60,7 +75,15 @@ static esp_err_t audio_write_callback(void *audio_buffer, size_t len, size_t *by
     return ESP_FAIL;
 }
 
-// I2S时钟重配置回调
+/**
+ * @brief I2S 时钟重配置回调。
+ * @param[in] rate 请求采样率，单位为 Hz。
+ * @param[in] bits_cfg 请求位宽配置。
+ * @param[in] ch 请求声道模式。
+ * @return 当前实现始终返回 `ESP_OK`。
+ *
+ * @note 当前硬件输出链路固定使用 `AUDIO_PLATFORM_HW_SAMPLE_RATE`，这里只做日志提示而不真正切换采样率。
+ */
 static esp_err_t audio_clk_reconfig_callback(uint32_t rate, uint32_t bits_cfg, i2s_slot_mode_t ch)
 {
     ESP_LOGI(TAG, "重配置I2S时钟: %lu Hz, %lu bits, %s",
@@ -75,17 +98,20 @@ static esp_err_t audio_clk_reconfig_callback(uint32_t rate, uint32_t bits_cfg, i
     return ESP_OK;
 }
 
+/**
+ * @brief 初始化 MP3 播放器。
+ * @return `ESP_OK` 表示成功；其他错误表示底层 `audio_player` 创建或回调注册失败。
+ */
 esp_err_t mp3_player_init(void)
 {
     ESP_LOGI(TAG, "初始化MP3播放器");
 
-    // 配置audio_player
     audio_player_config_t config = {
         .mute_fn = audio_mute_callback,
         .write_fn = audio_write_callback,
         .clk_set_fn = audio_clk_reconfig_callback,
-        .priority = 5, // 任务优先级
-        .coreID = 0    // 运行在核心0
+        .priority = 5,
+        .coreID = 0
     };
 
     esp_err_t ret = audio_player_new(config);
@@ -95,7 +121,6 @@ esp_err_t mp3_player_init(void)
         return ret;
     }
 
-    // 注册事件回调
     ret = audio_player_callback_register(audio_player_callback, NULL);
     if (ret != ESP_OK)
     {
@@ -108,6 +133,11 @@ esp_err_t mp3_player_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 播放指定音频文件。
+ * @param[in] file_path 文件路径。
+ * @return `ESP_OK` 表示播放已启动；其他错误表示路径非法、打开文件失败或底层播放失败。
+ */
 esp_err_t mp3_player_play_file(const char *file_path)
 {
     if (file_path == NULL)
@@ -116,7 +146,6 @@ esp_err_t mp3_player_play_file(const char *file_path)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // 检测文件格式
     const char *file_ext = strrchr(file_path, '.');
     const char *format_name = "未知";
 
@@ -134,7 +163,6 @@ esp_err_t mp3_player_play_file(const char *file_path)
 
     ESP_LOGI(TAG, "准备播放文件: %s (格式: %s)", file_path, format_name);
 
-    // 打开文件
     FILE *fp = fopen(file_path, "rb");
     if (fp == NULL)
     {
@@ -142,19 +170,18 @@ esp_err_t mp3_player_play_file(const char *file_path)
         return ESP_FAIL;
     }
 
-    // 获取文件大小
     fseek(fp, 0, SEEK_END);
     long file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     ESP_LOGI(TAG, "文件大小: %ld 字节 (%.2f MB)", file_size, file_size / 1024.0 / 1024.0);
 
-    // 调用audio_player播放 (自动识别MP3和WAV格式)
-    // 注意: audio_player_play会接管fp的生命周期,播放完成后会自动fclose
+    /* `audio_player_play()` 会接管文件句柄生命周期；
+     * 只有启动失败时，调用方才需要自己关闭 `fp`。 */
     esp_err_t ret = audio_player_play(fp);
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "播放失败: %s", esp_err_to_name(ret));
-        fclose(fp); // 如果播放失败,需要手动关闭文件
+        fclose(fp);
         return ret;
     }
 
@@ -162,30 +189,50 @@ esp_err_t mp3_player_play_file(const char *file_path)
     return ESP_OK;
 }
 
+/**
+ * @brief 暂停播放。
+ * @return 底层 `audio_player_pause()` 返回值。
+ */
 esp_err_t mp3_player_pause(void)
 {
     ESP_LOGI(TAG, "暂停播放");
     return audio_player_pause();
 }
 
+/**
+ * @brief 恢复播放。
+ * @return 底层 `audio_player_resume()` 返回值。
+ */
 esp_err_t mp3_player_resume(void)
 {
     ESP_LOGI(TAG, "恢复播放");
     return audio_player_resume();
 }
 
+/**
+ * @brief 停止播放。
+ * @return 底层 `audio_player_stop()` 返回值。
+ */
 esp_err_t mp3_player_stop(void)
 {
     ESP_LOGI(TAG, "停止播放");
     return audio_player_stop();
 }
 
+/**
+ * @brief 反初始化播放器。
+ * @return 底层 `audio_player_delete()` 返回值。
+ */
 esp_err_t mp3_player_deinit(void)
 {
     ESP_LOGI(TAG, "反初始化MP3播放器");
     return audio_player_delete();
 }
 
+/**
+ * @brief 获取当前播放器状态。
+ * @return 当前 `audio_player` 状态枚举。
+ */
 audio_player_state_t mp3_player_get_state(void)
 {
     return audio_player_get_state();

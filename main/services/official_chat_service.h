@@ -18,6 +18,7 @@ extern "C"
 {
 #endif
 
+    /* 服务层对外暴露的聊天会话状态，统一屏蔽底层 `official_chat` 细节。 */
     typedef enum
     {
         OFFICIAL_CHAT_SERVICE_STATE_STOPPED = 0,     /* 未持有底层聊天实例。 */
@@ -37,6 +38,7 @@ extern "C"
         OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT,
     } official_chat_service_message_role_t;
 
+    /* 单条消息历史快照，供 UI 直接读取展示。 */
     typedef struct
     {
         official_chat_service_message_role_t role; // 消息角色：用户或助手
