@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-04-17：新增 `low-power-management-baseline`，对齐真实代码沉淀当前低功耗现状：已落地 `AXP2101 -> board_power -> power_service` 只读观测、`ui_refresh_policy` 的 `Idle-Dim`、以及 `official_chat` 按状态切换 Wi-Fi power save；同时明确系统级 `Standby / Light Sleep / Deep Sleep`、`RTC_INT / AXP_IRQ` 与统一 `power_policy` 仍未接入。
+- 2026-04-17：对齐同步后的真实代码，更新 `repo-overview`、`power-wakeup-control-map`、`ai-font-assets`、`ai-ui-entry-network-guidance`，修正 `LVGL 9.3.0` 依赖、`AXP2101 + board_power + power_service` 已接入事实，并把已删除的 `ai_experiment_ui/main_ai_chat_experiment` 明确收敛为历史信息，避免旧卡继续指挥当前代码。
 - 2026-04-15：继续按最新 `embedded-c-cpp-comment-style` 规则清理主链路手写源码，覆盖 `touch_ft5x06`、`lvgl_port`、`co5300_panel`、`wifi_provision`、`wifi_manager`、`sd_manager`、`i2c_manager`、`get_time`、`mp3_player` 等主要文件，统一收敛 `Doxygen` 函数头、普通实现注释标记和关键共享状态说明。
 - 2026-04-15：压缩 `AGENTS.md` 新增的代码注释规范表述，保留默认约束并移除冗长模板与示例，便于 agent 快速执行。
 - 2026-04-15：为 `AGENTS.md` 新增默认生效的嵌入式 `C/C++` 代码注释规范，明确 `Doxygen` 函数头、普通说明注释标记、关键变量/常量解释、禁止逐行翻译式注释，以及“未经用户明确允许不得因补注释而扩大为重构”。

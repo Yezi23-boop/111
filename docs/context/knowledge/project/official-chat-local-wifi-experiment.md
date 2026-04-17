@@ -2,10 +2,20 @@
 id: official-chat-local-wifi-experiment
 tags: [project, official-chat, wifi-provision, esp32s3, audio, experiment]
 summary: 记录当前仓库曾通过独立实验入口验证 official_chat 接入本地 wifi_provision 的最小 AI 对话链路；该实验入口已在后续收敛到正式主流程。
-last_reviewed: 2026-04-08
+last_reviewed: 2026-04-17
 ---
 
 # official_chat 本地 Wi-Fi 实验入口（历史记录）
+
+## 使用边界
+
+- 本文只保留“独立实验入口时期”的迁移经验与排障线索。
+- 文中提到的 `main_ai_chat_experiment.c`、`ai_experiment_ui.c`、`111.c` 切换逻辑都属于历史实现，当前仓库**不应**再把它们当作真实入口或现行结构来理解。
+- 当前正式链路应以：
+  - `main/app/app_main.c`
+  - `main/services/official_chat_service.c`
+  - `main/ui/custom/ai_ui_controller.c`
+  为准。
 
 ## 结论
 

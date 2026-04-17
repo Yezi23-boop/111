@@ -2,7 +2,7 @@
 id: ai-font-assets
 tags: [project, ui, lvgl, fonts, assets, official-chat]
 summary: 记录 AI 页面 hand-written 字体资源链，当前已在 LVGL 9.3.0 下重新回到运行时资产主路径，并保留编译字体回退。
-last_reviewed: 2026-04-01
+last_reviewed: 2026-04-17
 ---
 
 # AI 页面字体资源链
@@ -38,7 +38,8 @@ last_reviewed: 2026-04-01
 - `build/flasher_args.json` 已包含 `assets` 分区烧录项，说明字体资产镜像会随 `idf.py flash` 一起写入。
 - 当前分区布局已调整为 `factory 8M -> assets 2M -> model 4M -> audio 7M`，用于避免 `assets/model` 被放到 16MB 以上后出现 `mmap` 读取异常。
 - 当前 `dependencies.lock` 已锁到 `lvgl/lvgl 9.3.0`。
-- 正式 AI 页面 `main/ui/custom/ai_ui_controller.c` 与实验页 `main/ai_experiment_ui.c` 都已切到统一的 `ui_font_assets` 入口。
+- 当前正式 AI 页面 `main/ui/custom/ai_ui_controller.c` 已切到统一的 `ui_font_assets` 入口。
+- 历史上的独立实验页 `main/ai_experiment_ui.c` 已从仓库删除，不应再作为当前代码入口理解。
 - 当前页面已统一为“顶部状态条 + 静态 AI 图标卡片 + 最近一轮对话卡片”的 hand-written 骨架。
 - `ui_font_assets` 当前已移除 `LVGL < 9.3.0` 的强制短路分支，源码测试改为检查“不再保留这条短路文案”。
 - `official_chat_service` 现已缓存最近一轮 `stt` 用户文本和 `tts sentence_start` 助手文本，两个 AI 页面会优先显示真实最近一轮内容，取不到时才回退到状态提示文案。

@@ -2,7 +2,7 @@
 id: power-wakeup-control-map
 tags: project, power, wakeup, axp2101, rtc, button, boot
 summary: 基于原理图与现有代码整理的电源、按键、RTC 和唤醒控制链路摘要。
-last_reviewed: 2026-04-09
+last_reviewed: 2026-04-17
 ---
 
 # 电源与唤醒控制图
@@ -25,7 +25,15 @@ last_reviewed: 2026-04-09
 
 - 软件按键当前只明确使用 `GPIO10`，定义在 `main/app/hardware_init.c`
 - 该按键当前单击会触发 BLE 配网，三连击才会触发 `wifi_provision_start_apcfg()` 进入 AP 配网
-- 当前代码中未发现 `AXP2101`、`PCF85063ATL`、`AXP_IRQ`、`PWRON`、`PWROK` 或 `RTC_INT` 的驱动接入
+- 当前代码中已经接入：
+  - `components/axp2101`
+  - `main/app/board_power.[ch]`
+  - `main/services/power_service.[ch]`
+- 当前代码中仍未发现：
+  - `PCF85063ATL` 正式驱动
+  - `AXP_IRQ` 中断处理链路
+  - `RTC_INT` 唤醒/中断链路
+  - `PWRON`、`PWROK` 的应用层直接控制
 - 结合 `KEYS` 原理图页，`GPIO10` 现在可以收敛为：
   - 它接的是 `SYS_OUT`
   - `SYS_OUT` 来自 `PWRON` 物理按键链路经 `BSS138` 的镜像输出
@@ -33,9 +41,15 @@ last_reviewed: 2026-04-09
 
 ## 当前电源/唤醒现状
 
-- 系统启动主要依赖主控上电后进入 `app_main()`，软件层尚未体现 PMIC 电源策略
-- 未看到背光、电池电量、充电状态、RTC 唤醒或 PMIC 中断的统一管理模块
-- 低功耗相关知识当前主要停留在通用检查清单层，尚未落成板级实现路径
+- 系统启动主要依赖主控上电后进入 `app_main()`，但软件层已经具备：
+  - AXP2101 probe 与只读快照
+  - `board_power` 板级电源状态语义
+  - `power_service` 后台发布与抖动抑制
+  - `ui_refresh_policy` 的运行态 dim/降频策略
+- 当前仍未落成的部分主要是：
+  - RTC 定时/唤醒闭环
+  - PMIC IRQ 事件闭环
+  - Standby / Deep Sleep 级别的系统级电源策略
 
 ## 对后续功能的影响
 
@@ -53,6 +67,10 @@ last_reviewed: 2026-04-09
   - 中断来源日志
   - 电池/充电状态读数
   - 进入待机前后的电流测量点
+- 当前已可直接复用的事实源是：
+  - `axp2101_read_snapshot()`
+  - `board_power_get_cached_state()`
+  - `power_service_get_state()`
 - 结合本次原理图页，当前应补充的硬约束是：
   - 不要尝试把 `PWROK` 当应用层普通 GPIO 去读写
   - `AXP_IRQ` 应按 active-low、外部上拉已存在的输入来建模

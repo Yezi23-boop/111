@@ -17,6 +17,7 @@
 - `knowledge/project/display-touch-audio-bus-map.md`
 - `knowledge/project/startup-init-and-blocking-chain.md`
 - `knowledge/project/power-wakeup-control-map.md`
+- `knowledge/project/low-power-management-baseline.md`
 - `knowledge/project/hardware-capability-gap-map.md`
 - `knowledge/project/storage-and-provisioning-paths.md`
 - `knowledge/project/plan-mode-rules.md`
