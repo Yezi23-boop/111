@@ -8,6 +8,8 @@ APP_DIR = MAIN_DIR / "app"
 SERVICES_DIR = MAIN_DIR / "services"
 FEATURES_DIR = MAIN_DIR / "features"
 UI_DIR = MAIN_DIR / "ui"
+UI_CUSTOM_DIR = UI_DIR / "custom"
+UI_GENERATED_DIR = UI_DIR / "generated"
 
 ALERTS_DIR = FEATURES_DIR / "alerts"
 DANGER_DETECTION_DIR = FEATURES_DIR / "danger_detection"
@@ -22,6 +24,15 @@ NETWORK_SERVICE_SOURCE = SERVICES_DIR / "network_service.c"
 NETWORK_SERVICE_HEADER = SERVICES_DIR / "network_service.h"
 OFFICIAL_CHAT_SERVICE_SOURCE = SERVICES_DIR / "official_chat_service.c"
 OFFICIAL_CHAT_SERVICE_HEADER = SERVICES_DIR / "official_chat_service.h"
+
+WIFI_PROVISION_DIR = REPO_ROOT / "components" / "wifi_provision"
+WIFI_PROVISION_INCLUDE_DIR = WIFI_PROVISION_DIR / "include"
+WIFI_PROVISION_SRC_DIR = WIFI_PROVISION_DIR / "src"
+WIFI_PROVISION_HEADER = WIFI_PROVISION_INCLUDE_DIR / "wifi_provision.h"
+WIFI_PROVISION_SOURCE = WIFI_PROVISION_SRC_DIR / "wifi_provision.c"
+WIFI_MANAGER_DIR = WIFI_PROVISION_SRC_DIR / "wifi_driver"
+WIFI_MANAGER_HEADER = WIFI_MANAGER_DIR / "wifi_manager.h"
+WIFI_MANAGER_SOURCE = WIFI_MANAGER_DIR / "wifi_manager.c"
 
 APP_ALERT_MANAGER_SOURCE = ALERTS_DIR / "app_alert_manager.c"
 APP_ALERT_MANAGER_HEADER = ALERTS_DIR / "app_alert_manager.h"
@@ -49,6 +60,17 @@ LVGL_TASK_SOURCE = UI_DIR / "lvgl_task.c"
 LVGL_TASK_HEADER = UI_DIR / "lvgl_task.h"
 UI_REFRESH_POLICY_SOURCE = UI_DIR / "ui_refresh_policy.c"
 UI_REFRESH_POLICY_HEADER = UI_DIR / "ui_refresh_policy.h"
+UI_CUSTOM_HEADER = UI_CUSTOM_DIR / "custom.h"
+UI_MAIN_DROPDOWN_CONTROLLER_SOURCE = UI_CUSTOM_DIR / "main_dropdown_controller.c"
+UI_MAIN_DROPDOWN_CONTROLLER_HEADER = UI_CUSTOM_DIR / "main_dropdown_controller.h"
+UI_WIFI_MANAGEMENT_CONTROLLER_SOURCE = (
+    UI_CUSTOM_DIR / "wifi_management_controller.c"
+)
+UI_WIFI_MANAGEMENT_CONTROLLER_HEADER = (
+    UI_CUSTOM_DIR / "wifi_management_controller.h"
+)
+UI_EVENTS_INIT_SOURCE = UI_GENERATED_DIR / "events_init.c"
+UI_EVENTS_INIT_HEADER = UI_GENERATED_DIR / "events_init.h"
 
 BOARD_POWER_SOURCE = APP_DIR / "board_power.c"
 BOARD_POWER_HEADER = APP_DIR / "board_power.h"

@@ -23,12 +23,32 @@ extern "C"
     {
         NETWORK_SERVICE_STATE_OFFLINE = 0,      /* 尚未启动服务任务。 */
         NETWORK_SERVICE_STATE_BLE_PROVISIONING, /* 无凭据或主动请求 BLE 配网。 */
+        NETWORK_SERVICE_STATE_BLE_DISABLED,     /* 无凭据且用户主动关闭 BLE 配网入口。 */
         NETWORK_SERVICE_STATE_CONNECTING,       /* 已有凭据，正在后台连 Wi-Fi。 */
         NETWORK_SERVICE_STATE_WIFI_READY,       /* 已连上 Wi-Fi，但云端依赖尚未全部验证。 */
         NETWORK_SERVICE_STATE_SERVICE_READY,    /* Wi-Fi 与关键业务域名探测均已通过。 */
         NETWORK_SERVICE_STATE_PORTAL_REQUIRED,  /* BLE 不可用或失败后，回退到 AP 门户模式。 */
         NETWORK_SERVICE_STATE_ERROR,            /* 启动底层配网流程失败。 */
     } network_service_state_t;
+
+    typedef enum
+    {
+        NETWORK_SERVICE_PROVISION_TRANSPORT_AUTO = 0,
+        NETWORK_SERVICE_PROVISION_TRANSPORT_BLE,
+        NETWORK_SERVICE_PROVISION_TRANSPORT_AP,
+    } network_service_provision_transport_t;
+
+    typedef struct
+    {
+        bool wifi_connected;
+        bool has_credentials;
+        bool user_disconnect_latched;
+        bool provisioning_active;
+        bool ble_active;
+        bool ap_active;
+        network_service_provision_transport_t default_transport;
+        char ip[16];
+    } network_service_wifi_status_t;
 
     /* 状态迁移主路径（当前项目）:
      * OFFLINE -> CONNECTING/BLE_PROVISIONING -> WIFI_READY -> SERVICE_READY
@@ -45,6 +65,78 @@ extern "C"
      * @return 服务层状态枚举。
      */
     network_service_state_t network_service_get_state(void);
+
+    /**
+     * @brief 设置 BLE 配网入口是否允许被后台状态机拉起。
+     *
+     * - 关闭时会立即停止 BLE 配网广播，且不会自动切 AP；
+     * - 开启时仅允许在“无 Wi-Fi 凭据”场景下生效；
+     * - 偏好会持久化到 NVS。
+     *
+     * @param[in] enabled true 表示允许 BLE 配网；false 表示禁止。
+     * @return `ESP_OK` 表示状态已更新；
+     *         `ESP_ERR_INVALID_STATE` 表示当前已有 Wi-Fi 凭据，拒绝从 UI 主动打开 BLE；
+     *         其他错误表示偏好持久化或 BLE 启动/停止失败。
+     */
+    esp_err_t network_service_set_ble_enabled(bool enabled);
+
+    /**
+     * @brief 查询 BLE 配网偏好是否为开启。
+     * @return true 表示偏好开启；false 表示用户主动关闭。
+     */
+    bool network_service_is_ble_enabled(void);
+
+    /**
+     * @brief 查询 BLE 配网当前是否真的处于活动状态。
+     * @return true 表示广播或连接仍然存在。
+     */
+    bool network_service_is_ble_active(void);
+
+    /**
+     * @brief 查询当前 Wi-Fi 是否已连接。
+     * @return true 表示已拿到有效 STA IP。
+     */
+    bool network_service_is_wifi_connected(void);
+
+    /**
+     * @brief 获取 Wi-Fi 管理页使用的状态快照。
+     * @param[out] status 输出结构体。
+     * @return `ESP_OK` 表示成功；`ESP_ERR_INVALID_ARG` 表示参数非法。
+     */
+    esp_err_t network_service_get_wifi_status(network_service_wifi_status_t *status);
+
+    /**
+     * @brief 再次使用已保存凭据发起联网。
+     * @return 底层连接请求结果。
+     */
+    esp_err_t network_service_request_connect_with_saved_credentials(void);
+
+    /**
+     * @brief 断开当前网络连接，并暂停自动重连。
+     * @return 底层断开结果。
+     */
+    esp_err_t network_service_request_disconnect(void);
+
+    /**
+     * @brief 重新进入配网流程。
+     * @return 底层 transport 启动结果。
+     */
+    esp_err_t network_service_request_reprovision(void);
+
+    /**
+     * @brief 设置默认配网方式。
+     * @param[in] transport 目标 transport。
+     * @return `ESP_OK` 表示已更新。
+     */
+    esp_err_t network_service_set_default_provision_transport(
+        network_service_provision_transport_t transport);
+
+    /**
+     * @brief 获取默认配网方式。
+     * @return 当前默认 transport。
+     */
+    network_service_provision_transport_t
+    network_service_get_default_provision_transport(void);
 
     /**
      * @brief 判断云端业务依赖是否真正可用。

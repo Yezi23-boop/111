@@ -17,6 +17,7 @@
 
 #include "custom.h" // 包含自定义函数的头文件
 #include "danger_detection_controller.h"
+#include "main_dropdown_controller.h"
 #include "ui_refresh_policy.h"
 static int32_t status_bar_y_pos;
 static int32_t start_y;
@@ -29,7 +30,36 @@ static void screen_main_event_handler (lv_event_t *e)
     switch (code) {
     case LV_EVENT_SCREEN_LOAD_START:
     {
+        main_dropdown_controller_bind((lv_ui *)lv_event_get_user_data(e));
 
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void screen_main_bluetooth_event_handler (lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    switch (code) {
+    case LV_EVENT_CLICKED:
+    {
+        main_dropdown_controller_handle_bluetooth_click();
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void screen_main_wifi_event_handler (lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    switch (code) {
+    case LV_EVENT_CLICKED:
+    {
+        main_dropdown_controller_handle_wifi_click();
         break;
     }
     default:
@@ -228,6 +258,7 @@ static void screen_main_Brightness_event_handler (lv_event_t *e)
 
 void events_init_screen_main (lv_ui *ui)
 {
+    main_dropdown_controller_bind(ui);
     lv_obj_add_event_cb(ui->screen_main, screen_main_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_cont_1, screen_main_cont_1_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_option_2, screen_main_option_2_event_handler, LV_EVENT_ALL, ui);
@@ -237,6 +268,8 @@ void events_init_screen_main (lv_ui *ui)
     lv_obj_add_event_cb(ui->screen_main_Microphone, screen_main_option_6_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_option_7, screen_main_option_7_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_top_grab_area, screen_main_top_grab_area_event_handler, LV_EVENT_ALL, ui);
+    lv_obj_add_event_cb(ui->screen_main_Wifi, screen_main_wifi_event_handler, LV_EVENT_ALL, ui);
+    lv_obj_add_event_cb(ui->screen_main_Bluetooth, screen_main_bluetooth_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_Brightness, screen_main_Brightness_event_handler, LV_EVENT_ALL, ui);
 }
 

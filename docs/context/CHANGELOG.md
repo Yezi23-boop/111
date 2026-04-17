@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-04-17：落地 `screen_main_Wifi` 真实联网入口与 hand-written `wifi_management_controller` 全屏管理页，为 `network_service` 补齐 Wi-Fi façade、默认配网方式持久化与“断开联网后暂停自动重连”能力，并新增 `wifi-management-ui-behavior`、更新 `ble-provisioning-ui-toggle-behavior`，把主界面入口已从蓝牙迁移到 Wi-Fi 的事实写回上下文库。
+- 2026-04-17：新增 `2026-04-17-wifi-management-ui-design.md` 与 `2026-04-17-wifi-management-ui-implementation.md`，把“主界面 Wi-Fi 图标接成真实联网入口 + 新增全屏 Wi-Fi 管理页 + BLE/AP 选择下沉到设置区”的后续落地边界写成已批准 spec 和待执行计划，避免旧 BLE 主入口上下文继续指挥当前实现。
 - 2026-04-17：新增 `low-power-management-baseline`，对齐真实代码沉淀当前低功耗现状：已落地 `AXP2101 -> board_power -> power_service` 只读观测、`ui_refresh_policy` 的 `Idle-Dim`、以及 `official_chat` 按状态切换 Wi-Fi power save；同时明确系统级 `Standby / Light Sleep / Deep Sleep`、`RTC_INT / AXP_IRQ` 与统一 `power_policy` 仍未接入。
 - 2026-04-17：对齐同步后的真实代码，更新 `repo-overview`、`power-wakeup-control-map`、`ai-font-assets`、`ai-ui-entry-network-guidance`，修正 `LVGL 9.3.0` 依赖、`AXP2101 + board_power + power_service` 已接入事实，并把已删除的 `ai_experiment_ui/main_ai_chat_experiment` 明确收敛为历史信息，避免旧卡继续指挥当前代码。
 - 2026-04-15：继续按最新 `embedded-c-cpp-comment-style` 规则清理主链路手写源码，覆盖 `touch_ft5x06`、`lvgl_port`、`co5300_panel`、`wifi_provision`、`wifi_manager`、`sd_manager`、`i2c_manager`、`get_time`、`mp3_player` 等主要文件，统一收敛 `Doxygen` 函数头、普通实现注释标记和关键共享状态说明。
@@ -128,3 +130,4 @@
 - 2026-04-13：新增最小 UI 低功耗刷新策略：`5s` 无交互后将 `lvgl_task` 调度从活跃态 `MIN(next_call,16ms)` 切到空闲态 `MAX(next_call,100ms)`，并通过 CO5300 `0x51` 亮度命令把空闲亮度降到用户亮度的 `40%`，同时保留强制高刷开关与触摸恢复高刷路径。
 - 2026-04-13：修复 UI 低功耗策略接入过程中 `co5300_panel.c / ui_refresh_policy.c / lvgl_task.c / lv_port_input.c` 被截断后的构建阻塞，恢复 CO5300 完整驱动并补回亮度接口，同时固化 `lvgl_task.c` 中 FreeRTOS 头必须早于 GUI/LVGL 头的包含顺序。
 - 2026-04-13：修复 CO5300 QSPI 亮度命令路径，`co5300_panel` 不再对 `panel_io` 裸发 `0x51`，改为复用 `esp_lcd_panel_co5300_set_brightness()`，对齐参考仓库与官方驱动的 QSPI opcode 编码方式，恢复手动亮度与 idle dim 生效条件。
+- 2026-04-17：将主界面下拉菜单 `screen_main_Bluetooth` 接成真实 BLE 配网总开关，新增 `network_service` 的 BLE NVS 偏好控制面与 `BLE_DISABLED` 状态，移除 BOOT 键单击/三连击的 BLE/AP 配网入口，并同步更新相关知识卡。

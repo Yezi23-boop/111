@@ -614,6 +614,7 @@ static void wifi_provision_ble_receive_cb(const char *data, size_t len,
 
         wifi_provision_send_ble_status("connecting", current_ssid, NULL,
                                        NULL, NULL);
+        wifi_manager_set_auto_reconnect_enabled(true);
         ret = wifi_manager_connect(current_ssid, current_password);
         if (ret != ESP_OK)
         {
@@ -829,6 +830,7 @@ void ws_receive_handle(const char *data, int len)
         {
             current_transport = WIFI_PROVISION_TRANSPORT_AP;
             is_configuring = true;
+            wifi_manager_set_auto_reconnect_enabled(true);
             xEventGroupSetBits(prov_ev_group, PROV_WIFI_CONNECTED_BIT);
         }
         else
@@ -889,11 +891,23 @@ esp_err_t wifi_provision_start_auto(void)
 {
     if (wifi_provision_has_credentials())
     {
+        wifi_manager_set_auto_reconnect_enabled(true);
         return wifi_manager_connect_saved();
     }
 
     wifi_provision_start_apcfg();
     return ESP_OK;
+}
+
+esp_err_t wifi_provision_connect_saved(void)
+{
+    wifi_manager_set_auto_reconnect_enabled(true);
+    return wifi_manager_connect_saved();
+}
+
+esp_err_t wifi_provision_disconnect_sta(void)
+{
+    return wifi_manager_disconnect();
 }
 
 /**
@@ -951,6 +965,24 @@ bool wifi_provision_is_ap_active(void)
     return current_transport == WIFI_PROVISION_TRANSPORT_AP;
 }
 
+esp_err_t wifi_provision_stop_active_transport(void)
+{
+    if (wifi_provision_is_ble_active())
+    {
+        return wifi_provision_stop_blecfg();
+    }
+
+    if (wifi_provision_is_ap_active())
+    {
+        ws_server_stop();
+        current_transport = WIFI_PROVISION_TRANSPORT_NONE;
+        is_configuring = false;
+        return wifi_manager_stop_ap();
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t wifi_provision_get_ble_service_name(char *service_name,
                                               size_t service_name_len)
 {
@@ -977,6 +1009,16 @@ esp_err_t wifi_provision_get_ip(char *ip_str, size_t ip_str_len)
 esp_err_t wifi_provision_set_power_save(bool enable)
 {
     return wifi_manager_set_power_save(enable);
+}
+
+void wifi_provision_set_auto_reconnect_enabled(bool enable)
+{
+    wifi_manager_set_auto_reconnect_enabled(enable);
+}
+
+bool wifi_provision_is_auto_reconnect_enabled(void)
+{
+    return wifi_manager_is_auto_reconnect_enabled();
 }
 
 esp_err_t wifi_provision_set_credentials(const char *ssid,

@@ -42,6 +42,12 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password);
 esp_err_t wifi_manager_connect_saved(void);
 
 /**
+ * @brief 主动断开当前 STA 连接。
+ * @return `ESP_OK` 表示已下发断开请求；若当前本就未连接，也返回 `ESP_OK`。
+ */
+esp_err_t wifi_manager_disconnect(void);
+
+/**
  * @brief 进入 APSTA 并启动 AP 门户侧配置。
  * @return `ESP_OK` 表示 AP 门户已就绪；其他错误表示 AP 或 DHCP 配置失败。
  */
@@ -80,6 +86,19 @@ bool wifi_manager_is_connected(void);
  * @return 底层 `esp_wifi_set_ps()` 返回值。
  */
 esp_err_t wifi_manager_set_power_save(bool enable);
+
+/**
+ * @brief 设置断线后的自动重连闸门。
+ * @param[in] enabled true 表示允许自动重连；false 表示暂停自动重连。
+ * @return 无返回值。
+ */
+void wifi_manager_set_auto_reconnect_enabled(bool enabled);
+
+/**
+ * @brief 查询当前是否允许自动重连。
+ * @return true 表示允许自动重连。
+ */
+bool wifi_manager_is_auto_reconnect_enabled(void);
 
 /**
  * @brief 保存 Wi-Fi 凭据到内部缓存和 NVS。

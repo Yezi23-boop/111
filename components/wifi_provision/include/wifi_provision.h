@@ -48,6 +48,18 @@ extern "C"
     esp_err_t wifi_provision_start_auto(void);
 
     /**
+     * @brief 使用已保存凭据重新发起连接。
+     * @return `ESP_OK` 表示连接请求已下发；其他错误表示当前无凭据或底层失败。
+     */
+    esp_err_t wifi_provision_connect_saved(void);
+
+    /**
+     * @brief 主动断开当前 STA 连接。
+     * @return `ESP_OK` 表示断开请求已处理。
+     */
+    esp_err_t wifi_provision_disconnect_sta(void);
+
+    /**
      * @brief 启动 BLE 配网广播。
      * @return `ESP_OK` 表示启动成功；其他错误表示 BLE 传输层启动失败。
      */
@@ -64,6 +76,12 @@ extern "C"
      * @return `ESP_OK` 表示启动成功；其他错误表示 AP 或 Web 门户启动失败。
      */
     esp_err_t wifi_provision_start_apcfg(void);
+
+    /**
+     * @brief 停止当前活动的配网 transport。
+     * @return `ESP_OK` 表示当前已停止或本就没有活动 transport。
+     */
+    esp_err_t wifi_provision_stop_active_transport(void);
 
     /**
      * @brief 查询 BLE 配网是否处于活动状态。
@@ -108,6 +126,19 @@ extern "C"
      * @return 底层 `wifi_manager` 返回值。
      */
     esp_err_t wifi_provision_set_power_save(bool enable);
+
+    /**
+     * @brief 设置底层 Wi-Fi 自动重连开关。
+     * @param[in] enable true 表示允许自动重连。
+     * @return 无返回值。
+     */
+    void wifi_provision_set_auto_reconnect_enabled(bool enable);
+
+    /**
+     * @brief 查询底层 Wi-Fi 自动重连开关。
+     * @return true 表示允许自动重连。
+     */
+    bool wifi_provision_is_auto_reconnect_enabled(void);
 
     /**
      * @brief 保存 Wi-Fi 凭据。

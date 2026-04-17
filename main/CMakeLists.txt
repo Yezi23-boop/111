@@ -62,6 +62,10 @@ set(ui_runtime_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_view.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/main_dropdown_controller.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/wifi_management_controller.c
+
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/scroll_functions.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ui_font_assets.c

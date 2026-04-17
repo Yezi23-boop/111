@@ -24,6 +24,7 @@
 #include "printf_esp32.h"
 #include "ui/custom/ai_ui_controller.h"
 #include "ui/custom/danger_detection_controller.h"
+#include "ui/custom/wifi_management_controller.h"
 #include "ui_refresh_policy.h"
 
 /*
@@ -85,6 +86,7 @@ void lvgl_task(void *pvParameter)
     setup_ui(&guider_ui);
     ai_ui_controller_init(&guider_ui);
     danger_detection_controller_init(&guider_ui);
+    wifi_management_controller_init(&guider_ui);
     events_init(&guider_ui);
     ui_refresh_policy_init();
 

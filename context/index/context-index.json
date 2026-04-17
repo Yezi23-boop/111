@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-17T09:10:52.428398+00:00",
+  "generated_at_utc": "2026-04-17T11:38:38.658258+00:00",
   "project_root": "C:\\Users\\ye\\Desktop\\111",
   "docs_root": "docs/context",
-  "doc_count": 62,
+  "doc_count": 64,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-17：新增 `low-power-management-baseline`，对齐真实代码沉淀当前低功耗现状：已落地 `AXP2101 -> board_power -> power_service` 只读观测、`ui_refresh_policy` 的 `Idle-Dim`、以及 `official_chat` 按状态切换 Wi-Fi p",
+      "summary": "- 2026-04-17：落地 `screen_main_Wifi` 真实联网入口与 hand-written `wifi_management_controller` 全屏管理页，为 `network_service` 补齐 Wi-Fi façade、默认配网方式持久化与“断开联网后暂停自动重连”能力，并新增 `wifi-management-ui-beh",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-17T09:10:37.977276+00:00",
-      "token_count": 2422
+      "mtime_utc": "2026-04-17T11:38:29.145568+00:00",
+      "token_count": 2493
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -398,6 +398,24 @@
       "token_count": 106
     },
     {
+      "path": "docs/context/knowledge/project/ble-provisioning-ui-toggle-behavior.md",
+      "title": "BLE 配网 UI 总开关行为",
+      "tags": [
+        "project",
+        "ble",
+        "provisioning",
+        "ui",
+        "network-service",
+        "nvs",
+        "history"
+      ],
+      "summary": "记录 BLE 配网总开关的当前保留能力与历史入口变化，明确主界面默认联网入口已经迁移到 Wi-Fi 按钮，蓝牙按钮不再承担主路径语义。",
+      "id": "ble-provisioning-ui-toggle-behavior",
+      "last_reviewed": "2026-04-17",
+      "mtime_utc": "2026-04-17T11:38:29.144562+00:00",
+      "token_count": 169
+    },
+    {
       "path": "docs/context/knowledge/project/ble-provisioning-wechat-feasibility.md",
       "title": "BLE 配网与微信小程序可行性",
       "tags": [
@@ -461,11 +479,11 @@
         "button",
         "esp32-s3"
       ],
-      "summary": "记录当前仓库 BOOT 按键与配网入口的映射：单击强制进入 BLE 配网，三连击强制进入 AP 网页兜底，并补充从 AP 切回 BLE 时的资源收口要求。",
+      "summary": "记录当前仓库 BOOT 按键已不再承担 BLE/AP 配网入口，默认配网入口改为主界面下拉菜单中的蓝牙按钮。",
       "id": "button-provisioning-entry-mapping",
-      "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-15T07:19:04.296504+00:00",
-      "token_count": 129
+      "last_reviewed": "2026-04-17",
+      "mtime_utc": "2026-04-17T09:48:36.167284+00:00",
+      "token_count": 163
     },
     {
       "path": "docs/context/knowledge/project/danger-signal-detection-port.md",
@@ -997,11 +1015,29 @@
         "miniapp",
         "handoff"
       ],
-      "summary": "记录微信小程序 BLE 配网接手时必须确认的工程位置、协议基线、真机限制与常见误判，避免把固件镜像不同步误当成小程序问题。",
+      "summary": "记录微信小程序 BLE 配网接手时必须确认的工程位置、协议基线、当前入口形态、真机限制与常见误判，避免把固件镜像不同步误当成小程序问题。",
       "id": "wechat-miniapp-ble-provisioning-handoff-config",
-      "last_reviewed": "2026-04-02",
-      "mtime_utc": "2026-04-15T07:19:04.330484+00:00",
-      "token_count": 120
+      "last_reviewed": "2026-04-17",
+      "mtime_utc": "2026-04-17T09:48:36.168742+00:00",
+      "token_count": 141
+    },
+    {
+      "path": "docs/context/knowledge/project/wifi-management-ui-behavior.md",
+      "title": "Wi-Fi 管理 UI 行为",
+      "tags": [
+        "project",
+        "wifi",
+        "ui",
+        "provisioning",
+        "ble",
+        "ap",
+        "network-service"
+      ],
+      "summary": "记录主界面 Wi-Fi 图标、全屏 Wi-Fi 管理页，以及默认配网方式设置在当前仓库中的真实行为边界。",
+      "id": "wifi-management-ui-behavior",
+      "last_reviewed": "2026-04-17",
+      "mtime_utc": "2026-04-17T11:38:29.145568+00:00",
+      "token_count": 244
     },
     {
       "path": "docs/context/knowledge/project/wifi-provision-retry-reasons.md",

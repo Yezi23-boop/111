@@ -10,7 +10,6 @@
 #include "button_gpio.h"
 #include "driver/gpio.h"
 #include "iot_button.h"
-#include "services/network_service.h"
 
 /*
  * 硬件初始化实现说明：
@@ -58,21 +57,6 @@ static void board_power_log_boot_snapshot(const board_power_state_t *state)
 }
 
 /**
- * @brief 单击 BOOT 键时请求 BLE 配网。
- * @param[in] arg 未使用。
- * @param[in] data 未使用。
- * @return 无返回值。
- */
-static void button_single_click_cb(void *arg, void *data)
-{
-    ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "按键单击！启动BLE配网模式...");
-    ESP_LOGI(TAG, "========================================");
-
-    network_service_request_ble();
-}
-
-/**
  * @brief 长按开始回调。
  * @param[in] arg 未使用。
  * @param[in] data 未使用。
@@ -86,36 +70,11 @@ static void button_long_press_start_cb(void *arg, void *data)
 }
 
 /**
- * @brief 三连击 BOOT 键时请求 AP 配网门户。
- * @param[in] arg 未使用。
- * @param[in] usr_data 用户透传日志字符串。
- * @return 无返回值。
- */
-static void button_triple_click_cb(void *arg, void *usr_data)
-{
-    char *msg = (char *)usr_data;
-    esp_err_t ret = ESP_OK;
-
-    ESP_LOGI(TAG, "BUTTON_TRIPLE_CLICK: %s", msg);
-    ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "按键三连击！启动AP配网模式...");
-    ESP_LOGI(TAG, "========================================");
-
-    ret = wifi_provision_start_apcfg();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "启动AP配网失败: %s", esp_err_to_name(ret));
-    }
-}
-
-/**
- * @brief 初始化板载 BOOT 按键及其多击回调。
+ * @brief 初始化板载 BOOT 按键。
  * @return 无返回值。
  *
- * 当前交互约定：
- * - 单击进入 BLE 配网；
- * - 三连击进入 AP 配网；
- * - 长按仅记录日志，作为后续扩展挂点。
+ * 当前版本不再把 BOOT 键作为配网入口，避免和 UI 蓝牙开关形成双入口竞争。
+ * 暂时仅保留驱动初始化和长按日志挂点，后续若要加恢复出厂等动作可继续复用。
  */
 static void button_init(void)
 {
@@ -137,20 +96,9 @@ static void button_init(void)
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "Button create failed");
+        return;
     }
-
-    /* 回调用户数据必须拥有静态生命周期，避免多击事件到达时指针已失效。 */
-    static char *user_msg = "Hello from Triple Click!";
-
-    /* 三连击被保留为显式切换 AP 配网门户的人工入口。 */
-    button_event_args_t args = {
-        .multiple_clicks.clicks = 3,
-    };
-
-    iot_button_register_cb(gpio_btn_handle, BUTTON_SINGLE_CLICK, NULL, button_single_click_cb, NULL);
     iot_button_register_cb(gpio_btn_handle, BUTTON_LONG_PRESS_START, NULL, button_long_press_start_cb, NULL);
-
-    iot_button_register_cb(gpio_btn_handle, BUTTON_MULTIPLE_CLICK, &args, button_triple_click_cb, user_msg);
 }
 /**
  * @brief 处理配网模块上报的 Wi-Fi 状态变化。

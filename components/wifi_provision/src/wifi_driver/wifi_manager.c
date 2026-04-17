@@ -32,6 +32,7 @@ static int sta_connect_count = 0;                                               
 static esp_netif_t *ap_netif = NULL;                                            // AP netif 句柄，仅初始化后长期复用。
 static p_wifi_state_callback wifi_state_cb = NULL;                              // 上层状态回调，事件路径调用。
 static bool is_sta_connected = false;                                           // STA 是否已拿到 IP。
+static bool s_auto_reconnect_enabled = true;                                    // 是否允许断线后自动重连。
 static char stored_ssid[sizeof(((wifi_config_t *)0)->sta.ssid)] = {0};          // 缓存的 SSID。
 static char stored_password[sizeof(((wifi_config_t *)0)->sta.password)] = {0};  // 缓存的密码。
 
@@ -259,7 +260,8 @@ static void event_handler(void *arg, esp_event_base_t event_base,
                 }
             }
 
-            if (sta_connect_count < g_config.max_retry)
+            if (sta_connect_count < g_config.max_retry &&
+                s_auto_reconnect_enabled)
             {
                 esp_wifi_connect();
                 sta_connect_count++;
@@ -387,6 +389,24 @@ esp_err_t wifi_manager_connect_saved(void)
                                       ssid, password);
     }
     return wifi_manager_connect(ssid, password);
+}
+
+/**
+ * @brief 主动断开当前 STA 连接。
+ * @return `ESP_OK` 表示断开请求已处理。
+ */
+esp_err_t wifi_manager_disconnect(void)
+{
+    esp_err_t ret = ESP_OK;
+
+    sta_connect_count = 0;
+    is_sta_connected = false;
+    ret = esp_wifi_disconnect();
+    if (ret == ESP_ERR_WIFI_NOT_CONNECT)
+    {
+        return ESP_OK;
+    }
+    return ret;
 }
 
 /**
@@ -622,6 +642,26 @@ bool wifi_manager_is_connected(void)
 esp_err_t wifi_manager_set_power_save(bool enable)
 {
     return esp_wifi_set_ps(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+}
+
+/**
+ * @brief 设置断线后的自动重连闸门。
+ * @param[in] enabled 目标开关值。
+ * @return 无返回值。
+ */
+void wifi_manager_set_auto_reconnect_enabled(bool enabled)
+{
+    s_auto_reconnect_enabled = enabled;
+    ESP_LOGI(TAG, "auto reconnect enabled=%d", enabled ? 1 : 0);
+}
+
+/**
+ * @brief 查询当前是否允许自动重连。
+ * @return true 表示允许自动重连。
+ */
+bool wifi_manager_is_auto_reconnect_enabled(void)
+{
+    return s_auto_reconnect_enabled;
 }
 
 /**

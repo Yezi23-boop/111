@@ -1,13 +1,17 @@
 ---
 id: wechat-miniapp-ble-provisioning-handoff-config
 tags: [project, ble, provisioning, wechat, miniapp, handoff]
-summary: 记录微信小程序 BLE 配网接手时必须确认的工程位置、协议基线、真机限制与常见误判，避免把固件镜像不同步误当成小程序问题。
-last_reviewed: 2026-04-02
+summary: 记录微信小程序 BLE 配网接手时必须确认的工程位置、协议基线、当前入口形态、真机限制与常见误判，避免把固件镜像不同步误当成小程序问题。
+last_reviewed: 2026-04-17
 ---
 
 # 微信小程序 BLE 配网接手配置
 
 - 小程序工程位于 `C:\Users\ye\Desktop\eps32_ble`，主页面是 `miniprogram/pages/index/index.*`，BLE 协议封装在 `miniprogram/utils/ble-provision.js`。
+- 当前固件默认的人机入口已经不是 BOOT 键，而是主界面下拉菜单中的 `screen_main_Bluetooth`：
+  - 当前名义上是“蓝牙总开关”
+  - 第一版实际只控制 BLE 配网广播/入口
+  - 有 Wi-Fi 凭据时，UI 不允许主动开启 BLE
 - 当前协议基线固定为自定义 128-bit GATT：
   - Service: `1C5ADFB4-6B3F-BFF4-EA4A-820304901A02`
   - RX: `1C5ADFB5-6B3F-BFF4-EA4A-820304901A02`
