@@ -1,7 +1,9 @@
 #include "main_dropdown_controller.h"
 
+#include <string.h>
+
 #include "esp_log.h"
-#include "services/network_service.h"
+#include "network_manager.h"
 #include "wifi_management_controller.h"
 
 static const char *TAG = "main_dropdown";
@@ -20,6 +22,8 @@ static bool s_last_bluetooth_checked_valid = false;
 static lv_obj_t *main_dropdown_controller_get_wifi_button(void);
 static lv_obj_t *main_dropdown_controller_get_bluetooth_button(void);
 static bool main_dropdown_controller_is_main_screen_active(void);
+static bool main_dropdown_controller_get_network_status(
+    network_manager_status_t *status);
 static void main_dropdown_controller_sync_wifi_button(void);
 static void main_dropdown_controller_sync_bluetooth_button(void);
 static void main_dropdown_controller_status_sync_timer_cb(lv_timer_t *timer);
@@ -27,6 +31,10 @@ static void main_dropdown_controller_toast_timer_cb(lv_timer_t *timer);
 static void main_dropdown_controller_hide_toast(void);
 static void main_dropdown_controller_show_toast(const char *text);
 
+/**
+ * @brief 获取主界面 Wi-Fi 图标按钮对象。
+ * @return 返回当前 UI 中的 Wi-Fi 按钮；若 UI 尚未绑定则返回 `NULL`。
+ */
 static lv_obj_t *main_dropdown_controller_get_wifi_button(void)
 {
     if (s_ui == NULL)
@@ -37,6 +45,10 @@ static lv_obj_t *main_dropdown_controller_get_wifi_button(void)
     return s_ui->screen_main_Wifi;
 }
 
+/**
+ * @brief 获取主界面蓝牙图标按钮对象。
+ * @return 返回当前 UI 中的蓝牙按钮；若 UI 尚未绑定则返回 `NULL`。
+ */
 static lv_obj_t *main_dropdown_controller_get_bluetooth_button(void)
 {
     if (s_ui == NULL)
@@ -47,20 +59,63 @@ static lv_obj_t *main_dropdown_controller_get_bluetooth_button(void)
     return s_ui->screen_main_Bluetooth;
 }
 
+/**
+ * @brief 判断当前是否仍停留在主界面。
+ * @return true 表示当前活动屏幕就是主界面，可继续刷新图标状态。
+ */
 static bool main_dropdown_controller_is_main_screen_active(void)
 {
     return s_ui != NULL && s_ui->screen_main != NULL &&
            lv_screen_active() == s_ui->screen_main;
 }
 
+/**
+ * @brief 读取当前统一网络状态快照。
+ *
+ * 这里统一通过 `network_manager` 取快照，避免 Wi-Fi 图标和蓝牙图标各自
+ * 读不同接口，导致同一帧内状态不一致。
+ *
+ * @param[out] status 输出状态快照。
+ * @return true 表示读取成功；false 表示快照不可用。
+ */
+static bool main_dropdown_controller_get_network_status(
+    network_manager_status_t *status)
+{
+    if (status == NULL)
+    {
+        return false;
+    }
+
+    memset(status, 0, sizeof(*status));
+    if (network_manager_get_status(status) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "failed to read network manager status");
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief 按真实 Wi-Fi 连接状态同步主界面 Wi-Fi 图标。
+ *
+ * 图标只表达“当前是否已经连上 Wi-Fi”，不表达是否存在保存凭据，
+ * 也不表达是否处在配网流程中。
+ */
 static void main_dropdown_controller_sync_wifi_button(void)
 {
     lv_obj_t *button = main_dropdown_controller_get_wifi_button();
-    const bool connected = network_service_is_wifi_connected();
+    network_manager_status_t status = {0};
+    bool connected = false;
 
     if (button == NULL)
     {
         return;
+    }
+
+    if (main_dropdown_controller_get_network_status(&status))
+    {
+        connected = status.wifi_connected;
     }
 
     if (!s_last_wifi_checked_valid || s_last_wifi_checked != connected)
@@ -80,22 +135,36 @@ static void main_dropdown_controller_sync_wifi_button(void)
     lv_obj_remove_state(button, LV_STATE_CHECKED);
 }
 
+/**
+ * @brief 按 BLE 总开关偏好同步主界面蓝牙图标。
+ *
+ * 当前主界面蓝牙按钮语义是“BLE 总开关”，因此 checked 状态表达
+ * `ble_enabled`，而不是当前 transport 是否真的在广播。
+ */
 static void main_dropdown_controller_sync_bluetooth_button(void)
 {
     lv_obj_t *button = main_dropdown_controller_get_bluetooth_button();
-    const bool ble_active = network_service_is_ble_active();
-    const bool ble_enabled = network_service_is_ble_enabled();
-    const bool checked = ble_active;
+    network_manager_status_t status = {0};
+    bool ble_enabled = network_manager_is_ble_enabled();
+    bool ble_active = network_manager_is_ble_active();
+    bool checked = ble_enabled;
 
     if (button == NULL)
     {
         return;
     }
 
+    if (main_dropdown_controller_get_network_status(&status))
+    {
+        ble_enabled = status.ble_enabled;
+        ble_active = status.ble_active;
+        checked = ble_enabled;
+    }
+
     if (!s_last_bluetooth_checked_valid || s_last_bluetooth_checked != checked)
     {
-        ESP_LOGI(TAG, "sync Bluetooth button: checked=%d ble_active=%d ble_enabled=%d",
-                 checked ? 1 : 0, ble_active ? 1 : 0, ble_enabled ? 1 : 0);
+        ESP_LOGI(TAG, "sync Bluetooth button: checked=%d ble_enabled=%d ble_active=%d",
+                 checked ? 1 : 0, ble_enabled ? 1 : 0, ble_active ? 1 : 0);
         s_last_bluetooth_checked = checked;
         s_last_bluetooth_checked_valid = true;
     }
@@ -109,6 +178,12 @@ static void main_dropdown_controller_sync_bluetooth_button(void)
     lv_obj_remove_state(button, LV_STATE_CHECKED);
 }
 
+/**
+ * @brief 主界面状态同步定时器回调。
+ *
+ * 仅在主界面可见时刷新图标状态；离开主界面后不继续显示临时 toast，
+ * 避免提示残留到其他页面上。
+ */
 static void main_dropdown_controller_status_sync_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -123,12 +198,22 @@ static void main_dropdown_controller_status_sync_timer_cb(lv_timer_t *timer)
     main_dropdown_controller_sync_bluetooth_button();
 }
 
+/**
+ * @brief toast 超时后自动隐藏的定时器回调。
+ * @param[in] timer LVGL 定时器句柄，当前实现未直接使用。
+ */
 static void main_dropdown_controller_toast_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
     main_dropdown_controller_hide_toast();
 }
 
+/**
+ * @brief 隐藏主界面临时 toast。
+ *
+ * 这里不会销毁对象，而是重复复用同一个 label，避免用户频繁点击时
+ * 持续创建/释放 LVGL 对象带来额外碎片和状态管理复杂度。
+ */
 static void main_dropdown_controller_hide_toast(void)
 {
     if (s_toast_label != NULL)
@@ -142,6 +227,11 @@ static void main_dropdown_controller_hide_toast(void)
     }
 }
 
+/**
+ * @brief 在主界面底部显示一个短时 toast 提示。
+ *
+ * @param[in] text 需要展示的提示文本；为空时直接忽略。
+ */
 static void main_dropdown_controller_show_toast(const char *text)
 {
     if (text == NULL || text[0] == '\0')
@@ -196,6 +286,14 @@ static void main_dropdown_controller_show_toast(const char *text)
     }
 }
 
+/**
+ * @brief 绑定主界面下拉菜单控制器。
+ *
+ * 该入口负责把手写控制逻辑接到 generated UI 上，并恢复蓝牙按钮的
+ * 可见性，使其真正承担 BLE 总开关语义。
+ *
+ * @param[in] ui 当前 UI 句柄。
+ */
 void main_dropdown_controller_bind(lv_ui *ui)
 {
     if (ui == NULL)
@@ -216,35 +314,49 @@ void main_dropdown_controller_bind(lv_ui *ui)
 
     if (s_ui->screen_main_Bluetooth != NULL)
     {
-        lv_obj_add_flag(s_ui->screen_main_Bluetooth, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_ui->screen_main_Bluetooth, LV_OBJ_FLAG_HIDDEN);
     }
     if (s_ui->screen_main_Bluetooth_label != NULL)
     {
-        lv_obj_add_flag(s_ui->screen_main_Bluetooth_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_ui->screen_main_Bluetooth_label, LV_OBJ_FLAG_HIDDEN);
     }
 
     main_dropdown_controller_sync_wifi_button();
     main_dropdown_controller_sync_bluetooth_button();
 }
 
+/**
+ * @brief 处理主界面 Wi-Fi 图标点击。
+ *
+ * 主界面 Wi-Fi 图标只承担“进入 Wi-Fi 管理页”入口，不在主界面直接
+ * 承载复杂联网操作，避免下拉菜单承载过重状态机交互。
+ */
 void main_dropdown_controller_handle_wifi_click(void)
 {
     ESP_LOGI(TAG, "WiFi button clicked");
     wifi_management_controller_open();
 }
 
+/**
+ * @brief 处理主界面蓝牙图标点击。
+ *
+ * 该按钮当前是 BLE 总开关：
+ * - 已开启时点击会关闭 BLE；
+ * - 已关闭时点击会尝试开启 BLE；
+ * - 若底层更新 BLE 总开关失败，则保持当前图标状态并给出 toast 提示。
+ */
 void main_dropdown_controller_handle_bluetooth_click(void)
 {
-    const bool ble_active = network_service_is_ble_active();
-    const bool ble_enabled = network_service_is_ble_enabled();
+    const bool ble_enabled = network_manager_is_ble_enabled();
+    const bool ble_active = network_manager_is_ble_active();
     esp_err_t ret = ESP_OK;
 
-    ESP_LOGI(TAG, "Bluetooth button clicked: ble_active=%d ble_enabled=%d",
-             ble_active ? 1 : 0, ble_enabled ? 1 : 0);
+    ESP_LOGI(TAG, "Bluetooth button clicked: ble_enabled=%d ble_active=%d",
+             ble_enabled ? 1 : 0, ble_active ? 1 : 0);
 
-    if (ble_active)
+    if (ble_enabled)
     {
-        ret = network_service_set_ble_enabled(false);
+        ret = network_manager_set_ble_enabled(false);
         if (ret != ESP_OK)
         {
             ESP_LOGW(TAG, "disable BLE provisioning failed: %s",
@@ -254,15 +366,11 @@ void main_dropdown_controller_handle_bluetooth_click(void)
         return;
     }
 
-    ret = network_service_set_ble_enabled(true);
-    if (ret == ESP_ERR_INVALID_STATE)
+    ret = network_manager_set_ble_enabled(true);
+    if (ret != ESP_OK)
     {
-        main_dropdown_controller_show_toast("当前仅无凭据时允许 BLE 配网");
-    }
-    else if (ret != ESP_OK)
-    {
-        main_dropdown_controller_show_toast("BLE 配网启动失败");
-        ESP_LOGW(TAG, "enable BLE provisioning failed: %s",
+        main_dropdown_controller_show_toast("BLE switch update failed");
+        ESP_LOGW(TAG, "enable BLE switch failed: %s",
                  esp_err_to_name(ret));
     }
 

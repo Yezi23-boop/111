@@ -9,7 +9,7 @@
    写代码要带详细注释方便用户理解，默认遵循下方“代码注释规范（默认生效）”；要求每一个新增或修改的函数都有中文注释，关键变量和常量也要有注释解释
 
 ## ESP-IDF Rules
-
+要求使用freertos
 - 先使用 `D:\esp-idf\v5.5.3\esp-idf\export.ps1` 拉起 `IDF 5.5` 环境，再实际执行 `idf.py build`。
 - 项目配置基线优先看 `sdkconfig.defaults`；不要无说明地大范围改生成出来的 `sdkconfig`。
 - 修改 `sdkconfig` 后，必须先 `idf.py fullclean` 再 `idf.py build`，否则配置变更可能不会正确进入最终产物。

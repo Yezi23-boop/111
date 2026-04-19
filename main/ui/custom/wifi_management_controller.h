@@ -8,7 +8,16 @@ extern "C"
 
 #include "gui_guider.h"
 
+/**
+ * @brief 初始化 Wi-Fi 管理页控制器。
+ * @param[in] ui 当前 UI 句柄。
+ */
 void wifi_management_controller_init(lv_ui *ui);
+
+/**
+ * @brief 打开 Wi-Fi 管理页。
+ * @return 无返回值。
+ */
 void wifi_management_controller_open(void);
 
 #ifdef __cplusplus

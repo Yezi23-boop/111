@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-17T11:38:38.658258+00:00",
+  "generated_at_utc": "2026-04-19T07:17:56.872870+00:00",
   "project_root": "C:\\Users\\ye\\Desktop\\111",
   "docs_root": "docs/context",
-  "doc_count": 64,
+  "doc_count": 66,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-17：落地 `screen_main_Wifi` 真实联网入口与 hand-written `wifi_management_controller` 全屏管理页，为 `network_service` 补齐 Wi-Fi façade、默认配网方式持久化与“断开联网后暂停自动重连”能力，并新增 `wifi-management-ui-beh",
+      "summary": "- 2026-04-19：更新 `network-provisioning-custom-upper-architecture` 与 `wifi-management-ui-behavior`，写回当前真实代码基线：`ap_portal_adapter` 已完成网页资源迁移与 HTTP API 壳，主界面 `screen_main_Wifi / screen",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-17T11:38:29.145568+00:00",
-      "token_count": 2493
+      "mtime_utc": "2026-04-19T07:17:44.496465+00:00",
+      "token_count": 2570
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -30,6 +30,24 @@
       "last_reviewed": "2026-03-11",
       "mtime_utc": "2026-04-03T09:12:33.371345+00:00",
       "token_count": 125
+    },
+    {
+      "path": "docs/context/decisions/ADR-20260418-network-provisioning-custom-upper-architecture.md",
+      "title": "ADR: 采用官方 `network_provisioning` + 自定义上层网络架构",
+      "tags": [
+        "decisions",
+        "wifi",
+        "provisioning",
+        "ble",
+        "ap",
+        "architecture",
+        "esp-idf"
+      ],
+      "summary": "用官方 network_provisioning 替换旧自定义 provisioning 内核，同时保留自定义上层网络架构与 AP 网页前端。",
+      "id": "adr-network-provisioning-custom-upper-architecture",
+      "last_reviewed": "2026-04-18",
+      "mtime_utc": "2026-04-18T08:38:52.919983+00:00",
+      "token_count": 190
     },
     {
       "path": "docs/context/decisions/README.md",
@@ -412,7 +430,7 @@
       "summary": "记录 BLE 配网总开关的当前保留能力与历史入口变化，明确主界面默认联网入口已经迁移到 Wi-Fi 按钮，蓝牙按钮不再承担主路径语义。",
       "id": "ble-provisioning-ui-toggle-behavior",
       "last_reviewed": "2026-04-17",
-      "mtime_utc": "2026-04-17T11:38:29.144562+00:00",
+      "mtime_utc": "2026-04-17T11:54:06.450794+00:00",
       "token_count": 169
     },
     {
@@ -482,7 +500,7 @@
       "summary": "记录当前仓库 BOOT 按键已不再承担 BLE/AP 配网入口，默认配网入口改为主界面下拉菜单中的蓝牙按钮。",
       "id": "button-provisioning-entry-mapping",
       "last_reviewed": "2026-04-17",
-      "mtime_utc": "2026-04-17T09:48:36.167284+00:00",
+      "mtime_utc": "2026-04-17T11:54:06.451794+00:00",
       "token_count": 163
     },
     {
@@ -674,6 +692,24 @@
       "last_reviewed": "2026-04-08",
       "mtime_utc": "2026-04-15T07:19:04.307270+00:00",
       "token_count": 214
+    },
+    {
+      "path": "docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md",
+      "title": "官方 provisioning + 自定义上层网络架构",
+      "tags": [
+        "project",
+        "architecture",
+        "wifi",
+        "provisioning",
+        "ble",
+        "softap",
+        "esp-idf"
+      ],
+      "summary": "记录当前仓库向“官方 network_provisioning + 自定义上层网络架构”迁移的长期方向、组件分层与当前落地边界。",
+      "id": "network-provisioning-custom-upper-architecture",
+      "last_reviewed": "2026-04-19",
+      "mtime_utc": "2026-04-19T07:17:44.495422+00:00",
+      "token_count": 469
     },
     {
       "path": "docs/context/knowledge/project/nimble-hci-init-minimal-config.md",
@@ -1018,7 +1054,7 @@
       "summary": "记录微信小程序 BLE 配网接手时必须确认的工程位置、协议基线、当前入口形态、真机限制与常见误判，避免把固件镜像不同步误当成小程序问题。",
       "id": "wechat-miniapp-ble-provisioning-handoff-config",
       "last_reviewed": "2026-04-17",
-      "mtime_utc": "2026-04-17T09:48:36.168742+00:00",
+      "mtime_utc": "2026-04-17T11:54:06.452797+00:00",
       "token_count": 141
     },
     {
@@ -1030,14 +1066,14 @@
         "ui",
         "provisioning",
         "ble",
-        "ap",
-        "network-service"
+        "softap",
+        "network-manager"
       ],
-      "summary": "记录主界面 Wi-Fi 图标、全屏 Wi-Fi 管理页，以及默认配网方式设置在当前仓库中的真实行为边界。",
+      "summary": "记录主界面 Wi-Fi / Bluetooth 图标，以及全屏 Wi-Fi 管理页在当前仓库中的真实行为边界。",
       "id": "wifi-management-ui-behavior",
-      "last_reviewed": "2026-04-17",
-      "mtime_utc": "2026-04-17T11:38:29.145568+00:00",
-      "token_count": 244
+      "last_reviewed": "2026-04-19",
+      "mtime_utc": "2026-04-19T07:17:44.496465+00:00",
+      "token_count": 277
     },
     {
       "path": "docs/context/knowledge/project/wifi-provision-retry-reasons.md",

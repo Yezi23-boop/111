@@ -7,9 +7,9 @@
 
 /*
  * 网络服务层：
- * 1. 对底层 `wifi_provision` 做二次封装，向上层屏蔽 BLE 配网 / AP 门户 / 自动重连细节。
- * 2. 额外增加“云端业务是否真正可用”的探测，不把“仅拿到 IP”误判成“服务已就绪”。
- * 3. 供 UI、聊天服务和业务控制器查询统一网络状态。
+ * 1. 当前阶段主要承担“云端业务是否真正可用”的就绪探测。
+ * 2. 对历史调用方继续保留旧接口名，但实际联网控制统一桥接到 `network_manager`。
+ * 3. 因此它现在是兼容 shim + service-ready 探测层，而不是新的网络主控制面。
  */
 
 #ifdef __cplusplus
@@ -33,9 +33,9 @@ extern "C"
 
     typedef enum
     {
-        NETWORK_SERVICE_PROVISION_TRANSPORT_AUTO = 0,
-        NETWORK_SERVICE_PROVISION_TRANSPORT_BLE,
-        NETWORK_SERVICE_PROVISION_TRANSPORT_AP,
+        NETWORK_SERVICE_PROVISION_TRANSPORT_AUTO = 0, /* 兼容保留；当前内部会映射到 BLE。 */
+        NETWORK_SERVICE_PROVISION_TRANSPORT_BLE,      /* 兼容层 BLE 配网 transport。 */
+        NETWORK_SERVICE_PROVISION_TRANSPORT_AP,       /* 兼容层 SoftAP 配网 transport。 */
     } network_service_provision_transport_t;
 
     typedef struct

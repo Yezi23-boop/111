@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "esp_log.h"
-#include "services/network_service.h"
+#include "network_manager.h"
 
 static const char *TAG = "wifi_mgmt_ui";
 static const uint32_t kStatusRefreshMs = 300U;
@@ -16,18 +16,23 @@ static lv_obj_t *s_status_detail = NULL;
 static lv_obj_t *s_retry_saved_btn = NULL;
 static lv_obj_t *s_disconnect_btn = NULL;
 static lv_obj_t *s_reprovision_btn = NULL;
-static lv_obj_t *s_transport_auto_btn = NULL;
 static lv_obj_t *s_transport_ble_btn = NULL;
-static lv_obj_t *s_transport_ap_btn = NULL;
+static lv_obj_t *s_transport_softap_btn = NULL;
 static lv_timer_t *s_status_timer = NULL;
 
 static void wifi_management_controller_refresh(void);
 static void wifi_management_controller_ensure_screen_created(void);
+static bool wifi_management_controller_get_status(
+    network_manager_status_t *status);
 static lv_obj_t *wifi_management_controller_create_action_button(
     lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y);
 static lv_obj_t *wifi_management_controller_create_transport_button(
     lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y);
 
+/**
+ * @brief 处理 Wi-Fi 管理页返回主界面的点击事件。
+ * @param[in] e LVGL 事件对象，当前实现未直接读取。
+ */
 static void wifi_management_back_event_cb(lv_event_t *e)
 {
     (void)e;
@@ -41,51 +46,87 @@ static void wifi_management_back_event_cb(lv_event_t *e)
                         true);
 }
 
+/**
+ * @brief 处理“Use Saved Wi-Fi”按钮点击。
+ *
+ * 该按钮语义是再次使用最近一次成功连接的 Wi-Fi 凭据发起连接，
+ * 适用于开机后因为环境变化或暂时失败而未连上的场景。
+ *
+ * @param[in] e LVGL 事件对象，当前实现未直接读取。
+ */
 static void wifi_management_retry_saved_event_cb(lv_event_t *e)
 {
     (void)e;
-    (void)network_service_request_connect_with_saved_credentials();
+    ESP_LOGI(TAG, "request latest saved Wi-Fi");
+    (void)network_manager_use_latest_wifi();
     wifi_management_controller_refresh();
 }
 
+/**
+ * @brief 处理“Disconnect”按钮点击。
+ *
+ * 该按钮会主动断开当前 Wi-Fi，并暂停自动重连，直到用户再次手动发起
+ * “Use Saved Wi-Fi”或“Reprovision”。
+ *
+ * @param[in] e LVGL 事件对象，当前实现未直接读取。
+ */
 static void wifi_management_disconnect_event_cb(lv_event_t *e)
 {
     (void)e;
-    (void)network_service_request_disconnect();
+    ESP_LOGI(TAG, "request Wi-Fi disconnect");
+    (void)network_manager_disconnect();
     wifi_management_controller_refresh();
 }
 
+/**
+ * @brief 处理“Reprovision”按钮点击。
+ *
+ * 该按钮会停止当前 transport，并重新进入用户当前选定的 provisioning
+ * transport，用于重新走配网流程。
+ *
+ * @param[in] e LVGL 事件对象，当前实现未直接读取。
+ */
 static void wifi_management_reprovision_event_cb(lv_event_t *e)
 {
     (void)e;
-    (void)network_service_request_reprovision();
+    ESP_LOGI(TAG, "request reprovision");
+    (void)network_manager_reprovision();
     wifi_management_controller_refresh();
 }
 
-static void wifi_management_transport_auto_event_cb(lv_event_t *e)
-{
-    (void)e;
-    (void)network_service_set_default_provision_transport(
-        NETWORK_SERVICE_PROVISION_TRANSPORT_AUTO);
-    wifi_management_controller_refresh();
-}
-
+/**
+ * @brief 处理 BLE transport 选择按钮点击。
+ * @param[in] e LVGL 事件对象，当前实现未直接读取。
+ */
 static void wifi_management_transport_ble_event_cb(lv_event_t *e)
 {
     (void)e;
-    (void)network_service_set_default_provision_transport(
-        NETWORK_SERVICE_PROVISION_TRANSPORT_BLE);
+    ESP_LOGI(TAG, "set provisioning transport: BLE");
+    (void)network_manager_set_default_transport(
+        NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE);
     wifi_management_controller_refresh();
 }
 
-static void wifi_management_transport_ap_event_cb(lv_event_t *e)
+/**
+ * @brief 处理 SoftAP transport 选择按钮点击。
+ * @param[in] e LVGL 事件对象，当前实现未直接读取。
+ */
+static void wifi_management_transport_softap_event_cb(lv_event_t *e)
 {
     (void)e;
-    (void)network_service_set_default_provision_transport(
-        NETWORK_SERVICE_PROVISION_TRANSPORT_AP);
+    ESP_LOGI(TAG, "set provisioning transport: SoftAP");
+    (void)network_manager_set_default_transport(
+        NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP);
     wifi_management_controller_refresh();
 }
 
+/**
+ * @brief Wi-Fi 管理页状态刷新定时器。
+ *
+ * 页面不在前台时不刷新，避免后台页面继续消耗无意义的绘制和状态读取。
+ *
+ * @param[in] timer LVGL 定时器句柄，当前实现未直接读取。
+ */
 static void wifi_management_status_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -98,6 +139,39 @@ static void wifi_management_status_timer_cb(lv_timer_t *timer)
     wifi_management_controller_refresh();
 }
 
+/**
+ * @brief 读取当前网络状态快照。
+ *
+ * @param[out] status 输出状态结构。
+ * @return true 表示读取成功；false 表示状态暂不可用。
+ */
+static bool wifi_management_controller_get_status(
+    network_manager_status_t *status)
+{
+    if (status == NULL)
+    {
+        return false;
+    }
+
+    memset(status, 0, sizeof(*status));
+    if (network_manager_get_status(status) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "failed to read network manager status");
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief 创建主操作区按钮。
+ *
+ * @param[in] parent 父对象。
+ * @param[in] text 按钮文案。
+ * @param[in] x 左上角 X 坐标。
+ * @param[in] y 左上角 Y 坐标。
+ * @return 创建好的按钮对象。
+ */
 static lv_obj_t *wifi_management_controller_create_action_button(
     lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y)
 {
@@ -118,6 +192,15 @@ static lv_obj_t *wifi_management_controller_create_action_button(
     return button;
 }
 
+/**
+ * @brief 创建 provisioning transport 选择按钮。
+ *
+ * @param[in] parent 父对象。
+ * @param[in] text 按钮文案。
+ * @param[in] x 左上角 X 坐标。
+ * @param[in] y 左上角 Y 坐标。
+ * @return 创建好的按钮对象。
+ */
 static lv_obj_t *wifi_management_controller_create_transport_button(
     lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y)
 {
@@ -139,13 +222,17 @@ static lv_obj_t *wifi_management_controller_create_transport_button(
     return button;
 }
 
+/**
+ * @brief 根据默认 provisioning transport 刷新底部设置按钮选中态。
+ *
+ * @param[in] transport 当前默认 provisioning transport。
+ */
 static void wifi_management_controller_refresh_transport_buttons(
-    network_service_provision_transport_t transport)
+    network_manager_provisioning_transport_t transport)
 {
     lv_obj_t *buttons[] = {
-        s_transport_auto_btn,
         s_transport_ble_btn,
-        s_transport_ap_btn,
+        s_transport_softap_btn,
     };
 
     for (size_t index = 0; index < sizeof(buttons) / sizeof(buttons[0]); ++index)
@@ -166,9 +253,16 @@ static void wifi_management_controller_refresh_transport_buttons(
     }
 }
 
+/**
+ * @brief 刷新 Wi-Fi 管理页状态文本与设置态。
+ *
+ * 页面顶部状态区只表达用户可理解的联网语义，不直接暴露底层 driver
+ * 细节。这里统一从 `network_manager` 读取状态，避免 UI 直接依赖旧的
+ * `network_service` 兼容层。
+ */
 static void wifi_management_controller_refresh(void)
 {
-    network_service_wifi_status_t status = {0};
+    network_manager_status_t status = {0};
     char detail[96] = {0};
 
     if (s_status_title == NULL || s_status_detail == NULL)
@@ -176,48 +270,69 @@ static void wifi_management_controller_refresh(void)
         return;
     }
 
-    (void)network_service_get_wifi_status(&status);
-    wifi_management_controller_refresh_transport_buttons(
-        status.default_transport);
+    if (!wifi_management_controller_get_status(&status))
+    {
+        lv_label_set_text(s_status_title, "Error");
+        lv_label_set_text(s_status_detail, "Network manager status unavailable");
+        return;
+    }
+
+    wifi_management_controller_refresh_transport_buttons(status.default_transport);
 
     if (status.wifi_connected)
     {
-        lv_label_set_text(s_status_title, "已连接");
+        lv_label_set_text(s_status_title, "Connected");
         if (status.ip[0] != '\0')
         {
-            snprintf(detail, sizeof(detail), "当前 IP：%s", status.ip);
+            snprintf(detail, sizeof(detail), "IP: %s", status.ip);
         }
         else
         {
-            snprintf(detail, sizeof(detail), "Wi-Fi 已连接");
+            snprintf(detail, sizeof(detail), "Wi-Fi connected");
         }
     }
-    else if (status.provisioning_active)
+    else if (status.state == NETWORK_MANAGER_STATE_CONNECTING_LATEST)
     {
-        lv_label_set_text(s_status_title, "正在重新配网");
-        snprintf(detail, sizeof(detail), "默认配网方式：%s",
-                 status.ap_active ? "AP" : "BLE");
+        lv_label_set_text(s_status_title, "Connecting");
+        snprintf(detail, sizeof(detail), "Trying the latest saved Wi-Fi");
     }
-    else if (status.user_disconnect_latched)
+    else if (status.state == NETWORK_MANAGER_STATE_PROVISIONING_BLE)
     {
-        lv_label_set_text(s_status_title, "已断开");
-        snprintf(detail, sizeof(detail), "自动重连已暂停");
+        lv_label_set_text(s_status_title, "Provisioning");
+        snprintf(detail, sizeof(detail), "Current transport: BLE");
     }
-    else if (status.has_credentials)
+    else if (status.state == NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP)
     {
-        lv_label_set_text(s_status_title, "未连接");
+        lv_label_set_text(s_status_title, "Provisioning");
+        snprintf(detail, sizeof(detail), "Current transport: SoftAP");
+    }
+    else if (status.state == NETWORK_MANAGER_STATE_DISCONNECTED_BY_USER)
+    {
+        lv_label_set_text(s_status_title, "Disconnected");
+        snprintf(detail, sizeof(detail), "Auto reconnect is paused");
+    }
+    else if (status.state == NETWORK_MANAGER_STATE_ERROR)
+    {
+        lv_label_set_text(s_status_title, "Error");
         snprintf(detail, sizeof(detail),
-                 "点击“进入配网”再次使用已保存凭据联网");
+                 "Tap 'Use Saved Wi-Fi' or 'Reprovision'");
     }
     else
     {
-        lv_label_set_text(s_status_title, "未连接");
-        snprintf(detail, sizeof(detail), "点击“重连”进入新的配网流程");
+        lv_label_set_text(s_status_title, "Offline");
+        snprintf(detail, sizeof(detail),
+                 "Tap 'Use Saved Wi-Fi' or 'Reprovision'");
     }
 
     lv_label_set_text(s_status_detail, detail);
 }
 
+/**
+ * @brief 按需创建 Wi-Fi 管理页。
+ *
+ * 当前继续沿用 hand-written LVGL 页面，不要求用户在 GUI Guider 里新增
+ * 页面结构，只在现有工程内生成一张全新的管理页。
+ */
 static void wifi_management_controller_ensure_screen_created(void)
 {
     if (s_screen != NULL)
@@ -232,7 +347,7 @@ static void wifi_management_controller_ensure_screen_created(void)
                             LV_PART_MAIN | LV_STATE_DEFAULT);
 
     lv_obj_t *title = lv_label_create(s_screen);
-    lv_label_set_text(title, "Wi-Fi 管理");
+    lv_label_set_text(title, "Wi-Fi Manager");
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(title, &lv_font_montserratMedium_27,
@@ -246,11 +361,11 @@ static void wifi_management_controller_ensure_screen_created(void)
     lv_obj_add_event_cb(back_btn, wifi_management_back_event_cb,
                         LV_EVENT_CLICKED, NULL);
     lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "返回主页");
+    lv_label_set_text(back_label, "Back");
     lv_obj_center(back_label);
 
     s_status_title = lv_label_create(s_screen);
-    lv_label_set_text(s_status_title, "未连接");
+    lv_label_set_text(s_status_title, "Offline");
     lv_obj_set_pos(s_status_title, 24, 86);
     lv_obj_set_style_text_color(s_status_title, lv_color_hex(0xffffff),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -265,46 +380,42 @@ static void wifi_management_controller_ensure_screen_created(void)
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
 
     lv_obj_t *action_title = lv_label_create(s_screen);
-    lv_label_set_text(action_title, "主操作区");
+    lv_label_set_text(action_title, "Actions");
     lv_obj_set_pos(action_title, 24, 182);
     lv_obj_set_style_text_color(action_title, lv_color_hex(0x93c5fd),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
 
     s_retry_saved_btn = wifi_management_controller_create_action_button(
-        s_screen, "进入配网", 24, 214);
+        s_screen, "Use Saved Wi-Fi", 24, 214);
     lv_obj_add_event_cb(s_retry_saved_btn, wifi_management_retry_saved_event_cb,
                         LV_EVENT_CLICKED, NULL);
 
     s_disconnect_btn = wifi_management_controller_create_action_button(
-        s_screen, "断开联网", 24, 276);
+        s_screen, "Disconnect", 24, 276);
     lv_obj_add_event_cb(s_disconnect_btn, wifi_management_disconnect_event_cb,
                         LV_EVENT_CLICKED, NULL);
 
     s_reprovision_btn = wifi_management_controller_create_action_button(
-        s_screen, "重连", 24, 338);
+        s_screen, "Reprovision", 24, 338);
     lv_obj_add_event_cb(s_reprovision_btn, wifi_management_reprovision_event_cb,
                         LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *settings_title = lv_label_create(s_screen);
-    lv_label_set_text(settings_title, "默认配网方式");
+    lv_label_set_text(settings_title, "Provisioning Transport");
     lv_obj_set_pos(settings_title, 24, 410);
     lv_obj_set_style_text_color(settings_title, lv_color_hex(0x93c5fd),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    s_transport_auto_btn = wifi_management_controller_create_transport_button(
-        s_screen, "AUTO", 24, 442);
     s_transport_ble_btn = wifi_management_controller_create_transport_button(
-        s_screen, "BLE", 132, 442);
-    s_transport_ap_btn = wifi_management_controller_create_transport_button(
-        s_screen, "AP", 240, 442);
+        s_screen, "BLE", 24, 442);
+    s_transport_softap_btn = wifi_management_controller_create_transport_button(
+        s_screen, "SoftAP", 132, 442);
 
-    lv_obj_add_event_cb(s_transport_auto_btn,
-                        wifi_management_transport_auto_event_cb,
-                        LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(s_transport_ble_btn,
                         wifi_management_transport_ble_event_cb,
                         LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(s_transport_ap_btn, wifi_management_transport_ap_event_cb,
+    lv_obj_add_event_cb(s_transport_softap_btn,
+                        wifi_management_transport_softap_event_cb,
                         LV_EVENT_CLICKED, NULL);
 
     if (s_status_timer == NULL)
@@ -315,14 +426,23 @@ static void wifi_management_controller_ensure_screen_created(void)
     }
 
     wifi_management_controller_refresh();
-    ESP_LOGI(TAG, "Wi-Fi 管理页已创建");
+    ESP_LOGI(TAG, "Wi-Fi management screen created");
 }
 
+/**
+ * @brief 初始化 Wi-Fi 管理页控制器。
+ * @param[in] ui 当前 UI 句柄。
+ */
 void wifi_management_controller_init(lv_ui *ui)
 {
     s_ui = ui;
 }
 
+/**
+ * @brief 打开 Wi-Fi 管理页。
+ *
+ * 首次打开时会先创建页面，之后复用同一张页面并在进入前刷新状态。
+ */
 void wifi_management_controller_open(void)
 {
     wifi_management_controller_ensure_screen_created();

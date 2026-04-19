@@ -1,5 +1,8 @@
 # 上下文库变更记录
 
+- 2026-04-19：更新 `network-provisioning-custom-upper-architecture` 与 `wifi-management-ui-behavior`，写回当前真实代码基线：`ap_portal_adapter` 已完成网页资源迁移与 HTTP API 壳，主界面 `screen_main_Wifi / screen_main_Bluetooth` 和 `wifi_management_controller` 已切到 `network_manager`，Wi-Fi 管理页 transport 已收敛为 `BLE / SoftAP`，旧 `network_service` 已收口为 `network_manager` 之上的兼容 shim + service-ready 探测层。
+- 2026-04-18：更新 `network-provisioning-custom-upper-architecture`，补记 `ble_control / network_credentials / network_manager` 已落地，以及 `ap_portal_adapter` 已完成最小 HTTPD handle 复用接缝；当前剩余重点转为 AP 门户资源迁移、设备侧接口和旧 `network_service` shim 收敛。
+- 2026-04-18：新增 `network-provisioning-custom-upper-architecture` 知识卡与对应 ADR/设计/实施计划，正式锁定“官方 `network_provisioning` + 自定义上层网络架构”路线，并明确当前已落地 `network_provisioning_adapter`、`wifi_control`，其余 `ble_control / network_credentials / network_manager / ap_portal_adapter` 仍在迁移中。
 - 2026-04-17：落地 `screen_main_Wifi` 真实联网入口与 hand-written `wifi_management_controller` 全屏管理页，为 `network_service` 补齐 Wi-Fi façade、默认配网方式持久化与“断开联网后暂停自动重连”能力，并新增 `wifi-management-ui-behavior`、更新 `ble-provisioning-ui-toggle-behavior`，把主界面入口已从蓝牙迁移到 Wi-Fi 的事实写回上下文库。
 - 2026-04-17：新增 `2026-04-17-wifi-management-ui-design.md` 与 `2026-04-17-wifi-management-ui-implementation.md`，把“主界面 Wi-Fi 图标接成真实联网入口 + 新增全屏 Wi-Fi 管理页 + BLE/AP 选择下沉到设置区”的后续落地边界写成已批准 spec 和待执行计划，避免旧 BLE 主入口上下文继续指挥当前实现。
 - 2026-04-17：新增 `low-power-management-baseline`，对齐真实代码沉淀当前低功耗现状：已落地 `AXP2101 -> board_power -> power_service` 只读观测、`ui_refresh_policy` 的 `Idle-Dim`、以及 `official_chat` 按状态切换 Wi-Fi power save；同时明确系统级 `Standby / Light Sleep / Deep Sleep`、`RTC_INT / AXP_IRQ` 与统一 `power_policy` 仍未接入。

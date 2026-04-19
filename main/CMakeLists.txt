@@ -134,6 +134,10 @@ idf_component_register(
 
         traffic_inference
 
+        network_manager
+
+        ap_portal_adapter
+
         wifi_provision
 
         official_chat

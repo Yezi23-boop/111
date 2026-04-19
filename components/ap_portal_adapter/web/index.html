@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Watch Wi-Fi Setup</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+
+<body>
+    <main class="portal-shell">
+        <section class="portal-card">
+            <header class="portal-header">
+                <div class="portal-badge">Wi-Fi Setup</div>
+                <h1>Connect Your Watch</h1>
+                <p>Choose a network and send credentials to the device.</p>
+            </header>
+
+            <section class="portal-status" aria-live="polite">
+                <div class="status-row">
+                    <span class="status-dot" id="api-dot"></span>
+                    <span id="api-text">Checking device portal...</span>
+                </div>
+                <p class="status-note" id="api-note">
+                    This page now targets the new AP portal adapter HTTP API.
+                </p>
+            </section>
+
+            <section class="portal-actions">
+                <button id="scan-btn" class="primary-btn" type="button">Scan Wi-Fi</button>
+                <button id="refresh-btn" class="ghost-btn" type="button">Refresh Status</button>
+            </section>
+
+            <section class="wifi-list-wrap">
+                <div class="section-title-row">
+                    <h2>Nearby Networks</h2>
+                    <span id="scan-capability" class="capability-chip">Scan API pending</span>
+                </div>
+                <div id="wifi-list" class="wifi-list empty">
+                    <div class="empty-state">
+                        <strong>No scan results yet</strong>
+                        <span>Device-side scan API will be connected in the next step.</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="portal-form">
+                <div class="field">
+                    <label for="ssid">Wi-Fi Name</label>
+                    <input id="ssid" name="ssid" type="text" placeholder="Enter SSID manually">
+                </div>
+
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input id="password" name="password" type="password" placeholder="Enter Wi-Fi password">
+                </div>
+
+                <button id="configure-btn" class="secondary-btn" type="button">Send Credentials</button>
+            </section>
+
+            <section id="feedback" class="feedback hidden" aria-live="polite"></section>
+        </section>
+    </main>
+
+    <script src="/app.js"></script>
+</body>
+
+</html>
