@@ -43,26 +43,30 @@ class OfficialChatSourceTests(unittest.TestCase):
         for path in expected_paths:
             self.assertTrue(path.exists(), f"missing expected file: {path}")
 
-    def test_official_chat_component_uses_wifi_provision_and_keeps_required_managed_deps(self) -> None:
+    def test_official_chat_component_keeps_required_managed_deps_after_wifi_migration(self) -> None:
         cmake = OFFICIAL_CHAT_CMAKE.read_text(encoding="utf-8")
 
-        self.assertIn("wifi_provision", cmake)
+        self.assertIn("wifi_control", cmake)
+        self.assertNotIn("wifi_provision", cmake)
         self.assertNotIn("hal_wifi", cmake)
         self.assertIn("utils", cmake)
         self.assertIn("esp_audio_effects", cmake)
         self.assertIn("esp-sr", cmake)
         self.assertIn("espressif__esp_audio_codec", cmake)
 
-    def test_official_chat_runtime_uses_local_wifi_provision_helpers(self) -> None:
+    def test_official_chat_runtime_uses_wifi_control_helpers(self) -> None:
         application_source = OFFICIAL_CHAT_APPLICATION.read_text(encoding="utf-8")
         mcp_source = OFFICIAL_CHAT_MCP.read_text(encoding="utf-8")
 
-        self.assertIn('#include "wifi_provision.h"', application_source)
+        self.assertIn('#include "wifi_control.h"', application_source)
+        self.assertNotIn('#include "wifi_provision.h"', application_source)
         self.assertNotIn('#include "hal_wifi.h"', application_source)
-        self.assertIn("wifi_provision_set_power_save(false);", application_source)
-        self.assertIn("wifi_provision_set_power_save(true);", application_source)
-        self.assertIn("wifi_provision_is_connected()", mcp_source)
-        self.assertIn("wifi_provision_get_ip(", mcp_source)
+        self.assertIn("wifi_control_set_power_save(false);", application_source)
+        self.assertIn("wifi_control_set_power_save(true);", application_source)
+        self.assertIn("wifi_control_is_connected()", mcp_source)
+        self.assertIn("wifi_control_get_ip(", mcp_source)
+        self.assertNotIn("wifi_provision_is_connected()", mcp_source)
+        self.assertNotIn("wifi_provision_get_ip(", mcp_source)
         self.assertNotIn("hal_wifi_get_connect_state()", mcp_source)
         self.assertNotIn("hal_wifi_get_ip()", mcp_source)
 

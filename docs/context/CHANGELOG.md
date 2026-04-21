@@ -1,5 +1,10 @@
 # 上下文库变更记录
 
+- 2026-04-21：继续做 `wifi_provision` 退场后的上下文去陈旧化，更新 `repo-overview`、`startup-init-and-blocking-chain`、`storage-and-provisioning-paths`、`nonblocking-boot-network-service`、`low-power-management-baseline`、`power-wakeup-control-map`，把当前网络 owner、AP 门户来源、启动链路与按键语义统一改写到 `network_manager / wifi_control / network_provisioning_adapter / ap_portal_adapter` 现状。
+- 2026-04-21：完成 `wifi_provision` 退场第 3/4 阶段：旧源码测试已迁到 `network_manager / network_provisioning_adapter / ap_portal_adapter / wifi_control` 新基线，`components/wifi_provision` 已物理删除，并同步更新 `wifi-provision-removal-migration-checklist` 与 `network-provisioning-custom-upper-architecture` 为“旧组件已退场”的当前事实。
+- 2026-04-21：继续推进 `wifi_provision` 退场，第 2 阶段已落地：`main/CMakeLists.txt` 与 `components/official_chat/CMakeLists.txt` 已移除 `wifi_provision` 显式依赖，且主工程运行时代码（排除旧组件自身）已无 `wifi_provision_*` 直接调用；同步更新 `wifi-provision-removal-migration-checklist` 的完成度记录。
+- 2026-04-21：继续推进 `wifi_provision` 退场，第 1 阶段已落地：`hardware_init` 不再初始化旧 `wifi_provision`，`official_chat` 的 Wi-Fi runtime helper 已迁到 `wifi_control`，并为 `wifi_control` 新增 `set_power_save(bool)`；同步更新 `wifi-provision-removal-migration-checklist` 记录当前完成度与剩余删除阻塞点。
+- 2026-04-21：新增 `wifi-provision-removal-migration-checklist`，系统梳理旧 `components/wifi_provision` 的公网接口替代映射、当前真实依赖点、阶段化删除顺序，以及 `official_chat` helper 缺口、启动链路回归和语义漂移等删除风险；并在 `network-provisioning-custom-upper-architecture` 中补入该迁移卡作为后续删除旧组件的唯一执行入口。
 - 2026-04-19：更新 `network-provisioning-custom-upper-architecture` 与 `wifi-management-ui-behavior`，写回当前真实代码基线：`ap_portal_adapter` 已完成网页资源迁移与 HTTP API 壳，主界面 `screen_main_Wifi / screen_main_Bluetooth` 和 `wifi_management_controller` 已切到 `network_manager`，Wi-Fi 管理页 transport 已收敛为 `BLE / SoftAP`，旧 `network_service` 已收口为 `network_manager` 之上的兼容 shim + service-ready 探测层。
 - 2026-04-18：更新 `network-provisioning-custom-upper-architecture`，补记 `ble_control / network_credentials / network_manager` 已落地，以及 `ap_portal_adapter` 已完成最小 HTTPD handle 复用接缝；当前剩余重点转为 AP 门户资源迁移、设备侧接口和旧 `network_service` shim 收敛。
 - 2026-04-18：新增 `network-provisioning-custom-upper-architecture` 知识卡与对应 ADR/设计/实施计划，正式锁定“官方 `network_provisioning` + 自定义上层网络架构”路线，并明确当前已落地 `network_provisioning_adapter`、`wifi_control`，其余 `ble_control / network_credentials / network_manager / ap_portal_adapter` 仍在迁移中。
@@ -134,3 +139,7 @@
 - 2026-04-13：修复 UI 低功耗策略接入过程中 `co5300_panel.c / ui_refresh_policy.c / lvgl_task.c / lv_port_input.c` 被截断后的构建阻塞，恢复 CO5300 完整驱动并补回亮度接口，同时固化 `lvgl_task.c` 中 FreeRTOS 头必须早于 GUI/LVGL 头的包含顺序。
 - 2026-04-13：修复 CO5300 QSPI 亮度命令路径，`co5300_panel` 不再对 `panel_io` 裸发 `0x51`，改为复用 `esp_lcd_panel_co5300_set_brightness()`，对齐参考仓库与官方驱动的 QSPI opcode 编码方式，恢复手动亮度与 idle dim 生效条件。
 - 2026-04-17：将主界面下拉菜单 `screen_main_Bluetooth` 接成真实 BLE 配网总开关，新增 `network_service` 的 BLE NVS 偏好控制面与 `BLE_DISABLED` 状态，移除 BOOT 键单击/三连击的 BLE/AP 配网入口，并同步更新相关知识卡。
+- 2026-04-21：修正 `network_manager` 的 BLE 总开关运行时语义；关闭时会真实停止 BLE transport，开启时可在空闲 BLE 模式下重新拉起 provisioning，且“BLE 已关 + 无 recent Wi-Fi”不再导致网络服务启动失败。
+- 2026-04-21：移除主界面 `main_dropdown_controller_bind()` 的重复初始化入口，避免 `events_init_screen_main()` 与 `LV_EVENT_SCREEN_LOAD_START` 同时绑定导致重复日志与重复 UI 初始化。
+- 2026-04-21：细化 `network_manager` 的 latest 连接语义；自动启动路径仍可在 latest 同步失败时回退到 provisioning，但手动 `Use Saved Wi-Fi` / recent 网络重试失败时不再偷偷跳入配网流程。
+- 2026-04-21：继续修正文档上下文库中的历史网络方案卡，为 `official_chat` 早期迁移评估、独立实验入口记录和 BLE/微信配网可行性卡补齐“历史边界”说明，并将 frontmatter 摘要改成历史语义，避免后续检索继续把旧 `wifi_provision` 方案误判为当前正式架构。

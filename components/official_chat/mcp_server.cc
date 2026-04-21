@@ -7,13 +7,7 @@
 #include <esp_log.h>
 
 #include "audio_codec.h"
-#ifdef __cplusplus
-extern "C" {
-#endif
-#include "wifi_provision.h"
-#ifdef __cplusplus
-}
-#endif
+#include "wifi_control.h"
 
 namespace official_chat {
 
@@ -305,8 +299,8 @@ cJSON *McpServer::BuildDeviceStatusJson() {
 cJSON *McpServer::BuildNetworkStatusJson() {
   cJSON *network = cJSON_CreateObject();
   char ip[16] = {0};
-  const bool connected = wifi_provision_is_connected();
-  const esp_err_t ip_err = wifi_provision_get_ip(ip, sizeof(ip));
+  const bool connected = wifi_control_is_connected();
+  const esp_err_t ip_err = wifi_control_get_ip(ip, sizeof(ip));
 
   cJSON_AddBoolToObject(network, "supported", true);
   cJSON_AddBoolToObject(network, "wifi_connected", connected);

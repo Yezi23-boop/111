@@ -2,7 +2,7 @@
 id: storage-and-provisioning-paths
 tags: project, storage, sd, spiffs, wifi, provisioning, html
 summary: 当前仓库的存储路径、SD 总线选择和 AP 配网页面嵌入方式摘要。
-last_reviewed: 2026-04-08
+last_reviewed: 2026-04-21
 ---
 
 # 存储与配网路径
@@ -35,26 +35,47 @@ last_reviewed: 2026-04-08
 
 ## 配网页面来源
 
-- `components/wifi_provision/CMakeLists.txt` 使用 `EMBED_TXTFILES "html/apcfg.html"`
-- `wifi_provision.c` 通过 `_binary_apcfg_html_start` 直接引用嵌入的 HTML 内容
-- `wifi_provision_start_apcfg()` 会启动 AP 和 WebSocket 服务器，把这份 HTML 作为配网页面提供给用户
+- 当前自定义 AP 门户页面资源位于 `components/ap_portal_adapter/web/`
+- `ap_portal_adapter` 负责最小 HTTPD、静态资源路由与 SoftAP API 壳：
+  - `GET /`
+  - `GET /app.js`
+  - `GET /app.css`
+  - `GET /api/status`
+  - `POST /api/scan`
+  - `POST /api/configure`
+- SoftAP provisioning 底层内核已切到官方 `espressif/network_provisioning`
+- 因此当前页面来源已经不是旧 `wifi_provision` 里的嵌入式 `apcfg.html`
 
 ## 配网运行路径
 
-1. `hardware_init()` 调用 `button_init()`
-2. `GPIO10` 按键回调触发 `wifi_provision_start_apcfg()`
-3. `wifi_manager_ap()` 启动热点
-4. `ws_server_start()` 提供嵌入式 HTML 页面
-5. 用户在页面提交 SSID/密码
-6. `wifi_manager_connect()` 切回 STA 连接目标 Wi-Fi
+1. `app_main()` 启动后台 `network_service`
+2. `network_service` 调用 `network_manager_start()`
+3. `network_manager` 根据 recent Wi-Fi 与默认 transport 决定：
+   - 自动尝试 latest Wi-Fi
+   - 或进入 `BLE provisioning`
+   - 或进入 `SoftAP provisioning`
+4. 当 transport 为 `SoftAP` 时：
+   - `network_provisioning_adapter` 启动官方 SoftAP provisioning manager
+   - `ap_portal_adapter` 启动 HTTPD 与自定义网页
+5. 当前网页侧可访问状态接口和占位 API：
+   - `/api/status`
+   - `/api/scan`
+   - `/api/configure`
+6. 但设备侧 `scan/configure` 仍未真正接通 provisioning 行为：
+   - `/api/scan` 当前返回 `501 Not Implemented`
+   - `/api/configure` 当前返回 `501 Not Implemented`
+7. 因此当前 SoftAP 路径的真实状态是：
+   - HTTPD 与网页资源已接好
+   - SoftAP provisioning manager 生命周期已接好
+   - 浏览器到设备侧的真实配置闭环仍待继续实现
 
 ## 排障建议
 
-- AP 页面打不开：先查 `wifi_provision` 组件是否成功注册和启动，再查 `apcfg.html` 是否被正确嵌入
-- 能开 AP 但配网后不上线：先查 `wifi_manager_connect()`、重试次数和 `IP_EVENT_STA_GOT_IP`
+- AP 页面打不开：先查 `ap_portal_adapter` 是否成功启动，再查 `network_manager` 当前是否真的进入 `PROVISIONING_SOFTAP`
+- 页面能打开但点击扫描/配置没有真正生效：先确认当前 `/api/scan`、`/api/configure` 仍是设备侧占位接口，不要误判成 Wi-Fi 驱动或 recent 逻辑故障
 - 录音或 MP3 路径失败：先查 `/sdcard` 挂载和目录存在性，再查编解码与播放器逻辑
 
 ## 适用边界
 
-- 本文基于 `components/sd_card/sd_manager.c`、`components/wifi_provision/CMakeLists.txt`、`components/wifi_provision/src/wifi_provision.c`、`main/ui/lvgl_task.c` 和 `main/features/weather/time_weather.c` 的当前实现整理。
+- 本文基于 `components/sd_card/sd_manager.c`、`components/ap_portal_adapter`、`components/network_provisioning_adapter`、`components/network_manager`、`main/ui/lvgl_task.c` 和 `main/features/weather/time_weather.c` 的当前实现整理。
 - 若后续把配网页面改为 SPIFFS、网络下载或外置文件系统，需同步更新本文。

@@ -2,7 +2,7 @@
 id: project-low-power-management-baseline
 tags: project, power, low-power, axp2101, lvgl, wifi
 summary: 当前仓库已落地的低功耗能力碎片、未落地缺口，以及后续统一功耗策略的接入起点。
-last_reviewed: 2026-04-17
+last_reviewed: 2026-04-21
 ---
 
 # 当前项目低功耗管理基线
@@ -49,8 +49,7 @@ last_reviewed: 2026-04-17
 
 ### 3. Wi-Fi 已有局部场景化省电切换
 
-- `components/wifi_provision/src/wifi_driver/wifi_manager.c` 已提供 `wifi_manager_set_power_save(bool enable)`，底层调用 `esp_wifi_set_ps(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE)`。
-- `components/wifi_provision/src/wifi_provision.c` 暴露了 `wifi_provision_set_power_save()` 供上层业务调用。
+- `components/wifi_control/src/wifi_control.c` 已提供 `wifi_control_set_power_save(bool enable)`，底层调用 `esp_wifi_set_ps(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE)`。
 - `components/official_chat/application.cc` 已按聊天状态切换 Wi-Fi Power Save：
   - `Connecting / Listening / Speaking` 时关闭省电；
   - `Activating / Upgrading / Idle` 时打开省电。
@@ -58,7 +57,7 @@ last_reviewed: 2026-04-17
 结论：
 
 - 当前仓库已经存在“按场景切换无线功耗”的真实先例。
-- 这套能力目前只在 `official_chat` 场景里使用，尚未上升为整机统一策略。
+- 旧 `wifi_provision_set_power_save()` 已经退场；当前这套能力由 `wifi_control` 承接，但仍只在 `official_chat` 场景里使用，尚未上升为整机统一策略。
 
 ### 4. 局部组件已经开始考虑低功耗友好配置
 
@@ -153,7 +152,7 @@ last_reviewed: 2026-04-17
 
 后续若继续做低功耗，优先级建议是：
 
-1. 新增 `main/services/power_policy.[ch]`，先统一编排 `ui_refresh_policy + wifi_provision_set_power_save + 音频/传感器/后台任务节流`。
+1. 新增 `main/services/power_policy.[ch]`，先统一编排 `ui_refresh_policy + wifi_control_set_power_save + 音频/传感器/后台任务节流`。
 2. 在不碰 `Deep Sleep` 的前提下，先补 `Standby` 路线：
    - 灭屏
    - 更激进的网络省电
@@ -179,8 +178,7 @@ last_reviewed: 2026-04-17
 - `main/ui/generated/events_init.c`
 - `components/lvgl_port/lv_port_input.c`
 - `components/co5300_panel/co5300_panel.c`
-- `components/wifi_provision/src/wifi_driver/wifi_manager.c`
-- `components/wifi_provision/src/wifi_provision.c`
+- `components/wifi_control/src/wifi_control.c`
 - `components/official_chat/application.cc`
 - `sdkconfig`
 - `sdkconfig.defaults`

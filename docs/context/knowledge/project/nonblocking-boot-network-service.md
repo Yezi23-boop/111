@@ -2,7 +2,7 @@
 id: nonblocking-boot-network-service
 tags: [project, boot, wifi, network-service, esp32s3, official-chat]
 summary: 记录当前仓库把正式主流程从阻塞联网切换到后台联网后的当前启动底座，以及重整后的 main 目录位置。
-last_reviewed: 2026-04-08
+last_reviewed: 2026-04-21
 ---
 
 # 非阻塞启动与后台联网服务
@@ -16,20 +16,12 @@ last_reviewed: 2026-04-08
   - `services/official_chat_service.c` 的初始化
 - `D:\esp32S3\111\main\features\weather\time_weather.c` 任务实现仍在，但正式入口里的任务创建当前保持注释。
 - `D:\esp32S3\111\main\services\network_service.c` 负责在后台继续执行：
-  - `wifi_provision_start_auto()`
+  - `network_manager_start()`
   - 联网状态轮询
   - `api.tenclass.net` / `mqtt.xiaozhi.me` DNS 与服务就绪探测
-- 在临时“无 UI 干扰”的验证模式下，可以继续使用 `D:\esp32S3\111\main\app\app_main.c` 作为入口，但注释掉：
-  - `lvgl_task`
-  - `time_and_weather`
-  - 与之相关的启动延时
-- 这时需要额外增加一个很轻的后台任务，在 `network_service_is_service_ready()` 后调用 `official_chat_service_enter_foreground()`，否则系统只会停在“网络已就绪但 AI 无触发源”的空闲状态。
-
-## 为什么要这么改
-
-- 用户要求“没网的时候也能用手表”。
-- 后续 AI 页面如果要在未联网时显示引导配网，正式 UI 就不能继续被 `hardware_init()` 卡住。
-- AI 实验入口 `main_ai_chat_experiment.c` 里已经有一套可用的服务探测逻辑，本轮把这部分能力沉到正式主流程可复用的后台联网层。
+- 当前 `network_service` 已不是旧 `wifi_provision` façade，而是：
+  - `network_manager` 之上的兼容 shim
+  - AI 服务就绪探测层
 
 ## 当前启动语义
 
@@ -37,7 +29,7 @@ last_reviewed: 2026-04-08
 
 现在只代表：
 
-- 基础硬件和本地联网组件初始化成功
+- 基础硬件初始化成功
 
 不再代表：
 
@@ -46,9 +38,11 @@ last_reviewed: 2026-04-08
 
 ### `network_service`
 
-新增后台联网状态层，当前至少区分：
+当前仍是后台联网状态层，但正式联网 owner 已经切到 `network_manager`。当前至少区分：
 
 - `OFFLINE`
+- `BLE_PROVISIONING`
+- `BLE_DISABLED`
 - `CONNECTING`
 - `WIFI_READY`
 - `SERVICE_READY`
@@ -66,10 +60,10 @@ last_reviewed: 2026-04-08
 ## 当前边界
 
 - 这一步只是在正式主流程里搭好后台联网底座。
-- 还没有正式 AI 页面。
+- 当前正式 UI 已存在真实 Wi‑Fi / BLE 入口与 Wi‑Fi 管理页。
 - `official_chat` 的正式入口生命周期已经并回 `main/app/app_main.c`，但是否前台激活仍由 AI 页面控制。
 - 还没有处理 AI 与音乐播放器的音频 owner 协调。
-- 临时“无 UI”验证模式不适合长期保留，只用于隔离显示/UI 干扰，单独观察 `official_chat`、音频链和网络链。
+- `network_service` 当前仍保留兼容 shim 语义，但新的网络策略和 UI 控制语义应以 `network_manager` 为准。
 
 ## 证据文件
 
@@ -79,4 +73,5 @@ last_reviewed: 2026-04-08
 - `D:\esp32S3\111\main\services\network_service.c`
 - `D:\esp32S3\111\main\services\network_service.h`
 - `D:\esp32S3\111\main\services\official_chat_service.c`
+- `D:\esp32S3\111\components\network_manager`
 - `D:\esp32S3\111\tests\test_nonblocking_boot_source.py`

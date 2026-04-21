@@ -24,21 +24,6 @@ static int32_t start_y;
 static bool is_dragging;
 static bool status_top=0;
 
-static void screen_main_event_handler (lv_event_t *e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    switch (code) {
-    case LV_EVENT_SCREEN_LOAD_START:
-    {
-        main_dropdown_controller_bind((lv_ui *)lv_event_get_user_data(e));
-
-        break;
-    }
-    default:
-        break;
-    }
-}
-
 static void screen_main_bluetooth_event_handler (lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -259,7 +244,6 @@ static void screen_main_Brightness_event_handler (lv_event_t *e)
 void events_init_screen_main (lv_ui *ui)
 {
     main_dropdown_controller_bind(ui);
-    lv_obj_add_event_cb(ui->screen_main, screen_main_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_cont_1, screen_main_cont_1_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_option_2, screen_main_option_2_event_handler, LV_EVENT_ALL, ui);
     lv_obj_add_event_cb(ui->screen_main_Xiao_Zhi, screen_main_option_2_event_handler, LV_EVENT_ALL, ui);

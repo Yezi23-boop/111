@@ -863,6 +863,35 @@ esp_err_t wifi_control_get_ip(char *ip_str, size_t ip_str_len)
 }
 
 /**
+ * @brief 设置当前 Wi-Fi STA 的省电模式。
+ *
+ * 这里复用已经初始化好的 STA runtime control，只切换 Wi-Fi modem 的省电策略，
+ * 不改变连接状态机，也不承担任何 provisioning 语义。
+ *
+ * @param[in] enabled true 表示开启 `WIFI_PS_MIN_MODEM`；false 表示切回 `WIFI_PS_NONE`。
+ * @return `ESP_OK` 表示设置成功；其他错误表示底层 Wi-Fi 驱动尚未就绪或配置失败。
+ */
+esp_err_t wifi_control_set_power_save(bool enabled)
+{
+    esp_err_t ret = wifi_control_init();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    /* 当前项目只需要“省电 / 不省电”两态，因此固定映射到 `MIN_MODEM` 与 `NONE`。 */
+    ret = esp_wifi_set_ps(enabled ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "set power save failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "power save enabled=%d", enabled ? 1 : 0);
+    return ESP_OK;
+}
+
+/**
  * @brief 查询当前 Wi-Fi STA 的运行状态。
  * @return 运行状态枚举快照。
  */

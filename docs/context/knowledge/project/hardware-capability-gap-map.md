@@ -2,7 +2,7 @@
 id: hardware-capability-gap-map
 tags: project, hardware, gap, rtc, imu, power, roadmap
 summary: 原理图可见硬件能力与当前代码已接入能力之间的差距摘要，便于规划下一阶段集成。
-last_reviewed: 2026-03-11
+last_reviewed: 2026-04-21
 ---
 
 # 硬件能力缺口图
@@ -12,7 +12,7 @@ last_reviewed: 2026-03-11
 - 显示：`CO5300` + `LVGL`
 - 触摸：`FT5x06/FT3168` 兼容路径
 - 音频播放/录音：`ES8311 + ES7210`
-- Wi-Fi 配网：`wifi_provision`
+- Wi-Fi 配网：`network_manager + network_provisioning_adapter + ap_portal_adapter + wifi_control`
 - 存储：`SPIFFS` + `SD` 卡
 
 ## 原理图可见但当前代码未见接入
@@ -25,17 +25,17 @@ last_reviewed: 2026-03-11
 ## 证据边界
 
 - 以上“未见接入”基于对 `main/` 和 `components/` 的代码搜索：
-  - 未检出 `AXP2101`
+  - 当前已能检出并确认接入 `AXP2101`
   - 未检出 `QMI8658C` / `QMI8658`
   - 未检出 `PCF85063ATL` / `PCF85063`
   - 未检出 `AXP_IRQ` / `PWRON` / `PWROK` / `RTC_INT`
-- 这表示当前仓库里没有明显的板级驱动或业务接线，不等于硬件不可用。
+- 这表示当前仓库里仍缺少 RTC / IMU / 唤醒链路的正式板级驱动或业务接线，不等于硬件不可用。
 
 ## 当前功能与 UI 的差距
 
 - UI 资源里已经有心率、AI、游戏、闹钟等页面图标，但当前代码里未看到对应传感器、BLE 同步或健康数据链路
 - 时间天气任务已存在，但更偏向联网时间更新与页面刷新，不等于 RTC 已接入
-- 功耗检查清单已存在，但尚未看到板级 PMIC 控制闭环
+- 功耗检查清单已存在，`AXP2101 + board_power + power_service` 也已接入只读观测，但尚未形成板级 PMIC 控制闭环
 
 ## 推荐接入顺序
 

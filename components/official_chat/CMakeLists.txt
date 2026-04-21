@@ -28,5 +28,5 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "." "audio" "audio/processors" "audio/wake_words" "audio/demuxer" "protocols" "net"
     EMBED_TXTFILES "board_metadata/esp32-s3-touch-amoled-2.06.json"
-    REQUIRES audio_codec utils json esp-tls esp_timer mbedtls esp_audio_effects esp-sr espressif__esp_audio_codec wifi_provision mqtt lwip nvs_flash esp_http_client app_update efuse
+    REQUIRES audio_codec utils json esp-tls esp_timer mbedtls esp_audio_effects esp-sr espressif__esp_audio_codec wifi_control mqtt lwip nvs_flash esp_http_client app_update efuse
 )

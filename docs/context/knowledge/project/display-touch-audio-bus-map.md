@@ -2,7 +2,7 @@
 id: display-touch-audio-bus-map
 tags: project, display, touch, audio, bus, i2c, i2s, qspi
 summary: 当前仓库显示、触摸、音频与配网模块对应的总线、引脚和排障入口图。
-last_reviewed: 2026-04-08
+last_reviewed: 2026-04-21
 ---
 
 # 显示、触摸、音频与总线映射
@@ -14,8 +14,10 @@ last_reviewed: 2026-04-08
 - `components/touch_ft5x06`：负责 `FT5x06/FT3168` 兼容触摸控制器的 `I2C` 读写与复位。
 - `components/audio_codec`：负责 `ES8311 + ES7210` 的控制面 `I2C`、数据面 `I2S0` 和功放控制。
 - `components/mp3_player`：负责播放器封装。
-- `components/wifi_provision`：负责 AP 配网流程、Web 页面和状态回调。
-- `main/app/hardware_init.c`：负责把存储、音频、按键和 Wi-Fi 初始化串起来。
+- `components/network_manager`：负责正式联网门面、自动连接、断开与重新配网。
+- `components/network_provisioning_adapter`：负责官方 provisioning 内核与 `BLE / SOFTAP` transport。
+- `components/ap_portal_adapter`：负责自定义 AP 门户页面和 HTTP API。
+- `main/app/hardware_init.c`：负责把存储、音频、按键和基础硬件初始化串起来；联网主链路已经下沉到后台 `network_service + network_manager`。
 
 ## 总线映射
 
@@ -54,4 +56,4 @@ last_reviewed: 2026-04-08
 1. 显示不亮或撕裂：先看 `co5300_panel` 和 `lvgl_port`，确认 `QSPI`、分辨率、颜色格式和 `TE` 行为。
 2. 触摸无响应：先看共享 `I2C` 是否正常，再看 `FT5x06` 复位、坐标映射和中断/轮询。
 3. 音频异常：先看 `audio_codec_init()` 的 `I2C`、`I2S`、功放和采样率，再看 `mp3_player` 与存储路径。
-4. 配网卡死：先看 `hardware_init()` 的按键触发和 `wifi_provision` 状态回调，再看阻塞等待是否过长。
+4. 配网卡死：先看 `network_manager` 当前状态、`network_provisioning_adapter` transport 生命周期和 `ap_portal_adapter` 页面/API，再看后台联网是否卡在重试或 service-ready 探测。

@@ -138,8 +138,6 @@ idf_component_register(
 
         ap_portal_adapter
 
-        wifi_provision
-
         official_chat
 
         axp2101

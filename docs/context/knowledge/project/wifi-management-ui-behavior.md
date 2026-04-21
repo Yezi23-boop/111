@@ -29,6 +29,10 @@ last_reviewed: 2026-04-19
   - 蓝色：`network_manager` 视角下 `ble_enabled == true`
 - 当前不会因为 BLE 没在广播就自动变灰；只要 BLE 总开关偏好仍是开启，图标就保持高亮。
 - 若底层 BLE 总开关更新失败，主界面会通过 toast 提示。
+- 当前真实运行时语义已经补齐：
+  - 从蓝色切到灰色时，若当前正处于 BLE provisioning，会立即停止 BLE transport
+  - 从灰色切到蓝色时，若当前未连网、没有活跃 provisioning、且默认 transport 为 BLE，会立即重新拉起 BLE provisioning
+  - 若默认 transport 当前为 SoftAP，则蓝牙图标只改变 BLE 总开关偏好，不会抢占当前 SoftAP provisioning
 
 ## Wi-Fi 管理页
 
@@ -96,6 +100,9 @@ last_reviewed: 2026-04-19
 - 当前自动重连闸门实际落在：
   - `components/wifi_control`
 - 新配网流程开始前，会先停止当前活动的 BLE/AP transport，避免 UI 上存在两套入口同时活跃。
+- 若设备开机时没有 recent Wi-Fi，且默认 transport 为 BLE 但 BLE 总开关已关闭：
+  - 当前会停在合法空闲态等待用户手动操作
+  - 不再把后台网络服务直接打成启动失败
 - 当前页面仍是 hand-written LVGL 页，不依赖 GUI Guider 生成新的页面结构。
 
 ## 当前残余风险

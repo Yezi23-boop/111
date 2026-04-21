@@ -2,7 +2,7 @@
 id: power-wakeup-control-map
 tags: project, power, wakeup, axp2101, rtc, button, boot
 summary: 基于原理图与现有代码整理的电源、按键、RTC 和唤醒控制链路摘要。
-last_reviewed: 2026-04-17
+last_reviewed: 2026-04-21
 ---
 
 # 电源与唤醒控制图
@@ -24,7 +24,7 @@ last_reviewed: 2026-04-17
 ## 当前代码中已接入的控制入口
 
 - 软件按键当前只明确使用 `GPIO10`，定义在 `main/app/hardware_init.c`
-- 该按键当前单击会触发 BLE 配网，三连击才会触发 `wifi_provision_start_apcfg()` 进入 AP 配网
+- 该按键当前已不再承担 BLE / AP 配网入口语义
 - 当前代码中已经接入：
   - `components/axp2101`
   - `main/app/board_power.[ch]`
@@ -62,7 +62,7 @@ last_reviewed: 2026-04-17
 
 ## 当前最小可观测建议
 
-- 先把 `GPIO10`、`WIFI_CONNECT_BIT`、`AXP_IRQ/RTC_INT` 这些控制点分开建模，不要把“按键配网”和“电源键/唤醒键”混为一类
+- 先把 `GPIO10`、网络 UI 入口、`AXP_IRQ/RTC_INT` 这些控制点分开建模，不要把“主界面进入配网”和“电源键/唤醒键”混为一类
 - 若后续接 PMIC/RTC，优先补：
   - 中断来源日志
   - 电池/充电状态读数

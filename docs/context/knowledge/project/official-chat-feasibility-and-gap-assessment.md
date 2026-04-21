@@ -1,11 +1,22 @@
 ---
 id: official-chat-feasibility-and-gap-assessment
 tags: [project, official-chat, esp32s3, migration, review, wifi, audio]
-summary: 评估当前 111 仓库接入 official_chat 的可实现程度，并对比 idf-xiaozhi 与 idf-EDGE_lmpulse 的关键运行时差异、剩余风险和推荐落地顺序。
-last_reviewed: 2026-04-08
+summary: 历史评估卡：记录 111 仓库早期接入 official_chat 时的可实现性判断、与 idf-xiaozhi / idf-EDGE_lmpulse 的差异，以及在当前正式网络架构下应如何理解这些旧结论。
+last_reviewed: 2026-04-21
 ---
 
 # official_chat 可实现性与差距评估
+
+## 使用边界
+
+- 本文主要保留 `official_chat` 早期迁移评估阶段的分析结论。
+- 文中凡是把 `wifi_provision` 写成当前 owner、或把独立实验链路写成当前实现的内容，都应按历史背景理解。
+- 当前仓库真实网络底座应以：
+  - `network_manager`
+  - `wifi_control`
+  - `network_provisioning_adapter`
+  - `ap_portal_adapter`
+  为准。
 
 ## 结论
 
@@ -23,7 +34,7 @@ last_reviewed: 2026-04-08
   - `esp_audio_effects`
   - `esp-sr`
   - `espressif__esp_audio_codec`
-  - `wifi_provision`
+  - `wifi_control`
   - `mqtt`
   - `lwip`
   - `esp_http_client`
@@ -80,17 +91,20 @@ last_reviewed: 2026-04-08
 ### 1. Wi-Fi owner 不同
 
 - `idf-xiaozhi` 的 `official_chat` 依赖 `hal_wifi`。
-- 当前仓库的 `components/official_chat/CMakeLists.txt` 已改为依赖 `wifi_provision`。
-- `idf-EDGE_lmpulse` 也是这条路线。
+- 当前仓库早期迁移阶段曾走过“改依赖本地 `wifi_provision`”路线。
+- 但当前代码基线已经进一步迁到：
+  - `wifi_control`
+  - `network_manager`
+- `idf-EDGE_lmpulse` 更接近当时那一阶段的迁移思路，而不是当前仓库今天的正式网络架构。
 
 ### 2. 配网策略不同
 
 - `idf-xiaozhi` 的 `hal_wifi` 预设是自己的 AP/STA 生命周期管理。
-- 当前仓库保留原有本地配网：
-  - Web 配网页
-  - `192.168.100.1`
-  - 本地 `wifi_provision` / `wifi_manager`
-- 这让当前项目更适合“本地现有产品逻辑优先”，但也意味着不是原版网络栈原样搬运。
+- 当前仓库今天保留的是“自定义上层 + 官方 provisioning 内核”路线：
+  - `network_manager`
+  - `network_provisioning_adapter`
+  - `ap_portal_adapter`
+- 因此这部分对比更适合拿来理解迁移演进历史，而不是拿来描述当前仓库的现行配网 owner。
 
 ### 3. 入口策略不同
 
@@ -216,7 +230,8 @@ last_reviewed: 2026-04-08
 - `D:\esp32S3\111\components\official_chat\application.cc`
 - `D:\esp32S3\111\components\official_chat\include\official_chat.h`
 - `D:\esp32S3\111\components\official_chat\protocol_config.cc`
-- `D:\esp32S3\111\components\wifi_provision\include\wifi_provision.h`
+- `D:\esp32S3\111\components\wifi_control\include\wifi_control.h`
+- `D:\esp32S3\111\components\network_manager\include\network_manager.h`
 - `D:\esp32S3\111\sdkconfig`
 - `D:\esp32S3\111\partitions.csv`
 - `C:\Users\ye\Desktop\idf-xiaozhi\components\official_chat\CMakeLists.txt`

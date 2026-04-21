@@ -8,6 +8,8 @@ from tests.main_paths import REPO_ROOT
 
 
 SDKCONFIG = REPO_ROOT / "sdkconfig"
+MAIN_CMAKE = REPO_ROOT / "main" / "CMakeLists.txt"
+REMOVED_WIFI_PROVISION_COMPONENT_DIR = REPO_ROOT / "components" / "wifi_provision"
 
 
 class NonblockingBootSourceTests(unittest.TestCase):
@@ -31,7 +33,8 @@ class NonblockingBootSourceTests(unittest.TestCase):
 
         self.assertNotIn("xEventGroupWaitBits(", source)
         self.assertNotIn("portMAX_DELAY", source)
-        self.assertIn("wifi_provision_init(", source)
+        self.assertNotIn('#include "wifi_provision.h"', source)
+        self.assertNotIn("wifi_provision_init(", source)
 
     def test_formal_entry_starts_background_network_service(self) -> None:
         source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
@@ -56,14 +59,24 @@ class NonblockingBootSourceTests(unittest.TestCase):
 
         self.assertNotIn("CONFIG_APP_AI_CHAT_EXPERIMENT=y", source)
 
+    def test_main_component_no_longer_requires_wifi_provision(self) -> None:
+        source = MAIN_CMAKE.read_text(encoding="utf-8")
+
+        self.assertIn("network_manager", source)
+        self.assertIn("ap_portal_adapter", source)
+        self.assertNotIn("wifi_provision", source)
+
+    def test_removed_wifi_provision_component_directory_is_absent(self) -> None:
+        self.assertFalse(REMOVED_WIFI_PROVISION_COMPONENT_DIR.exists())
+
     def test_network_service_exists_and_probes_ai_service_readiness(self) -> None:
         self.assertTrue(NETWORK_SERVICE_SOURCE.exists())
         self.assertTrue(NETWORK_SERVICE_HEADER.exists())
 
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("wifi_provision_start_auto()", source)
-        self.assertIn("wifi_provision_is_connected()", source)
+        self.assertIn("network_manager_start()", source)
+        self.assertIn("network_manager_get_status(", source)
         self.assertIn("getaddrinfo(", source)
         self.assertIn("api.tenclass.net", source)
         self.assertIn("mqtt.xiaozhi.me", source)

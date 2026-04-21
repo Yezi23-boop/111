@@ -16,7 +16,7 @@
 #include "protocols/mqtt_protocol.h"
 #include "protocols/websocket_protocol.h"
 #include "settings.h"
-#include "wifi_provision.h"
+#include "wifi_control.h"
 
 namespace official_chat {
 
@@ -121,14 +121,14 @@ void UpdateWifiPowerSaveForState(DeviceState state) {
     case DeviceState::kConnecting:
     case DeviceState::kListening:
     case DeviceState::kSpeaking:
-      wifi_provision_set_power_save(false);
+      wifi_control_set_power_save(false);
       break;
     case DeviceState::kActivating:
     case DeviceState::kUpgrading:
     case DeviceState::kIdle:
     case DeviceState::kUnknown:
     default:
-      wifi_provision_set_power_save(true);
+      wifi_control_set_power_save(true);
       break;
   }
 }

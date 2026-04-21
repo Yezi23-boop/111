@@ -87,6 +87,17 @@ bool wifi_control_is_connected(void);
 esp_err_t wifi_control_get_ip(char *ip_str, size_t ip_str_len);
 
 /**
+ * @brief 设置当前 Wi-Fi STA 的省电模式。
+ *
+ * 该接口只改动运行时 `esp_wifi_set_ps()` 配置，不会触发重新连接、
+ * provisioning 或凭据持久化行为。
+ *
+ * @param[in] enabled true 表示开启 `WIFI_PS_MIN_MODEM`；false 表示关闭省电。
+ * @return `ESP_OK` 表示设置成功；其他错误表示底层 Wi-Fi 尚未就绪或驱动调用失败。
+ */
+esp_err_t wifi_control_set_power_save(bool enabled);
+
+/**
  * @brief 查询当前 Wi-Fi STA 的运行状态。
  * @return 运行状态枚举快照。
  */

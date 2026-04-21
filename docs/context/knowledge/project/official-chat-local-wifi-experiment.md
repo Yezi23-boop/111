@@ -1,8 +1,8 @@
 ---
 id: official-chat-local-wifi-experiment
 tags: [project, official-chat, wifi-provision, esp32s3, audio, experiment]
-summary: 记录当前仓库曾通过独立实验入口验证 official_chat 接入本地 wifi_provision 的最小 AI 对话链路；该实验入口已在后续收敛到正式主流程。
-last_reviewed: 2026-04-17
+summary: 历史实验卡：记录仓库早期通过独立实验入口验证 official_chat 接入本地 wifi_provision 的最小 AI 对话链路；该入口和旧网络 owner 均已退场。
+last_reviewed: 2026-04-21
 ---
 
 # official_chat 本地 Wi-Fi 实验入口（历史记录）
@@ -20,8 +20,12 @@ last_reviewed: 2026-04-17
 ## 结论
 
 - 当前仓库已经引入本地组件 `components/official_chat` 和 `components/utils`。
-- `official_chat` 不再依赖 `hal_wifi`，运行时统一调用本地 `wifi_provision_*` helper。
-- 当前仓库的 `wifi_provision` 继续作为唯一 Wi-Fi owner，保留既有 AP 配网页行为和 `192.168.100.1` 地址。
+- 在这段历史实验时期，`official_chat` 曾通过本地 `wifi_provision_*` helper 接入 Wi-Fi。
+- 但当前仓库已经不再保留这条运行时路径；今天的正式网络 owner 已切到：
+  - `wifi_control`
+  - `network_manager`
+  - `network_provisioning_adapter`
+  - `ap_portal_adapter`
 - 当时的 AI 对话实验入口独立放在 `main/main_ai_chat_experiment.c`，用于隔离验证，不影响正式入口。
 - 截至 `2026-04-08`，该实验入口链路已从仓库删除，正式主流程收敛到 `main/app/app_main.c + official_chat_service`。
 
@@ -41,7 +45,7 @@ last_reviewed: 2026-04-17
   - 保留 `wifi_manager_private.h` 中 `.ap_ip = "192.168.100.1"`
 - `components/official_chat`
   - 采用 `idf-EDGE_lmpulse` 版本作为迁移基线
-  - 保留 `wifi_provision` 适配后的调用路径
+  - 当时保留 `wifi_provision` 适配后的调用路径
   - 在 `ota.cc` 中去掉 `try/catch + std::stoi`，改成 `strtol` 解析版本号，避免启用全局 C++ exceptions
 - `main/CMakeLists.txt`
   - 改为根据 `CONFIG_APP_AI_CHAT_EXPERIMENT` 在 `111.c` 和 `main_ai_chat_experiment.c` 之间切换入口
@@ -121,6 +125,7 @@ last_reviewed: 2026-04-17
 
 - 本文主要保留“独立实验入口”阶段的迁移经验，不再描述当前默认构建入口。
 - 当前默认固件入口已是 `main/app/app_main.c`，不会再编译或启用 `main_ai_chat_experiment.c`。
+- 当前仓库也已经不再保留 `wifi_provision` 组件本身；文中所有 `wifi_provision_*` 接口都属于历史实验阶段信息。
 - `official_chat` 运行时是否能在当前硬件上完整完成激活、协议连接、语音上下行，仍需以正式主流程真机验证为准。
 
 ## 显示内存压力修正

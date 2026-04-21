@@ -2,7 +2,7 @@
 id: network-provisioning-custom-upper-architecture
 tags: [project, architecture, wifi, provisioning, ble, softap, esp-idf]
 summary: 记录当前仓库向“官方 network_provisioning + 自定义上层网络架构”迁移的长期方向、组件分层与当前落地边界。
-last_reviewed: 2026-04-19
+last_reviewed: 2026-04-21
 ---
 
 # 官方 provisioning + 自定义上层网络架构
@@ -50,6 +50,14 @@ last_reviewed: 2026-04-19
   - BLE enabled / active 状态查询
 - 不负责：
   - 直接启动 BLE provisioning 会话
+
+### 当前运行时边界
+
+- `ble_control` 仍只负责偏好与 active 状态本身。
+- 但从当前代码起，`network_manager_set_ble_enabled()` 不再只是改偏好位：
+  - 关闭 BLE 时，若当前正跑 BLE provisioning，会立即停止 BLE transport
+  - 开启 BLE 时，若当前处于空闲、未连网、且默认 transport 为 BLE，会立即重新拉起 BLE provisioning
+- 因此“BLE 总开关是否真的影响广播/配网入口”的解释权，当前已经收敛到 `network_manager`，而不是 `ble_control` 自己。
 
 ### `network_credentials`
 
@@ -137,10 +145,13 @@ last_reviewed: 2026-04-19
   - 自动进入用户当前设置的 provisioning transport
 - 若 transport 为 `BLE`：
   - 启动前必须再检查 `ble_control_is_enabled()`
+- 若没有 recent，且默认 transport 是 `BLE`，但 BLE 总开关已关闭：
+  - 当前会停在合法空闲态
+  - 不再把 `network_manager_start()` / `network_service_start()` 直接打成启动失败
 
 ## 当前实现进度
 
-截至 `2026-04-19`，当前仓库已确认：
+截至 `2026-04-21`，当前仓库已确认：
 
 - 已落地：
   - `espressif/network_provisioning` 组件依赖
@@ -154,11 +165,24 @@ last_reviewed: 2026-04-19
   - 主界面 `screen_main_Wifi / screen_main_Bluetooth` 对 `network_manager` 的 UI 接线
   - `wifi_management_controller` 对 `network_manager` 的 UI 接线
   - `network_service` 收敛为 `network_manager` 之上的兼容 shim
+  - 旧 `components/wifi_provision` 已物理删除
 - 仍待继续：
   - `ap_portal_adapter` 设备侧真实 scan/configure 接口
-  - 旧 `components/wifi_provision` 最终删除
+
+## 删除旧 `wifi_provision` 的执行入口
+
+- 删除旧组件时，不要再从历史 BLE/AP 设计卡倒推当前代码。
+- 应优先参考：
+  - `docs/context/knowledge/project/wifi-provision-removal-migration-checklist.md`
+- 这张迁移清单已经把：
+  - 旧公网接口到新组件的替代映射
+  - 当前真实直接依赖点
+  - 删除顺序
+  - 风险与验证
+    单独收口，后续以该卡为准推进。
 
 ## 和旧上下文的关系
 
 - 旧 `ble-provisioning-ui-toggle-behavior.md`、`wifi-management-ui-behavior.md` 仍可作为“当前 UI 语义演进历史”的参考。
+- 旧 `wifi_provision` 相关 spec / plan / 知识卡，在当前代码基线下都应按“历史方案”理解。
 - 但凡涉及“长期网络底座如何分层”的问题，应优先以本卡和对应 ADR 为准，而不是继续把旧 `wifi_provision` 视为长期正式架构。

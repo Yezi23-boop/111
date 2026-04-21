@@ -69,13 +69,15 @@ extern "C"
     /**
      * @brief 设置 BLE 配网入口是否允许被后台状态机拉起。
      *
-     * - 关闭时会立即停止 BLE 配网广播，且不会自动切 AP；
-     * - 开启时仅允许在“无 Wi-Fi 凭据”场景下生效；
-     * - 偏好会持久化到 NVS。
+     * 当前接口只是兼容层桥接，真实语义由 `network_manager` 决定：
+     * - 关闭时会立即停止当前 BLE provisioning transport；
+     * - 开启时若当前处于空闲、未连网且默认 transport 是 BLE，
+     *   会立即重新拉起 BLE provisioning；
+     * - 若默认 transport 不是 BLE，则这里只更新 BLE 总开关偏好。
      *
      * @param[in] enabled true 表示允许 BLE 配网；false 表示禁止。
      * @return `ESP_OK` 表示状态已更新；
-     *         `ESP_ERR_INVALID_STATE` 表示当前已有 Wi-Fi 凭据，拒绝从 UI 主动打开 BLE；
+     *         `ESP_ERR_INVALID_STATE` 表示当前默认 transport 不允许直接启动；
      *         其他错误表示偏好持久化或 BLE 启动/停止失败。
      */
     esp_err_t network_service_set_ble_enabled(bool enabled);

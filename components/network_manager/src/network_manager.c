@@ -36,9 +36,11 @@ static esp_err_t network_manager_sync_ip(network_manager_status_t *status);
 static void network_manager_sync_ble_active_from_adapter(void);
 static esp_err_t network_manager_stop_active_transport(void);
 static esp_err_t network_manager_start_selected_transport(void);
+static esp_err_t network_manager_start_selected_transport_auto(void);
 static void network_manager_refresh_runtime_state(void);
 static esp_err_t network_manager_connect_entry(
-    const network_credentials_entry_t *entry);
+    const network_credentials_entry_t *entry,
+    bool allow_transport_fallback);
 static esp_err_t network_manager_ensure_monitor_task(void);
 static void network_manager_task(void *arg);
 static void network_manager_clear_pending_provisioned_entry(void);
@@ -215,6 +217,29 @@ static esp_err_t network_manager_start_selected_transport(void)
 }
 
 /**
+ * @brief 在“自动回退/自动启动”语义下启动当前默认 transport。
+ *
+ * 与显式 `reprovision` 不同，自动路径遇到“默认 transport 是 BLE 但 BLE 总开关已关闭”时，
+ * 应收敛到合法空闲态，而不是把整个网络编排打成错误。这样设备开机后可以停在“等待用户
+ * 手动操作”的状态，而不是把兼容层启动流程直接报失败。
+ *
+ * @return `ESP_OK` 表示已经成功启动 transport，或因 BLE 被用户关闭而进入空闲态；
+ *         其他错误表示真实 transport 启动失败。
+ */
+static esp_err_t network_manager_start_selected_transport_auto(void)
+{
+    if (s_default_transport == NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE &&
+        !ble_control_is_enabled())
+    {
+        (void)ble_control_set_active(false);
+        s_state = NETWORK_MANAGER_STATE_IDLE;
+        return ESP_OK;
+    }
+
+    return network_manager_start_selected_transport();
+}
+
+/**
  * @brief 根据底层组件当前运行态刷新主状态机。
  *
  * 当前阶段最关键的策略是：
@@ -278,7 +303,7 @@ static void network_manager_refresh_runtime_state(void)
     if (s_state == NETWORK_MANAGER_STATE_CONNECTING_LATEST &&
         wifi_state == WIFI_CONTROL_STATE_CONNECT_FAIL)
     {
-        (void)network_manager_start_selected_transport();
+        (void)network_manager_start_selected_transport_auto();
     }
 }
 
@@ -288,10 +313,13 @@ static void network_manager_refresh_runtime_state(void)
  * 该辅助函数统一负责 recent 网络连接前的 transport 收口和状态迁移。
  *
  * @param[in] entry 目标 recent Wi-Fi 记录。
+ * @param[in] allow_transport_fallback true 表示允许在同步连接失败时直接进入 provisioning；
+ *             false 表示把错误直接返回给调用方，由 UI 决定下一步动作。
  * @return `ESP_OK` 表示连接请求已下发；其他错误表示条目非法或连接失败。
  */
 static esp_err_t network_manager_connect_entry(
-    const network_credentials_entry_t *entry)
+    const network_credentials_entry_t *entry,
+    bool allow_transport_fallback)
 {
     esp_err_t ret = ESP_OK;
 
@@ -315,8 +343,18 @@ static esp_err_t network_manager_connect_entry(
     }
     else
     {
-        s_state = NETWORK_MANAGER_STATE_CONNECTING_LATEST;
-        return network_manager_start_selected_transport();
+        /*
+         * 这里要显式区分“自动 latest 尝试”和“用户手动点击 Use Saved Wi-Fi / recent 网络”：
+         * - 自动入口允许在同步连接失败时立刻退回 provisioning；
+         * - 手动入口应把失败直接暴露给 UI，避免用户只是想重试已保存凭据，却被悄悄带进配网流程。
+         */
+        s_state = NETWORK_MANAGER_STATE_ERROR;
+        if (allow_transport_fallback)
+        {
+            s_state = NETWORK_MANAGER_STATE_CONNECTING_LATEST;
+            return network_manager_start_selected_transport_auto();
+        }
+        return ret;
     }
 
     return ret;
@@ -507,7 +545,7 @@ esp_err_t network_manager_start(void)
     ret = network_credentials_get_latest(&latest);
     if (ret == ESP_OK)
     {
-        ret = network_manager_connect_entry(&latest);
+        ret = network_manager_connect_entry(&latest, true);
         xSemaphoreGive(s_manager_mutex);
         return ret;
     }
@@ -518,7 +556,7 @@ esp_err_t network_manager_start(void)
         return ret;
     }
 
-    ret = network_manager_start_selected_transport();
+    ret = network_manager_start_selected_transport_auto();
     xSemaphoreGive(s_manager_mutex);
     return ret;
 }
@@ -614,7 +652,7 @@ esp_err_t network_manager_use_latest_wifi(void)
         return ret;
     }
 
-    ret = network_manager_connect_entry(&latest);
+    ret = network_manager_connect_entry(&latest, false);
     xSemaphoreGive(s_manager_mutex);
     return ret;
 }
@@ -694,15 +732,82 @@ esp_err_t network_manager_reprovision(void)
 /**
  * @brief 设置 BLE 总开关偏好。
  *
- * 当前阶段直接桥接 `ble_control`；若 BLE 已被关闭，后续 `start_selected_transport()`
- * 在 BLE 路径上会拒绝启动。
+ * 该接口当前已经具备真实运行时语义：
+ * - 关闭 BLE 时，如果当前正跑 BLE provisioning，会立即停止该 transport；
+ * - 开启 BLE 时，如果当前处于空闲、未连网、且默认 transport 就是 BLE，
+ *   会立即重新拉起 BLE provisioning；
+ * - 若默认 transport 是 SoftAP，则这里只更新 BLE 总开关偏好，不打断当前 SoftAP。
  *
  * @param[in] enabled 目标 BLE 总开关状态。
- * @return `ESP_ERR_NOT_SUPPORTED` 表示真实逻辑尚未接入。
+ * @return `ESP_OK` 表示更新成功；
+ *         `ESP_ERR_INVALID_STATE` 表示当前 transport 策略不允许直接启动；
+ *         其他错误表示底层 stop/start 或偏好持久化失败。
  */
 esp_err_t network_manager_set_ble_enabled(bool enabled)
 {
-    return ble_control_set_enabled(enabled);
+    esp_err_t ret = network_manager_ensure_mutex();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+    if (xSemaphoreTake(s_manager_mutex, portMAX_DELAY) != pdTRUE)
+    {
+        return ESP_FAIL;
+    }
+
+    ret = ble_control_set_enabled(enabled);
+    if (ret != ESP_OK)
+    {
+        xSemaphoreGive(s_manager_mutex);
+        return ret;
+    }
+
+    if (!enabled)
+    {
+        const bool ble_transport_active =
+            network_provisioning_adapter_is_active() &&
+            network_provisioning_adapter_get_transport() ==
+                NETWORK_PROVISIONING_TRANSPORT_BLE;
+
+        if (ble_transport_active)
+        {
+            ret = network_manager_stop_active_transport();
+            if (ret != ESP_OK)
+            {
+                xSemaphoreGive(s_manager_mutex);
+                return ret;
+            }
+        }
+
+        network_manager_refresh_runtime_state();
+        if (!wifi_control_is_connected() &&
+            !network_provisioning_adapter_is_active() &&
+            s_state != NETWORK_MANAGER_STATE_CONNECTING_LATEST &&
+            s_state != NETWORK_MANAGER_STATE_DISCONNECTED_BY_USER)
+        {
+            s_state = NETWORK_MANAGER_STATE_IDLE;
+        }
+
+        xSemaphoreGive(s_manager_mutex);
+        return ESP_OK;
+    }
+
+    if (!wifi_control_is_connected() &&
+        !network_provisioning_adapter_is_active() &&
+        s_default_transport == NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE &&
+        s_state != NETWORK_MANAGER_STATE_CONNECTING_LATEST)
+    {
+        ret = network_manager_start_selected_transport();
+        if (ret != ESP_OK)
+        {
+            xSemaphoreGive(s_manager_mutex);
+            return ret;
+        }
+    }
+
+    network_manager_refresh_runtime_state();
+    xSemaphoreGive(s_manager_mutex);
+    return ESP_OK;
 }
 
 /**
@@ -843,7 +948,7 @@ esp_err_t network_manager_connect_recent_by_index(size_t index)
         return ESP_ERR_INVALID_ARG;
     }
 
-    ret = network_manager_connect_entry(&entries[index]);
+    ret = network_manager_connect_entry(&entries[index], false);
     xSemaphoreGive(s_manager_mutex);
     return ret;
 }

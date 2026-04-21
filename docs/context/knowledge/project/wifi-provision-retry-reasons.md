@@ -2,14 +2,16 @@
 id: wifi-provision-retry-reasons
 tags: [project, wifi, provision, diagnostics, esp32-s3]
 summary: 记录当前仓库 Wi-Fi 自动连接失败后常见断连 reason 码的含义，以及哪些告警是正常探测噪声。
-last_reviewed: 2026-04-01
+last_reviewed: 2026-04-21
 ---
 
 # Wi-Fi 自动连接重试诊断
 
-- 当前仓库在 `wifi_provision_start_auto()` 下，会先尝试使用已保存凭据走 STA 自动连接。
-- 若 `wifi_manager` 连续重试达到 `max_retry`，会回退到 `wifi_provision_start_apcfg()` 启动 AP 配网门户。
-- 为了判断真实失败原因，`components/wifi_provision/src/wifi_driver/wifi_manager.c` 已增加 `WIFI_EVENT_STA_DISCONNECTED` 的 `reason` 日志。
+- 当前仓库已不再使用旧 `wifi_provision_start_auto()` 路径。
+- 当前正式语义是：
+  - `network_manager_start()` 先尝试最近成功连接的 latest Wi-Fi
+  - 若 latest 失败，再按当前默认 transport 进入 `BLE` 或 `SoftAP` provisioning
+- Wi-Fi 断连原因日志当前由 `wifi_control` 侧的 STA 事件链路承接。
 
 # 当前已验证的 reason 码
 
@@ -25,8 +27,8 @@ last_reviewed: 2026-04-01
 
 # 当前项目中的判读经验
 
-- 若启动后先反复出现 `202 / 205 / 15`，最后才进入 AP 配网，而在网页重新输入凭据后立即连接成功，则优先怀疑：
-  - NVS 中保存的旧密码已过期或输入错误
+- 若启动后先反复出现 `202 / 205 / 15`，最后才进入 provisioning，而在重新配网后立即连接成功，则优先怀疑：
+  - recent Wi-Fi 中最新一条记录已过期或密码错误
   - 不是 UI、LVGL 或字体问题
 - 日志中若出现：
   - `wifi:state: assoc -> run`
@@ -46,5 +48,5 @@ last_reviewed: 2026-04-01
 
 # 当前建议
 
-- 看到 `202 / 205 / 15` 组合时，优先先核对 NVS 中保存的凭据是否还是最新密码。
-- 若网页重新输入同一 SSID 的新密码后能立刻成功，说明链路和驱动大概率没问题，问题主要在旧凭据。
+- 看到 `202 / 205 / 15` 组合时，优先先核对 recent Wi-Fi 中最新一条记录是否还是最新密码。
+- 若重新配网并提交同一 SSID 的新密码后能立刻成功，说明链路和驱动大概率没问题，问题主要在旧记录。

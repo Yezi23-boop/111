@@ -54,7 +54,10 @@ typedef struct
 /**
  * @brief 启动统一网络编排层。
  *
- * 当前阶段该接口先冻结 façade 入口，后续再接入真实状态机与底层组件。
+ * 当前实现会完成底层控制层初始化，并按以下优先级推进：
+ * - 若存在 latest Wi-Fi，则优先尝试最新一条 recent 记录；
+ * - 若不存在 latest，则尝试进入当前默认 provisioning transport；
+ * - 若默认 transport 是 BLE 但 BLE 总开关已关闭，则保持空闲态等待用户手动操作。
  *
  * @return `ESP_OK` 表示入口调用成功；其他错误表示底层编排初始化失败。
  */
@@ -97,6 +100,10 @@ esp_err_t network_manager_reprovision(void);
 
 /**
  * @brief 设置 BLE 总开关偏好。
+ *
+ * 该接口除了持久化 BLE enabled 偏好外，还会在需要时同步真实运行态：
+ * - 关闭 BLE 时，若当前正跑 BLE provisioning，会立即停止；
+ * - 开启 BLE 时，若当前处于空闲且默认 transport 是 BLE，会尝试立即拉起 BLE provisioning。
  *
  * @param[in] enabled true 表示允许 BLE；false 表示关闭 BLE。
  * @return `ESP_OK` 表示更新成功；其他错误表示更新失败。

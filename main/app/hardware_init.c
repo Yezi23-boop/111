@@ -1,7 +1,6 @@
 #include "hardware_init.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "wifi_provision.h"
 #include "features/audio/audio_app.h"
 #include "sd_manager.h"
 #include "audio_codec.h"
@@ -13,7 +12,7 @@
 
 /*
  * 硬件初始化实现说明：
- * - 这里收敛主工程对 NVS、音频、存储、PMIC、按键和配网入口的依赖顺序；
+ * - 这里收敛主工程对 NVS、音频、存储、PMIC 和按键的依赖顺序；
  * - 目标是把“开机后必须具备的基础能力”一次性准备好；
  * - 真正的联网状态推进交给 `network_service`，避免初始化阶段长时间阻塞。
  */
@@ -101,23 +100,6 @@ static void button_init(void)
     iot_button_register_cb(gpio_btn_handle, BUTTON_LONG_PRESS_START, NULL, button_long_press_start_cb, NULL);
 }
 /**
- * @brief 处理配网模块上报的 Wi-Fi 状态变化。
- * @param[in] state 配网状态枚举。
- * @return 无返回值。
- */
-static void wifi_provision_cb(wifi_provision_state_t state)
-{
-    if (state == WIFI_PROVISION_STATE_CONNECTED)
-    {
-        ESP_LOGI(TAG, "WiFi Connected Event Received");
-    }
-    else if (state == WIFI_PROVISION_STATE_DISCONNECTED)
-    {
-        ESP_LOGW(TAG, "WiFi Disconnected");
-    }
-}
-
-/**
  * @brief 初始化 NVS。
  * @return `ESP_OK` 表示初始化成功；其他错误表示 NVS 不可用。
  */
@@ -137,7 +119,7 @@ static esp_err_t hardware_nvs_init(void)
 /**
  * @brief 统一初始化基础硬件能力。
  *
- * 该入口负责准备 NVS、音频资源、SD、codec、板级电源和配网入口，
+ * 该入口负责准备 NVS、音频资源、SD、codec、板级电源和按键输入，
  * 但不会阻塞等待 Wi-Fi 真正连通。
  *
  * @return `ESP_OK` 表示基础硬件初始化成功；
@@ -204,15 +186,9 @@ esp_err_t hardware_init(void)
         }
     }
 
-    /* 配网入口必须在启动结束前可用，便于用户从冷启动直接进入配网。 */
+    /* 网络主链路已迁到后台 `network_service`，这里不再同步初始化旧 `wifi_provision`。 */
     ESP_LOGI(TAG, "Initializing WiFi...");
     button_init();
-    ret = wifi_provision_init(wifi_provision_cb);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "WiFi provision init failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
     ESP_LOGI(TAG, "Hardware init complete: background network startup required");
     return ESP_OK;
 }
