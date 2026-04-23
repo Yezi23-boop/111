@@ -2,7 +2,7 @@
 id: wifi-management-ui-behavior
 tags: [project, wifi, ui, provisioning, ble, softap, network-manager]
 summary: 记录主界面 Wi-Fi / Bluetooth 图标，以及全屏 Wi-Fi 管理页在当前仓库中的真实行为边界。
-last_reviewed: 2026-04-23
+last_reviewed: 2026-04-24
 ---
 
 # Wi-Fi 管理 UI 行为
@@ -121,6 +121,11 @@ last_reviewed: 2026-04-23
   - 当前会停在合法空闲态等待用户手动操作
   - 不再把后台网络服务直接打成启动失败
 - 当前页面仍是 hand-written LVGL 页，不依赖 GUI Guider 生成新的页面结构。
+- Wi-Fi 管理页返回主界面时，当前使用 `lv_screen_load_anim(..., true)` 删除旧 screen。
+  因此控制器不能只靠静态缓存指针判断“页面已创建”；每次二次打开前都必须确认
+  `lv_obj_is_valid(s_screen)`，并在 `LV_EVENT_DELETE` 时清空所有子控件缓存指针，
+  否则再次进入页面时会对悬空按钮调用 `lv_obj_add_state()`，在 `lv_style_get_prop()`
+  内触发 `LoadProhibited`。
 
 ## 当前残余风险
 

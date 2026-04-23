@@ -1,5 +1,9 @@
 # 上下文库变更记录
 
+- 2026-04-24：为 SoftAP 门户新增 Captive Portal 自动弹页壳层基线，补记其真实 owner 在 `ap_portal_adapter` 而不是官方 `network_provisioning`：当前通过 `HTTPD_404_NOT_FOUND -> /`、DNS 劫持到 `WIFI_AP_DEF` 与 DHCP Option 114 共同提供系统自动弹页能力，并新增 `softap-captive-portal-auto-popup` 知识卡固定该边界。
+- 2026-04-24：修复 Wi-Fi 管理页二次打开崩溃：`wifi_management_controller` 返回主界面时旧 screen 会被 `lv_screen_load_anim(..., true)` 删除，控制器若继续保留旧 `lv_obj_t *` 缓存，下一次打开页面时会在 `lv_obj_add_state()` 命中悬空对象并在 `lv_style_get_prop()` 内触发 `LoadProhibited`；当前已改为 `LV_EVENT_DELETE` 清空缓存，并在复用前统一校验 `lv_obj_is_valid()`。
+- 2026-04-24：修正 SoftAP 自动弹页首轮时序问题：`ap_portal_adapter_start()` 早于 `network_provisioning_adapter_start_softap()`，因此设置 DHCP Option 114 前不能假设 `WIFI_AP_DEF` 已存在；当前已在 `ap_portal_adapter` 内先补建默认 AP netif，避免门户启动阶段报 `设置 Captive Portal DHCP URI 失败: ESP_ERR_INVALID_STATE`。
+- 2026-04-24：为 SoftAP Captive Portal 增加 HTTPD 探测日志降噪策略：`ap_portal_adapter` 会在门户启动时临时把 `httpd_uri / httpd_txrx / httpd_parse` 收到 `ERROR`，并在 stop 时恢复原级别，避免系统探测流量产生的大量 404/400/socket warning 干扰主线联调。
 - 2026-04-23：新增 `.agents/skills/embedded-framework-mentor` 项目技能，并沉淀 `embedded-framework-mentor-skill` 知识卡；该 skill 以“当前项目真实边界 + 外部权威工程原则”为双基线，专门指导新功能设计、重构、评审和架构归属判断。
 - 2026-04-23：补记 SoftAP 门户成功态时序边界：设备配网成功后会主动关闭 AP/HTTPD，浏览器随后轮询 `prov-config` 可能只看到网络断开，因此门户前端需要把这类“ApplyConfig 后的 transport 断开”翻译成“设备大概率已切回目标 Wi-Fi”的成功提示，而不是简单判成失败或超时。
 - 2026-04-23：收敛 Wi-Fi 配网剩余边界：`network_manager` 现在会在用户显式点击 `Use Saved Wi-Fi / Disconnect / Reprovision` 前主动清掉上一轮 provisioning 的 pending 凭据，避免旧 SSID 被迟到结果误写回 recent；同时 `wifi_management_controller` 会在 `BLE / SoftAP provisioning` 进行中临时禁用 `Reprovision` 和 transport 切换，避免用户自己把会话 stop -> start 掉。
