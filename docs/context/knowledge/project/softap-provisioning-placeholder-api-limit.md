@@ -12,6 +12,8 @@ last_reviewed: 2026-04-23
 - 自 `2026-04-22` 起，SoftAP 门户正式主链路已迁到“浏览器端官方 provisioning client”。
 - 门户页面现在通过官方 `proto-ver / prov-session / prov-scan / prov-config` 完成版本探测、会话建立、扫描和凭据下发。
 - 旧 `/api/scan` 与 `/api/configure` 不再承载真实配网逻辑，只保留兼容提示接口。
+- 门户前端的视觉和交互可以独立迭代，但必须保持 `prov_client.js` 访问官方 `prov-*`
+  endpoint 的主链路不变；本地体验优先使用 `scripts/ap_portal_mock_server.py` 模拟端验证。
 - SoftAP 主链路若出现“AP 能起来，但浏览器始终配不成”，还要重点检查：
   - `ap_portal_adapter_start()` 是否真的接进了 SoftAP 生命周期
   - 复用 HTTPD 的 `max_uri_handlers` 是否足够容纳“自定义门户路由 + 官方 `prov-*` endpoint”
@@ -62,6 +64,7 @@ last_reviewed: 2026-04-23
 - 如果日志只看到 `NET_PROV_AP` 和 AP STA `join/leave`，但看不到任何后续配网行为，优先怀疑门户 HTTPD 没真正启动，或 URI handler 槽位不够导致关键路由未挂上。
 - 如果日志在 `AP 门户 HTTPD 已启动并复用给 SoftAP provisioning` 之后立刻崩在 `httpd_find_uri_handler()` / `httpd_register_uri_handler()`，优先怀疑 external HTTPD handle 传错了一层指针。
 - 如果仍有旧页面或旧脚本调用 `/api/scan`、`/api/configure`，现在只会收到兼容提示，不会触发真实配网。
+- 前端 UI 调整后，至少用本地模拟端验证“检测门户、扫描 Wi-Fi、点选 SSID、聚焦密码、提交、连接成功”闭环；这能覆盖浏览器端交互，但不替代真机 Wi-Fi 连接验证。
 
 ## 当前适用边界
 
