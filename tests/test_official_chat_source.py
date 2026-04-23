@@ -11,6 +11,7 @@ OFFICIAL_CHAT_MCP = OFFICIAL_CHAT_DIR / "mcp_server.cc"
 OFFICIAL_CHAT_MQTT = OFFICIAL_CHAT_DIR / "protocols" / "mqtt_protocol.cc"
 OFFICIAL_CHAT_HEADER = OFFICIAL_CHAT_DIR / "include" / "official_chat.h"
 OFFICIAL_CHAT_C_API = OFFICIAL_CHAT_DIR / "official_chat_c_api.cc"
+OFFICIAL_CHAT_OTA = OFFICIAL_CHAT_DIR / "ota.cc"
 MAIN_MANIFEST = REPO_ROOT / "main" / "idf_component.yml"
 MAIN_KCONFIG = REPO_ROOT / "main" / "Kconfig.projbuild"
 
@@ -113,6 +114,24 @@ class OfficialChatSourceTests(unittest.TestCase):
         self.assertIn("shutdown ignoring start listening event", app)
         self.assertIn("shutdown ignoring wake word event", app)
         self.assertIn("shutdown ignoring activation done event", app)
+
+    def test_official_chat_ota_waits_for_valid_system_time_before_https(self) -> None:
+        source = OFFICIAL_CHAT_OTA.read_text(encoding="utf-8")
+
+        self.assertIn("#include <esp_sntp.h>", source)
+        self.assertIn("EnsureSystemTimeValidForTls", source)
+        self.assertIn("esp_sntp_enabled()", source)
+        self.assertIn("esp_sntp_get_sync_status()", source)
+        self.assertIn("kTlsValidEpochThreshold", source)
+        self.assertIn("skip https request due to invalid system time", source)
+
+    def test_official_chat_ota_logs_tls_diagnostics_for_certificate_failures(self) -> None:
+        source = OFFICIAL_CHAT_OTA.read_text(encoding="utf-8")
+
+        self.assertIn("LogHttpTlsDiagnostics", source)
+        self.assertIn("esp_http_client_get_and_clear_last_tls_error", source)
+        self.assertIn("http tls diagnostics stage=", source)
+        self.assertIn("mbedtls -0x2700 usually means certificate validation failed", source)
 
 
 if __name__ == "__main__":

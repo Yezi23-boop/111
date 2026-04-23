@@ -22,9 +22,25 @@
 - `knowledge/project/storage-and-provisioning-paths.md`
 - `knowledge/project/plan-mode-rules.md`
 - `knowledge/project/embedded-c-cpp-engineering-rules.md`
+- `knowledge/project/embedded-framework-mentor-skill.md`
 - `knowledge/project/teaching-milestones.md`
 - `decisions/ADR-20260311-default-embedded-codegen-rules.md`
 - `decisions/README.md`
+
+## 联网与配网
+
+- `knowledge/project/network-provisioning-custom-upper-architecture.md`
+- `knowledge/project/wifi-management-ui-behavior.md`
+- `knowledge/project/storage-and-provisioning-paths.md`
+- `knowledge/project/softap-provisioning-placeholder-api-limit.md`
+- `knowledge/project/wifi-provision-removal-migration-checklist.md`
+
+## AI 与 official_chat
+
+- `knowledge/project/official-chat-feasibility-and-gap-assessment.md`
+- `knowledge/project/official-chat-config-completeness-audit.md`
+- `knowledge/project/official-chat-ota-tls-time-bootstrap.md`
+- `knowledge/project/ai-ui-entry-network-guidance.md`
 
 ## 扩展方式
 

@@ -2,7 +2,7 @@
 id: wifi-management-ui-behavior
 tags: [project, wifi, ui, provisioning, ble, softap, network-manager]
 summary: 记录主界面 Wi-Fi / Bluetooth 图标，以及全屏 Wi-Fi 管理页在当前仓库中的真实行为边界。
-last_reviewed: 2026-04-19
+last_reviewed: 2026-04-23
 ---
 
 # Wi-Fi 管理 UI 行为
@@ -66,6 +66,7 @@ last_reviewed: 2026-04-19
 - `Reprovision`
   - 当前语义：重新进入新的配网流程
   - 对应接口：`network_manager_reprovision()`
+  - 当前边界：当设备正处于 `BLE / SoftAP provisioning` 时，按钮会被临时禁用，避免用户重复点击把当前配网会话自己 stop -> start 掉
 
 ## 默认配网方式
 
@@ -81,6 +82,17 @@ last_reviewed: 2026-04-19
   - 直接尝试 BLE 配网
 - `SoftAP`
   - 直接尝试 SoftAP 配网
+
+### 运行时锁定边界
+
+- 当 `network_manager` 处于：
+  - `NETWORK_MANAGER_STATE_PROVISIONING_BLE`
+  - `NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP`
+- Wi-Fi 管理页会临时锁住：
+  - `Reprovision`
+  - `BLE`
+  - `SoftAP`
+- 这样做是因为当前 `network_manager_reprovision()` 的语义就是“立即 stop 当前 transport，再按默认 transport 重启”；如果在配网进行中继续连点这些控件，会把已经建立的 BLE/SoftAP 会话自己抖掉。
 
 ## 运行时状态收口
 
@@ -100,6 +112,11 @@ last_reviewed: 2026-04-19
 - 当前自动重连闸门实际落在：
   - `components/wifi_control`
 - 新配网流程开始前，会先停止当前活动的 BLE/AP transport，避免 UI 上存在两套入口同时活跃。
+- 用户显式点击：
+  - `Use Saved Wi-Fi`
+  - `Disconnect`
+  - `Reprovision`
+  之前，会先清掉上一轮 provisioning 尚未落盘的 pending Wi-Fi 记录，避免旧 SSID 在迟到的连网结果中被误提升为 latest recent。
 - 若设备开机时没有 recent Wi-Fi，且默认 transport 为 BLE 但 BLE 总开关已关闭：
   - 当前会停在合法空闲态等待用户手动操作
   - 不再把后台网络服务直接打成启动失败
@@ -108,5 +125,5 @@ last_reviewed: 2026-04-19
 ## 当前残余风险
 
 - 页面当前只展示 IP，不展示 SSID，状态说明仍偏最小实现。
-- “重连”会重新进入配网，但当前不会自动清空历史凭据；若用户中途退出新配网流程，后续行为仍可能受旧凭据影响。
+- 门户前端成功提示仍依赖浏览器侧的固定轮询窗口；若某些路由器认证或 DHCP 偏慢，页面可能先提示“still connecting”，随后设备其实已经成功切回 STA。
 - 旧的 `network_service_state_t` 仍服务于 AI 页面等历史消费者，因此当前仍保留一层兼容 shim，但新的 UI 和联网控制语义已经以 `network_manager` 为准。

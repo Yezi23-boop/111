@@ -28,6 +28,9 @@ static lv_obj_t *wifi_management_controller_create_action_button(
     lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y);
 static lv_obj_t *wifi_management_controller_create_transport_button(
     lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y);
+static void wifi_management_controller_set_locked(lv_obj_t *obj, bool locked);
+static void wifi_management_controller_refresh_action_lock_state(
+    network_manager_state_t state);
 
 /**
  * @brief 处理 Wi-Fi 管理页返回主界面的点击事件。
@@ -223,6 +226,61 @@ static lv_obj_t *wifi_management_controller_create_transport_button(
 }
 
 /**
+ * @brief 按是否锁定刷新单个按钮的交互态。
+ *
+ * 当前 Wi-Fi 管理页使用该辅助函数统一收口“配网进行中”的禁用逻辑，避免多个按钮
+ * 各自散落地直接操作 `LV_STATE_DISABLED`。
+ *
+ * @param[in] obj 目标按钮对象，可为 `NULL`。
+ * @param[in] locked true 表示禁用交互；false 表示恢复可点击。
+ */
+static void wifi_management_controller_set_locked(lv_obj_t *obj, bool locked)
+{
+    if (obj == NULL)
+    {
+        return;
+    }
+
+    if (locked)
+    {
+        lv_obj_add_state(obj, LV_STATE_DISABLED);
+    }
+    else
+    {
+        lv_obj_remove_state(obj, LV_STATE_DISABLED);
+    }
+}
+
+/**
+ * @brief 根据当前网络主状态刷新页面操作锁定态。
+ *
+ * BLE / SoftAP provisioning 期间，重复点击 `Reprovision` 或切换 transport
+ * 会把当前会话直接 stop -> start 掉，导致用户自己把配网流程抖断。因此这里在
+ * provisioning 进行中锁住：
+ * - `Reprovision`
+ * - `BLE`
+ * - `SoftAP`
+ *
+ * 其余操作暂保持原样，避免扩大本轮改动范围。
+ *
+ * @param[in] state 当前 `network_manager` 主状态。
+ */
+static void wifi_management_controller_refresh_action_lock_state(
+    network_manager_state_t state)
+{
+    const bool provisioning_locked =
+        (state == NETWORK_MANAGER_STATE_PROVISIONING_BLE) ||
+        (state == NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP);
+
+    wifi_management_controller_set_locked(s_reprovision_btn,
+                                          provisioning_locked);
+    wifi_management_controller_set_locked(s_transport_ble_btn,
+                                          provisioning_locked);
+    wifi_management_controller_set_locked(s_transport_softap_btn,
+                                          provisioning_locked);
+}
+
+/**
  * @brief 根据默认 provisioning transport 刷新底部设置按钮选中态。
  *
  * @param[in] transport 当前默认 provisioning transport。
@@ -278,6 +336,7 @@ static void wifi_management_controller_refresh(void)
     }
 
     wifi_management_controller_refresh_transport_buttons(status.default_transport);
+    wifi_management_controller_refresh_action_lock_state(status.state);
 
     if (status.wifi_connected)
     {

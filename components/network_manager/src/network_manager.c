@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ap_portal_adapter.h"
 #include "ble_control.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -44,6 +45,7 @@ static esp_err_t network_manager_connect_entry(
 static esp_err_t network_manager_ensure_monitor_task(void);
 static void network_manager_task(void *arg);
 static void network_manager_clear_pending_provisioned_entry(void);
+static void network_manager_drop_pending_provisioned_entry_for_manual_action(void);
 static void network_manager_on_provisioning_event(
     network_provisioning_adapter_event_t event,
     const wifi_sta_config_t *wifi_sta_config, void *user_ctx);
@@ -68,6 +70,34 @@ static void network_manager_clear_pending_provisioned_entry(void)
     s_pending_provisioned_entry_valid = false;
     s_pending_provisioned_entry_connecting = false;
     memset(&s_pending_provisioned_entry, 0, sizeof(s_pending_provisioned_entry));
+}
+
+/**
+ * @brief 在用户显式切换联网动作前丢弃上一轮 provisioning 暂存凭据。
+ *
+ * `pending provisioning entry` 只应该服务“当前这轮门户/BLE 下发的凭据，等待 STA
+ * 真正连上后再写 recent”。一旦用户显式点击：
+ * - `Use Saved Wi-Fi`
+ * - `Disconnect`
+ * - `Reprovision`
+ *
+ * 就说明用户已经放弃上一轮 provisioning 结果，继续保留旧 pending 会带来两个风险：
+ * 1. 旧 STA 结果迟到时，可能把已经放弃的 SSID 误提升为最新 recent；
+ * 2. UI 看起来是在执行新动作，底层 recent 落盘却仍受旧凭据影响。
+ *
+ * 该辅助函数只在已经持有 `s_manager_mutex` 的手动动作路径下调用。
+ *
+ * @return 无返回值。
+ */
+static void network_manager_drop_pending_provisioned_entry_for_manual_action(void)
+{
+    if (!s_pending_provisioned_entry_valid &&
+        !s_pending_provisioned_entry_connecting)
+    {
+        return;
+    }
+
+    network_manager_clear_pending_provisioned_entry();
 }
 
 /**
@@ -145,6 +175,8 @@ static void network_manager_sync_ble_active_from_adapter(void)
 static esp_err_t network_manager_stop_active_transport(void)
 {
     esp_err_t ret = ESP_OK;
+    const network_provisioning_transport_t active_transport =
+        network_provisioning_adapter_get_transport();
 
     if (!network_provisioning_adapter_is_active())
     {
@@ -153,6 +185,16 @@ static esp_err_t network_manager_stop_active_transport(void)
     }
 
     ret = network_provisioning_adapter_stop();
+    if (ret == ESP_OK)
+    {
+        if (active_transport == NETWORK_PROVISIONING_TRANSPORT_SOFTAP)
+        {
+            /* SoftAP 路径使用自定义门户 HTTPD 作为官方 provisioning 的宿主；
+             * transport 停止后要同步收口门户服务，避免下一轮切换时继续持有旧 handle。 */
+            ret = ap_portal_adapter_stop();
+        }
+    }
+
     if (ret == ESP_OK)
     {
         (void)ble_control_set_active(false);
@@ -199,6 +241,15 @@ static esp_err_t network_manager_start_selected_transport(void)
         return ret;
 
     case NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP:
+        /* 先确保自定义门户 HTTPD 已创建，再把同一个 handle 复用给官方 SoftAP
+         * provisioning。否则设备端即使起了 AP，也没有我们的页面资源和入口。 */
+        ret = ap_portal_adapter_start();
+        if (ret != ESP_OK)
+        {
+            s_state = NETWORK_MANAGER_STATE_ERROR;
+            return ret;
+        }
+
         ret = network_provisioning_adapter_start_softap();
         if (ret == ESP_OK)
         {
@@ -207,6 +258,7 @@ static esp_err_t network_manager_start_selected_transport(void)
         }
         else
         {
+            (void)ap_portal_adapter_stop();
             s_state = NETWORK_MANAGER_STATE_ERROR;
         }
         return ret;
@@ -652,6 +704,7 @@ esp_err_t network_manager_use_latest_wifi(void)
         return ret;
     }
 
+    network_manager_drop_pending_provisioned_entry_for_manual_action();
     ret = network_manager_connect_entry(&latest, false);
     xSemaphoreGive(s_manager_mutex);
     return ret;
@@ -676,6 +729,7 @@ esp_err_t network_manager_disconnect(void)
         return ESP_FAIL;
     }
 
+    network_manager_drop_pending_provisioned_entry_for_manual_action();
     ret = wifi_control_disconnect();
     if (ret != ESP_OK)
     {
@@ -716,6 +770,7 @@ esp_err_t network_manager_reprovision(void)
         return ESP_FAIL;
     }
 
+    network_manager_drop_pending_provisioned_entry_for_manual_action();
     wifi_control_set_auto_reconnect_enabled(false);
     ret = network_manager_stop_active_transport();
     if (ret != ESP_OK)

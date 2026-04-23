@@ -18,6 +18,10 @@
 static const char *TAG = "ap_portal";
 /** @brief 当前门户 HTTPD 句柄；官方 SoftAP provisioning 会复用这个实例。 */
 static httpd_handle_t s_portal_server = NULL;
+/** @brief 指向门户 HTTPD 句柄变量本身的稳定地址；供 protocomm 以“外部句柄存储”形式解引用。 */
+static httpd_handle_t *const s_portal_server_ref = &s_portal_server;
+/** @brief 为“自定义门户路由 + 官方 prov-* endpoint”预留的 URI handler 槽位数。 */
+static const uint16_t kPortalMaxUriHandlers = 20;
 /** @brief AP 门户句柄保护 mutex 的静态存储。 */
 static StaticSemaphore_t s_portal_mutex_buffer;
 /** @brief 串行化门户 HTTPD 启停与句柄发布的 mutex。 */
@@ -78,14 +82,22 @@ esp_err_t ap_portal_adapter_start(void)
 
     if (s_portal_server != NULL)
     {
-        network_prov_scheme_softap_set_httpd_handle((void *)s_portal_server);
+        /* protocomm 在 external HTTPD 模式下会把传入值当成 `httpd_handle_t *`
+         * 再做一次解引用，因此这里必须传“句柄变量地址”而不是“句柄值本身”。
+         * 若少这一层 `&`，官方 `prov-*` endpoint 注册阶段会把 HTTPD 内部结构
+         * 误当成句柄存储使用，最终在 `httpd_find_uri_handler()` 中读到野指针并 panic。 */
+        network_prov_scheme_softap_set_httpd_handle((void *)s_portal_server_ref);
         xSemaphoreGive(s_portal_mutex);
         return ESP_OK;
     }
 
-    /* AP 门户页面后续会继续承接配置交互与浏览器请求，因此这里先提升 URI handler 容量，
-     * 避免后续叠加 provisioning endpoint 时过早碰到 handler 数量上限。 */
-    config.max_uri_handlers = 8;
+    /* 这里必须同时容纳：
+     * 1. 自定义门户页面自己的静态资源和兼容接口
+     * 2. 官方 SoftAP provisioning 动态注册的 `proto-ver / prov-session /
+     *    prov-config / prov-scan / prov-ctrl`
+     * 如果槽位不够，HTTPD 会在注册阶段直接返回 `ESP_ERR_HTTPD_HANDLERS_FULL`，
+     * 现象上就会变成“AP 能起来，但门户页或官方 endpoint 没挂全”。 */
+    config.max_uri_handlers = kPortalMaxUriHandlers;
     config.stack_size = 8192;
 
     ret = httpd_start(&s_portal_server, &config);
@@ -106,7 +118,9 @@ esp_err_t ap_portal_adapter_start(void)
         return ret;
     }
 
-    network_prov_scheme_softap_set_httpd_handle((void *)s_portal_server);
+    /* 这里同样传递句柄变量地址，保证官方 SoftAP provisioning 在注册 `prov-session /
+     * prov-scan / prov-config` 等 endpoint 时拿到的是真实 HTTPD handle。 */
+    network_prov_scheme_softap_set_httpd_handle((void *)s_portal_server_ref);
     ESP_LOGI(TAG, "AP 门户 HTTPD 已启动并复用给 SoftAP provisioning");
     xSemaphoreGive(s_portal_mutex);
     return ESP_OK;

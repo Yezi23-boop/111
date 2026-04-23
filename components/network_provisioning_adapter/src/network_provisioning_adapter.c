@@ -7,7 +7,9 @@
 
 #include <string.h>
 
+#include "esp_netif.h"
 #include "esp_log.h"
+#include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/semphr.h"
@@ -56,6 +58,8 @@ typedef struct
 
 /** @brief 组件日志标签。 */
 static const char *TAG = "net_prov_adpt";
+/** @brief 官方默认 SoftAP esp-netif 的固定 ifkey；用于查询是否已经创建过 AP netif。 */
+static const char *kWifiApIfKey = "WIFI_AP_DEF";
 
 /** @brief 单实例全局运行时上下文。 */
 static network_provisioning_adapter_runtime_t s_runtime = {
@@ -79,6 +83,7 @@ static portMUX_TYPE s_lifecycle_bootstrap_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static esp_err_t network_provisioning_adapter_ensure_mutex(void);
 static esp_err_t network_provisioning_adapter_ensure_lifecycle_mutex(void);
+static esp_err_t network_provisioning_adapter_ensure_softap_netif(void);
 static void network_provisioning_adapter_set_runtime_state_threadsafe(
     network_provisioning_adapter_state_t state,
     network_provisioning_transport_t transport, bool manager_started);
@@ -138,6 +143,40 @@ static esp_err_t network_provisioning_adapter_ensure_lifecycle_mutex(void)
     portEXIT_CRITICAL(&s_lifecycle_bootstrap_lock);
 
     return s_lifecycle_mutex != NULL ? ESP_OK : ESP_FAIL;
+}
+
+/**
+ * @brief 确保官方 SoftAP 默认 netif 已创建。
+ *
+ * 官方 `wifi_prov_mgr` SoftAP 示例会在启动 provisioning 之前显式创建
+ * `esp_netif_create_default_wifi_ap()`。当前仓库长期只初始化了 STA netif，
+ * 这会让 SoftAP 无线侧虽然能起来，但 AP 侧网络接口和后续 HTTP 承载链路不完整，
+ * 进而表现为客户端能连上热点、`192.168.4.1:80` 可达，但 official provisioning
+ * 请求一进来就被设备端直接断开。
+ *
+ * 这里先按官方默认 `if_key = "WIFI_AP_DEF"` 查询现有 AP netif，只有在确实不存在时
+ * 才补建，避免和其他调用方重复创建默认接口。
+ *
+ * @return `ESP_OK` 表示 AP netif 已可用；其他错误表示创建失败。
+ */
+static esp_err_t network_provisioning_adapter_ensure_softap_netif(void)
+{
+    esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey(kWifiApIfKey);
+
+    if (ap_netif != NULL)
+    {
+        return ESP_OK;
+    }
+
+    ap_netif = esp_netif_create_default_wifi_ap();
+    if (ap_netif == NULL)
+    {
+        ESP_LOGE(TAG, "创建默认 SoftAP netif 失败");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "已补建默认 SoftAP netif，供官方 provisioning HTTP 服务复用");
+    return ESP_OK;
 }
 
 /**
@@ -398,6 +437,18 @@ static esp_err_t network_provisioning_adapter_start_transport(
     if (ret != ESP_OK)
     {
         return ret;
+    }
+
+    if (transport == NETWORK_PROVISIONING_TRANSPORT_SOFTAP)
+    {
+        ret = network_provisioning_adapter_ensure_softap_netif();
+        if (ret != ESP_OK)
+        {
+            network_provisioning_adapter_set_runtime_state_threadsafe(
+                NETWORK_PROVISIONING_ADAPTER_STATE_ERROR,
+                NETWORK_PROVISIONING_TRANSPORT_NONE, false);
+            return ret;
+        }
     }
 
     service_name =

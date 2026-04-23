@@ -1,5 +1,14 @@
 # 上下文库变更记录
 
+- 2026-04-23：新增 `.agents/skills/embedded-framework-mentor` 项目技能，并沉淀 `embedded-framework-mentor-skill` 知识卡；该 skill 以“当前项目真实边界 + 外部权威工程原则”为双基线，专门指导新功能设计、重构、评审和架构归属判断。
+- 2026-04-23：补记 SoftAP 门户成功态时序边界：设备配网成功后会主动关闭 AP/HTTPD，浏览器随后轮询 `prov-config` 可能只看到网络断开，因此门户前端需要把这类“ApplyConfig 后的 transport 断开”翻译成“设备大概率已切回目标 Wi-Fi”的成功提示，而不是简单判成失败或超时。
+- 2026-04-23：收敛 Wi-Fi 配网剩余边界：`network_manager` 现在会在用户显式点击 `Use Saved Wi-Fi / Disconnect / Reprovision` 前主动清掉上一轮 provisioning 的 pending 凭据，避免旧 SSID 被迟到结果误写回 recent；同时 `wifi_management_controller` 会在 `BLE / SoftAP provisioning` 进行中临时禁用 `Reprovision` 和 transport 切换，避免用户自己把会话 stop -> start 掉。
+- 2026-04-23：新增 `official-chat-ota-tls-time-bootstrap`，固化当前 `official_chat` 真机激活中“Wi-Fi 已通但 OTA HTTPS 首轮因系统时间无效触发 TLS 证书校验失败”的根因、SNTP bootstrap 修复策略与诊断日志判读；同时在 `knowledge-map` 中新增 “AI 与 official_chat” 导航分组。
+- 2026-04-22：SoftAP 门户正式切到“自定义 UI + 浏览器端官方 provisioning client”主链路，`app.js` 通过 `prov_client.js` 直连官方 `proto-ver / prov-session / prov-scan / prov-config`；同时 `ap_portal_routes` 补齐 `/prov_client.js` 与 `/prov_proto_bundle.js` 静态资源路由，旧 `/api/scan`、`/api/configure` 收口为兼容提示接口。
+- 2026-04-23：排查 SoftAP 真机“AP 能起来但实现不了联网”时，补记并修复两条关键边界：`network_manager` 的 SoftAP 启动链必须显式调用 `ap_portal_adapter_start()/stop()`，且复用 HTTPD 的 `max_uri_handlers` 必须预留足够槽位同时承载自定义门户路由和官方 `prov-*` endpoint。
+- 2026-04-23：继续修复 SoftAP 真机 panic，补记 external HTTPD 句柄复用的真实约束：`network_prov_scheme_softap_set_httpd_handle()` 需要传 `httpd_handle_t` 变量地址而不是句柄值本身，否则官方 `prov-*` endpoint 注册阶段会在 `httpd_find_uri_handler()` 内部因错误解引用触发 `LoadProhibited`。
+- 2026-04-23：继续收敛 SoftAP official provisioning 卡住问题；对齐官方 `wifi_prov_mgr` 示例，在 `network_provisioning_adapter` 的 SoftAP 启动路径中显式确保默认 AP netif（`esp_netif_create_default_wifi_ap()`）已存在，避免长期仅初始化 STA netif 时出现“客户端能连上 AP，但 `proto-ver / prov-session` 请求被设备端直接断开”的异常。
+- 2026-04-22：重新梳理联网/配网上下文，新增 `softap-provisioning-placeholder-api-limit` 固化“SoftAP 门户已启动但 `/api/scan`、`/api/configure` 仍返回 `501 Not Implemented`”的真实限制；同时将 `ble-provisioning-wifi-scan-over-ble` 明确改标为历史卡，并在 `knowledge-map` 中补出“联网与配网”导航分组，避免后续继续被旧 BLE 自定义协议卡误导。
 - 2026-04-21：继续做 `wifi_provision` 退场后的上下文去陈旧化，更新 `repo-overview`、`startup-init-and-blocking-chain`、`storage-and-provisioning-paths`、`nonblocking-boot-network-service`、`low-power-management-baseline`、`power-wakeup-control-map`，把当前网络 owner、AP 门户来源、启动链路与按键语义统一改写到 `network_manager / wifi_control / network_provisioning_adapter / ap_portal_adapter` 现状。
 - 2026-04-21：完成 `wifi_provision` 退场第 3/4 阶段：旧源码测试已迁到 `network_manager / network_provisioning_adapter / ap_portal_adapter / wifi_control` 新基线，`components/wifi_provision` 已物理删除，并同步更新 `wifi-provision-removal-migration-checklist` 与 `network-provisioning-custom-upper-architecture` 为“旧组件已退场”的当前事实。
 - 2026-04-21：继续推进 `wifi_provision` 退场，第 2 阶段已落地：`main/CMakeLists.txt` 与 `components/official_chat/CMakeLists.txt` 已移除 `wifi_provision` 显式依赖，且主工程运行时代码（排除旧组件自身）已无 `wifi_provision_*` 直接调用；同步更新 `wifi-provision-removal-migration-checklist` 的完成度记录。
