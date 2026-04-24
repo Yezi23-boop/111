@@ -8,7 +8,7 @@ idf_component_register(
         "src/ap_portal_routes.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src"
-    REQUIRES esp_http_server network_provisioning log
+    REQUIRES esp_http_server network_provisioning log esp_netif captive_portal_dns lwip
     EMBED_TXTFILES
         "web/index.html"
         "web/app.js"

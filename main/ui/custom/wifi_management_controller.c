@@ -22,6 +22,7 @@ static lv_timer_t *s_status_timer = NULL;
 
 static void wifi_management_controller_refresh(void);
 static void wifi_management_controller_ensure_screen_created(void);
+static void wifi_management_controller_reset_screen_refs(void);
 static bool wifi_management_controller_get_status(
     network_manager_status_t *status);
 static lv_obj_t *wifi_management_controller_create_action_button(
@@ -31,6 +32,24 @@ static lv_obj_t *wifi_management_controller_create_transport_button(
 static void wifi_management_controller_set_locked(lv_obj_t *obj, bool locked);
 static void wifi_management_controller_refresh_action_lock_state(
     network_manager_state_t state);
+static bool wifi_management_controller_is_screen_alive(void);
+
+/**
+ * @brief 在 Wi-Fi 管理页对象被删除时清空缓存指针。
+ *
+ * 当前页面通过静态全局指针缓存 `screen / label / button`，方便二次打开时复用。
+ * 但返回主界面时 `lv_screen_load_anim(..., true)` 会删除旧 screen；如果这里不在
+ * `LV_EVENT_DELETE` 回调里同步清空缓存，下一次再次打开页面时就会把已经释放的
+ * `lv_obj_t *` 当成活对象继续调用 `lv_obj_add_state()`，最终在 `lv_style_get_prop()`
+ * 里因悬空对象触发 `LoadProhibited`。
+ *
+ * @param[in] e LVGL 事件对象，当前只用于表明删除事件已到达。
+ */
+static void wifi_management_screen_delete_event_cb(lv_event_t *e)
+{
+    (void)e;
+    wifi_management_controller_reset_screen_refs();
+}
 
 /**
  * @brief 处理 Wi-Fi 管理页返回主界面的点击事件。
@@ -134,7 +153,8 @@ static void wifi_management_status_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
 
-    if (s_screen == NULL || lv_screen_active() != s_screen)
+    if (!wifi_management_controller_is_screen_alive() ||
+        lv_screen_active() != s_screen)
     {
         return;
     }
@@ -226,6 +246,36 @@ static lv_obj_t *wifi_management_controller_create_transport_button(
 }
 
 /**
+ * @brief 判断当前缓存的 Wi-Fi 管理页 screen 是否仍然有效。
+ *
+ * @return true 表示 `s_screen` 仍是 LVGL 有效对象；false 表示 screen 为空或已被删除。
+ */
+static bool wifi_management_controller_is_screen_alive(void)
+{
+    return s_screen != NULL && lv_obj_is_valid(s_screen);
+}
+
+/**
+ * @brief 清空当前页面相关的所有对象缓存。
+ *
+ * 这里不会删除对象本身，而是在 LVGL 已经进入删除流程后把 hand-written 控制层的静态
+ * 指针全部置空，确保下一次打开页面时重新创建一套全新的 screen 和子控件。
+ *
+ * @return 无返回值。
+ */
+static void wifi_management_controller_reset_screen_refs(void)
+{
+    s_screen = NULL;
+    s_status_title = NULL;
+    s_status_detail = NULL;
+    s_retry_saved_btn = NULL;
+    s_disconnect_btn = NULL;
+    s_reprovision_btn = NULL;
+    s_transport_ble_btn = NULL;
+    s_transport_softap_btn = NULL;
+}
+
+/**
  * @brief 按是否锁定刷新单个按钮的交互态。
  *
  * 当前 Wi-Fi 管理页使用该辅助函数统一收口“配网进行中”的禁用逻辑，避免多个按钮
@@ -236,7 +286,7 @@ static lv_obj_t *wifi_management_controller_create_transport_button(
  */
 static void wifi_management_controller_set_locked(lv_obj_t *obj, bool locked)
 {
-    if (obj == NULL)
+    if (obj == NULL || !lv_obj_is_valid(obj))
     {
         return;
     }
@@ -295,7 +345,7 @@ static void wifi_management_controller_refresh_transport_buttons(
 
     for (size_t index = 0; index < sizeof(buttons) / sizeof(buttons[0]); ++index)
     {
-        if (buttons[index] == NULL)
+        if (buttons[index] == NULL || !lv_obj_is_valid(buttons[index]))
         {
             continue;
         }
@@ -323,7 +373,9 @@ static void wifi_management_controller_refresh(void)
     network_manager_status_t status = {0};
     char detail[96] = {0};
 
-    if (s_status_title == NULL || s_status_detail == NULL)
+    if (!wifi_management_controller_is_screen_alive() ||
+        s_status_title == NULL || s_status_detail == NULL ||
+        !lv_obj_is_valid(s_status_title) || !lv_obj_is_valid(s_status_detail))
     {
         return;
     }
@@ -394,16 +446,20 @@ static void wifi_management_controller_refresh(void)
  */
 static void wifi_management_controller_ensure_screen_created(void)
 {
-    if (s_screen != NULL)
+    if (wifi_management_controller_is_screen_alive())
     {
         return;
     }
+
+    wifi_management_controller_reset_screen_refs();
 
     s_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x0f172a),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER,
                             LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(s_screen, wifi_management_screen_delete_event_cb,
+                        LV_EVENT_DELETE, NULL);
 
     lv_obj_t *title = lv_label_create(s_screen);
     lv_label_set_text(title, "Wi-Fi Manager");

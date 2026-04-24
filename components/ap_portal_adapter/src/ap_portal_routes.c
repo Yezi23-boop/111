@@ -179,6 +179,30 @@ static esp_err_t ap_portal_favicon_handler(httpd_req_t *req)
 }
 
 /**
+ * @brief 将未知 HTTP 路径重定向到门户首页。
+ *
+ * 当前不能使用“全量通配重定向”去吞掉所有请求，因为官方 `prov-*` endpoint 与静态资源
+ * 都复用同一个 HTTPD。选择 404 error handler 的原因是：只把系统联网探测访问到的未知
+ * 路径引到 `/`，而不误伤已经注册完成的协议接口和前端资源。
+ *
+ * @param[in] req HTTP 请求对象。
+ * @param[in] err HTTP 错误码；当前主要处理 `HTTPD_404_NOT_FOUND`。
+ * @return `ESP_OK` 表示重定向响应已提交。
+ */
+static esp_err_t ap_portal_captive_redirect_error_handler(httpd_req_t *req,
+                                                          httpd_err_code_t err)
+{
+    (void)err;
+
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/");
+    /* iOS captive portal 检测通常要求响应体存在实际内容，单纯返回空 redirect
+     * 有机会被系统忽略，导致“已连热点但不自动弹页”。 */
+    return httpd_resp_send(req, "Redirect to the captive portal",
+                           HTTPD_RESP_USE_STRLEN);
+}
+
+/**
  * @brief 向给定 HTTPD 注册 AP 门户路由。
  *
  * 当前会注册：
@@ -272,6 +296,13 @@ esp_err_t ap_portal_routes_register(httpd_handle_t server)
         {
             return ret;
         }
+    }
+
+    ret = httpd_register_err_handler(server, HTTPD_404_NOT_FOUND,
+                                     ap_portal_captive_redirect_error_handler);
+    if (ret != ESP_OK)
+    {
+        return ret;
     }
 
     return ESP_OK;

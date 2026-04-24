@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-23T15:01:50.985234+00:00",
+  "generated_at_utc": "2026-04-24T07:39:08.685461+00:00",
   "project_root": "C:\\Users\\ye\\Desktop\\111",
   "docs_root": "docs/context",
-  "doc_count": 70,
+  "doc_count": 71,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-23：新增 `.agents/skills/embedded-framework-mentor` 项目技能，并沉淀 `embedded-framework-mentor-skill` 知识卡；该 skill 以“当前项目真实边界 + 外部权威工程原则”为双基线，专门指导新功能设计、重构、评审和架构归属判断。",
+      "summary": "- 2026-04-24：为 SoftAP 门户新增 Captive Portal 自动弹页壳层基线，补记其真实 owner 在 `ap_portal_adapter` 而不是官方 `network_provisioning`：当前通过 `HTTPD_404_NOT_FOUND -> /`、DNS 劫持到 `WIFI_AP_DEF` 与 DHCP Optio",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-23T15:01:42.967070+00:00",
-      "token_count": 3131
+      "mtime_utc": "2026-04-24T07:33:30.066246+00:00",
+      "token_count": 3238
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -952,6 +952,23 @@
       "token_count": 546
     },
     {
+      "path": "docs/context/knowledge/project/softap-captive-portal-auto-popup.md",
+      "title": "SoftAP 自动弹页壳层边界",
+      "tags": [
+        "project",
+        "wifi",
+        "softap",
+        "captive-portal",
+        "ap-portal",
+        "provisioning"
+      ],
+      "summary": "记录当前仓库 SoftAP 自动弹页能力的真实归属边界：官方 `prov-*` endpoint 负责真实配网，自动弹页由 `ap_portal_adapter` 外挂的 DNS 劫持、404 redirect 与 DHCP Option 114 壳层提供。",
+      "id": "softap-captive-portal-auto-popup",
+      "last_reviewed": "2026-04-24",
+      "mtime_utc": "2026-04-24T07:33:30.066246+00:00",
+      "token_count": 219
+    },
+    {
       "path": "docs/context/knowledge/project/softap-provisioning-placeholder-api-limit.md",
       "title": "SoftAP 门户官方客户端迁移边界",
       "tags": [
@@ -965,9 +982,9 @@
       ],
       "summary": "记录 SoftAP 门户从旧设备侧 JSON 占位 API 迁移到浏览器端官方 provisioning client 之后的真实边界：主链路已切到 `prov-*` endpoint，旧 `/api/scan`、`/api/configure` 仅保留兼容提示。",
       "id": "softap-provisioning-placeholder-api-limit",
-      "last_reviewed": "2026-04-23",
-      "mtime_utc": "2026-04-23T14:11:26.654953+00:00",
-      "token_count": 435
+      "last_reviewed": "2026-04-24",
+      "mtime_utc": "2026-04-24T07:38:58.751429+00:00",
+      "token_count": 529
     },
     {
       "path": "docs/context/knowledge/project/startup-init-and-blocking-chain.md",
@@ -1123,9 +1140,9 @@
       ],
       "summary": "记录主界面 Wi-Fi / Bluetooth 图标，以及全屏 Wi-Fi 管理页在当前仓库中的真实行为边界。",
       "id": "wifi-management-ui-behavior",
-      "last_reviewed": "2026-04-23",
-      "mtime_utc": "2026-04-23T12:58:01.980373+00:00",
-      "token_count": 398
+      "last_reviewed": "2026-04-24",
+      "mtime_utc": "2026-04-24T07:33:30.073996+00:00",
+      "token_count": 420
     },
     {
       "path": "docs/context/knowledge/project/wifi-provision-removal-migration-checklist.md",
