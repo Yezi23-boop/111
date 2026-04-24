@@ -83,7 +83,17 @@ last_reviewed: 2026-04-01
   - 在 `HandleStateChanged()` 的 shutdown 路径里强制关闭 wake word detection / voice processing，并保持 decoder 复位
   - 音频 wake word callback 在 `shutting_down_` 期间不再继续投递 `kMainEventWakeWordDetected`
 
-### 3. MQTT 层不要手动 `disconnect`
+### 4. shutdown fence 不能拦截 StopListening
+
+- 2026-04-24 真机日志显示退出 AI 页时：
+  - `prepare shutdown armed`
+  - `official_chat_stop_listening during shutdown failed: ESP_ERR_INVALID_STATE`
+  - `shutdown waiting for idle before destroy state=listening`
+- 根因是服务层先调用 `official_chat_prepare_shutdown()`，使 `Application::shutting_down_` 置位；随后 `official_chat_stop_listening()` 被 `StopListening()` 的 shutdown guard 拒绝。
+- `kMainEventStopListening` 是停机收敛路径，不是新的用户交互入口；`RunLoop()` 在 shutdown 期间本来就允许执行 `HandleStopListeningEvent()`。
+- 因此 `StopListening()` 只检查 `started_ / event_group_`，即使 `shutting_down_` 已置位也允许投递停止事件，让 `connecting / listening / speaking` 能关闭音频通道并回到 `idle`。
+
+### 5. MQTT 层不要手动 `disconnect`
 
 - `esp_mqtt_client_disconnect()` 在 ESP-IDF 5.5.3 里只是设置 `DISCONNECT_BIT`。
 - MQTT 任务随后会在 `MQTT_STATE_CONNECTED` 分支里：

@@ -166,3 +166,7 @@
 - 2026-04-23：继续精简 SoftAP 配网页顶部区域，删除大号 H1 标题，将入口改为“绿点 + 手表 Wi-Fi 配网”的自然标题样式，并保留一段轻说明。
 - 2026-04-23：继续优化 SoftAP 配网页首屏信息密度，将顶部说明压缩为一句话，并把三块式步骤卡片改成更轻的横向点线步骤条。
 - 2026-04-23：按用户反馈隐藏 SoftAP 配网页流程点线显示，仅保留“当前状态”摘要，同时将设备门户状态改成用户可理解的连接说明，不再显示协议版本细节。
+- 2026-04-24：修复 official_chat 退出 AI 页时 `prepare_shutdown` 后 `stop_listening` 被 shutdown fence 拒绝的问题；`StopListening()` 作为停机收敛事件允许在 `shutting_down_` 期间投递，避免服务卡在 `listening` 等待 idle。
+- 2026-04-24：在根目录 `AGENTS.md` 固化双电脑 ESP-IDF 5.5.3 export 路径尝试顺序：先 `D:\esp-idf\v5.5.3\esp-idf\export.ps1`，不存在时再用 `D:\esp32\v5.5.3\esp-idf\export.ps1`，最后才检查 `IDF_PATH` 或搜索本机路径。
+- 2026-04-24：按 `D:\xiaozhi-esp32` 官方实现对齐 official_chat 音频队列模型，保持 `std::deque<std::unique_ptr<AudioTask>> + std::condition_variable` 的多队列等待结构，不采用固定环形队列或局部 FreeRTOS queue；仅保留音频编解码 frame 结构体字段显式初始化以清理构建 warning。
+- 2026-04-24：新增仓库级 `.gitattributes`，统一文本文件 `eol=crlf` 并标记常见二进制资源为 binary；同时将本仓库 Git 配置设为 `core.autocrlf=true`、`core.eol=crlf`，并让 `scripts/context/build_index.py` 显式以 CRLF 写出索引，按 Windows 默认换行约定避免 VSCode/Git 反复提示。

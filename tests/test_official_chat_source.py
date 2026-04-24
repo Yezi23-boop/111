@@ -114,6 +114,31 @@ class OfficialChatSourceTests(unittest.TestCase):
         self.assertIn("shutdown ignoring start listening event", app)
         self.assertIn("shutdown ignoring wake word event", app)
         self.assertIn("shutdown ignoring activation done event", app)
+        self.assertIn("StopListening 是 shutdown 收敛路径的一部分", app)
+        self.assertIn("xEventGroupSetBits(event_group_, kMainEventStopListening);",
+                      app)
+
+    def test_official_chat_audio_encode_queue_aligns_with_official_stl_queue(self) -> None:
+        header = (OFFICIAL_CHAT_DIR / "audio" / "audio_service.h").read_text(
+            encoding="utf-8"
+        )
+        source = (OFFICIAL_CHAT_DIR / "audio" / "audio_service.cc").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("class FixedAudioTaskQueue", header)
+        self.assertNotIn("FixedAudioTaskQueue audio_encode_queue_;", header)
+        self.assertIn(
+            "std::deque<std::unique_ptr<AudioTask>> audio_encode_queue_",
+            header,
+        )
+        self.assertIn("auto task = std::move(audio_encode_queue_.front());", source)
+        self.assertIn("audio_encode_queue_.pop_front();", source)
+        self.assertIn(
+            "audio_encode_queue_.size() < kMaxEncodeTasksInQueue",
+            source,
+        )
+        self.assertIn("audio_encode_queue_.push_back(std::move(task));", source)
 
     def test_official_chat_ota_waits_for_valid_system_time_before_https(self) -> None:
         source = OFFICIAL_CHAT_OTA.read_text(encoding="utf-8")

@@ -360,10 +360,14 @@ esp_err_t Application::ToggleChat() {
 }
 
 esp_err_t Application::StopListening() {
-  if (!started_ || event_group_ == nullptr ||
-      shutting_down_.load(std::memory_order_acquire)) {
+  if (!started_ || event_group_ == nullptr) {
     return ESP_ERR_INVALID_STATE;
   }
+  /*
+   * StopListening 是 shutdown 收敛路径的一部分：PrepareForShutdown 会先拉起
+   * shutting_down_ fence 来屏蔽新的 start/toggle/wakeword，但此时仍必须允许
+   * 服务层投递停止事件，把 connecting/listening/speaking 状态推进回 idle。
+   */
   xEventGroupSetBits(event_group_, kMainEventStopListening);
   return ESP_OK;
 }

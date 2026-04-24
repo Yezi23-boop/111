@@ -10,7 +10,11 @@
 
 ## ESP-IDF Rules
 要求使用freertos
-- 先使用 `D:\esp-idf\v5.5.3\esp-idf\export.ps1` 拉起 `IDF 5.5` 环境，再实际执行 `idf.py build`。
+- 拉起 `IDF 5.5` 环境时，用户常在两台不同电脑编译，必须按顺序尝试：
+  1. 优先使用 `D:\esp-idf\v5.5.3\esp-idf\export.ps1`；
+  2. 如果不存在，再使用 `D:\esp32\v5.5.3\esp-idf\export.ps1`；
+  3. 两者都不存在时，再检查 `$env:IDF_PATH` 或搜索本机 `export.ps1`。
+- 找到可用 `export.ps1` 后，再实际执行 `idf.py build`。
 - 项目配置基线优先看 `sdkconfig.defaults`；不要无说明地大范围改生成出来的 `sdkconfig`。
 - 修改 `sdkconfig` 后，必须先 `idf.py fullclean` 再 `idf.py build`，否则配置变更可能不会正确进入最终产物。
 - 默认不走 `test app` 路线；除非任务明确要求，否则直接修改主工程并验证。

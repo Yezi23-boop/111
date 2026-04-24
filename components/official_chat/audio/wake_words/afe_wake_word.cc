@@ -305,6 +305,7 @@ void AfeWakeWord::EncodeWakeWordData() {
                 .buffer = opus_buf.data(),
                 .len = static_cast<uint32_t>(outbuf_size),
                 .encoded_bytes = 0,
+                .pts = 0,
             };
             ret = esp_opus_enc_process(encoder_handle, &in, &out);
             if (ret == ESP_AUDIO_ERR_OK) {

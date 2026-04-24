@@ -750,6 +750,7 @@ void AudioService::OpusCodecTask() {
         esp_audio_dec_out_frame_t out_frame = {
             .buffer = reinterpret_cast<uint8_t *>(task->pcm.data()),
             .len = static_cast<uint32_t>(task->pcm.size() * sizeof(int16_t)),
+            .needed_size = 0,
             .decoded_size = 0,
         };
         esp_audio_dec_info_t dec_info = {};
@@ -815,6 +816,7 @@ void AudioService::OpusCodecTask() {
             .buffer = buf.data(),
             .len = static_cast<uint32_t>(encoder_outbuf_size_),
             .encoded_bytes = 0,
+            .pts = 0,
         };
         const auto ret = esp_opus_enc_process(opus_encoder_, &in, &out);
         if (ret == ESP_AUDIO_ERR_OK) {
@@ -861,7 +863,7 @@ void AudioService::OpusCodecTask() {
 }
 
 void AudioService::PushTaskToEncodeQueue(AudioTaskType type,
-                                         std::vector<int16_t> &&pcm) {
+                                          std::vector<int16_t> &&pcm) {
   auto task = std::make_unique<AudioTask>();
   task->type = type;
   task->pcm = std::move(pcm);

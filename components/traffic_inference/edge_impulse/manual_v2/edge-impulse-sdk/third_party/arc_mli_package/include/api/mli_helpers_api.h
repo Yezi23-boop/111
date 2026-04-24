@@ -98,7 +98,7 @@ mli_status mli_hlp_convert_tensor(mli_tensor *in, mli_tensor *out);
  * @brief Point to Sub-Tensor
  *
  * @detail This function points to sub tensors in input tensor. This can be considered as indexing in 
- * a multidimensional array. This function performs operations on pointers and doesn’t copy data 
+ * a multidimensional array. This function performs operations on pointers and doesnï¿½t copy data 
  * (only points to subsequence of data in input). For this reason, this function takes only parameters that 
  * can be translated to starting coordinates and size of required data.
  *
@@ -116,7 +116,7 @@ mli_status mli_hlp_point_to_subtensor(const mli_tensor *in, const mli_point_to_s
  * @brief Create a Sub-Tensor from a larger tensor
  *
  * @detail This function points to sub tensors in input tensor. This function performs operations 
- * on pointers and doesn’t copy data (only points to subsequence of data in input).
+ * on pointers and doesnï¿½t copy data (only points to subsequence of data in input).
  * For this reason, depending on the parameters, it can happen that the sub tensor contains
  * data that is not adjacent in memory.
  *

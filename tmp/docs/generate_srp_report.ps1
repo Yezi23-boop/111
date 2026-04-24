@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 $targetPath = "C:\Users\ye\Desktop\广州城市理工学院校级大学生创新创业训练计划项目(SRP)结题报告书.doc"
 $backupDir = "D:\esp32S3\111\tmp\docs"
