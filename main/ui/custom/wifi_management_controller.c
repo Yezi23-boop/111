@@ -15,9 +15,8 @@ static lv_obj_t *s_status_title = NULL;
 static lv_obj_t *s_status_detail = NULL;
 static lv_obj_t *s_retry_saved_btn = NULL;
 static lv_obj_t *s_disconnect_btn = NULL;
-static lv_obj_t *s_reprovision_btn = NULL;
-static lv_obj_t *s_transport_ble_btn = NULL;
-static lv_obj_t *s_transport_softap_btn = NULL;
+static lv_obj_t *s_ble_provision_btn = NULL;
+static lv_obj_t *s_softap_provision_btn = NULL;
 static lv_timer_t *s_status_timer = NULL;
 
 static void wifi_management_controller_refresh(void);
@@ -27,12 +26,12 @@ static bool wifi_management_controller_get_status(
     network_manager_status_t *status);
 static lv_obj_t *wifi_management_controller_create_action_button(
     lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y);
-static lv_obj_t *wifi_management_controller_create_transport_button(
-    lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y);
 static void wifi_management_controller_set_locked(lv_obj_t *obj, bool locked);
 static void wifi_management_controller_refresh_action_lock_state(
-    network_manager_state_t state);
+    const network_manager_status_t *status);
 static bool wifi_management_controller_is_screen_alive(void);
+static void wifi_management_controller_show_inline_message(
+    const char *title, const char *detail);
 
 /**
  * @brief 在 Wi-Fi 管理页对象被删除时清空缓存指针。
@@ -101,44 +100,61 @@ static void wifi_management_disconnect_event_cb(lv_event_t *e)
 }
 
 /**
- * @brief 处理“Reprovision”按钮点击。
+ * @brief 处理“BLE Provision”按钮点击。
  *
- * 该按钮会停止当前 transport，并重新进入用户当前选定的 provisioning
- * transport，用于重新走配网流程。
+ * 该按钮是小程序 BLE 配网的唯一显式入口。主界面蓝牙按钮只负责
+ * BLE 总开关，不会自动启动官方 provisioning 广播。
  *
  * @param[in] e LVGL 事件对象，当前实现未直接读取。
  */
-static void wifi_management_reprovision_event_cb(lv_event_t *e)
+static void wifi_management_ble_provision_event_cb(lv_event_t *e)
 {
     (void)e;
-    ESP_LOGI(TAG, "request reprovision");
-    (void)network_manager_reprovision();
+    esp_err_t ret = ESP_OK;
+
+    ESP_LOGI(TAG, "request BLE provisioning from Wi-Fi page");
+    ret = network_manager_start_ble_provisioning();
+    if (ret == ESP_ERR_INVALID_STATE)
+    {
+        wifi_management_controller_show_inline_message(
+            "Bluetooth Off", "Turn on Bluetooth from the main switch first");
+        return;
+    }
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "start BLE provisioning failed: %s",
+                 esp_err_to_name(ret));
+        wifi_management_controller_show_inline_message(
+            "BLE Failed", "Could not start BLE provisioning");
+        return;
+    }
+
     wifi_management_controller_refresh();
 }
 
 /**
- * @brief 处理 BLE transport 选择按钮点击。
+ * @brief 处理“AP Web Fallback”按钮点击。
+ *
+ * 该按钮保留原有 AP 网页配网兜底能力，和 BLE 小程序配网互为备选入口。
+ *
  * @param[in] e LVGL 事件对象，当前实现未直接读取。
  */
-static void wifi_management_transport_ble_event_cb(lv_event_t *e)
+static void wifi_management_softap_provision_event_cb(lv_event_t *e)
 {
     (void)e;
-    ESP_LOGI(TAG, "set provisioning transport: BLE");
-    (void)network_manager_set_default_transport(
-        NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE);
-    wifi_management_controller_refresh();
-}
+    esp_err_t ret = ESP_OK;
 
-/**
- * @brief 处理 SoftAP transport 选择按钮点击。
- * @param[in] e LVGL 事件对象，当前实现未直接读取。
- */
-static void wifi_management_transport_softap_event_cb(lv_event_t *e)
-{
-    (void)e;
-    ESP_LOGI(TAG, "set provisioning transport: SoftAP");
-    (void)network_manager_set_default_transport(
-        NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP);
+    ESP_LOGI(TAG, "request SoftAP provisioning from Wi-Fi page");
+    ret = network_manager_start_softap_provisioning();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "start SoftAP provisioning failed: %s",
+                 esp_err_to_name(ret));
+        wifi_management_controller_show_inline_message(
+            "AP Failed", "Could not start AP web fallback");
+        return;
+    }
+
     wifi_management_controller_refresh();
 }
 
@@ -224,27 +240,6 @@ static lv_obj_t *wifi_management_controller_create_action_button(
  * @param[in] y 左上角 Y 坐标。
  * @return 创建好的按钮对象。
  */
-static lv_obj_t *wifi_management_controller_create_transport_button(
-    lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y)
-{
-    lv_obj_t *button = lv_btn_create(parent);
-    lv_obj_set_pos(button, x, y);
-    lv_obj_set_size(button, 94, 42);
-    lv_obj_add_flag(button, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_style_radius(button, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x2a2f3a),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x1f6feb),
-                              LV_PART_MAIN | LV_STATE_CHECKED);
-
-    lv_obj_t *label = lv_label_create(button);
-    lv_label_set_text(label, text);
-    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_center(label);
-    return button;
-}
-
 /**
  * @brief 判断当前缓存的 Wi-Fi 管理页 screen 是否仍然有效。
  *
@@ -270,9 +265,8 @@ static void wifi_management_controller_reset_screen_refs(void)
     s_status_detail = NULL;
     s_retry_saved_btn = NULL;
     s_disconnect_btn = NULL;
-    s_reprovision_btn = NULL;
-    s_transport_ble_btn = NULL;
-    s_transport_softap_btn = NULL;
+    s_ble_provision_btn = NULL;
+    s_softap_provision_btn = NULL;
 }
 
 /**
@@ -302,63 +296,55 @@ static void wifi_management_controller_set_locked(lv_obj_t *obj, bool locked)
 }
 
 /**
- * @brief 根据当前网络主状态刷新页面操作锁定态。
+ * @brief 根据当前网络快照刷新页面操作锁定态。
  *
- * BLE / SoftAP provisioning 期间，重复点击 `Reprovision` 或切换 transport
- * 会把当前会话直接 stop -> start 掉，导致用户自己把配网流程抖断。因此这里在
- * provisioning 进行中锁住：
- * - `Reprovision`
- * - `BLE`
- * - `SoftAP`
+ * BLE / SoftAP provisioning 期间，重复点击两个配网入口会把当前会话直接
+ * stop -> start 掉，导致用户自己把小程序连接或 AP 门户抖断。因此这里
+ * 在任一 provisioning 会话进行中锁住两个入口。
  *
  * 其余操作暂保持原样，避免扩大本轮改动范围。
  *
- * @param[in] state 当前 `network_manager` 主状态。
+ * @param[in] status 当前 `network_manager` 快照。
  */
 static void wifi_management_controller_refresh_action_lock_state(
-    network_manager_state_t state)
+    const network_manager_status_t *status)
 {
-    const bool provisioning_locked =
-        (state == NETWORK_MANAGER_STATE_PROVISIONING_BLE) ||
-        (state == NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP);
+    if (status == NULL)
+    {
+        return;
+    }
 
-    wifi_management_controller_set_locked(s_reprovision_btn,
+    const bool provisioning_locked =
+        status->ble_active ||
+        (status->state == NETWORK_MANAGER_STATE_PROVISIONING_BLE) ||
+        (status->state == NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP);
+
+    wifi_management_controller_set_locked(s_ble_provision_btn,
                                           provisioning_locked);
-    wifi_management_controller_set_locked(s_transport_ble_btn,
-                                          provisioning_locked);
-    wifi_management_controller_set_locked(s_transport_softap_btn,
+    wifi_management_controller_set_locked(s_softap_provision_btn,
                                           provisioning_locked);
 }
 
 /**
- * @brief 根据默认 provisioning transport 刷新底部设置按钮选中态。
+ * @brief 在状态区显示一次内联提示。
  *
- * @param[in] transport 当前默认 provisioning transport。
+ * Wi-Fi 管理页没有额外 toast 层，这里复用标题和详情区域表达点击失败原因，
+ * 避免用户点“BLE 配网”后无反馈。
+ *
+ * @param[in] title 提示标题。
+ * @param[in] detail 提示详情。
  */
-static void wifi_management_controller_refresh_transport_buttons(
-    network_manager_provisioning_transport_t transport)
+static void wifi_management_controller_show_inline_message(
+    const char *title, const char *detail)
 {
-    lv_obj_t *buttons[] = {
-        s_transport_ble_btn,
-        s_transport_softap_btn,
-    };
-
-    for (size_t index = 0; index < sizeof(buttons) / sizeof(buttons[0]); ++index)
+    if (s_status_title == NULL || s_status_detail == NULL ||
+        !lv_obj_is_valid(s_status_title) || !lv_obj_is_valid(s_status_detail))
     {
-        if (buttons[index] == NULL || !lv_obj_is_valid(buttons[index]))
-        {
-            continue;
-        }
-
-        if ((int)index == (int)transport)
-        {
-            lv_obj_add_state(buttons[index], LV_STATE_CHECKED);
-        }
-        else
-        {
-            lv_obj_remove_state(buttons[index], LV_STATE_CHECKED);
-        }
+        return;
     }
+
+    lv_label_set_text(s_status_title, title != NULL ? title : "Notice");
+    lv_label_set_text(s_status_detail, detail != NULL ? detail : "");
 }
 
 /**
@@ -387,10 +373,27 @@ static void wifi_management_controller_refresh(void)
         return;
     }
 
-    wifi_management_controller_refresh_transport_buttons(status.default_transport);
-    wifi_management_controller_refresh_action_lock_state(status.state);
+    wifi_management_controller_refresh_action_lock_state(&status);
 
-    if (status.wifi_connected)
+    if (status.ble_active && status.wifi_connected)
+    {
+        lv_label_set_text(s_status_title, "Connected + BLE");
+        if (status.ip[0] != '\0')
+        {
+            snprintf(detail, sizeof(detail), "IP: %s, BLE provisioning active",
+                     status.ip);
+        }
+        else
+        {
+            snprintf(detail, sizeof(detail), "BLE provisioning active");
+        }
+    }
+    else if (status.ble_active)
+    {
+        lv_label_set_text(s_status_title, "BLE Provisioning");
+        snprintf(detail, sizeof(detail), "Open the WeChat mini program");
+    }
+    else if (status.wifi_connected)
     {
         lv_label_set_text(s_status_title, "Connected");
         if (status.ip[0] != '\0')
@@ -426,13 +429,13 @@ static void wifi_management_controller_refresh(void)
     {
         lv_label_set_text(s_status_title, "Error");
         snprintf(detail, sizeof(detail),
-                 "Tap 'Use Saved Wi-Fi' or 'Reprovision'");
+                 "Tap BLE Provision or AP Web Fallback");
     }
     else
     {
         lv_label_set_text(s_status_title, "Offline");
         snprintf(detail, sizeof(detail),
-                 "Tap 'Use Saved Wi-Fi' or 'Reprovision'");
+                 "Tap BLE Provision or AP Web Fallback");
     }
 
     lv_label_set_text(s_status_detail, detail);
@@ -510,27 +513,15 @@ static void wifi_management_controller_ensure_screen_created(void)
     lv_obj_add_event_cb(s_disconnect_btn, wifi_management_disconnect_event_cb,
                         LV_EVENT_CLICKED, NULL);
 
-    s_reprovision_btn = wifi_management_controller_create_action_button(
-        s_screen, "Reprovision", 24, 338);
-    lv_obj_add_event_cb(s_reprovision_btn, wifi_management_reprovision_event_cb,
+    s_ble_provision_btn = wifi_management_controller_create_action_button(
+        s_screen, "BLE Provision", 24, 338);
+    lv_obj_add_event_cb(s_ble_provision_btn, wifi_management_ble_provision_event_cb,
                         LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *settings_title = lv_label_create(s_screen);
-    lv_label_set_text(settings_title, "Provisioning Transport");
-    lv_obj_set_pos(settings_title, 24, 410);
-    lv_obj_set_style_text_color(settings_title, lv_color_hex(0x93c5fd),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    s_transport_ble_btn = wifi_management_controller_create_transport_button(
-        s_screen, "BLE", 24, 442);
-    s_transport_softap_btn = wifi_management_controller_create_transport_button(
-        s_screen, "SoftAP", 132, 442);
-
-    lv_obj_add_event_cb(s_transport_ble_btn,
-                        wifi_management_transport_ble_event_cb,
-                        LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(s_transport_softap_btn,
-                        wifi_management_transport_softap_event_cb,
+    s_softap_provision_btn = wifi_management_controller_create_action_button(
+        s_screen, "AP Web Fallback", 24, 400);
+    lv_obj_add_event_cb(s_softap_provision_btn,
+                        wifi_management_softap_provision_event_cb,
                         LV_EVENT_CLICKED, NULL);
 
     if (s_status_timer == NULL)

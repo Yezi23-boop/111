@@ -45,8 +45,8 @@ typedef struct
 {
     network_manager_state_t state; /**< 当前主状态机状态。 */
     bool wifi_connected; /**< 当前是否已连上 Wi-Fi。 */
-    bool ble_enabled; /**< BLE 总开关偏好是否开启。 */
-    bool ble_active; /**< BLE transport 当前是否活跃。 */
+    bool ble_enabled; /**< BLE 总开关偏好是否开启；不等同于正在配网。 */
+    bool ble_active; /**< BLE 配网广播当前是否活跃。 */
     network_manager_provisioning_transport_t default_transport; /**< 当前默认配网 transport。 */
     char ip[16]; /**< 当前 IPv4 字符串，无 IP 时为空字符串。 */
 } network_manager_status_t;
@@ -56,8 +56,8 @@ typedef struct
  *
  * 当前实现会完成底层控制层初始化，并按以下优先级推进：
  * - 若存在 latest Wi-Fi，则优先尝试最新一条 recent 记录；
- * - 若不存在 latest，则尝试进入当前默认 provisioning transport；
- * - 若默认 transport 是 BLE 但 BLE 总开关已关闭，则保持空闲态等待用户手动操作。
+ * - 若不存在 latest，保持空闲态等待用户进入 Wi-Fi 管理页选择配网方式；
+ * - latest 失败后同样不自动启动 BLE 小程序配网，避免蓝牙开关和配网入口耦合。
  *
  * @return `ESP_OK` 表示入口调用成功；其他错误表示底层编排初始化失败。
  */
@@ -99,11 +99,34 @@ esp_err_t network_manager_disconnect(void);
 esp_err_t network_manager_reprovision(void);
 
 /**
+ * @brief 显式启动 BLE 配网会话。
+ *
+ * 该接口只应由 Wi-Fi 配网页面里的“BLE 配网”入口调用。主界面蓝牙开关
+ * 只负责 BLE enabled 偏好，不会自动触发小程序配网广播。
+ *
+ * @return `ESP_OK` 表示 BLE 配网广播已启动；
+ *         `ESP_ERR_INVALID_STATE` 表示 BLE 总开关当前关闭；
+ *         其他错误表示底层 BLE provisioning 启动失败。
+ */
+esp_err_t network_manager_start_ble_provisioning(void);
+
+/**
+ * @brief 显式启动 SoftAP 配网会话。
+ *
+ * 该接口用于 AP 网页兜底入口，避免 UI 先切默认 transport 再调用
+ * `network_manager_reprovision()` 的两步语义散落在页面层。
+ *
+ * @return `ESP_OK` 表示 SoftAP 配网已启动；其他错误表示启动失败。
+ */
+esp_err_t network_manager_start_softap_provisioning(void);
+
+/**
  * @brief 设置 BLE 总开关偏好。
  *
- * 该接口除了持久化 BLE enabled 偏好外，还会在需要时同步真实运行态：
- * - 关闭 BLE 时，若当前正跑 BLE provisioning，会立即停止；
- * - 开启 BLE 时，若当前处于空闲且默认 transport 是 BLE，会尝试立即拉起 BLE provisioning。
+ * 该接口现在只表达“手机蓝牙开关”式语义：
+ * - 开启时启动普通 BLE 可发现广播，不自动进入小程序配网；
+ * - 关闭时停止普通 BLE 广播；若当前正跑 BLE 配网广播，也会立即停止该会话；
+ * - Wi-Fi 是否连接不影响 BLE enabled 偏好，两者允许并存。
  *
  * @param[in] enabled true 表示允许 BLE；false 表示关闭 BLE。
  * @return `ESP_OK` 表示更新成功；其他错误表示更新失败。

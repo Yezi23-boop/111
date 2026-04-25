@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-04-25：修复微信小程序官方 BLE 配网客户端两处真机联调风险：官方 protocomm BLE 路线新增 `wx.setBLEMTU()` 协商和 payload 上限保护，避免把 protobuf 请求按旧 JSON 方式拆坏；BLE 扫描默认收敛到官方/旧版配网服务并降低无关广播日志噪声，保留“显示全部”作为调试入口。
+- 2026-04-25：修复 BLE presence / 官方 provisioning 分离后的三个框架回归点：`ble_presence_is_active()` 改为按真实 advertising 状态返回，`network_manager` 在收到 provisioning 新凭据后恢复 STA 自动重连，并把 getter 的 BLE presence 启停副作用收窄为只读刷新；同时更新配网相关知识卡，统一当前“Wi-Fi 管理页显式点击 BLE Provision / AP Web Fallback”的入口语义。
 - 2026-04-24：为 SoftAP 门户新增 Captive Portal 自动弹页壳层基线，补记其真实 owner 在 `ap_portal_adapter` 而不是官方 `network_provisioning`：当前通过 `HTTPD_404_NOT_FOUND -> /`、DNS 劫持到 `WIFI_AP_DEF` 与 DHCP Option 114 共同提供系统自动弹页能力，并新增 `softap-captive-portal-auto-popup` 知识卡固定该边界。
 - 2026-04-24：修复 Wi-Fi 管理页二次打开崩溃：`wifi_management_controller` 返回主界面时旧 screen 会被 `lv_screen_load_anim(..., true)` 删除，控制器若继续保留旧 `lv_obj_t *` 缓存，下一次打开页面时会在 `lv_obj_add_state()` 命中悬空对象并在 `lv_style_get_prop()` 内触发 `LoadProhibited`；当前已改为 `LV_EVENT_DELETE` 清空缓存，并在复用前统一校验 `lv_obj_is_valid()`。
 - 2026-04-24：修正 SoftAP 自动弹页首轮时序问题：`ap_portal_adapter_start()` 早于 `network_provisioning_adapter_start_softap()`，因此设置 DHCP Option 114 前不能假设 `WIFI_AP_DEF` 已存在；当前已在 `ap_portal_adapter` 内先补建默认 AP netif，避免门户启动阶段报 `设置 Captive Portal DHCP URI 失败: ESP_ERR_INVALID_STATE`。
@@ -170,3 +172,6 @@
 - 2026-04-24：在根目录 `AGENTS.md` 固化双电脑 ESP-IDF 5.5.3 export 路径尝试顺序：先 `D:\esp-idf\v5.5.3\esp-idf\export.ps1`，不存在时再用 `D:\esp32\v5.5.3\esp-idf\export.ps1`，最后才检查 `IDF_PATH` 或搜索本机路径。
 - 2026-04-24：按 `D:\xiaozhi-esp32` 官方实现对齐 official_chat 音频队列模型，保持 `std::deque<std::unique_ptr<AudioTask>> + std::condition_variable` 的多队列等待结构，不采用固定环形队列或局部 FreeRTOS queue；仅保留音频编解码 frame 结构体字段显式初始化以清理构建 warning。
 - 2026-04-24：新增仓库级 `.gitattributes`，统一文本文件 `eol=crlf` 并标记常见二进制资源为 binary；同时将本仓库 Git 配置设为 `core.autocrlf=true`、`core.eol=crlf`，并让 `scripts/context/build_index.py` 显式以 CRLF 写出索引，按 Windows 默认换行约定避免 VSCode/Git 反复提示。
+- 2026-04-25：确认微信小程序 BLE 配网应对齐当前官方 `network_provisioning` 协议，优先实现 `proto-ver / prov-session / prov-scan / prov-config` 的 protocomm BLE client，并将历史 JSON GATT 协议收敛为旧镜像兜底。
+- 2026-04-25：分离主界面蓝牙总开关与 Wi-Fi 管理页 BLE 配网入口；`network_manager_set_ble_enabled()` 和 latest 失败自动路径都不再自动启动小程序配网，新增显式 `network_manager_start_ble_provisioning()` / `network_manager_start_softap_provisioning()`，允许 Wi-Fi 连接与 BLE enabled 并存。
+- 2026-04-25：新增 `components/ble_presence` 普通 BLE 可发现广播；主界面 Bluetooth 开关打开后广播 `ESP32S3-723C` 供扫描发现，Wi-Fi 管理页 `BLE Provision` 启动前会先停止 presence 并独占官方 BLE provisioning，同时 provisioning handler 改为保留 BLE 控制器资源以便后续恢复普通广播。

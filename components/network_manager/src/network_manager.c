@@ -11,6 +11,7 @@
 
 #include "ap_portal_adapter.h"
 #include "ble_control.h"
+#include "ble_presence.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/semphr.h"
@@ -35,10 +36,13 @@ static portMUX_TYPE s_manager_bootstrap_lock = portMUX_INITIALIZER_UNLOCKED;
 static esp_err_t network_manager_ensure_mutex(void);
 static esp_err_t network_manager_sync_ip(network_manager_status_t *status);
 static void network_manager_sync_ble_active_from_adapter(void);
+static esp_err_t network_manager_sync_ble_presence(void);
 static esp_err_t network_manager_stop_active_transport(void);
 static esp_err_t network_manager_start_selected_transport(void);
 static esp_err_t network_manager_start_selected_transport_auto(void);
-static void network_manager_refresh_runtime_state(void);
+static esp_err_t network_manager_start_explicit_transport(
+    network_manager_provisioning_transport_t transport);
+static void network_manager_refresh_runtime_state(bool sync_ble_presence);
 static esp_err_t network_manager_connect_entry(
     const network_credentials_entry_t *entry,
     bool allow_transport_fallback);
@@ -166,6 +170,34 @@ static void network_manager_sync_ble_active_from_adapter(void)
 }
 
 /**
+ * @brief 按当前 owner 状态同步普通 BLE presence 广播。
+ *
+ * 主界面蓝牙开关的语义是“允许普通蓝牙可发现”；Wi-Fi 配网页面的 BLE
+ * Provision 才是官方 provisioning owner。这里集中处理两者互斥：
+ * - BLE provisioning 正在运行时，presence 必须停止，避免抢 NimBLE host；
+ * - BLE enabled 且没有 BLE provisioning 时，presence 可以运行，和 Wi-Fi STA 并存；
+ * - BLE disabled 时，presence 必须停止。
+ *
+ * @return `ESP_OK` 表示同步成功；其他错误表示 presence 启停失败。
+ *
+ * @note 调用方通常已经持有 `s_manager_mutex`，本函数自身不会访问 manager 共享字段。
+ */
+static esp_err_t network_manager_sync_ble_presence(void)
+{
+    const bool ble_transport_active =
+        network_provisioning_adapter_is_active() &&
+        network_provisioning_adapter_get_transport() ==
+            NETWORK_PROVISIONING_TRANSPORT_BLE;
+
+    if (!ble_control_is_enabled() || ble_transport_active)
+    {
+        return ble_presence_stop();
+    }
+
+    return ble_presence_start();
+}
+
+/**
  * @brief 停止当前 active provisioning transport。
  *
  * 统一收口 stop/deinit 失败路径，避免上层继续误以为 transport 已经停干净。
@@ -198,6 +230,7 @@ static esp_err_t network_manager_stop_active_transport(void)
     if (ret == ESP_OK)
     {
         (void)ble_control_set_active(false);
+        ret = network_manager_sync_ble_presence();
     }
     else
     {
@@ -227,6 +260,13 @@ static esp_err_t network_manager_start_selected_transport(void)
             return ESP_ERR_INVALID_STATE;
         }
 
+        ret = ble_presence_stop();
+        if (ret != ESP_OK)
+        {
+            s_state = NETWORK_MANAGER_STATE_ERROR;
+            return ret;
+        }
+
         ret = network_provisioning_adapter_start_ble();
         if (ret == ESP_OK)
         {
@@ -254,6 +294,7 @@ static esp_err_t network_manager_start_selected_transport(void)
         if (ret == ESP_OK)
         {
             (void)ble_control_set_active(false);
+            (void)network_manager_sync_ble_presence();
             s_state = NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP;
         }
         else
@@ -269,25 +310,60 @@ static esp_err_t network_manager_start_selected_transport(void)
 }
 
 /**
- * @brief 在“自动回退/自动启动”语义下启动当前默认 transport。
+ * @brief 处理开机或 latest 失败后的自动配网路径。
  *
- * 与显式 `reprovision` 不同，自动路径遇到“默认 transport 是 BLE 但 BLE 总开关已关闭”时，
- * 应收敛到合法空闲态，而不是把整个网络编排打成错误。这样设备开机后可以停在“等待用户
- * 手动操作”的状态，而不是把兼容层启动流程直接报失败。
+ * 当前产品语义要求“只有进入 Wi-Fi 管理页并点击 BLE Provision，才启动微信
+ * 小程序配网”。因此自动路径不再启动默认 transport，而是停在合法空闲态，
+ * 等待用户明确选择 BLE 配网或 AP 网页兜底。
  *
- * @return `ESP_OK` 表示已经成功启动 transport，或因 BLE 被用户关闭而进入空闲态；
- *         其他错误表示真实 transport 启动失败。
+ * @return 固定返回 `ESP_OK`，表示自动路径已收敛到空闲态。
  */
 static esp_err_t network_manager_start_selected_transport_auto(void)
 {
-    if (s_default_transport == NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE &&
+    (void)ble_control_set_active(false);
+    (void)network_manager_sync_ble_presence();
+    s_state = NETWORK_MANAGER_STATE_IDLE;
+    return ESP_OK;
+}
+
+/**
+ * @brief 按用户在 Wi-Fi 配网页面点击的入口显式启动指定配网 transport。
+ *
+ * 显式入口和开机自动回退不同：它代表用户已经进入 Wi-Fi 管理页并选择
+ * “BLE 配网”或“AP 兜底”，因此这里会暂停 STA 自动重连并收口旧的
+ * provisioning 会话，但不会主动断开已经连上的 Wi-Fi。这样 BLE 配网广播
+ * 可以和现有 Wi-Fi 连接短时间并存，直到用户真正下发新凭据。
+ *
+ * @param[in] transport 用户选择的配网 transport。
+ * @return `ESP_OK` 表示 transport 已启动；其他错误表示当前状态或底层启动失败。
+ */
+static esp_err_t network_manager_start_explicit_transport(
+    network_manager_provisioning_transport_t transport)
+{
+    esp_err_t ret = ESP_OK;
+
+    if (transport > NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (transport == NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE &&
         !ble_control_is_enabled())
     {
         (void)ble_control_set_active(false);
-        s_state = NETWORK_MANAGER_STATE_IDLE;
-        return ESP_OK;
+        return ESP_ERR_INVALID_STATE;
     }
 
+    network_manager_drop_pending_provisioned_entry_for_manual_action();
+    wifi_control_set_auto_reconnect_enabled(false);
+
+    ret = network_manager_stop_active_transport();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    s_default_transport = transport;
     return network_manager_start_selected_transport();
 }
 
@@ -295,18 +371,24 @@ static esp_err_t network_manager_start_selected_transport_auto(void)
  * @brief 根据底层组件当前运行态刷新主状态机。
  *
  * 当前阶段最关键的策略是：
- * - 若正在尝试 latest Wi-Fi 且连接失败，则自动进入当前默认 provisioning transport；
  * - 若 provisioning transport 已启动，则把主状态同步到 BLE / SOFTAP；
- * - 若 provisioning 触发的 Wi-Fi 已真实连上，则在这里更新 recent list。
+ * - 若 provisioning 触发的 Wi-Fi 已真实连上，则在这里更新 recent list；
+ * - 若 latest Wi-Fi 失败，则停在空闲态，等待用户从 Wi-Fi 管理页选择配网方式。
  *
+ * @param[in] sync_ble_presence true 表示允许本次刷新同步普通 BLE presence 广播；
+ *            false 表示只刷新状态快照，避免 getter 或 UI 轮询隐式启停 NimBLE。
  * @return 无返回值。
  */
-static void network_manager_refresh_runtime_state(void)
+static void network_manager_refresh_runtime_state(bool sync_ble_presence)
 {
     const wifi_control_state_t wifi_state = wifi_control_get_state();
     const bool wifi_connected = wifi_control_is_connected();
 
     network_manager_sync_ble_active_from_adapter();
+    if (sync_ble_presence)
+    {
+        (void)network_manager_sync_ble_presence();
+    }
 
     if (wifi_connected || wifi_state == WIFI_CONTROL_STATE_CONNECTED)
     {
@@ -452,7 +534,7 @@ static void network_manager_task(void *arg)
         if (s_manager_mutex != NULL &&
             xSemaphoreTake(s_manager_mutex, portMAX_DELAY) == pdTRUE)
         {
-            network_manager_refresh_runtime_state();
+            network_manager_refresh_runtime_state(true);
             xSemaphoreGive(s_manager_mutex);
         }
         vTaskDelay(pdMS_TO_TICKS(250));
@@ -503,6 +585,9 @@ static void network_manager_on_provisioning_event(
                      (const char *)wifi_sta_config->password);
             s_pending_provisioned_entry_valid = true;
             s_pending_provisioned_entry_connecting = false;
+            /* 显式进入配网前会暂停自动重连，收到新凭据后必须恢复，
+             * 否则首次连接失败或后续掉线都不会走 STA runtime 的重试闭环。 */
+            wifi_control_set_auto_reconnect_enabled(true);
             ret = wifi_control_connect((const char *)wifi_sta_config->ssid,
                                        (const char *)wifi_sta_config->password);
             if (ret == ESP_OK)
@@ -597,6 +682,7 @@ esp_err_t network_manager_start(void)
     ret = network_credentials_get_latest(&latest);
     if (ret == ESP_OK)
     {
+        (void)network_manager_sync_ble_presence();
         ret = network_manager_connect_entry(&latest, true);
         xSemaphoreGive(s_manager_mutex);
         return ret;
@@ -630,7 +716,7 @@ network_manager_state_t network_manager_get_state(void)
         return NETWORK_MANAGER_STATE_ERROR;
     }
 
-    network_manager_refresh_runtime_state();
+    network_manager_refresh_runtime_state(false);
     state = s_state;
     xSemaphoreGive(s_manager_mutex);
     return state;
@@ -664,7 +750,7 @@ esp_err_t network_manager_get_status(network_manager_status_t *status)
     }
 
     memset(status, 0, sizeof(*status));
-    network_manager_refresh_runtime_state();
+    network_manager_refresh_runtime_state(false);
     status->state = s_state;
     status->wifi_connected = wifi_control_is_connected();
     status->ble_enabled = ble_control_is_enabled();
@@ -770,16 +856,59 @@ esp_err_t network_manager_reprovision(void)
         return ESP_FAIL;
     }
 
-    network_manager_drop_pending_provisioned_entry_for_manual_action();
-    wifi_control_set_auto_reconnect_enabled(false);
-    ret = network_manager_stop_active_transport();
+    ret = network_manager_start_explicit_transport(s_default_transport);
+    xSemaphoreGive(s_manager_mutex);
+    return ret;
+}
+
+/**
+ * @brief 显式启动 BLE 配网会话。
+ *
+ * 该入口只服务 Wi-Fi 配网页面的“BLE 配网”按钮；主界面蓝牙开关不会调用它。
+ * 如果 BLE 总开关关闭，本函数返回 `ESP_ERR_INVALID_STATE`，由 UI 提醒用户先打开蓝牙。
+ *
+ * @return `ESP_OK` 表示 BLE 配网广播已启动；其他错误表示当前状态或底层启动失败。
+ */
+esp_err_t network_manager_start_ble_provisioning(void)
+{
+    esp_err_t ret = network_manager_ensure_mutex();
     if (ret != ESP_OK)
     {
-        xSemaphoreGive(s_manager_mutex);
         return ret;
     }
+    if (xSemaphoreTake(s_manager_mutex, portMAX_DELAY) != pdTRUE)
+    {
+        return ESP_FAIL;
+    }
 
-    ret = network_manager_start_selected_transport();
+    ret = network_manager_start_explicit_transport(
+        NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE);
+    xSemaphoreGive(s_manager_mutex);
+    return ret;
+}
+
+/**
+ * @brief 显式启动 SoftAP 配网会话。
+ *
+ * 该入口用于 Wi-Fi 配网页面的 AP 网页兜底，不依赖“先选择 transport，再
+ * Reprovision”的两步 UI 状态。
+ *
+ * @return `ESP_OK` 表示 SoftAP 配网已启动；其他错误表示底层启动失败。
+ */
+esp_err_t network_manager_start_softap_provisioning(void)
+{
+    esp_err_t ret = network_manager_ensure_mutex();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+    if (xSemaphoreTake(s_manager_mutex, portMAX_DELAY) != pdTRUE)
+    {
+        return ESP_FAIL;
+    }
+
+    ret = network_manager_start_explicit_transport(
+        NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP);
     xSemaphoreGive(s_manager_mutex);
     return ret;
 }
@@ -787,16 +916,13 @@ esp_err_t network_manager_reprovision(void)
 /**
  * @brief 设置 BLE 总开关偏好。
  *
- * 该接口当前已经具备真实运行时语义：
- * - 关闭 BLE 时，如果当前正跑 BLE provisioning，会立即停止该 transport；
- * - 开启 BLE 时，如果当前处于空闲、未连网、且默认 transport 就是 BLE，
- *   会立即重新拉起 BLE provisioning；
- * - 若默认 transport 是 SoftAP，则这里只更新 BLE 总开关偏好，不打断当前 SoftAP。
+ * 该接口只表达“手机蓝牙开关”式语义：
+ * - 开启时启动普通 BLE 可发现广播，但不启动小程序配网 GATT 服务；
+ * - 关闭时停止普通 BLE 广播；如果 BLE 配网会话正在运行，也会立即停止 BLE transport；
+ * - Wi-Fi STA 连接状态不会被这个开关改变，因此 Wi-Fi 与 BLE enabled 可以并存。
  *
  * @param[in] enabled 目标 BLE 总开关状态。
- * @return `ESP_OK` 表示更新成功；
- *         `ESP_ERR_INVALID_STATE` 表示当前 transport 策略不允许直接启动；
- *         其他错误表示底层 stop/start 或偏好持久化失败。
+ * @return `ESP_OK` 表示更新成功；其他错误表示底层 stop 或偏好持久化失败。
  */
 esp_err_t network_manager_set_ble_enabled(bool enabled)
 {
@@ -834,7 +960,14 @@ esp_err_t network_manager_set_ble_enabled(bool enabled)
             }
         }
 
-        network_manager_refresh_runtime_state();
+        ret = ble_presence_stop();
+        if (ret != ESP_OK)
+        {
+            xSemaphoreGive(s_manager_mutex);
+            return ret;
+        }
+
+        network_manager_refresh_runtime_state(false);
         if (!wifi_control_is_connected() &&
             !network_provisioning_adapter_is_active() &&
             s_state != NETWORK_MANAGER_STATE_CONNECTING_LATEST &&
@@ -847,20 +980,14 @@ esp_err_t network_manager_set_ble_enabled(bool enabled)
         return ESP_OK;
     }
 
-    if (!wifi_control_is_connected() &&
-        !network_provisioning_adapter_is_active() &&
-        s_default_transport == NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE &&
-        s_state != NETWORK_MANAGER_STATE_CONNECTING_LATEST)
+    ret = network_manager_sync_ble_presence();
+    if (ret != ESP_OK)
     {
-        ret = network_manager_start_selected_transport();
-        if (ret != ESP_OK)
-        {
-            xSemaphoreGive(s_manager_mutex);
-            return ret;
-        }
+        xSemaphoreGive(s_manager_mutex);
+        return ret;
     }
 
-    network_manager_refresh_runtime_state();
+    network_manager_refresh_runtime_state(false);
     xSemaphoreGive(s_manager_mutex);
     return ESP_OK;
 }

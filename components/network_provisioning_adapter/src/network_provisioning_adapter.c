@@ -53,6 +53,8 @@ typedef struct
 #define wifi_prov_scheme_softap network_prov_scheme_softap
 #define WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM \
     NETWORK_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM
+#define WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BT \
+    NETWORK_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BT
 #define WIFI_PROV_EVENT_HANDLER_NONE NETWORK_PROV_EVENT_HANDLER_NONE
 #define WIFI_PROV_SECURITY_0 NETWORK_PROV_SECURITY_0
 
@@ -379,8 +381,10 @@ static esp_err_t network_provisioning_adapter_fill_mgr_config(
     wifi_prov_mgr_config_t *config)
 {
     wifi_prov_event_handler_t no_event = WIFI_PROV_EVENT_HANDLER_NONE;
+    /* 主界面蓝牙开关需要在 provisioning 结束后还能重新启动普通 BLE presence。
+     * 因此这里只释放 Classic BT 内存，不使用 FREE_BTDM 释放整个 BLE 控制器内存。 */
     wifi_prov_event_handler_t ble_handler =
-        WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM;
+        WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BT;
     wifi_prov_event_handler_t app_handler = {
         .event_cb = (wifi_prov_cb_func_t)network_provisioning_adapter_app_event_cb,
         .user_data = NULL,

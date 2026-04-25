@@ -4,5 +4,5 @@
 idf_component_register(
     SRCS "src/network_manager.c"
     INCLUDE_DIRS "include"
-    REQUIRES ap_portal_adapter ble_control network_credentials network_provisioning_adapter wifi_control
+    REQUIRES ap_portal_adapter ble_control ble_presence network_credentials network_provisioning_adapter wifi_control
 )

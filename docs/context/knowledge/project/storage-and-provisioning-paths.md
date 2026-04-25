@@ -2,7 +2,7 @@
 id: storage-and-provisioning-paths
 tags: project, storage, sd, spiffs, wifi, provisioning, html
 summary: 当前仓库的存储路径、SD 总线选择和 AP 配网页面嵌入方式摘要。
-last_reviewed: 2026-04-21
+last_reviewed: 2026-04-25
 ---
 
 # 存储与配网路径
@@ -50,21 +50,22 @@ last_reviewed: 2026-04-21
 
 1. `app_main()` 启动后台 `network_service`
 2. `network_service` 调用 `network_manager_start()`
-3. `network_manager` 根据 recent Wi-Fi 与默认 transport 决定：
+3. `network_manager` 根据 recent Wi-Fi 决定：
    - 自动尝试 latest Wi-Fi
-   - 或进入 `BLE provisioning`
-   - 或进入 `SoftAP provisioning`
-4. 当 transport 为 `SoftAP` 时：
+   - 或停在空闲态，等待用户进入 Wi-Fi 管理页显式选择配网方式
+4. 当用户显式选择 `BLE Provision` 时：
+   - `network_manager` 会先停止普通 BLE presence，再启动官方 BLE provisioning
+5. 当用户显式选择 `AP Web Fallback` 时：
    - `network_provisioning_adapter` 启动官方 SoftAP provisioning manager
    - `ap_portal_adapter` 启动 HTTPD 与自定义网页
-5. 当前网页侧可访问状态接口和占位 API：
+6. 当前网页侧可访问状态接口和占位 API：
    - `/api/status`
    - `/api/scan`
    - `/api/configure`
-6. 但设备侧 `scan/configure` 仍未真正接通 provisioning 行为：
+7. 但设备侧 `scan/configure` 仍未真正接通 provisioning 行为：
    - `/api/scan` 当前返回 `501 Not Implemented`
    - `/api/configure` 当前返回 `501 Not Implemented`
-7. 因此当前 SoftAP 路径的真实状态是：
+8. 因此当前 SoftAP 路径的真实状态是：
    - HTTPD 与网页资源已接好
    - SoftAP provisioning manager 生命周期已接好
    - 浏览器到设备侧的真实配置闭环仍待继续实现

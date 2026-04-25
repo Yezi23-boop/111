@@ -2,7 +2,7 @@
 id: wifi-management-ui-behavior
 tags: [project, wifi, ui, provisioning, ble, softap, network-manager]
 summary: 记录主界面 Wi-Fi / Bluetooth 图标，以及全屏 Wi-Fi 管理页在当前仓库中的真实行为边界。
-last_reviewed: 2026-04-24
+last_reviewed: 2026-04-25
 ---
 
 # Wi-Fi 管理 UI 行为
@@ -31,8 +31,8 @@ last_reviewed: 2026-04-24
 - 若底层 BLE 总开关更新失败，主界面会通过 toast 提示。
 - 当前真实运行时语义已经补齐：
   - 从蓝色切到灰色时，若当前正处于 BLE provisioning，会立即停止 BLE transport
-  - 从灰色切到蓝色时，若当前未连网、没有活跃 provisioning、且默认 transport 为 BLE，会立即重新拉起 BLE provisioning
-  - 若默认 transport 当前为 SoftAP，则蓝牙图标只改变 BLE 总开关偏好，不会抢占当前 SoftAP provisioning
+  - 从灰色切到蓝色时，会启动普通 BLE 可发现广播 `ESP32S3-723C`，但不自动启动小程序配网
+  - Wi-Fi 已连接时也允许 BLE enabled 保持开启，两者不再互斥
 
 ## Wi-Fi 管理页
 
@@ -41,7 +41,7 @@ last_reviewed: 2026-04-24
 - 页面结构分为三块：
   - 顶部状态区
   - 中间主操作区
-  - 下方设置区
+  - AP 网页兜底入口
 
 ### 顶部状态区
 
@@ -64,35 +64,26 @@ last_reviewed: 2026-04-24
   - 当前语义：断开当前连接，并暂停自动重连
   - 对应接口：`network_manager_disconnect()`
 - `Reprovision`
-  - 当前语义：重新进入新的配网流程
-  - 对应接口：`network_manager_reprovision()`
-  - 当前边界：当设备正处于 `BLE / SoftAP provisioning` 时，按钮会被临时禁用，避免用户重复点击把当前配网会话自己 stop -> start 掉
-
-## 默认配网方式
-
-- 设置位置：
-  - Wi-Fi 管理页底部
-- 当前枚举：
-  - `BLE`
-  - `SoftAP`
-
-### 当前行为
-
-- `BLE`
-  - 直接尝试 BLE 配网
-- `SoftAP`
-  - 直接尝试 SoftAP 配网
+  - 已被拆成显式入口，不再要求用户先选择 transport 再重启配网
+- `BLE Provision`
+  - 当前语义：启动官方 BLE provisioning 广播，供微信小程序连接
+  - 对应接口：`network_manager_start_ble_provisioning()`
+  - 当前边界：若主界面蓝牙总开关关闭，会提示先打开 Bluetooth，不会偷偷开启 BLE
+  - 启动前会先停止普通 `ble_presence` 广播，让官方 provisioning adapter 独占 NimBLE host
+- `AP Web Fallback`
+  - 当前语义：保留 AP 网页配网兜底
+  - 对应接口：`network_manager_start_softap_provisioning()`
 
 ### 运行时锁定边界
 
 - 当 `network_manager` 处于：
   - `NETWORK_MANAGER_STATE_PROVISIONING_BLE`
   - `NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP`
+  - 或 `status.ble_active == true`
 - Wi-Fi 管理页会临时锁住：
-  - `Reprovision`
-  - `BLE`
-  - `SoftAP`
-- 这样做是因为当前 `network_manager_reprovision()` 的语义就是“立即 stop 当前 transport，再按默认 transport 重启”；如果在配网进行中继续连点这些控件，会把已经建立的 BLE/SoftAP 会话自己抖掉。
+  - `BLE Provision`
+  - `AP Web Fallback`
+- 这样做是为了避免用户在小程序连接或 AP 门户会话中重复点击，把已经建立的 BLE/SoftAP 会话自己抖掉。
 
 ## 运行时状态收口
 
@@ -101,8 +92,8 @@ last_reviewed: 2026-04-24
   - `network_manager_get_status()`
   - `network_manager_use_latest_wifi()`
   - `network_manager_disconnect()`
-  - `network_manager_reprovision()`
-  - `network_manager_set_default_transport()`
+  - `network_manager_start_ble_provisioning()`
+  - `network_manager_start_softap_provisioning()`
   - `network_manager_set_ble_enabled()`
 - `main/services/network_service.[ch]` 仍存在，但当前已经退化为旧消费者兼容层 + service-ready 探测层，而不是新的 UI 主控制面。
 
@@ -112,6 +103,7 @@ last_reviewed: 2026-04-24
 - 当前自动重连闸门实际落在：
   - `components/wifi_control`
 - 新配网流程开始前，会先停止当前活动的 BLE/AP transport，避免 UI 上存在两套入口同时活跃。
+- 普通蓝牙可发现广播由 `components/ble_presence` 独立承载；官方 BLE provisioning 使用 `network_provisioning_adapter`，二者通过 `network_manager` 串行切换，避免两个 BLE owner 同时持有 NimBLE host。
 - 用户显式点击：
   - `Use Saved Wi-Fi`
   - `Disconnect`
@@ -120,6 +112,9 @@ last_reviewed: 2026-04-24
 - 若设备开机时没有 recent Wi-Fi，且默认 transport 为 BLE 但 BLE 总开关已关闭：
   - 当前会停在合法空闲态等待用户手动操作
   - 不再把后台网络服务直接打成启动失败
+- 若设备开机没有 recent Wi-Fi，或 latest Wi-Fi 连接失败：
+  - 当前不会自动启动 BLE 小程序配网
+  - 用户必须进入 Wi-Fi 管理页点击 `BLE Provision` 或 `AP Web Fallback`
 - 当前页面仍是 hand-written LVGL 页，不依赖 GUI Guider 生成新的页面结构。
 - Wi-Fi 管理页返回主界面时，当前使用 `lv_screen_load_anim(..., true)` 删除旧 screen。
   因此控制器不能只靠静态缓存指针判断“页面已创建”；每次二次打开前都必须确认

@@ -67,18 +67,15 @@ extern "C"
     network_service_state_t network_service_get_state(void);
 
     /**
-     * @brief 设置 BLE 配网入口是否允许被后台状态机拉起。
+     * @brief 设置 BLE 总开关偏好。
      *
      * 当前接口只是兼容层桥接，真实语义由 `network_manager` 决定：
+     * - 开启时只允许 BLE 功能，不会自动启动小程序配网；
      * - 关闭时会立即停止当前 BLE provisioning transport；
-     * - 开启时若当前处于空闲、未连网且默认 transport 是 BLE，
-     *   会立即重新拉起 BLE provisioning；
-     * - 若默认 transport 不是 BLE，则这里只更新 BLE 总开关偏好。
+     * - Wi-Fi 连接状态不受该开关影响，允许 Wi-Fi 与 BLE enabled 并存。
      *
-     * @param[in] enabled true 表示允许 BLE 配网；false 表示禁止。
-     * @return `ESP_OK` 表示状态已更新；
-     *         `ESP_ERR_INVALID_STATE` 表示当前默认 transport 不允许直接启动；
-     *         其他错误表示偏好持久化或 BLE 启动/停止失败。
+     * @param[in] enabled true 表示允许 BLE；false 表示关闭 BLE。
+     * @return `ESP_OK` 表示状态已更新；其他错误表示偏好持久化或 BLE 停止失败。
      */
     esp_err_t network_service_set_ble_enabled(bool enabled);
 
@@ -163,7 +160,11 @@ extern "C"
     void network_service_request_portal(void);
 
     /**
-     * @brief 主动切换到 BLE 配网。
+     * @brief 主动启动 BLE 配网。
+     *
+     * 该兼容入口不会自动打开 BLE 总开关；如果蓝牙被用户关闭，会由底层返回
+     * `ESP_ERR_INVALID_STATE` 并记录日志。
+     *
      * @return 无返回值。
      */
     void network_service_request_ble(void);

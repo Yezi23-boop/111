@@ -2,7 +2,7 @@
 id: network-provisioning-custom-upper-architecture
 tags: [project, architecture, wifi, provisioning, ble, softap, esp-idf]
 summary: 记录当前仓库向“官方 network_provisioning + 自定义上层网络架构”迁移的长期方向、组件分层与当前落地边界。
-last_reviewed: 2026-04-21
+last_reviewed: 2026-04-25
 ---
 
 # 官方 provisioning + 自定义上层网络架构
@@ -56,7 +56,7 @@ last_reviewed: 2026-04-21
 - `ble_control` 仍只负责偏好与 active 状态本身。
 - 但从当前代码起，`network_manager_set_ble_enabled()` 不再只是改偏好位：
   - 关闭 BLE 时，若当前正跑 BLE provisioning，会立即停止 BLE transport
-  - 开启 BLE 时，若当前处于空闲、未连网、且默认 transport 为 BLE，会立即重新拉起 BLE provisioning
+  - 开启 BLE 时，只启动普通 BLE presence 可发现广播，不自动拉起 BLE provisioning
 - 因此“BLE 总开关是否真的影响广播/配网入口”的解释权，当前已经收敛到 `network_manager`，而不是 `ble_control` 自己。
 
 ### `network_credentials`
@@ -74,11 +74,12 @@ last_reviewed: 2026-04-21
   - 项目唯一正式网络统一门面
 - 负责：
   - 开机尝试 latest Wi-Fi
-  - latest 失败后自动进入用户设置的 provisioning transport
+  - latest 失败后停在空闲态，等待用户在 Wi-Fi 管理页显式选择 provisioning transport
   - 向 UI 暴露：
     - 使用最近网络
     - 断开联网
-    - 重新配网
+    - 显式启动 BLE Provision
+    - 显式启动 AP Web Fallback
     - BLE 总开关
 
 ### `ap_portal_adapter`
@@ -125,10 +126,9 @@ last_reviewed: 2026-04-21
 - 当前目标动作：
   - `Use Saved Wi-Fi`
   - `Disconnect`
-  - `Reprovision`
-- provisioning transport 设置只保留：
-  - `BLE`
-  - `SOFTAP`
+  - `BLE Provision`
+  - `AP Web Fallback`
+- 页面不再要求用户先选择 transport 再点击 `Reprovision`。
 - 不再保留 `AUTO`
 - 当前 UI 已直接对接 `network_manager`，不再让页面直接依赖旧 `network_service` Wi-Fi façade
 - `network_service` 当前已退化为：
@@ -142,9 +142,9 @@ last_reviewed: 2026-04-21
 - 若存在 latest：
   - 先尝试 latest
 - 若 latest 连接失败：
-  - 自动进入用户当前设置的 provisioning transport
-- 若 transport 为 `BLE`：
-  - 启动前必须再检查 `ble_control_is_enabled()`
+  - 停在合法空闲态，等待用户显式点击 `BLE Provision` 或 `AP Web Fallback`
+- 若用户显式点击 `BLE Provision`：
+  - 启动前必须检查 `ble_control_is_enabled()`
 - 若没有 recent，且默认 transport 是 `BLE`，但 BLE 总开关已关闭：
   - 当前会停在合法空闲态
   - 不再把 `network_manager_start()` / `network_service_start()` 直接打成启动失败

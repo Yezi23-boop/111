@@ -29,7 +29,8 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
         self.assertIn("network_manager_set_ble_enabled(enabled)", source)
         self.assertIn("network_manager_is_ble_enabled()", source)
         self.assertIn("network_manager_is_ble_active()", source)
-        self.assertIn("network_manager_reprovision()", source)
+        self.assertIn("network_manager_start_ble_provisioning()", source)
+        self.assertIn("network_manager_start_softap_provisioning()", source)
         self.assertIn("NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE", source)
         self.assertIn("NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP", source)
 
@@ -50,16 +51,19 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
         self.assertIn("NETWORK_SERVICE_STATE_WIFI_READY", source)
         self.assertIn("NETWORK_SERVICE_STATE_SERVICE_READY", source)
 
-    def test_network_service_request_ble_uses_ble_transport_reprovision_path(
+    def test_network_service_request_ble_uses_explicit_ble_provisioning_path(
         self,
     ) -> None:
         header = NETWORK_SERVICE_HEADER.read_text(encoding="utf-8")
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("void network_service_request_ble(void);", header)
-        self.assertIn("network_manager_set_ble_enabled(true)", source)
-        self.assertIn("network_manager_set_default_transport(", source)
-        self.assertIn("network_manager_reprovision()", source)
+        self.assertIn("network_manager_start_ble_provisioning()", source)
+        request_ble_body = source.split("void network_service_request_ble(void)", 1)[
+            1
+        ]
+        self.assertNotIn("network_manager_set_ble_enabled(true)", request_ble_body)
+        self.assertNotIn("network_manager_set_default_transport(", request_ble_body)
 
     def test_network_service_logs_ble_requests_and_state_transitions(self) -> None:
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")

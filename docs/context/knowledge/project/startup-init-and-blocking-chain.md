@@ -2,7 +2,7 @@
 id: startup-init-and-blocking-chain
 tags: project, startup, init, wifi, blocking, lvgl, audio
 summary: 当前仓库从上电到 UI 启动的初始化顺序、后台联网分工和首启风险摘要。
-last_reviewed: 2026-04-21
+last_reviewed: 2026-04-25
 ---
 
 # 启动与阻塞链路
@@ -43,12 +43,12 @@ last_reviewed: 2026-04-21
   - `network_credentials`
   - `network_provisioning_adapter`
 - 若设备存在 recent Wi-Fi 记录，会先尝试最新一条。
-- 若 latest 连接失败，系统会按当前默认 transport 进入 `BLE` 或 `SoftAP` provisioning。
+- 若 latest 连接失败，系统会停在合法空闲态，等待用户进入 Wi-Fi 管理页点击 `BLE Provision` 或 `AP Web Fallback`。
 - 若没有 recent 且默认 transport 为 `BLE`，但 BLE 总开关已关闭，则会停在合法空闲态，而不是直接启动失败。
 
 ## 首启与离线风险
 
-- 首启、清空凭据或凭据失效时，系统会先进入 UI，再由 `network_service` 留在 `BLE provisioning`、`SoftAP provisioning` 或后台连接阶段。
+- 首启、清空凭据或凭据失效时，系统会先进入 UI，并等待用户从 Wi-Fi 管理页显式选择 `BLE Provision` 或 `AP Web Fallback`。
 - 当前默认配网入口已经回收到 UI，不再依赖 `GPIO10` 的单击/多击配网映射。
 - 因为 `time_and_weather` 任务创建当前仍注释，时间同步链路尚未重新并回正式入口。
 
@@ -56,7 +56,7 @@ last_reviewed: 2026-04-21
 
 - 想确认是不是卡在联网，先观察 `HARDWARE_INIT`、`NETWORK_SERVICE` 和 `wifi_mgr` 日志，而不是先查 LVGL。
 - 若是首启问题，优先验证：
-  - `network_manager` 当前是否进入 `PROVISIONING_BLE / PROVISIONING_SOFTAP / CONNECTING`
+  - `network_manager` 当前是否进入 `IDLE / PROVISIONING_BLE / PROVISIONING_SOFTAP / CONNECTING`
   - `ap_portal_adapter` 的页面与 `/api/status` 是否可访问
   - `wifi_control` 的重试日志是否符合预期
 - 若希望时间同步等后处理也并回正式入口，下一步应单独评估 `time_and_weather` 的恢复时机和阻塞边界。

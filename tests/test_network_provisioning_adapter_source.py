@@ -46,6 +46,23 @@ class NetworkProvisioningAdapterSourceTests(unittest.TestCase):
         self.assertIn("xSemaphoreCreateRecursiveMutexStatic", source)
         self.assertIn("xSemaphoreTakeRecursive", source)
 
+    def test_ble_scheme_keeps_ble_memory_available_for_presence(self) -> None:
+        source = NETWORK_PROVISIONING_ADAPTER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BT", source)
+        self.assertIn("不使用 FREE_BTDM", source)
+        fill_body = source.split(
+            "static esp_err_t network_provisioning_adapter_fill_mgr_config", 1
+        )[1].split("/**\n * @brief 启动指定 transport", 1)[0]
+        self.assertIn(
+            "WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BT;",
+            fill_body,
+        )
+        self.assertNotIn(
+            "WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM;",
+            fill_body,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

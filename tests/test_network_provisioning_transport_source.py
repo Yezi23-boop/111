@@ -62,6 +62,7 @@ class NetworkProvisioningTransportSourceTests(unittest.TestCase):
             "NETWORK_PROVISIONING_ADAPTER_EVENT_WIFI_CRED_RECV", source
         )
         self.assertIn("network_credentials_save_or_promote(", source)
+        self.assertIn("wifi_control_set_auto_reconnect_enabled(true);", source)
         self.assertIn("wifi_control_connect(", source)
 
 

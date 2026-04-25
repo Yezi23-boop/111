@@ -2,7 +2,7 @@
 id: wifi-provision-retry-reasons
 tags: [project, wifi, provision, diagnostics, esp32-s3]
 summary: 记录当前仓库 Wi-Fi 自动连接失败后常见断连 reason 码的含义，以及哪些告警是正常探测噪声。
-last_reviewed: 2026-04-21
+last_reviewed: 2026-04-25
 ---
 
 # Wi-Fi 自动连接重试诊断
@@ -10,7 +10,7 @@ last_reviewed: 2026-04-21
 - 当前仓库已不再使用旧 `wifi_provision_start_auto()` 路径。
 - 当前正式语义是：
   - `network_manager_start()` 先尝试最近成功连接的 latest Wi-Fi
-  - 若 latest 失败，再按当前默认 transport 进入 `BLE` 或 `SoftAP` provisioning
+  - 若 latest 失败，停在空闲态，等待用户进入 Wi-Fi 管理页显式点击 `BLE Provision` 或 `AP Web Fallback`
 - Wi-Fi 断连原因日志当前由 `wifi_control` 侧的 STA 事件链路承接。
 
 # 当前已验证的 reason 码

@@ -619,26 +619,17 @@ esp_err_t network_service_get_ip(char *ip_str, size_t ip_str_len)
 /**
  * @brief 主动请求切换到 SoftAP 配网。
  *
- * 兼容层通过先切默认 transport，再请求 `reprovision` 的方式，复用新
- * 架构已有的 transport 收口与重启逻辑。
+ * 兼容层直接桥接到 `network_manager` 的显式 SoftAP 入口，避免把
+ * “切默认 transport + reprovision”的两步旧 UI 语义继续扩散。
  *
  * @return 无返回值。
  */
 void network_service_request_portal(void)
 {
-    esp_err_t ret = network_manager_set_default_transport(
-        NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP);
+    esp_err_t ret = network_manager_start_softap_provisioning();
     if (ret != ESP_OK)
     {
-        ESP_LOGW(TAG, "switch transport to SoftAP failed: %s",
-                 esp_err_to_name(ret));
-        return;
-    }
-
-    ret = network_manager_reprovision();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGW(TAG, "explicit SoftAP reprovision failed: %s",
+        ESP_LOGW(TAG, "explicit SoftAP provisioning failed: %s",
                  esp_err_to_name(ret));
     }
 }
@@ -646,34 +637,17 @@ void network_service_request_portal(void)
 /**
  * @brief 主动请求切换到 BLE 配网。
  *
- * 这里会先确保 BLE 总开关处于开启态，再把默认 transport 切到 BLE 并
- * 请求 `reprovision`，从而避免兼容层重新自己管理 BLE 生命周期。
+ * 兼容层只桥接到显式 BLE 配网入口；是否允许 BLE 由主界面蓝牙总开关控制，
+ * 本函数不会偷偷打开蓝牙，避免把“蓝牙开关”和“小程序配网”再次耦合。
  *
  * @return 无返回值。
  */
 void network_service_request_ble(void)
 {
-    esp_err_t ret = network_manager_set_ble_enabled(true);
+    esp_err_t ret = network_manager_start_ble_provisioning();
     if (ret != ESP_OK)
     {
-        ESP_LOGW(TAG, "enable BLE before reprovision failed: %s",
-                 esp_err_to_name(ret));
-        return;
-    }
-
-    ret = network_manager_set_default_transport(
-        NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGW(TAG, "switch transport to BLE failed: %s",
-                 esp_err_to_name(ret));
-        return;
-    }
-
-    ret = network_manager_reprovision();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGW(TAG, "explicit BLE reprovision failed: %s",
+        ESP_LOGW(TAG, "explicit BLE provisioning failed: %s",
                  esp_err_to_name(ret));
     }
 }
