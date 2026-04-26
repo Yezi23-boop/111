@@ -17,6 +17,7 @@ class NetworkManagerSourceTests(unittest.TestCase):
         self.assertIn("network_manager_use_latest_wifi", header)
         self.assertIn("network_manager_disconnect", header)
         self.assertIn("network_manager_reprovision", header)
+        self.assertIn("network_manager_get_state_cached", header)
         self.assertIn("network_manager_start_ble_provisioning", header)
         self.assertIn("network_manager_start_softap_provisioning", header)
         self.assertIn("network_manager_set_ble_enabled", header)
@@ -40,12 +41,14 @@ class NetworkManagerSourceTests(unittest.TestCase):
         self.assertIn("portMUX_TYPE s_manager_bootstrap_lock", source)
         self.assertIn("xSemaphoreCreateMutexStatic", source)
         self.assertIn("xSemaphoreTake(s_manager_mutex, portMAX_DELAY)", source)
+        self.assertIn("static volatile network_manager_state_t s_state", source)
         self.assertIn("xTaskCreate(network_manager_task", source)
         self.assertIn("network_manager_stop_active_transport", source)
         self.assertIn("network_manager_start_selected_transport_auto()", source)
         self.assertIn("network_manager_connect_entry(&latest, true)", source)
         self.assertIn("等待用户明确选择 BLE 配网或 AP 网页兜底", source)
         self.assertIn('#include "ble_presence.h"', source)
+        self.assertIn("network_manager_get_state_cached(void)", source)
 
     def test_source_updates_recent_list_only_after_successful_connect(self) -> None:
         source = NETWORK_MANAGER_SOURCE.read_text(encoding="utf-8")

@@ -1,5 +1,8 @@
 # 上下文库变更记录
 
+- 2026-04-25：在项目根 `AGENTS.md` 新增“状态发布与 UI 读取原则”，正式要求高频 UI/策略层默认只读快照，重状态推进留给后台任务或 owner 模块，并明确 getter 默认无副作用、必要时应同时提供 cached/snapshot 接口。
+- 2026-04-25：修正 BLE provisioning 期 UI 降载策略的两处回归：`ui_refresh_policy` 不再把 `PROVISIONING_THROTTLED` 当成顶层交互状态，而是拆成“交互状态 + 系统节流模式”两维，恢复配网期间 `5s` 无触摸后 dim 与 `80ms/250ms` 双档延时；同时 `network_manager` 新增无锁 `network_manager_get_state_cached()`，避免 UI 主循环轮询时抢占网络互斥锁。
+- 2026-04-25：针对 BLE provisioning 建链后 `spi_master: setup_dma_priv_buffer() -> ESP_ERR_NO_MEM` 的真机问题，把 `ui_refresh_policy` 从“临时布尔降载标志”收口成正式输出状态 `PROVISIONING_THROTTLED`；当前通过“输入条件 -> 最终状态”统一计算刷新策略，并在 `NETWORK_MANAGER_STATE_PROVISIONING_BLE` 期间把 LVGL 主循环最小唤醒间隔稳定抬到 `80ms`，优先减少显示 flush 与 NimBLE / Wi-Fi scan 对内部 DMA 内存的竞争。
 - 2026-04-25：修复微信小程序官方 BLE 配网客户端两处真机联调风险：官方 protocomm BLE 路线新增 `wx.setBLEMTU()` 协商和 payload 上限保护，避免把 protobuf 请求按旧 JSON 方式拆坏；BLE 扫描默认收敛到官方/旧版配网服务并降低无关广播日志噪声，保留“显示全部”作为调试入口。
 - 2026-04-25：修复 BLE presence / 官方 provisioning 分离后的三个框架回归点：`ble_presence_is_active()` 改为按真实 advertising 状态返回，`network_manager` 在收到 provisioning 新凭据后恢复 STA 自动重连，并把 getter 的 BLE presence 启停副作用收窄为只读刷新；同时更新配网相关知识卡，统一当前“Wi-Fi 管理页显式点击 BLE Provision / AP Web Fallback”的入口语义。
 - 2026-04-24：为 SoftAP 门户新增 Captive Portal 自动弹页壳层基线，补记其真实 owner 在 `ap_portal_adapter` 而不是官方 `network_provisioning`：当前通过 `HTTPD_404_NOT_FOUND -> /`、DNS 劫持到 `WIFI_AP_DEF` 与 DHCP Option 114 共同提供系统自动弹页能力，并新增 `softap-captive-portal-auto-popup` 知识卡固定该边界。
@@ -175,3 +178,4 @@
 - 2026-04-25：确认微信小程序 BLE 配网应对齐当前官方 `network_provisioning` 协议，优先实现 `proto-ver / prov-session / prov-scan / prov-config` 的 protocomm BLE client，并将历史 JSON GATT 协议收敛为旧镜像兜底。
 - 2026-04-25：分离主界面蓝牙总开关与 Wi-Fi 管理页 BLE 配网入口；`network_manager_set_ble_enabled()` 和 latest 失败自动路径都不再自动启动小程序配网，新增显式 `network_manager_start_ble_provisioning()` / `network_manager_start_softap_provisioning()`，允许 Wi-Fi 连接与 BLE enabled 并存。
 - 2026-04-25：新增 `components/ble_presence` 普通 BLE 可发现广播；主界面 Bluetooth 开关打开后广播 `ESP32S3-723C` 供扫描发现，Wi-Fi 管理页 `BLE Provision` 启动前会先停止 presence 并独占官方 BLE provisioning，同时 provisioning handler 改为保留 BLE 控制器资源以便后续恢复普通广播。
+- 2026-04-25：针对“先打开状态栏普通蓝牙，再进入 BLE Provision 时 LCD 刷新报 `setup_dma_priv_buffer / ESP_ERR_NO_MEM`”的板端问题，将 `lv_port` 固定 flush chunk 从 `30` 行收紧到 `10` 行，并把 `CO5300_PANEL_MAX_TRANSFER_LINES / PCLK` 收敛到 `10 行 / 50MHz`，降低 BLE owner 切换后对连续片内 DMA 私有缓冲的需求峰值。

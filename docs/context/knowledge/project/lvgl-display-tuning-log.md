@@ -469,6 +469,43 @@ last_reviewed: 2026-04-08
   - 本节描述的是当前 `codex/bluetooth` 分支的现状
   - 文档前文涉及 bounce buffer 的章节属于历史调参记录，代表过去实验结论，不再代表当前分支默认实现
 
+### 23. BLE provisioning 活跃期新增 UI 主循环降载保护
+
+- 触发证据：
+  - 当前官方 BLE provisioning 真机日志显示：
+    - `network_prov_mgr: Provisioning started with service name : NET_PROV_BLE`
+    - 建链后 `protocomm_nimble: mtu update event ... mtu=256`
+    - 随后连续出现 `spi_master: setup_dma_priv_buffer()` 与 `Display flush failed: ESP_ERR_NO_MEM`
+  - 同期微信小程序已经能完成：
+    - `proto-ver`
+    - `security0 session`
+    - `prov-scan`
+  - 这说明主问题已从“协议没打通”收敛成“BLE/Wi-Fi scan 与显示 flush 抢内部 DMA 内存”
+- 收敛修改：
+  - `main/ui/ui_refresh_policy.c`
+    - 新增对 `NETWORK_MANAGER_STATE_PROVISIONING_BLE` 的检测
+    - 当前不再把“配网降载”做成顶层交互状态，而是拆成两层：
+      - 交互状态：`ACTIVE / IDLE_DIM / FORCE_ACTIVE`
+      - 系统节流模式：`NORMAL / PROVISIONING`
+    - BLE 配网活跃期：
+      - 活跃态最小唤醒间隔抬到 `80ms`
+      - 空闲态最小唤醒间隔抬到 `250ms`
+    - 亮度仍只跟交互状态走，因此配网期间 `5s` 无触摸后仍会 dim
+    - UI 轮询不再调用会抢 `network_manager` 互斥锁的 `network_manager_get_state()`，
+      改为使用无锁快照接口 `network_manager_get_state_cached()`
+- 目的：
+  - 保持“交互活跃语义”和“系统保护语义”正交，避免一个状态同时承担 dim 与限流两种职责
+  - 不改触摸超时语义
+  - 在 BLE 配网期间继续利用空闲 dim 和更慢轮询一起减少 `lv_timer_handler() -> flush` 的触发密度
+  - 优先验证“显示总线降载后，内部 DMA 私有缓冲申请失败是否明显减少”
+- 当前判断：
+  - 当前最稳的实现不是把 `PROVISIONING_THROTTLED` 当成顶层状态，而是把它做成独立节流模式
+  - 这样既保住了 dim / 常亮的用户语义，也避免 UI 主循环被网络互斥锁拖慢
+  - 若真机仍持续报 `ESP_ERR_NO_MEM`，下一步应继续看：
+    1. Wi-Fi 管理页上是否还有额外高频对象刷新
+    2. 是否需要在 BLE provisioning 期间进一步暂停部分后台 UI 驱动源
+    3. 是否需要重新引入更稳的 `Internal + DMA` bounce buffer 路径
+
 ## 后续 agent 使用建议
 
 - 后续继续调参前，先读本文，再读 [display-render-touch-transfer-pipeline.md](/D:/esp32S3/111/docs/context/knowledge/project/display-render-touch-transfer-pipeline.md)

@@ -3,6 +3,7 @@
 #include "co5300_panel.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "network_manager.h"
 
 #include <limits.h>
 
@@ -20,9 +21,17 @@ typedef enum
     UI_REFRESH_POLICY_STATE_FORCE_ACTIVE,
 } ui_refresh_policy_state_t;
 
+typedef enum
+{
+    UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL = 0,
+    UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING,
+} ui_refresh_policy_throttle_mode_t;
+
 static const char *TAG = "ui_refresh_policy";
 static const uint32_t k_active_delay_ms = 16U;                 /* 活跃态最大循环延时，单位为毫秒。 */
 static const uint32_t k_idle_delay_ms = 100U;                  /* 空闲态最小循环延时，单位为毫秒。 */
+static const uint32_t k_provisioning_active_delay_ms = 80U;    /* BLE 配网活跃态最小循环延时，单位为毫秒。 */
+static const uint32_t k_provisioning_idle_delay_ms = 250U;     /* BLE 配网空闲态最小循环延时，单位为毫秒。 */
 static const int64_t k_active_timeout_us = 5000LL * 1000LL;    /* 最近一次触摸后保持活跃的窗口，单位为微秒。 */
 static const uint8_t k_idle_brightness_percent = 40U;          /* 空闲态目标亮度占用户亮度的百分比。 */
 static const uint8_t k_default_user_brightness_percent = 100U; /* 默认用户亮度，单位为百分比。 */
@@ -32,7 +41,9 @@ static bool s_force_active = false;                                        /* �
 static uint8_t s_user_brightness_percent = 100U;                           /* 用户配置的原始亮度百分比。 */
 static uint8_t s_applied_brightness_percent = UCHAR_MAX;                   /* 最近一次成功下发给面板的亮度；`UCHAR_MAX` 表示尚未下发。 */
 static int64_t s_last_touch_time_us = 0;                                   /* 最近一次用户活跃时间戳，单位为微秒。 */
-static ui_refresh_policy_state_t s_state = UI_REFRESH_POLICY_STATE_ACTIVE; /* 当前刷新策略状态机状态。 */
+static ui_refresh_policy_state_t s_state = UI_REFRESH_POLICY_STATE_ACTIVE;  /* 当前交互活跃状态。 */
+static ui_refresh_policy_throttle_mode_t s_throttle_mode =
+    UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL; /* 当前系统级刷新节流模式。 */
 
 /**
  * @brief 限制亮度百分比到合法范围。
@@ -68,14 +79,25 @@ static uint8_t ui_refresh_policy_compute_dim_brightness(uint8_t percent)
 }
 
 /**
+ * @brief 判断某个刷新策略状态是否应保持用户配置的原始亮度。
+ *
+ * @param[in] state 当前最终刷新策略状态。
+ * @return true 表示应保持用户亮度；false 表示应进入 dim 亮度。
+ */
+static bool ui_refresh_policy_state_uses_full_brightness(
+    ui_refresh_policy_state_t state)
+{
+    return state == UI_REFRESH_POLICY_STATE_ACTIVE ||
+           state == UI_REFRESH_POLICY_STATE_FORCE_ACTIVE;
+}
+
+/**
  * @brief 根据当前状态机推导真正要下发给面板的亮度。
  * @return 应写入面板的亮度百分比。
  */
 static uint8_t ui_refresh_policy_get_effective_brightness_percent(void)
 {
-    if (s_force_active ||
-        s_state == UI_REFRESH_POLICY_STATE_FORCE_ACTIVE ||
-        s_state == UI_REFRESH_POLICY_STATE_ACTIVE)
+    if (ui_refresh_policy_state_uses_full_brightness(s_state))
     {
         return s_user_brightness_percent;
     }
@@ -98,6 +120,25 @@ static const char *ui_refresh_policy_state_name(ui_refresh_policy_state_t state)
         return "idle_dim";
     case UI_REFRESH_POLICY_STATE_FORCE_ACTIVE:
         return "force_active";
+    default:
+        return "unknown";
+    }
+}
+
+/**
+ * @brief 将系统级节流模式转换成日志可读字符串。
+ * @param[in] mode 当前节流模式。
+ * @return 模式对应的短字符串。
+ */
+static const char *ui_refresh_policy_throttle_mode_name(
+    ui_refresh_policy_throttle_mode_t mode)
+{
+    switch (mode)
+    {
+    case UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL:
+        return "normal";
+    case UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING:
+        return "provisioning_throttled";
     default:
         return "unknown";
     }
@@ -152,6 +193,89 @@ static void ui_refresh_policy_set_state(ui_refresh_policy_state_t next_state)
 }
 
 /**
+ * @brief 更新系统级节流模式并输出统一日志。
+ * @param[in] next_mode 目标节流模式。
+ * @return 无返回值。
+ */
+static void ui_refresh_policy_set_throttle_mode(
+    ui_refresh_policy_throttle_mode_t next_mode)
+{
+    if (s_throttle_mode == next_mode)
+    {
+        return;
+    }
+
+    ESP_LOGI(TAG, "refresh throttle %s -> %s",
+             ui_refresh_policy_throttle_mode_name(s_throttle_mode),
+             ui_refresh_policy_throttle_mode_name(next_mode));
+    s_throttle_mode = next_mode;
+}
+
+/**
+ * @brief 查询当前是否处于官方 BLE provisioning 活跃期。
+ *
+ * 当前真机日志表明，BLE provisioning 建链和 Wi-Fi 扫描阶段会明显挤压片内 DMA
+ * 可用内存。这里统一只认 `network_manager` 的主状态机，避免 UI 层自行猜 transport owner。
+ *
+ * @return true 表示当前正在走 BLE provisioning，会触发 UI 降载。
+ */
+static bool ui_refresh_policy_is_ble_provisioning_active(void)
+{
+    return network_manager_get_state_cached() ==
+           NETWORK_MANAGER_STATE_PROVISIONING_BLE;
+}
+
+/**
+ * @brief 根据当前交互输入条件计算活跃状态。
+ *
+ * 这里专门只处理“用户是否活跃/是否允许 dim”这个维度：
+ * - `FORCE_ACTIVE` 表示上层场景禁止自动 dim；
+ * - `ACTIVE` 表示最近 5 秒内仍有交互；
+ * - `IDLE_DIM` 表示已进入可调暗、可降低刷新频率的空闲态。
+ *
+ * BLE provisioning 的资源保护不在这里混算，而是单独走 `s_throttle_mode`。
+ * 这样可以保留“配网期间仍然允许 5 秒后 dim”的节电语义，避免一个状态同时承担
+ * “是否活跃”和“是否要限流”两种职责。
+ *
+ * @return 当前交互活跃状态。
+ */
+static ui_refresh_policy_state_t ui_refresh_policy_compute_state(void)
+{
+    if (s_force_active)
+    {
+        return UI_REFRESH_POLICY_STATE_FORCE_ACTIVE;
+    }
+
+    int64_t idle_time_us = esp_timer_get_time() - s_last_touch_time_us;
+    if (idle_time_us < 0)
+    {
+        idle_time_us = 0;
+    }
+
+    if (idle_time_us <= k_active_timeout_us)
+    {
+        return UI_REFRESH_POLICY_STATE_ACTIVE;
+    }
+
+    return UI_REFRESH_POLICY_STATE_IDLE_DIM;
+}
+
+/**
+ * @brief 根据当前系统条件计算刷新节流模式。
+ *
+ * 节流模式只表达“当前系统是否需要为了资源稳定性而主动降载”。
+ * 它不决定是否 dim，也不覆盖 `ACTIVE / IDLE_DIM / FORCE_ACTIVE` 的交互语义。
+ *
+ * @return 当前系统级节流模式。
+ */
+static ui_refresh_policy_throttle_mode_t ui_refresh_policy_compute_throttle_mode(void)
+{
+    return ui_refresh_policy_is_ble_provisioning_active()
+               ? UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING
+               : UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL;
+}
+
+/**
  * @brief 初始化刷新策略状态机。
  *
  * 初始化后默认进入活跃态，并立即把亮度同步到默认用户亮度，
@@ -161,6 +285,7 @@ void ui_refresh_policy_init(void)
 {
     s_last_touch_time_us = esp_timer_get_time();
     s_state = UI_REFRESH_POLICY_STATE_ACTIVE;
+    s_throttle_mode = UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL;
     s_force_active = false;
     s_user_brightness_percent = k_default_user_brightness_percent;
     s_applied_brightness_percent = UCHAR_MAX;
@@ -183,11 +308,8 @@ void ui_refresh_policy_notify_touch(void)
     }
 
     s_last_touch_time_us = esp_timer_get_time();
-    if (!s_force_active)
-    {
-        ui_refresh_policy_set_state(UI_REFRESH_POLICY_STATE_ACTIVE);
-        ui_refresh_policy_apply_brightness_if_needed();
-    }
+    ui_refresh_policy_set_state(ui_refresh_policy_compute_state());
+    ui_refresh_policy_apply_brightness_if_needed();
 }
 
 /**
@@ -252,6 +374,8 @@ uint8_t ui_refresh_policy_get_user_brightness_percent(void)
  *
  * 活跃态优先保证流畅度，因此把最大延时压到 16ms；
  * 空闲态优先省电，因此把最小延时抬高到 100ms。
+ * 若当前正跑 BLE provisioning，则进一步把最小唤醒间隔抬高，
+ * 优先降低显示 flush 与 NimBLE / Wi-Fi scan 对片内 DMA 内存的竞争。
  */
 uint32_t ui_refresh_policy_adjust_delay(uint32_t next_call_ms)
 {
@@ -260,8 +384,21 @@ uint32_t ui_refresh_policy_adjust_delay(uint32_t next_call_ms)
         return next_call_ms;
     }
 
-    if (s_force_active ||
-        s_state == UI_REFRESH_POLICY_STATE_FORCE_ACTIVE ||
+    if (s_throttle_mode == UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING)
+    {
+        if (s_state == UI_REFRESH_POLICY_STATE_IDLE_DIM)
+        {
+            return next_call_ms < k_provisioning_idle_delay_ms
+                       ? k_provisioning_idle_delay_ms
+                       : next_call_ms;
+        }
+
+        return next_call_ms < k_provisioning_active_delay_ms
+                   ? k_provisioning_active_delay_ms
+                   : next_call_ms;
+    }
+
+    if (s_state == UI_REFRESH_POLICY_STATE_FORCE_ACTIVE ||
         s_state == UI_REFRESH_POLICY_STATE_ACTIVE)
     {
         return next_call_ms > k_active_delay_ms ? k_active_delay_ms : next_call_ms;
@@ -275,6 +412,8 @@ uint32_t ui_refresh_policy_adjust_delay(uint32_t next_call_ms)
  *
  * 该函数应在 UI 主循环中高频调用。它会结合最近触摸时间和强制活跃标志，
  * 统一决定当前状态，并在状态变化时同步亮度。
+ * 同时它会读取 `network_manager` 的无锁状态快照，单独驱动“配网期 UI 降载”节流模式，
+ * 避免把主循环绑定到网络互斥锁上。
  */
 void ui_refresh_policy_poll(void)
 {
@@ -283,25 +422,7 @@ void ui_refresh_policy_poll(void)
         return;
     }
 
-    ui_refresh_policy_state_t next_state = UI_REFRESH_POLICY_STATE_IDLE_DIM;
-    if (s_force_active)
-    {
-        next_state = UI_REFRESH_POLICY_STATE_FORCE_ACTIVE;
-    }
-    else
-    {
-        int64_t idle_time_us = esp_timer_get_time() - s_last_touch_time_us;
-        if (idle_time_us < 0)
-        {
-            idle_time_us = 0;
-        }
-
-        if (idle_time_us <= k_active_timeout_us)
-        {
-            next_state = UI_REFRESH_POLICY_STATE_ACTIVE;
-        }
-    }
-
-    ui_refresh_policy_set_state(next_state);
+    ui_refresh_policy_set_throttle_mode(ui_refresh_policy_compute_throttle_mode());
+    ui_refresh_policy_set_state(ui_refresh_policy_compute_state());
     ui_refresh_policy_apply_brightness_if_needed();
 }

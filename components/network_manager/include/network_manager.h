@@ -70,6 +70,21 @@ esp_err_t network_manager_start(void);
 network_manager_state_t network_manager_get_state(void);
 
 /**
+ * @brief 读取当前网络主状态的无锁快照。
+ *
+ * 该接口只返回最近一次写入的 `network_manager` 主状态，不会主动刷新底层运行态，
+ * 也不会申请 `s_manager_mutex`。因此它适合 UI 刷新策略、背光策略等高频轮询路径，
+ * 用来避免把界面主循环绑到网络互斥锁上。
+ *
+ * 注意：这是一个“轻量快照”接口，返回值可能比 `network_manager_get_state()` 稍旧。
+ * 若调用方需要“读状态前顺便推进底层状态机”的语义，仍应使用
+ * `network_manager_get_state()`。
+ *
+ * @return 当前 `network_manager` 状态快照。
+ */
+network_manager_state_t network_manager_get_state_cached(void);
+
+/**
  * @brief 获取当前网络状态快照。
  *
  * @param[out] status 输出状态结构。

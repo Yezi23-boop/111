@@ -34,7 +34,7 @@
 /* ========== 显示控制 ========== */
 
 #define CO5300_PANEL_DEFAULT_BRIGHTNESS 0xFF // 默认亮度寄存器值（0x00~0xFF）
-#define CO5300_PANEL_MAX_TRANSFER_LINES 30   // 单次传输最大行数（控制 DMA bounce buffer 峰值）
+#define CO5300_PANEL_MAX_TRANSFER_LINES 10   // 单次传输最大行数（控制 DMA/private TX buffer 峰值）
 
 /* TE信号配置 */
 #define CO5300_PANEL_USE_TE_SIGNAL 0 // 1: 启用 TE 同步；0: 禁用 TE 同步
@@ -42,7 +42,7 @@
 
 /* ========== 性能优化 ========== */
 
-#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (80 * 1000 * 1000) // QSPI 像素时钟（Hz）
+#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000) // QSPI 像素时钟（Hz）
 #define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 8        // IO 传输队列深度
 
 /* ========== LCD参数 ========== */

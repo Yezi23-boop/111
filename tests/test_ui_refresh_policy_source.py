@@ -41,6 +41,20 @@ class UiRefreshPolicySourceTests(unittest.TestCase):
         self.assertIn("ui_refresh_policy_set_force_active", source)
         self.assertIn("co5300_panel_set_brightness", source)
 
+    def test_policy_source_adds_ble_provisioning_refresh_throttle(self) -> None:
+        source = UI_REFRESH_POLICY_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include "network_manager.h"', source)
+        self.assertIn("network_manager_get_state_cached()", source)
+        self.assertIn("NETWORK_MANAGER_STATE_PROVISIONING_BLE", source)
+        self.assertIn("UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING", source)
+        self.assertIn("k_provisioning_active_delay_ms = 80U", source)
+        self.assertIn("k_provisioning_idle_delay_ms = 250U", source)
+        self.assertIn("ui_refresh_policy_compute_state", source)
+        self.assertIn("ui_refresh_policy_compute_throttle_mode", source)
+        self.assertNotIn("UI_REFRESH_POLICY_STATE_PROVISIONING_THROTTLED", source)
+        self.assertNotIn("s_ble_provisioning_throttle_active", source)
+
     def test_lvgl_task_uses_policy_to_bound_lv_timer_handler_delay(self) -> None:
         source = LVGL_TASK_SOURCE.read_text(encoding="utf-8")
 

@@ -19,8 +19,8 @@
 #include "network_provisioning_adapter.h"
 #include "wifi_control.h"
 
-/** @brief 当前网络门面的主状态。 */
-static network_manager_state_t s_state = NETWORK_MANAGER_STATE_IDLE;
+/** @brief 当前网络门面的主状态快照；高频只读路径允许无锁读取这个值。 */
+static volatile network_manager_state_t s_state = NETWORK_MANAGER_STATE_IDLE;
 /** @brief 当前默认 provisioning transport。 */
 static network_manager_provisioning_transport_t s_default_transport =
     NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE;
@@ -720,6 +720,20 @@ network_manager_state_t network_manager_get_state(void)
     state = s_state;
     xSemaphoreGive(s_manager_mutex);
     return state;
+}
+
+/**
+ * @brief 读取当前网络主状态的无锁快照。
+ *
+ * 该接口不刷新底层状态机，也不申请 `s_manager_mutex`，因此适合 UI 刷新策略这种
+ * 高频轻量轮询场景。返回值只保证“最近一次已发布状态”的快照语义，不保证与
+ * `wifi_control`、`network_provisioning_adapter` 的瞬时内部状态完全同步。
+ *
+ * @return 当前 `network_manager` 状态快照。
+ */
+network_manager_state_t network_manager_get_state_cached(void)
+{
+    return s_state;
 }
 
 /**
