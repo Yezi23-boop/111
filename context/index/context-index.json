@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-04-25T13:35:02.301127+00:00",
-  "project_root": "C:\\Users\\ye\\Desktop\\111",
+  "generated_at_utc": "2026-05-02T17:05:59.466110+00:00",
+  "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 73,
+  "doc_count": 74,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-04-25：修正 BLE provisioning 期 UI 降载策略的两处回归：`ui_refresh_policy` 不再把 `PROVISIONING_THROTTLED` 当成顶层交互状态，而是拆成“交互状态 + 系统节流模式”两维，恢复配网期间 `5s` 无触摸后 dim 与 `80ms/250ms` 双档延时；同时 `network",
+      "summary": "- 2026-05-03：补记 `DS-TCN-small` 当前导出图的算子/热点分析：核心节点已全部落到 `ESPDL_S3_INT8`，`BatchNormalization` 已折叠为 `1x1 Conv`，当前结构已基本踩中 `Conv2D + DepthwiseConv2D` 的 ESP32-S3 高效路径，但仍保留 `FLOAT input -",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-25T13:34:54.744833+00:00",
-      "token_count": 3580
+      "mtime_utc": "2026-05-02T17:05:50.249773+00:00",
+      "token_count": 4445
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -28,7 +28,7 @@
       "summary": "将 ESP32/MCU 嵌入式 C/C++ 工程规则提升为本仓库默认代码生成规范的决策记录。",
       "id": "adr-default-embedded-codegen-rules",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-04-24T09:31:33.756821+00:00",
+      "mtime_utc": "2026-03-11T10:19:04.458091+00:00",
       "token_count": 125
     },
     {
@@ -46,7 +46,7 @@
       "summary": "用官方 network_provisioning 替换旧自定义 provisioning 内核，同时保留自定义上层网络架构与 AP 网页前端。",
       "id": "adr-network-provisioning-custom-upper-architecture",
       "last_reviewed": "2026-04-18",
-      "mtime_utc": "2026-04-24T09:31:33.757831+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.509708+00:00",
       "token_count": 190
     },
     {
@@ -56,7 +56,7 @@
       "summary": "该目录用于记录架构决策。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-24T09:31:33.759309+00:00",
+      "mtime_utc": "2026-03-11T10:19:04.458091+00:00",
       "token_count": 28
     },
     {
@@ -74,7 +74,7 @@
       "summary": "基于原理图和现有代码整理的 ESP32-S3-Touch-AMOLED-2.06 板级器件与关键网络映射。",
       "id": "esp32-s3-amoled-206-board-hardware-map",
       "last_reviewed": "2026-04-09",
-      "mtime_utc": "2026-04-24T09:31:33.763852+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.509708+00:00",
       "token_count": 263
     },
     {
@@ -93,7 +93,7 @@
       "summary": "ES8311 与 ES7210 在当前项目中的地址编码、时钟能力和代码映射基线。",
       "id": "audio-codec-address-clock-baseline",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-04-24T09:31:33.764854+00:00",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
       "token_count": 203
     },
     {
@@ -111,7 +111,7 @@
       "summary": "AXP2101 在当前 ESP32-S3 手表板上的功能块、关键寄存器组、状态机与接入边界梳理。",
       "id": "axp2101-deep-dive",
       "last_reviewed": "2026-04-09",
-      "mtime_utc": "2026-04-24T09:31:33.766363+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.510709+00:00",
       "token_count": 1211
     },
     {
@@ -128,7 +128,7 @@
       "summary": "AXP2101 在当前板上的最小探测前提、候选地址和接入顺序摘要。",
       "id": "axp2101-minimal-probe",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-04-24T09:31:33.768387+00:00",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
       "token_count": 156
     },
     {
@@ -145,7 +145,7 @@
       "summary": "FT3168 在当前项目共享 I2C 总线下的通信上限、休眠约束和上电时序基线。",
       "id": "ft3168-shared-i2c-baseline",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-04-24T09:31:33.769894+00:00",
+      "mtime_utc": "2026-03-11T10:45:30.361810+00:00",
       "token_count": 130
     },
     {
@@ -161,7 +161,7 @@
       "summary": "ESP32-S3 在 ESP-IDF 下集成 LVGL 显示与触摸的基础点亮流程。",
       "id": "esp32-s3-lvgl-porting-baseline",
       "last_reviewed": "2026-03-07",
-      "mtime_utc": "2026-04-24T09:31:33.771545+00:00",
+      "mtime_utc": "2026-03-11T10:19:04.459648+00:00",
       "token_count": 43
     },
     {
@@ -178,7 +178,7 @@
       "summary": "PCF85063ATL 在当前板上的最小探测地址、用途边界和接入顺序摘要。",
       "id": "pcf85063atl-minimal-probe",
       "last_reviewed": "2026-04-09",
-      "mtime_utc": "2026-04-24T09:31:33.773061+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.510709+00:00",
       "token_count": 123
     },
     {
@@ -194,7 +194,7 @@
       "summary": "ESP32-S3 智能手表待机功耗优化检查清单。",
       "id": "esp32-s3-watch-power-checklist",
       "last_reviewed": "2026-03-07",
-      "mtime_utc": "2026-04-24T09:31:33.774489+00:00",
+      "mtime_utc": "2026-03-11T10:19:04.460158+00:00",
       "token_count": 36
     },
     {
@@ -211,7 +211,7 @@
       "summary": "QMI8658C 在当前板上的最小探测地址、共享总线风险和后续接入顺序摘要。",
       "id": "qmi8658c-minimal-probe",
       "last_reviewed": "2026-04-09",
-      "mtime_utc": "2026-04-24T09:31:33.776178+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.510709+00:00",
       "token_count": 130
     },
     {
@@ -228,7 +228,7 @@
       "summary": "记录 AI 页面 hand-written 字体资源链，当前已在 LVGL 9.3.0 下重新回到运行时资产主路径，并保留编译字体回退。",
       "id": "ai-font-assets",
       "last_reviewed": "2026-04-17",
-      "mtime_utc": "2026-04-24T09:31:33.778366+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.510709+00:00",
       "token_count": 260
     },
     {
@@ -245,7 +245,7 @@
       "summary": "记录当前仓库在替换 GUI Guider 新导出层并升级到 LVGL 9.3 后，如何保持主菜单 AI 图标继续跳转到 hand-written AI 页面，以及当前 AI 页面布局与联网引导方案。",
       "id": "ai-ui-entry-network-guidance",
       "last_reviewed": "2026-04-17",
-      "mtime_utc": "2026-04-24T09:31:33.779367+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.510709+00:00",
       "token_count": 613
     },
     {
@@ -262,7 +262,7 @@
       "summary": "使用 ffmpeg 解码并结合短时 RMS 与过零率启发式提取 1 秒喇叭样候选片段的脚本入口与默认输出。",
       "id": "audio-horn-like-segment-extraction",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-24T09:31:33.781372+00:00",
+      "mtime_utc": "2026-04-23T16:05:29.535477+00:00",
       "token_count": 131
     },
     {
@@ -278,7 +278,7 @@
       "summary": "使用 ffmpeg 解码后按静音占比、整体 RMS 和包络起伏系数筛选低活动音频的脚本入口与默认阈值。",
       "id": "audio-low-activity-filter-script",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-24T09:31:33.783378+00:00",
+      "mtime_utc": "2026-04-23T16:05:29.535477+00:00",
       "token_count": 87
     },
     {
@@ -294,7 +294,7 @@
       "summary": "当前仓库接入 AXP2101 的推荐分层、最小只读阶段和后续放权边界。",
       "id": "axp2101-integration-staging",
       "last_reviewed": "2026-04-09",
-      "mtime_utc": "2026-04-24T09:31:33.784380+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.510709+00:00",
       "token_count": 294
     },
     {
@@ -311,7 +311,7 @@
       "summary": "当前手表项目接入 AXP2101 新电源管理组件的分层设计、接口草案、初始化时序、阶段边界与验证闭环。",
       "id": "axp2101-power-component-design",
       "last_reviewed": "2026-04-10",
-      "mtime_utc": "2026-04-24T09:31:33.786385+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.511709+00:00",
       "token_count": 1347
     },
     {
@@ -327,7 +327,7 @@
       "summary": "AXP2101 第一阶段只读电源组件的实际落地文件、状态语义、轮询策略和主链路接入位置。",
       "id": "axp2101-power-component-implementation",
       "last_reviewed": "2026-04-13",
-      "mtime_utc": "2026-04-24T09:31:33.788528+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.511709+00:00",
       "token_count": 344
     },
     {
@@ -343,7 +343,7 @@
       "summary": "记录当前仓库 BLE 配网在 NimBLE 广播阶段遇到的 31 字节 payload 上限问题、实机证据和修复方式。",
       "id": "ble-provisioning-advertising-payload-limit",
       "last_reviewed": "2026-04-02",
-      "mtime_utc": "2026-04-24T09:31:33.790575+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.511709+00:00",
       "token_count": 192
     },
     {
@@ -360,7 +360,7 @@
       "summary": "记录微信小程序 BLE 写入的 20 字节兼容边界、自定义 JSON 分片重组方案，以及官方 protocomm BLE 路线的 MTU 处理边界。",
       "id": "ble-provisioning-miniapp-write-fragmentation",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.146989+00:00",
+      "mtime_utc": "2026-04-25T10:24:08.886918+00:00",
       "token_count": 226
     },
     {
@@ -377,7 +377,7 @@
       "summary": "记录当前仓库自定义 BLE GATT UUID 在 NimBLE 下必须使用 little-endian 字节序，否则小程序会出现已连接但找不到目标服务。",
       "id": "ble-provisioning-nimble-uuid-byte-order",
       "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-24T09:31:33.794206+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.511709+00:00",
       "token_count": 194
     },
     {
@@ -395,7 +395,7 @@
       "summary": "记录当前仓库 BLE 配网 notify 回包需要显式补换行分隔，否则微信小程序在连续 notify 场景下可能把多条 JSON 粘连后解析失败。",
       "id": "ble-provisioning-notify-framing",
       "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-24T09:31:33.796202+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.511709+00:00",
       "token_count": 162
     },
     {
@@ -412,7 +412,7 @@
       "summary": "记录 BLE 配网在返回终态 `connected` 后若立即关闭 transport，可能导致微信小程序收不到最后一条成功通知；当前固件通过短暂延迟 stop 解决。",
       "id": "ble-provisioning-terminal-notify-flush-window",
       "last_reviewed": "2026-04-02",
-      "mtime_utc": "2026-04-24T09:31:33.797567+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.511709+00:00",
       "token_count": 106
     },
     {
@@ -430,7 +430,7 @@
       "summary": "记录 BLE 总开关与 BLE 配网入口的分离语义，明确主界面蓝牙按钮只启动普通可发现广播，不自动启动小程序配网。",
       "id": "ble-provisioning-ui-toggle-behavior",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.154663+00:00",
+      "mtime_utc": "2026-04-25T07:04:15.815047+00:00",
       "token_count": 228
     },
     {
@@ -447,7 +447,7 @@
       "summary": "历史可行性卡：记录仓库早期评估 BLE 配网与微信小程序时曾建议的“自定义 BLE GATT + AP 兜底”最小闭环方案；当前正式方向已切到官方 network_provisioning 内核。",
       "id": "ble-provisioning-wechat-feasibility",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.800069+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.512709+00:00",
       "token_count": 282
     },
     {
@@ -465,7 +465,7 @@
       "summary": "历史知识卡：记录仓库早期“自定义 BLE GATT + 微信小程序”方案里的 scan_wifi 协议；当前仓库正式实现已切到官方 network_provisioning 路线，本卡不再代表当前代码现状。",
       "id": "ble-provisioning-wifi-scan-over-ble",
       "last_reviewed": "2026-04-22",
-      "mtime_utc": "2026-04-24T09:31:33.802183+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.512709+00:00",
       "token_count": 256
     },
     {
@@ -483,7 +483,7 @@
       "summary": "记录 BLE 配网成功后延时关闭 BLE transport 的临时任务栈过小会触发 stack overflow，当前仓库已把 `ble_stop_delay` 栈从 2048 提升到 4096。",
       "id": "ble-stop-delay-stack-overflow",
       "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-24T09:31:33.804229+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.512709+00:00",
       "token_count": 109
     },
     {
@@ -500,7 +500,7 @@
       "summary": "记录当前仓库 BOOT 按键已不再承担 BLE/AP 配网入口，BLE 总开关与 Wi-Fi 管理页配网入口已分离。",
       "id": "button-provisioning-entry-mapping",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.162600+00:00",
+      "mtime_utc": "2026-04-25T08:53:23.772327+00:00",
       "token_count": 187
     },
     {
@@ -517,7 +517,7 @@
       "summary": "记录危险音频识别移植、option_6 页面生命周期、统一提醒链路和资源释放边界。",
       "id": "danger-signal-detection-port",
       "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-24T09:31:33.806037+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.512709+00:00",
       "token_count": 224
     },
     {
@@ -537,7 +537,7 @@
       "summary": "记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。",
       "id": "display-render-touch-transfer-pipeline",
       "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-24T09:31:33.808055+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.512709+00:00",
       "token_count": 1351
     },
     {
@@ -556,7 +556,7 @@
       "summary": "当前仓库显示、触摸、音频与配网模块对应的总线、引脚和排障入口图。",
       "id": "display-touch-audio-bus-map",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.809057+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.513709+00:00",
       "token_count": 259
     },
     {
@@ -573,7 +573,7 @@
       "summary": "仓库新增 embedded-c-cpp-comment-style 技能，用于约束 agent 为嵌入式 C/C++ 代码生成说明型注释，强调 Doxygen 函数头、原因说明和关键变量/常量解释。",
       "id": "embedded-c-cpp-comment-style-skill",
       "last_reviewed": "2026-04-15",
-      "mtime_utc": "2026-04-24T09:31:33.810060+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.513709+00:00",
       "token_count": 149
     },
     {
@@ -590,7 +590,7 @@
       "summary": "本仓库默认采用的 ESP32/MCU 嵌入式 C/C++ 工程规则，覆盖分层、接口、复杂度、资源、安全和算法/AI 模块边界。",
       "id": "embedded-c-cpp-engineering-rules",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-04-24T09:31:33.812562+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.513709+00:00",
       "token_count": 275
     },
     {
@@ -607,7 +607,7 @@
       "summary": "仓库新增 `embedded-framework-mentor` 技能，用于在当前 ESP-IDF 项目中以“项目真实边界 + 外部权威原则”的双基线指导新功能设计、重构、评审和架构归属判断。",
       "id": "embedded-framework-mentor-skill",
       "last_reviewed": "2026-04-23",
-      "mtime_utc": "2026-04-24T09:31:33.813067+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.513709+00:00",
       "token_count": 158
     },
     {
@@ -623,8 +623,23 @@
       "summary": "ESP-IDF 5.3+ 新版 I2C master bus 驱动的对象模型、常用 API 与共享总线注意事项。",
       "id": "esp-idf-i2c-master-driver-overview",
       "last_reviewed": "2026-04-10",
-      "mtime_utc": "2026-04-24T09:31:33.815071+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.513709+00:00",
       "token_count": 313
+    },
+    {
+      "path": "docs/context/knowledge/project/espdl-audio-tdnn-port.md",
+      "title": "ESP-DL 音频 TDNN 移植结论",
+      "tags": [
+        "audio",
+        "esp-dl",
+        "danger-detection",
+        "tdnn"
+      ],
+      "summary": "AudioClassification-Pytorch 到 ESP32-S3 esp-dl 的首版最小链路结论：TDNN + Fbank + TAP，训练侧 3D 特征输入，导出侧使用等价 2D wrapper 避免 ESP-PPQ 1D BN 风险。",
+      "id": "espdl-audio-tdnn-port",
+      "last_reviewed": "2026-05-02",
+      "mtime_utc": "2026-05-02T17:05:50.249773+00:00",
+      "token_count": 3063
     },
     {
       "path": "docs/context/knowledge/project/hardware-capability-gap-map.md",
@@ -641,7 +656,7 @@
       "summary": "原理图可见硬件能力与当前代码已接入能力之间的差距摘要，便于规划下一阶段集成。",
       "id": "hardware-capability-gap-map",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.817208+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.513709+00:00",
       "token_count": 145
     },
     {
@@ -657,7 +672,7 @@
       "summary": "当前仓库 i2c_manager 切换到 master bus 接口后的调用约束与兼容边界。",
       "id": "i2c-manager-master-bus-migration",
       "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-04-24T09:31:33.818760+00:00",
+      "mtime_utc": "2026-03-30T17:42:24.608817+00:00",
       "token_count": 92
     },
     {
@@ -674,7 +689,7 @@
       "summary": "当前仓库已落地的低功耗能力碎片、未落地缺口，以及后续统一功耗策略的接入起点。",
       "id": "project-low-power-management-baseline",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.819881+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.513709+00:00",
       "token_count": 558
     },
     {
@@ -691,8 +706,8 @@
       "summary": "按时间记录 LVGL 9.3 显示异常排查中的每轮参数修改、实测现象与当前结论，供后续 agent 直接复用，避免重复调参。",
       "id": "lvgl-display-tuning-log",
       "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-25T13:34:46.781980+00:00",
-      "token_count": 2032
+      "mtime_utc": "2026-04-23T16:05:39.514709+00:00",
+      "token_count": 1861
     },
     {
       "path": "docs/context/knowledge/project/main-directory-map.md",
@@ -707,7 +722,7 @@
       "summary": "记录 main 组件当前按 app、services、features、ui 分层后的目录职责，便于后续整理与定位改动。",
       "id": "main-directory-map",
       "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-24T09:31:33.822641+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.514709+00:00",
       "token_count": 214
     },
     {
@@ -725,7 +740,7 @@
       "summary": "记录当前仓库向“官方 network_provisioning + 自定义上层网络架构”迁移的长期方向、组件分层与当前落地边界。",
       "id": "network-provisioning-custom-upper-architecture",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.171084+00:00",
+      "mtime_utc": "2026-04-25T08:53:23.772327+00:00",
       "token_count": 584
     },
     {
@@ -742,7 +757,7 @@
       "summary": "记录 ESP32-S3 板端在单击进入 BLE 后出现 `hci inits failed / nimble host init failed` 时，当前仓库采用的最小 NimBLE peripheral 配置收敛方案，以及 `sdkconfig.defaults` 中无效 BTDM 键的处理。",
       "id": "nimble-hci-init-minimal-config",
       "last_reviewed": "2026-04-03",
-      "mtime_utc": "2026-04-24T09:31:33.824645+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.514709+00:00",
       "token_count": 260
     },
     {
@@ -759,7 +774,7 @@
       "summary": "记录在 NimBLE HCI 初始化已恢复后，板端仍未出现 `BLE host task started` / advertising 日志时，当前仓库采用的最小诊断探针与判断依据。",
       "id": "nimble-host-task-start-diagnostics",
       "last_reviewed": "2026-04-03",
-      "mtime_utc": "2026-04-24T09:31:33.827180+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.514709+00:00",
       "token_count": 211
     },
     {
@@ -776,7 +791,7 @@
       "summary": "记录当前仓库把正式主流程从阻塞联网切换到后台联网后的当前启动底座，以及重整后的 main 目录位置。",
       "id": "nonblocking-boot-network-service",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.828182+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.514709+00:00",
       "token_count": 244
     },
     {
@@ -793,7 +808,7 @@
       "summary": "记录当前仓库 official_chat 音频队列按 D:\\xiaozhi-esp32 官方实现保持 STL 队列与 condition_variable 模型，不改成 FreeRTOS queue 或固定环形队列。",
       "id": "official-chat-audio-queue-official-alignment",
       "last_reviewed": "2026-04-24",
-      "mtime_utc": "2026-04-24T09:31:33.830185+00:00",
+      "mtime_utc": "2026-04-24T17:10:23.386634+00:00",
       "token_count": 190
     },
     {
@@ -810,7 +825,7 @@
       "summary": "审查当前 111 仓库的 official_chat 迁移完整性，结论是最小可编译配置、model/assets 分区、AEC 和基础唤醒词开关已补齐，但完整运行时策略仍未完全对齐源仓库。",
       "id": "official-chat-config-completeness-audit",
       "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-04-24T09:31:33.831377+00:00",
+      "mtime_utc": "2026-03-31T13:42:00.408839+00:00",
       "token_count": 321
     },
     {
@@ -828,7 +843,7 @@
       "summary": "历史评估卡：记录 111 仓库早期接入 official_chat 时的可实现性判断、与 idf-xiaozhi / idf-EDGE_lmpulse 的差异，以及在当前正式网络架构下应如何理解这些旧结论。",
       "id": "official-chat-feasibility-and-gap-assessment",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.833139+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.514709+00:00",
       "token_count": 771
     },
     {
@@ -845,7 +860,7 @@
       "summary": "历史实验卡：记录仓库早期通过独立实验入口验证 official_chat 接入本地 wifi_provision 的最小 AI 对话链路；该入口和旧网络 owner 均已退场。",
       "id": "official-chat-local-wifi-experiment",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.834141+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.514709+00:00",
       "token_count": 535
     },
     {
@@ -862,7 +877,7 @@
       "summary": "将 idf-xiaozhi 的 official_chat 迁移到当前仓库前，需要先补齐的关键 sdkconfig 开关、内存策略和组件依赖。",
       "id": "official-chat-migration-prerequisites",
       "last_reviewed": "2026-03-31",
-      "mtime_utc": "2026-04-24T09:31:33.836146+00:00",
+      "mtime_utc": "2026-03-31T13:42:04.708064+00:00",
       "token_count": 150
     },
     {
@@ -879,7 +894,7 @@
       "summary": "记录 official_chat 在 MQTT 模式下离开 AI 页面时，`esp_mqtt_client_destroy()` 命中 `sys_mutex_lock` 断言的根因与最小修复策略。",
       "id": "official-chat-mqtt-shutdown-lwip-mutex-crash",
       "last_reviewed": "2026-04-01",
-      "mtime_utc": "2026-04-24T09:31:33.837653+00:00",
+      "mtime_utc": "2026-04-24T17:10:23.386634+00:00",
       "token_count": 542
     },
     {
@@ -896,7 +911,7 @@
       "summary": "official_chat 的 OTA/激活 HTTPS 请求会先于正式时间同步链路发生；若系统仍停留在冷启动时间，TLS 证书有效期校验会失败，因此需要在首次 OTA HTTPS 前先确认系统时间有效并输出 TLS 诊断日志。",
       "id": "official-chat-ota-tls-time-bootstrap",
       "last_reviewed": "2026-04-23",
-      "mtime_utc": "2026-04-24T09:31:33.838877+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515710+00:00",
       "token_count": 288
     },
     {
@@ -913,7 +928,7 @@
       "summary": "记录当前仓库按 D:\\xiaozhiai\\xiaozhi-esp32 例程对齐的 AI 对话内部 RAM 配置，仅收敛可一一对应的栈与 lwIP mailbox 参数。",
       "id": "official-chat-ram-alignment-to-xiaozhi-reference",
       "last_reviewed": "2026-04-02",
-      "mtime_utc": "2026-04-24T09:31:33.840269+00:00",
+      "mtime_utc": "2026-04-23T16:05:29.538478+00:00",
       "token_count": 185
     },
     {
@@ -929,7 +944,7 @@
       "summary": "本仓库在上层环境进入计划模式后使用的深度计划规则，约束问题建模、方案比较、验证闭环和回滚设计。",
       "id": "plan-mode-rules",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-04-24T09:31:33.842274+00:00",
+      "mtime_utc": "2026-03-11T10:19:04.458599+00:00",
       "token_count": 338
     },
     {
@@ -947,7 +962,7 @@
       "summary": "基于原理图与现有代码整理的电源、按键、RTC 和唤醒控制链路摘要。",
       "id": "power-wakeup-control-map",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.844279+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515994+00:00",
       "token_count": 265
     },
     {
@@ -965,7 +980,7 @@
       "summary": "当前仓库的模块地图、启动链路和构建依赖摘要，便于定位 UI、音频和配网相关改动。",
       "id": "project-repo-overview",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.846135+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515994+00:00",
       "token_count": 546
     },
     {
@@ -982,7 +997,7 @@
       "summary": "记录当前仓库 SoftAP 自动弹页能力的真实归属边界：官方 `prov-*` endpoint 负责真实配网，自动弹页由 `ap_portal_adapter` 外挂的 DNS 劫持、404 redirect 与 DHCP Option 114 壳层提供。",
       "id": "softap-captive-portal-auto-popup",
       "last_reviewed": "2026-04-24",
-      "mtime_utc": "2026-04-24T09:31:33.847166+00:00",
+      "mtime_utc": "2026-04-23T18:12:53.272151+00:00",
       "token_count": 219
     },
     {
@@ -1000,7 +1015,7 @@
       "summary": "记录 SoftAP 门户从旧设备侧 JSON 占位 API 迁移到浏览器端官方 provisioning client 之后的真实边界：主链路已切到 `prov-*` endpoint，旧 `/api/scan`、`/api/configure` 仅保留兼容提示。",
       "id": "softap-provisioning-placeholder-api-limit",
       "last_reviewed": "2026-04-24",
-      "mtime_utc": "2026-04-24T09:31:33.848299+00:00",
+      "mtime_utc": "2026-04-24T17:10:23.386634+00:00",
       "token_count": 529
     },
     {
@@ -1018,7 +1033,7 @@
       "summary": "当前仓库从上电到 UI 启动的初始化顺序、后台联网分工和首启风险摘要。",
       "id": "startup-init-and-blocking-chain",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.179403+00:00",
+      "mtime_utc": "2026-04-25T08:53:23.772327+00:00",
       "token_count": 245
     },
     {
@@ -1036,7 +1051,7 @@
       "summary": "当前仓库的存储路径、SD 总线选择和 AP 配网页面嵌入方式摘要。",
       "id": "storage-and-provisioning-paths",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.217581+00:00",
+      "mtime_utc": "2026-04-25T08:53:23.772327+00:00",
       "token_count": 298
     },
     {
@@ -1054,7 +1069,7 @@
       "summary": "面向新手的 ESP32-S3 显示/音频项目分阶段教学验收点。",
       "id": "esp32-ui-audio-teaching-milestones",
       "last_reviewed": "2026-03-11",
-      "mtime_utc": "2026-04-24T09:31:33.853515+00:00",
+      "mtime_utc": "2026-03-11T10:19:04.459648+00:00",
       "token_count": 45
     },
     {
@@ -1070,7 +1085,7 @@
       "summary": "记录当前仓库将 Edge Impulse `v2-cpp-mcu-v5.zip` 作为 `manual_v5` 接入 `components/traffic_inference` 的最小改动与兼容结论。",
       "id": "traffic-inference-edge-impulse-manual-v5-integration",
       "last_reviewed": "2026-04-02",
-      "mtime_utc": "2026-04-24T09:31:33.854637+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515994+00:00",
       "token_count": 215
     },
     {
@@ -1087,7 +1102,7 @@
       "summary": "记录当前仓库 UI 空闲降频、亮度 dim 与强制高刷开关的最小实现策略。",
       "id": "ui-refresh-policy-idle-dim",
       "last_reviewed": "2026-04-13",
-      "mtime_utc": "2026-04-24T09:31:33.856145+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515994+00:00",
       "token_count": 212
     },
     {
@@ -1105,7 +1120,7 @@
       "summary": "当前手表项目低功耗管理的推荐状态机、模块分层、实施顺序与硬件边界。",
       "id": "watch-low-power-management-architecture",
       "last_reviewed": "2026-04-13",
-      "mtime_utc": "2026-04-24T09:31:33.857167+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515994+00:00",
       "token_count": 211
     },
     {
@@ -1123,7 +1138,7 @@
       "summary": "记录微信小程序侧 BLE notify 需要按字节缓冲拆帧，而不是按字符串直接拼接，否则在 ESP32 按 20 字节分片上行时容易一直等不到 hello/status/wifi_scan 完整回包。",
       "id": "wechat-miniapp-ble-notify-byte-buffer",
       "last_reviewed": "2026-04-08",
-      "mtime_utc": "2026-04-24T09:31:33.859172+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515994+00:00",
       "token_count": 162
     },
     {
@@ -1140,7 +1155,7 @@
       "summary": "记录微信小程序 BLE 配网接手时必须确认的工程位置、协议基线、当前入口形态、真机限制与常见误判，避免把固件镜像不同步误当成小程序问题。",
       "id": "wechat-miniapp-ble-provisioning-handoff-config",
       "last_reviewed": "2026-04-17",
-      "mtime_utc": "2026-04-24T09:31:33.860383+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515994+00:00",
       "token_count": 141
     },
     {
@@ -1157,7 +1172,7 @@
       "summary": "记录微信小程序 BLE 配网应对齐当前官方 network_provisioning 协议，而不是继续沿用历史 JSON GATT 协议。",
       "id": "wechat-miniapp-official-ble-provisioning",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.224470+00:00",
+      "mtime_utc": "2026-04-24T17:34:20.384860+00:00",
       "token_count": 160
     },
     {
@@ -1175,7 +1190,7 @@
       "summary": "记录主界面 Wi-Fi / Bluetooth 图标，以及全屏 Wi-Fi 管理页在当前仓库中的真实行为边界。",
       "id": "wifi-management-ui-behavior",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.232094+00:00",
+      "mtime_utc": "2026-04-25T07:04:15.815047+00:00",
       "token_count": 454
     },
     {
@@ -1193,7 +1208,7 @@
       "summary": "梳理删除旧 components/wifi_provision 前必须完成的接口迁移、真实依赖点、阶段顺序、风险与验证方法。",
       "id": "wifi-provision-removal-migration-checklist",
       "last_reviewed": "2026-04-21",
-      "mtime_utc": "2026-04-24T09:31:33.862387+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.515994+00:00",
       "token_count": 1020
     },
     {
@@ -1209,7 +1224,7 @@
       "summary": "记录当前仓库 Wi-Fi 自动连接失败后常见断连 reason 码的含义，以及哪些告警是正常探测噪声。",
       "id": "wifi-provision-retry-reasons",
       "last_reviewed": "2026-04-25",
-      "mtime_utc": "2026-04-25T12:12:04.239979+00:00",
+      "mtime_utc": "2026-04-25T08:53:23.773328+00:00",
       "token_count": 198
     },
     {
@@ -1219,7 +1234,7 @@
       "summary": "- `knowledge/esp32-s3/lvgl-porting-baseline.md`",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-24T09:31:33.761849+00:00",
+      "mtime_utc": "2026-04-23T16:05:39.509708+00:00",
       "token_count": 174
     },
     {
@@ -1229,7 +1244,7 @@
       "summary": "该目录是 Codex 使用的项目长期上下文库。",
       "id": "",
       "last_reviewed": "",
-      "mtime_utc": "2026-04-24T09:31:33.755311+00:00",
+      "mtime_utc": "2026-03-11T10:19:04.457073+00:00",
       "token_count": 100
     }
   ]

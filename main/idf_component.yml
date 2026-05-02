@@ -23,3 +23,4 @@ dependencies:
   chmorgan/esp-audio-player: ^1.0.7
   espressif/button: =*
   espressif/network_provisioning: ^1.2.4
+  espressif/esp-dl: "^3.1.0"

@@ -9,12 +9,16 @@
 #include "freertos/portmacro.h"
 #include "traffic_audio_runtime.h"
 #include "traffic_inference_postprocess.h"
+#include "espdl_audio_runtime.h"
+#include "espdl_dual_runner.h"
+#include "espdl_model_runner.h"
 
 #define TAG "danger_detection"
-#define DANGER_DETECTION_STOP_TIMEOUT_MS 2000U /* 默认停止等待时间，单位为毫秒。 */
+#define DANGER_DETECTION_STOP_TIMEOUT_MS 2000U /**< 默认停止等待时间，单位为毫秒。 */
 
 /*
  * 危险检测服务实现说明：
+ * - 支持两种推理后端：Edge Impulse (traffic_inference) 和 ESP-DL (espdl_inference)
  * - 统一协调交通声音运行时、后处理告警回调和应用级告警管理器；
  * - 对外发布快照时，会把运行时状态与后处理分数整合到同一结构；
  * - 快照通过临界区保护，避免 UI 在读取时看到半更新状态。
@@ -25,6 +29,7 @@ typedef struct
     bool initialized;                     /**< 服务是否完成初始化。 */
     bool callback_registered;             /**< 后处理告警回调是否已注册。 */
     bool runtime_started;                 /**< 音频运行时是否已启动。 */
+    danger_detection_backend_t active_backend; /**< 当前活跃的推理后端。 */
     danger_detection_snapshot_t snapshot; /**< 对外发布的快照。 */
     portMUX_TYPE lock;                    /**< 快照临界区锁，保护共享状态一致性。 */
 } danger_detection_service_state_t;
@@ -33,6 +38,7 @@ static danger_detection_service_state_t s_service_state = {
     .initialized = false,
     .callback_registered = false,
     .runtime_started = false,
+    .active_backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE,
     .snapshot = {
         .state = DANGER_DETECTION_STATE_IDLE,
         .stable_label = DANGER_DETECTION_LABEL_NONE,
@@ -40,17 +46,17 @@ static danger_detection_service_state_t s_service_state = {
         .last_detected_confidence = 0.0f,
         .horn_confidence = 0.0f,
         .siren_confidence = 0.0f,
+        .danger_confidence = 0.0f,
         .alert_sequence = 0U,
         .last_error = ESP_OK,
         .danger_overlay_active = false,
+        .active_backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE,
     },
     .lock = portMUX_INITIALIZER_UNLOCKED,
 };
 
 /**
  * @brief 将后处理稳定标签映射成服务层标签。
- * @param[in] label 后处理稳定标签。
- * @return 服务层对外标签。
  */
 static danger_detection_label_t danger_detection_map_label(
     traffic_inference_postprocess_stable_label_t label)
@@ -69,13 +75,6 @@ static danger_detection_label_t danger_detection_map_label(
 
 /**
  * @brief 将运行时状态映射成服务层状态。
- *
- * 对于底层未提供明确语义的状态，保留调用方传入的回退状态，
- * 以避免采样链路短暂波动时把上层状态意外重置。
- *
- * @param[in] runtime_state 底层运行时状态。
- * @param[in] fallback 无明确映射时保留的服务层状态。
- * @return 服务层状态枚举。
  */
 static danger_detection_state_t danger_detection_map_runtime_state(
     traffic_audio_runtime_state_t runtime_state,
@@ -98,10 +97,30 @@ static danger_detection_state_t danger_detection_map_runtime_state(
 }
 
 /**
+ * @brief 将 ESPDL 运行时状态映射成服务层状态。
+ */
+static danger_detection_state_t danger_detection_map_espdl_state(
+    espdl_audio_runtime_state_t runtime_state,
+    danger_detection_state_t fallback)
+{
+    switch (runtime_state)
+    {
+    case ESPDL_AUDIO_RUNTIME_STATE_STARTING:
+        return DANGER_DETECTION_STATE_STARTING;
+    case ESPDL_AUDIO_RUNTIME_STATE_RUNNING:
+        return DANGER_DETECTION_STATE_RUNNING;
+    case ESPDL_AUDIO_RUNTIME_STATE_STOPPING:
+        return DANGER_DETECTION_STATE_STOPPING;
+    case ESPDL_AUDIO_RUNTIME_STATE_FAILED:
+        return DANGER_DETECTION_STATE_ERROR;
+    case ESPDL_AUDIO_RUNTIME_STATE_IDLE:
+    default:
+        return fallback;
+    }
+}
+
+/**
  * @brief 统一更新服务状态和最近错误码。
- * @param[in] state 新的服务状态。
- * @param[in] last_error 最近错误码。
- * @return 无返回值。
  */
 static void danger_detection_set_state(danger_detection_state_t state,
                                        esp_err_t last_error)
@@ -113,15 +132,7 @@ static void danger_detection_set_state(danger_detection_state_t state,
 }
 
 /**
- * @brief 后处理告警回调。
- * @param[in] alert 后处理上报的告警动作。
- * @param[in] user_data 未使用。
- * @return 无返回值。
- *
- * RAISE 会触发应用级告警并更新快照；
- * CLEAR 会撤销应用级告警并把稳定标签恢复为 NONE。
- *
- * @note 回调可能由底层运行时线程触发，因此共享快照更新必须走临界区。
+ * @brief Edge Impulse 后处理告警回调。
  */
 static void danger_detection_on_alert(
     const traffic_inference_postprocess_alert_t *alert,
@@ -136,7 +147,6 @@ static void danger_detection_on_alert(
 
     if (alert->action == TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_RAISE)
     {
-        /* RAISE 要同步推进应用级告警和本地快照，避免 UI 与提示音状态脱节。 */
         app_alert_request_t request = {
             .source = APP_ALERT_SOURCE_TRAFFIC_AUDIO,
             .severity = APP_ALERT_SEVERITY_DANGER,
@@ -162,7 +172,6 @@ static void danger_detection_on_alert(
     else if (alert->action ==
              TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_CLEAR)
     {
-        /* CLEAR 只撤销当前告警表现，不重置整个服务生命周期状态。 */
         (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
 
         taskENTER_CRITICAL(&s_service_state.lock);
@@ -174,8 +183,74 @@ static void danger_detection_on_alert(
 }
 
 /**
+ * @brief ESP-DL 双模型推理结果回调。
+ *
+ * 将 ESPDL 双模型融合结果映射到 danger_detection_snapshot，
+ * 并在检测到 danger 时触发应用级告警。
+ */
+static void danger_detection_on_espdl_result(
+    const espdl_dual_result_t *result,
+    void *user_data)
+{
+    (void)user_data;
+
+    if (result == NULL)
+    {
+        return;
+    }
+
+    const bool is_danger = result->fused_label_index == 1;
+    const float danger_prob = result->fused_danger_prob;
+
+    taskENTER_CRITICAL(&s_service_state.lock);
+
+    s_service_state.snapshot.danger_confidence = danger_prob;
+    s_service_state.snapshot.state = DANGER_DETECTION_STATE_RUNNING;
+    s_service_state.snapshot.active_backend = DANGER_DETECTION_BACKEND_ESPDL_DUAL;
+
+    if (is_danger && !s_service_state.snapshot.danger_overlay_active)
+    {
+        /* 新的 danger 检测 → 触发告警 */
+        s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_DANGER;
+        s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_DANGER;
+        s_service_state.snapshot.last_detected_confidence = danger_prob;
+        s_service_state.snapshot.alert_sequence += 1U;
+        s_service_state.snapshot.danger_overlay_active = true;
+
+        taskEXIT_CRITICAL(&s_service_state.lock);
+
+        /* 在锁外触发告警，避免回调内部长时间持锁 */
+        app_alert_request_t request = {
+            .source = APP_ALERT_SOURCE_TRAFFIC_AUDIO,
+            .severity = APP_ALERT_SEVERITY_DANGER,
+            .label = APP_ALERT_LABEL_HORN,  /* ESP-DL 二分类模式统一用 HORN */
+        };
+        (void)app_alert_manager_raise(&request);
+
+        ESP_LOGW(TAG,
+                 "ESPDL danger 检测: fused_prob=%.4f, dstcn=%.4f, dscnn=%.4f",
+                 danger_prob,
+                 result->dstcn_result.probabilities[1],
+                 result->dscnn_result.probabilities[1]);
+    }
+    else if (!is_danger && s_service_state.snapshot.danger_overlay_active)
+    {
+        /* danger 消失 → 清除告警 */
+        s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
+        s_service_state.snapshot.danger_overlay_active = false;
+
+        taskEXIT_CRITICAL(&s_service_state.lock);
+
+        (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
+    }
+    else
+    {
+        taskEXIT_CRITICAL(&s_service_state.lock);
+    }
+}
+
+/**
  * @brief 初始化危险检测服务。
- * @return `ESP_OK` 表示初始化成功或已初始化；其他错误表示依赖模块初始化失败。
  */
 esp_err_t danger_detection_service_init(void)
 {
@@ -199,52 +274,30 @@ esp_err_t danger_detection_service_init(void)
     s_service_state.snapshot.last_detected_confidence = 0.0f;
     s_service_state.snapshot.horn_confidence = 0.0f;
     s_service_state.snapshot.siren_confidence = 0.0f;
+    s_service_state.snapshot.danger_confidence = 0.0f;
     s_service_state.snapshot.alert_sequence = 0U;
     s_service_state.snapshot.last_error = ESP_OK;
     s_service_state.snapshot.danger_overlay_active = false;
+    s_service_state.snapshot.active_backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE;
     taskEXIT_CRITICAL(&s_service_state.lock);
     return ESP_OK;
 }
 
 /**
- * @brief 启动危险检测运行时。
- * @return 若运行时已在运行，则直接返回 `ESP_OK`；其他错误表示回调注册或运行时启动失败。
+ * @brief 启动 Edge Impulse 后端运行时。
  */
-esp_err_t danger_detection_service_start(void)
+static esp_err_t start_edge_impulse_backend(void)
 {
-    esp_err_t ret = danger_detection_service_init();
-    if (ret != ESP_OK)
-    {
-        return ret;
-    }
-
-    taskENTER_CRITICAL(&s_service_state.lock);
-    const bool already_running = s_service_state.runtime_started;
-    taskEXIT_CRITICAL(&s_service_state.lock);
-    if (already_running)
-    {
-        return ESP_OK;
-    }
-
     traffic_audio_runtime_config_t config = {
         .input_chunk_frames = 0U,
-        .read_timeout_ms = 250U,  /* 音频读取超时阈值，单位为毫秒。 */
-        .task_stack_size = 8192U, /* 运行时任务栈大小，单位为字节。 */
-        .task_priority = 5U,      /* 运行时任务优先级。 */
+        .read_timeout_ms = 250U,
+        .task_stack_size = 8192U,
+        .task_priority = 5U,
     };
 
     danger_detection_set_state(DANGER_DETECTION_STATE_STARTING, ESP_OK);
-    taskENTER_CRITICAL(&s_service_state.lock);
-    s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
-    s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_NONE;
-    s_service_state.snapshot.last_detected_confidence = 0.0f;
-    s_service_state.snapshot.horn_confidence = 0.0f;
-    s_service_state.snapshot.siren_confidence = 0.0f;
-    s_service_state.snapshot.alert_sequence = 0U;
-    s_service_state.snapshot.danger_overlay_active = false;
-    taskEXIT_CRITICAL(&s_service_state.lock);
 
-    ret = traffic_inference_postprocess_set_alert_callback(
+    esp_err_t ret = traffic_inference_postprocess_set_alert_callback(
         danger_detection_on_alert, NULL);
     if (ret != ESP_OK)
     {
@@ -269,15 +322,114 @@ esp_err_t danger_detection_service_start(void)
 
     taskENTER_CRITICAL(&s_service_state.lock);
     s_service_state.runtime_started = true;
+    s_service_state.active_backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE;
     taskEXIT_CRITICAL(&s_service_state.lock);
-    ESP_LOGI(TAG, "danger detection runtime started");
+
+    ESP_LOGI(TAG, "Edge Impulse 运行时已启动");
     return ESP_OK;
 }
 
 /**
+ * @brief 启动 ESP-DL 双模型后端运行时。
+ */
+static esp_err_t start_espdl_backend(void)
+{
+    espdl_audio_runtime_config_t config = {
+        .input_chunk_frames = 0U,
+        .read_timeout_ms = 250U,
+        .task_stack_size = 16384U,  /* ESP-DL 需要更大栈 */
+        .task_priority = 5U,
+        .fusion_strategy = ESPDL_FUSION_ANY_DANGER,  /* 召回优先 */
+    };
+
+    danger_detection_set_state(DANGER_DETECTION_STATE_STARTING, ESP_OK);
+
+    /* 注册 ESPDL 结果回调 */
+    esp_err_t ret = espdl_audio_runtime_set_result_callback(
+        danger_detection_on_espdl_result, NULL);
+    if (ret != ESP_OK)
+    {
+        danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
+        return ret;
+    }
+
+    taskENTER_CRITICAL(&s_service_state.lock);
+    s_service_state.callback_registered = true;
+    taskEXIT_CRITICAL(&s_service_state.lock);
+
+    ret = espdl_audio_runtime_start(&config);
+    if (ret != ESP_OK)
+    {
+        (void)espdl_audio_runtime_set_result_callback(NULL, NULL);
+        taskENTER_CRITICAL(&s_service_state.lock);
+        s_service_state.callback_registered = false;
+        taskEXIT_CRITICAL(&s_service_state.lock);
+        danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
+        return ret;
+    }
+
+    taskENTER_CRITICAL(&s_service_state.lock);
+    s_service_state.runtime_started = true;
+    s_service_state.active_backend = DANGER_DETECTION_BACKEND_ESPDL_DUAL;
+    taskEXIT_CRITICAL(&s_service_state.lock);
+
+    ESP_LOGI(TAG, "ESP-DL 双模型运行时已启动");
+    return ESP_OK;
+}
+
+/**
+ * @brief 启动危险检测运行时（默认 Edge Impulse）。
+ */
+esp_err_t danger_detection_service_start(void)
+{
+    return danger_detection_service_start_with_backend(
+        DANGER_DETECTION_BACKEND_EDGE_IMPULSE);
+}
+
+/**
+ * @brief 使用指定后端启动危险检测运行时。
+ */
+esp_err_t danger_detection_service_start_with_backend(
+    danger_detection_backend_t backend)
+{
+    esp_err_t ret = danger_detection_service_init();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    taskENTER_CRITICAL(&s_service_state.lock);
+    const bool already_running = s_service_state.runtime_started;
+    taskEXIT_CRITICAL(&s_service_state.lock);
+    if (already_running)
+    {
+        return ESP_OK;
+    }
+
+    /* 重置快照 */
+    taskENTER_CRITICAL(&s_service_state.lock);
+    s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.last_detected_confidence = 0.0f;
+    s_service_state.snapshot.horn_confidence = 0.0f;
+    s_service_state.snapshot.siren_confidence = 0.0f;
+    s_service_state.snapshot.danger_confidence = 0.0f;
+    s_service_state.snapshot.alert_sequence = 0U;
+    s_service_state.snapshot.danger_overlay_active = false;
+    taskEXIT_CRITICAL(&s_service_state.lock);
+
+    switch (backend)
+    {
+    case DANGER_DETECTION_BACKEND_ESPDL_DUAL:
+        return start_espdl_backend();
+    case DANGER_DETECTION_BACKEND_EDGE_IMPULSE:
+    default:
+        return start_edge_impulse_backend();
+    }
+}
+
+/**
  * @brief 停止危险检测运行时。
- * @param[in] timeout_ms 停止运行时允许等待的超时，单位为毫秒；传 0 使用默认值。
- * @return 停止底层运行时或注销回调失败时返回错误。
  */
 esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
 {
@@ -289,6 +441,7 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     taskENTER_CRITICAL(&s_service_state.lock);
     const bool runtime_started = s_service_state.runtime_started;
     const bool callback_registered = s_service_state.callback_registered;
+    const danger_detection_backend_t backend = s_service_state.active_backend;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
     if (!runtime_started && !callback_registered)
@@ -303,18 +456,33 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     esp_err_t ret = ESP_OK;
     if (runtime_started)
     {
-        ret = traffic_audio_runtime_stop(timeout_ms == 0U
-                                             ? DANGER_DETECTION_STOP_TIMEOUT_MS
-                                             : timeout_ms);
+        const uint32_t effective_timeout =
+            timeout_ms == 0U ? DANGER_DETECTION_STOP_TIMEOUT_MS : timeout_ms;
+
+        if (backend == DANGER_DETECTION_BACKEND_ESPDL_DUAL)
+        {
+            ret = espdl_audio_runtime_stop(effective_timeout);
+        }
+        else
+        {
+            ret = traffic_audio_runtime_stop(effective_timeout);
+        }
     }
 
     if (callback_registered)
     {
-        esp_err_t clear_ret =
-            traffic_inference_postprocess_set_alert_callback(NULL, NULL);
-        if (ret == ESP_OK && clear_ret != ESP_OK)
+        if (backend == DANGER_DETECTION_BACKEND_ESPDL_DUAL)
         {
-            ret = clear_ret;
+            (void)espdl_audio_runtime_set_result_callback(NULL, NULL);
+        }
+        else
+        {
+            esp_err_t clear_ret =
+                traffic_inference_postprocess_set_alert_callback(NULL, NULL);
+            if (ret == ESP_OK && clear_ret != ESP_OK)
+            {
+                ret = clear_ret;
+            }
         }
     }
 
@@ -326,6 +494,7 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     s_service_state.snapshot.last_detected_confidence = 0.0f;
     s_service_state.snapshot.horn_confidence = 0.0f;
     s_service_state.snapshot.siren_confidence = 0.0f;
+    s_service_state.snapshot.danger_confidence = 0.0f;
     s_service_state.snapshot.alert_sequence = 0U;
     s_service_state.snapshot.danger_overlay_active = false;
     taskEXIT_CRITICAL(&s_service_state.lock);
@@ -337,42 +506,58 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     }
 
     danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);
-    ESP_LOGI(TAG, "danger detection runtime stopped");
+    ESP_LOGI(TAG, "危险检测运行时已停止 (backend=%d)", backend);
     return ESP_OK;
 }
 
 /**
  * @brief 获取当前危险检测快照。
- * @return 线程安全复制出的快照值。
- *
- * 若运行时仍在运行，会额外拉取最新运行时状态和 horn/siren 分数补全快照。
- *
- * @note 函数先复制共享快照，再在锁外查询运行时细节，避免长时间占用临界区。
  */
 danger_detection_snapshot_t danger_detection_service_get_snapshot(void)
 {
     danger_detection_snapshot_t snapshot;
     bool runtime_started = false;
+    danger_detection_backend_t backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE;
 
     taskENTER_CRITICAL(&s_service_state.lock);
     snapshot = s_service_state.snapshot;
     runtime_started = s_service_state.runtime_started;
+    backend = s_service_state.active_backend;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
     if (runtime_started)
     {
-        traffic_audio_runtime_state_t runtime_state =
-            traffic_audio_runtime_get_state();
-        const traffic_inference_postprocess_snapshot_t postprocess_snapshot =
-            traffic_inference_postprocess_get_latest_snapshot();
-        snapshot.state = danger_detection_map_runtime_state(runtime_state,
-                                                            snapshot.state);
-        snapshot.horn_confidence = postprocess_snapshot.horn_score;
-        snapshot.siren_confidence = postprocess_snapshot.siren_score;
-        if (runtime_state == TRAFFIC_AUDIO_RUNTIME_STATE_FAILED &&
-            snapshot.last_error == ESP_OK)
+        if (backend == DANGER_DETECTION_BACKEND_ESPDL_DUAL)
         {
-            snapshot.last_error = ESP_FAIL;
+            /* ESPDL 后端：查询运行时状态 */
+            espdl_audio_runtime_state_t espdl_state =
+                espdl_audio_runtime_get_state();
+            snapshot.state = danger_detection_map_espdl_state(
+                espdl_state, snapshot.state);
+            snapshot.active_backend = DANGER_DETECTION_BACKEND_ESPDL_DUAL;
+            if (espdl_state == ESPDL_AUDIO_RUNTIME_STATE_FAILED &&
+                snapshot.last_error == ESP_OK)
+            {
+                snapshot.last_error = ESP_FAIL;
+            }
+        }
+        else
+        {
+            /* Edge Impulse 后端：查询运行时状态和分数 */
+            traffic_audio_runtime_state_t runtime_state =
+                traffic_audio_runtime_get_state();
+            const traffic_inference_postprocess_snapshot_t postprocess_snapshot =
+                traffic_inference_postprocess_get_latest_snapshot();
+            snapshot.state = danger_detection_map_runtime_state(runtime_state,
+                                                                snapshot.state);
+            snapshot.horn_confidence = postprocess_snapshot.horn_score;
+            snapshot.siren_confidence = postprocess_snapshot.siren_score;
+            snapshot.active_backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE;
+            if (runtime_state == TRAFFIC_AUDIO_RUNTIME_STATE_FAILED &&
+                snapshot.last_error == ESP_OK)
+            {
+                snapshot.last_error = ESP_FAIL;
+            }
         }
     }
 

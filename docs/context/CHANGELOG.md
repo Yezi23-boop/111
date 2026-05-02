@@ -1,8 +1,7 @@
 # 上下文库变更记录
 
-- 2026-04-25：在项目根 `AGENTS.md` 新增“状态发布与 UI 读取原则”，正式要求高频 UI/策略层默认只读快照，重状态推进留给后台任务或 owner 模块，并明确 getter 默认无副作用、必要时应同时提供 cached/snapshot 接口。
-- 2026-04-25：修正 BLE provisioning 期 UI 降载策略的两处回归：`ui_refresh_policy` 不再把 `PROVISIONING_THROTTLED` 当成顶层交互状态，而是拆成“交互状态 + 系统节流模式”两维，恢复配网期间 `5s` 无触摸后 dim 与 `80ms/250ms` 双档延时；同时 `network_manager` 新增无锁 `network_manager_get_state_cached()`，避免 UI 主循环轮询时抢占网络互斥锁。
-- 2026-04-25：针对 BLE provisioning 建链后 `spi_master: setup_dma_priv_buffer() -> ESP_ERR_NO_MEM` 的真机问题，把 `ui_refresh_policy` 从“临时布尔降载标志”收口成正式输出状态 `PROVISIONING_THROTTLED`；当前通过“输入条件 -> 最终状态”统一计算刷新策略，并在 `NETWORK_MANAGER_STATE_PROVISIONING_BLE` 期间把 LVGL 主循环最小唤醒间隔稳定抬到 `80ms`，优先减少显示 flush 与 NimBLE / Wi-Fi scan 对内部 DMA 内存的竞争。
+- 2026-05-03：补记 `DS-TCN-small` 当前导出图的算子/热点分析：核心节点已全部落到 `ESPDL_S3_INT8`，`BatchNormalization` 已折叠为 `1x1 Conv`，当前结构已基本踩中 `Conv2D + DepthwiseConv2D` 的 ESP32-S3 高效路径，但仍保留 `FLOAT input -> QuantizeLinear` 入口与残差重标定开销，后续若继续优化应优先尝试纯 INT8 输入和更纯 DS-CNN 路线。
+- 2026-05-02：补记危险声音 teacher-student 新进展：mixed 数据集上的 `DS-TCN-small` challenger 已完成训练、INT8 导出和 ESP32-S3 样板工程板测，确认其 `FLOAT NCHW input + INT8 output` `.espdl` 需要板端 runtime 同时兼容旧 TDNN 的 `INT8 NHWC` 路径；实测 `FPR=0.00`、推理约 `63.5ms`，已成为比 mixed TDNN 更优的当前部署候选。
 - 2026-04-25：修复微信小程序官方 BLE 配网客户端两处真机联调风险：官方 protocomm BLE 路线新增 `wx.setBLEMTU()` 协商和 payload 上限保护，避免把 protobuf 请求按旧 JSON 方式拆坏；BLE 扫描默认收敛到官方/旧版配网服务并降低无关广播日志噪声，保留“显示全部”作为调试入口。
 - 2026-04-25：修复 BLE presence / 官方 provisioning 分离后的三个框架回归点：`ble_presence_is_active()` 改为按真实 advertising 状态返回，`network_manager` 在收到 provisioning 新凭据后恢复 STA 自动重连，并把 getter 的 BLE presence 启停副作用收窄为只读刷新；同时更新配网相关知识卡，统一当前“Wi-Fi 管理页显式点击 BLE Provision / AP Web Fallback”的入口语义。
 - 2026-04-24：为 SoftAP 门户新增 Captive Portal 自动弹页壳层基线，补记其真实 owner 在 `ap_portal_adapter` 而不是官方 `network_provisioning`：当前通过 `HTTPD_404_NOT_FOUND -> /`、DNS 劫持到 `WIFI_AP_DEF` 与 DHCP Option 114 共同提供系统自动弹页能力，并新增 `softap-captive-portal-auto-popup` 知识卡固定该边界。
@@ -178,4 +177,38 @@
 - 2026-04-25：确认微信小程序 BLE 配网应对齐当前官方 `network_provisioning` 协议，优先实现 `proto-ver / prov-session / prov-scan / prov-config` 的 protocomm BLE client，并将历史 JSON GATT 协议收敛为旧镜像兜底。
 - 2026-04-25：分离主界面蓝牙总开关与 Wi-Fi 管理页 BLE 配网入口；`network_manager_set_ble_enabled()` 和 latest 失败自动路径都不再自动启动小程序配网，新增显式 `network_manager_start_ble_provisioning()` / `network_manager_start_softap_provisioning()`，允许 Wi-Fi 连接与 BLE enabled 并存。
 - 2026-04-25：新增 `components/ble_presence` 普通 BLE 可发现广播；主界面 Bluetooth 开关打开后广播 `ESP32S3-723C` 供扫描发现，Wi-Fi 管理页 `BLE Provision` 启动前会先停止 presence 并独占官方 BLE provisioning，同时 provisioning handler 改为保留 BLE 控制器资源以便后续恢复普通广播。
-- 2026-04-25：针对“先打开状态栏普通蓝牙，再进入 BLE Provision 时 LCD 刷新报 `setup_dma_priv_buffer / ESP_ERR_NO_MEM`”的板端问题，将 `lv_port` 固定 flush chunk 从 `30` 行收紧到 `10` 行，并把 `CO5300_PANEL_MAX_TRANSFER_LINES / PCLK` 收敛到 `10 行 / 50MHz`，降低 BLE owner 切换后对连续片内 DMA 私有缓冲的需求峰值。
+- 2026-04-29：固化 AudioClassification-Pytorch 到 ESP32-S3 esp-dl 的 TDNN + Fbank 首版链路；导出侧采用等价 2D wrapper 避免 ESP-PPQ 1D BatchNorm 风险，部署样板已通过官方 `espressif/esp-dl` component manager 构建。
+- 2026-04-29：补齐 AudioClassification-Pytorch ESP-DL 样板的 Fbank 对齐工具；PC 侧可导出参考 `[298,40]` Fbank，板端样板可串口输出同格式 `FBANK,...` CSV，用于后续真机逐元素误差闭环。
+- 2026-04-29：AudioClassification-Pytorch ESP-DL 样板在模型加载后新增 `get_memory_info()` 串口日志，按 `fbs_model / variable / parameter / parameter_copy / others / total` 输出 internal RAM、PSRAM 与 flash，占用判断从估算切换为板端实测。
+- 2026-04-29：AudioClassification-Pytorch 导出脚本新增 `local_resource_estimate` 和可选资源门禁，用 `.espdl` 文件大小与 `.info` tensor 形状在训练/导出阶段粗筛过大的 ESP-DL 音频模型。
+- 2026-04-29：明确 AudioClassification-Pytorch ESP-DL 资源策略：首版默认只记录 `local_resource_estimate`，不启用硬门禁；只有试更大模型时才用导出门禁，最终 RAM 仍以板端 `get_memory_info()` 为准。
+- 2026-04-29：将 AudioClassification-Pytorch ESP-DL 离线样板的 `sdkconfig.defaults`/分区表对齐当前主工程板级基线：CPU 240MHz、32MB flash、Octal PSRAM 80MHz、8MB factory app 与 `assets/model/audio` 数据分区，并已重新构建通过。
+- 2026-04-29：修复 AudioClassification-Pytorch ESP-DL 离线样板默认全量 Fbank CSV 输出导致 `task_wdt` 的问题；默认关闭 dump，并在手动 dump 路径每 4 帧让出 CPU。
+- 2026-04-30：修正 AudioClassification-Pytorch ESP-DL 离线样板的输入 shape 校验与 Tensor 包装；导出侧 NCHW `[1,1,298,40]` 在板端运行时按 NHWC `[1,298,40,1]` 暴露。
+- 2026-04-30：实机烧录并 monitor 验证 AudioClassification-Pytorch ESP-DL 离线样板；模型成功加载和推理，首版 `get_memory_info()` 实测总占用为 internal 5,892 B、PSRAM 263,112 B、flash 197,760 B。
+- 2026-04-30：完成 AudioClassification-Pytorch ESP-DL 样板 Fbank 逐元素对齐；改用 LCG 宽带参考 PCM 后真机实测 `max_abs_error=4.72e-05`、`mean_abs_error=1.70e-06`，并将默认固件恢复为关闭 Fbank dump。
+- 2026-04-30：使用 `C:\Users\ye\Desktop\stdio\esp32_siren\1-31482-A-42.wav` 做 AudioClassification-Pytorch ESP-DL 真实音频端到端冒烟；PC 与板端 top1 均为 `children_playing(2)`，板端置信度 `0.6401`，说明链路可用但该样本不能证明 siren 精度。
+- 2026-05-01：修正 AudioClassification-Pytorch ESP-DL 导出校准顺序为按类别轮询，并用 `calib_steps=320` 重导出；4 条真实样本板端批测中 `gun_shot/siren` 与 PC 侧同向，`car_horn` 仍混淆为 `gun_shot`。
+- 2026-05-01：完成 AudioClassification-Pytorch 9 类 no_gunshot 训练实验；最终 `channels=512/embd_dim=192/dropout=0.25/label_smoothing=0.08` 的 TDNN best 测试准确率 `0.9241`，但 `.espdl` 增至约 2.35MB，板端替换前需重新实测 RAM/耗时。
+- 2026-05-01：完成更适合部署的 9 类 no_gunshot 256-channel 正则化 TDNN；测试准确率 `0.9185`，`.espdl` `647,744` 字节，真机实测 ESP-DL 占用 internal 5,892 B、PSRAM 788,296 B、flash 647,728 B，单次离线整窗推理约 2.86 秒。
+- 2026-05-01：完成 9 类 no_gunshot 192-channel 正则化 TDNN 轻量验证；测试准确率 `0.9141`，`.espdl` `387,904` 字节，真机实测 ESP-DL 占用 internal 5,892 B、PSRAM 490,856 B、flash 387,888 B，单次离线整窗推理约 1.51 秒。
+- 2026-05-02：新增 AudioClassification-Pytorch `docs/espdl_danger_sound_roadmap.md`，将后续路线固定为 no_gunshot 危险声音识别，优先做 `danger/non_danger` 二分类与 DS-CNN + Fbank，而不是继续发散到通用 UrbanSound8K 多分类。
+- 2026-05-02：固化 AudioClassification-Pytorch danger/non_danger TDNN-192 二分类结果；best accuracy `0.97433`，阈值 `0.20` 时 danger_recall `0.947761`，`.espdl` `387232` B，真机 PSRAM `490152` B，推理约 `1519 ms`，并记录外部 siren/car_horn 漏报风险。
+- 2026-05-02：将 AudioClassification-Pytorch 危险声音路线切到用户确认的真实 edge 1 秒数据；TDNN-192 edge 二分类阈值 `0.20` 时 accuracy `0.954198`、danger_recall `0.950617`，真机按官方 ESP-DL INT8 输入/输出 exponent 路径跑通，PSRAM `405352` B，推理约 `464 ms`。
+- 2026-05-02：按官方 `espdl-operator` 流程为 AudioClassification-Pytorch ESP-DL 样板增加 `Model::test()` 启动自检；真机 test vector 日志 `Test Pass!`，用于确认 `.espdl` 量化图与导出结果一致。
+- 2026-05-02：复查 AudioClassification-Pytorch edge 样板中 siren 置信度偏低原因；`siren_220.wav` 在 PyTorch 与 ESP-DL 板端均为低 danger 概率边界难例，siren 测试集整体均值约 `0.935`，问题不属于量化漂移。
+- 2026-05-02：将 AudioClassification-Pytorch ESP-DL 样板嵌入 siren 演示样本替换为 `siren_diverse_027.wav`；真机复测 `sample_02_edge_siren` 的 `danger_prob=0.9511`，用于避免边界难例误导演示结论。
+- 2026-05-02：用当前 edge 1 秒二分类模型反测 UrbanSound8K，映射 `car_horn/siren -> danger` 并排除 `gun_shot`；全量 8358 条 PC 侧评估 accuracy `0.691792`、danger_recall `0.712813`、false_positive_rate `0.312286`，说明跨域泛化不足。
+- 2026-05-02：冻结当前 AudioClassification-Pytorch 可用模型版本为 `edge_danger_tdnn192_fbank1s_int8_v20260502`，记录 active `.espdl`、checkpoint、配置、板端资源和演示样本 SHA256；后续实验不得覆盖该 locked baseline。
+- 2026-05-02：覆盖 AudioClassification-Pytorch `docs/espdl_danger_sound_roadmap.md` 为 teacher-student 危险声训练路线；YAMNet/PANNs/AudioSet 作为离线 teacher 做窗口级标注和难例筛选，ESP32-S3 只部署 INT8 student。
+- 2026-05-02：复查并加固 AudioClassification-Pytorch teacher-student 路线；新增数据门禁、teacher 门禁、训练门禁和替换 active 模型门禁，避免公开数据脏标签或 teacher 错误直接污染训练。
+- 2026-05-02：更新 AudioClassification-Pytorch 危险声音后续方案为 `AST + PaSST` 离线 teacher、`TDNN-192` locked baseline、`DS-TCN-small INT8` challenger；要求 DS-TCN 用 Conv2D temporal dilation 表达，避免真实 Conv1D 带来的 ESP-DL 转换风险。
+- 2026-05-02：开始执行 AudioClassification-Pytorch teacher-student 第一阶段；安装 AST/PaSST teacher 依赖，新增 window manifest、UrbanSound8K source manifest 和 review sample 导出工具，并完成 edge/UrbanSound8K 小样本 CUDA 冒烟与 review_index 产物。
+- 2026-05-02：按用户要求进一步减少公开音频人工参与；新增 `filter_teacher_manifest.py` 强过滤公开数据，将 UrbanSound8K smoke 人工复核从 16 条压到 3 条，并只保留 filtered review_index 作为人工入口。
+- 2026-05-02：将 AudioClassification-Pytorch teacher 过滤默认策略改为零人工 `--manual_policy reject`；manual_review 候选默认自动丢弃，UrbanSound8K smoke 人工复核降为 0 条。
+- 2026-05-02：完成 AudioClassification-Pytorch 零人工 mixed TDNN-192 首轮训练与 ESP-DL INT8 导出；UrbanSound8K 50/类筛出 `auto_train=234/manual_review=0`，edge-only 阈值 `0.35` 指标为 accuracy `0.969466`、danger_recall `0.975309`、FPR `0.04`，`.espdl` `379216` B，版本登记为 `edge_mix_teacher_tdnn192_fbank1s_int8_v20260502` 但暂不切 active。
+- 2026-05-02：将 AudioClassification-Pytorch mixed TDNN-192 候选临时烧录到 ESP32-S3 样板验证；`Model::test()` 通过，实测 total internal `5892` B、PSRAM `405352` B、flash `379200` B，Fbank 约 `33.12 ms`、推理约 `464.63 ms`，三条 edge 嵌入样本均判对。
+- 2026-05-02：新增 AudioClassification-Pytorch `V3.1 lightaug` 实验版本；固定 DS-TCN-small 和 mixed teacher 数据，只把训练增强改为 `speed=0 + volume±4dB + 轻SpecAugment`，edge-only 阈值 `0.35` 提升到 danger_recall `0.987654`、FPR `0.02`，导出 `.espdl` `69920` B，但样板 flash 因主机未枚举 ESP32-S3 串口设备而阻断，当前仅记录为待补板测的 recall 导向实验版本。
+- 2026-05-03：补完 AudioClassification-Pytorch `V3.1 lightaug` 样板工程板测闭环；COM3 恢复枚举后 flash/串口抓日志成功，`Model::test()` 通过，实测 total internal `10768` B、PSRAM `258344` B、flash `69904` B，Fbank 约 `33.20 ms`、推理约 `63.20 ms`，三条 edge 嵌入样本均判对，当前应视为“样板工程已验证的 recall 候选”。
+- 2026-05-03：完成 AudioClassification-Pytorch `DS-TCN-small` 纯 INT8 输入导出优化；新增导出检查脚本并把 `.espdl` 入口从 `FLOAT` 收紧为 `INT8 [1,98,40,1], exponent=-3`，样板工程 flash/monitor 通过，实测 total internal `10192` B、PSRAM `261488` B、flash `56640` B，推理约 `61.52 ms`，新版本登记为 `edge_mix_teacher_dstcn_small_1s_int8input_v20260503`。
+- 2026-05-03：完成 AudioClassification-Pytorch `DS-CNN-tiny` 纯卷积 challenger；版本 `edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503` 已样板板测通过，实测 total internal `5644` B、PSRAM `137416` B、flash `22368` B，推理约 `61.77 ms`，结论是明显省内存和模型体积，但不明显快过 V3.2。
