@@ -1,0 +1,13 @@
+# Discoverability-only Codex project config for this ESP-IDF repository.
+
+project_root_markers = [
+  ".git",
+  "CMakeLists.txt",
+  "sdkconfig.defaults",
+  "main",
+]
+
+project_doc_fallback_filenames = [
+  "docs/context/INDEX.agent.md",
+  "docs/context/knowledge/project/project-profile.md",
+]

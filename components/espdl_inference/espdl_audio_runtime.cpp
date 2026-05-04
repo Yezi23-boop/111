@@ -1,9 +1,9 @@
 /**
  * @file espdl_audio_runtime.cpp
- * @brief ESP-DL 双模型实时音频推理运行时实现。
+ * @brief ESP-DL 单模型实时音频推理运行时实现。
  *
  * 在 FreeRTOS 后台任务中持续读取麦克风音频，重采样到 16kHz，
- * 提取 Fbank 特征后运行 V3.2 DS-TCN + V3.3 DS-CNN-tiny 并行推理。
+ * 提取 Fbank 特征后运行当前 active 的 V3.3 DS-CNN-tiny 模型。
  *
  * 音频管线与 traffic_inference_realtime.cc 保持一致：
  *   ES7210 ADC (24kHz, 2ch TDM, "MR" 格式)
@@ -11,7 +11,7 @@
  *   → 3:2 重采样到 16kHz
  *   → 滑窗缓冲 1 秒
  *   → ESP-DL Fbank 特征提取
- *   → 双模型推理
+ *   → 单模型推理
  *   → 回调上报结果
  *
  * @note 该运行时与 traffic_audio_runtime 互斥，同一时刻只能运行一个。
@@ -31,13 +31,12 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "espdl_dual_runner.h"
 #include "espdl_feature_pipeline.h"
+#include "espdl_model_runner.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-/* 双模型 .espdl rodata 声明 */
-extern const uint8_t dstcn_small_espdl[] asm("_binary_edge_mix_teacher_dstcn_small_1s_int8input_v20260503_espdl_start");
+/* Active 单模型 .espdl rodata 声明。 */
 extern const uint8_t dscnn_tiny_espdl[] asm("_binary_edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503_espdl_start");
 
 static const char *TAG = "espdl_runtime";
@@ -76,7 +75,7 @@ struct RuntimeControl {
     std::atomic<bool> stop_requested = {false};
     TaskHandle_t task_handle = nullptr;
     espdl_audio_runtime_config_t config = {};
-    espdl_dual_runner_t *dual_runner = nullptr;
+    espdl_model_runner_t *model_runner = nullptr;
     espdl_audio_runtime_result_callback_t result_callback = nullptr;
     void *callback_user_data = nullptr;
     esp_err_t last_result = ESP_OK;
@@ -172,7 +171,9 @@ void resample_24k_to_16k(const std::vector<int16_t> &mono_input,
  * @brief 运行时主循环。
  *
  * 持续读取麦克风音频，维护 1 秒滑窗缓冲，当缓冲满时提取 Fbank
- * 特征并运行双模型推理。
+ * 特征并运行 active 单模型推理。
+ *
+ * @param[in] arg FreeRTOS 任务参数，当前未使用。
  */
 void runtime_task(void *arg)
 {
@@ -208,13 +209,12 @@ void runtime_task(void *arg)
 
     ESP_LOGI(TAG,
              "启动 ESPDL 实时推理: hw=%dHz/%dch, target=%dHz, "
-             "chunk=%u, stride=%ums, strategy=%d",
+             "chunk=%u, stride=%ums, model=dscnn_v3.3",
              AUDIO_PLATFORM_HW_SAMPLE_RATE,
              AUDIO_PLATFORM_HW_INPUT_CHANNELS,
              ESPDL_SAMPLE_RATE_HZ,
              static_cast<unsigned>(chunk_frames),
-             static_cast<unsigned>(kStrideMs),
-             s_runtime.config.fusion_strategy);
+             static_cast<unsigned>(kStrideMs));
 
     while (!s_runtime.stop_requested.load()) {
         /* 读取麦克风音频 */
@@ -283,28 +283,24 @@ void runtime_task(void *arg)
                 break;
             }
 
-            /* 双模型推理 */
+            /* 单模型推理。 */
             const int64_t infer_start = esp_timer_get_time();
-            espdl_dual_result_t result = {};
-            ret = espdl_dual_runner_run(s_runtime.dual_runner, &feature_out,
-                                        &result);
+            espdl_model_result_t result = {};
+            ret = espdl_model_runner_run(s_runtime.model_runner, &feature_out,
+                                         &result);
             const int64_t infer_us = esp_timer_get_time() - infer_start;
             if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "双模型推理失败: %s", esp_err_to_name(ret));
+                ESP_LOGE(TAG, "ESP-DL 单模型推理失败: %s", esp_err_to_name(ret));
                 /* 不 break，继续下一个窗口 */
             } else {
                 total_inferences++;
                 ESP_LOGI(TAG,
-                         "INFERENCE #%u: fused=%s, danger=%.4f, "
-                         "dstcn=%s(%.4f), dscnn=%s(%.4f), "
-                         "fbank_ms=%.1f, infer_ms=%.1f",
+                         "INFERENCE #%u: label=%s, confidence=%.4f, "
+                         "danger=%.4f, fbank_ms=%.1f, infer_ms=%.1f",
                          static_cast<unsigned>(total_inferences),
-                         espdl_model_runner_label_name(result.fused_label_index),
-                         result.fused_danger_prob,
-                         espdl_model_runner_label_name(result.dstcn_result.label_index),
-                         result.dstcn_result.probabilities[1],
-                         espdl_model_runner_label_name(result.dscnn_result.label_index),
-                         result.dscnn_result.probabilities[1],
+                         espdl_model_runner_label_name(result.label_index),
+                         result.confidence,
+                         result.probabilities[1],
                          static_cast<double>(feature_us) / 1000.0,
                          static_cast<double>(infer_us) / 1000.0);
 
@@ -336,6 +332,9 @@ void runtime_task(void *arg)
         s_runtime.state.store(ESPDL_AUDIO_RUNTIME_STATE_FAILED);
     }
 
+    // 输入会话由后台任务释放，保证任务退出前不会被 stop 线程提前释放 RX 通道。
+    (void)audio_codec_release_input(AUDIO_CODEC_OWNER_ESPDL_INFERENCE);
+
     s_runtime.stop_requested.store(false);
     s_runtime.task_handle = nullptr;
     vTaskDelete(nullptr);
@@ -345,35 +344,37 @@ void runtime_task(void *arg)
 
 extern "C" {
 
-esp_err_t espdl_audio_runtime_start(
-    const espdl_audio_runtime_config_t *config)
+/**
+ * @brief 启动 ESP-DL 实时音频推理运行时。
+ *
+ * 该接口持有 audio_codec 生命周期引用，并申请独占 input session。session 的释放
+ * 放在后台任务退出点，避免 stop 线程和读麦克风任务之间出现资源归属竞态。
+ *
+ * @param[in] config 运行时配置，传 NULL 时使用默认窗口和任务栈。
+ * @return `ESP_OK` 表示启动成功；其他错误表示模型、codec 或任务创建失败。
+ */
+esp_err_t espdl_audio_runtime_start(const espdl_audio_runtime_config_t *config)
 {
     if (s_runtime.task_handle != nullptr ||
         s_runtime.state.load() != ESPDL_AUDIO_RUNTIME_STATE_IDLE) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* 初始化双模型 */
-    espdl_fusion_strategy_t strategy = ESPDL_FUSION_ANY_DANGER;
-    if (config != nullptr) {
-        strategy = config->fusion_strategy;
-    }
-
-    esp_err_t ret = espdl_dual_runner_create(&s_runtime.dual_runner,
-                                              dstcn_small_espdl,
+    /* 初始化 active 单模型。当前只加载 V3.3，避免双模型常驻导致 RAM 峰值过高。 */
+    esp_err_t ret = espdl_model_runner_create(&s_runtime.model_runner,
                                               dscnn_tiny_espdl,
-                                              strategy);
+                                              "dscnn_v3.3");
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "双模型初始化失败: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "ESP-DL active 模型初始化失败: %s", esp_err_to_name(ret));
         return ret;
     }
 
     /* 自检 */
-    ret = espdl_dual_runner_self_test(s_runtime.dual_runner);
+    ret = espdl_model_runner_self_test(s_runtime.model_runner);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "双模型自检失败: %s", esp_err_to_name(ret));
-        espdl_dual_runner_destroy(s_runtime.dual_runner);
-        s_runtime.dual_runner = nullptr;
+        ESP_LOGE(TAG, "ESP-DL active 模型自检失败: %s", esp_err_to_name(ret));
+        espdl_model_runner_destroy(s_runtime.model_runner);
+        s_runtime.model_runner = nullptr;
         return ret;
     }
 
@@ -381,8 +382,17 @@ esp_err_t espdl_audio_runtime_start(
     ret = audio_codec_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "音频编解码器初始化失败: %s", esp_err_to_name(ret));
-        espdl_dual_runner_destroy(s_runtime.dual_runner);
-        s_runtime.dual_runner = nullptr;
+        espdl_model_runner_destroy(s_runtime.model_runner);
+        s_runtime.model_runner = nullptr;
+        return ret;
+    }
+
+    ret = audio_codec_acquire_input(AUDIO_CODEC_OWNER_ESPDL_INFERENCE, 0U);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "ESP-DL 录音输入会话申请失败: %s", esp_err_to_name(ret));
+        (void)audio_codec_deinit();
+        espdl_model_runner_destroy(s_runtime.model_runner);
+        s_runtime.model_runner = nullptr;
         return ret;
     }
 
@@ -399,7 +409,6 @@ esp_err_t espdl_audio_runtime_start(
         (config != nullptr && config->task_priority != 0U)
             ? config->task_priority
             : kDefaultTaskPriority;
-    s_runtime.config.fusion_strategy = strategy;
     s_runtime.last_result = ESP_OK;
     s_runtime.stop_requested.store(false);
     s_runtime.state.store(ESPDL_AUDIO_RUNTIME_STATE_STARTING);
@@ -414,9 +423,10 @@ esp_err_t espdl_audio_runtime_start(
     if (created != pdPASS) {
         s_runtime.task_handle = nullptr;
         s_runtime.state.store(ESPDL_AUDIO_RUNTIME_STATE_FAILED);
-        audio_codec_deinit();
-        espdl_dual_runner_destroy(s_runtime.dual_runner);
-        s_runtime.dual_runner = nullptr;
+        (void)audio_codec_release_input(AUDIO_CODEC_OWNER_ESPDL_INFERENCE);
+        (void)audio_codec_deinit();
+        espdl_model_runner_destroy(s_runtime.model_runner);
+        s_runtime.model_runner = nullptr;
         return ESP_ERR_NO_MEM;
     }
 
@@ -424,6 +434,12 @@ esp_err_t espdl_audio_runtime_start(
     return ESP_OK;
 }
 
+/**
+ * @brief 停止 ESP-DL 实时音频推理运行时。
+ *
+ * @param[in] timeout_ms 等待后台任务退出的超时，0 表示使用默认 2 秒。
+ * @return `ESP_OK` 表示停止成功；`ESP_ERR_TIMEOUT` 表示任务未在期限内退出。
+ */
 esp_err_t espdl_audio_runtime_stop(uint32_t timeout_ms)
 {
     if (s_runtime.task_handle == nullptr) {
@@ -448,9 +464,9 @@ esp_err_t espdl_audio_runtime_stop(uint32_t timeout_ms)
 
     /* 清理资源 */
     audio_codec_deinit();
-    if (s_runtime.dual_runner != nullptr) {
-        espdl_dual_runner_destroy(s_runtime.dual_runner);
-        s_runtime.dual_runner = nullptr;
+    if (s_runtime.model_runner != nullptr) {
+        espdl_model_runner_destroy(s_runtime.model_runner);
+        s_runtime.model_runner = nullptr;
     }
 
     ESP_LOGI(TAG, "ESPDL 实时运行时已停止");

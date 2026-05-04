@@ -1,11 +1,10 @@
 /**
  * @file espdl_audio_runtime.h
- * @brief ESP-DL 双模型实时音频推理运行时（C API）。
+ * @brief ESP-DL 单模型实时音频推理运行时（C API）。
  *
- * 镜像 traffic_audio_runtime 的生命周期管理，但使用 ESP-DL 双模型推理：
+ * 镜像 traffic_audio_runtime 的生命周期管理，但使用 ESP-DL active 单模型推理：
  *   ES7210 ADC (24kHz, 2ch TDM) → 提取主麦克风 → 重采样到 16kHz
- *   → Fbank 特征提取 → V3.2 DS-TCN + V3.3 DS-CNN-tiny 并行推理
- *   → 结果融合 → 回调通知上层
+ *   → Fbank 特征提取 → V3.3 DS-CNN-tiny → 回调通知上层
  *
  * 使用方法：
  *   1. espdl_audio_runtime_start() 启动后台 FreeRTOS 任务
@@ -20,7 +19,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
-#include "espdl_dual_runner.h"
+#include "espdl_model_runner.h"
 #include "freertos/FreeRTOS.h"
 
 #ifdef __cplusplus
@@ -42,20 +41,19 @@ typedef struct {
     uint32_t read_timeout_ms;    /**< 音频读取超时，单位毫秒。 */
     uint32_t task_stack_size;    /**< FreeRTOS 任务栈大小，单位字节。 */
     UBaseType_t task_priority;   /**< FreeRTOS 任务优先级。 */
-    espdl_fusion_strategy_t fusion_strategy; /**< 双模型融合策略。 */
 } espdl_audio_runtime_config_t;
 
 /**
  * @brief 实时推理结果回调。
  *
- * 每次双模型推理完成后调用，由运行时任务上下文触发。
+ * 每次单模型推理完成后调用，由运行时任务上下文触发。
  * 回调内应尽快完成处理，避免阻塞推理循环。
  *
- * @param[in] result 双模型推理结果。
+ * @param[in] result 单模型推理结果。
  * @param[in] user_data 用户数据指针。
  */
 typedef void (*espdl_audio_runtime_result_callback_t)(
-    const espdl_dual_result_t *result,
+    const espdl_model_result_t *result,
     void *user_data);
 
 /**

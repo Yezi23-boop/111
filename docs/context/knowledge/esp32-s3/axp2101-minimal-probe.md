@@ -3,6 +3,11 @@ id: axp2101-minimal-probe
 tags: esp32-s3, axp2101, power, pmic, i2c, probe
 summary: AXP2101 在当前板上的最小探测前提、候选地址和接入顺序摘要。
 last_reviewed: 2026-03-11
+memory_type: semantic
+scope: board
+owners: components/axp2101, main/app/board_power.c
+triggers: axp2101, minimal, probe
+evidence_level: observed
 ---
 
 # AXP2101 最小探测

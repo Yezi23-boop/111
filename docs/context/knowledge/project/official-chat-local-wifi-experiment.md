@@ -3,6 +3,13 @@ id: official-chat-local-wifi-experiment
 tags: [project, official-chat, wifi-provision, esp32s3, audio, experiment]
 summary: 历史实验卡：记录仓库早期通过独立实验入口验证 official_chat 接入本地 wifi_provision 的最小 AI 对话链路；该入口和旧网络 owner 均已退场。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: main/services/official_chat_service.c, components/official_chat, components/wifi_control
+triggers: official, chat, local, wifi, experiment
+evidence_level: observed
+status: superseded
+superseded_by: docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
 ---
 
 # official_chat 本地 Wi-Fi 实验入口（历史记录）

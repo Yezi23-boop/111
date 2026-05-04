@@ -3,6 +3,11 @@ id: ai-font-assets
 tags: [project, ui, lvgl, fonts, assets, official-chat]
 summary: 记录 AI 页面 hand-written 字体资源链，当前已在 LVGL 9.3.0 下重新回到运行时资产主路径，并保留编译字体回退。
 last_reviewed: 2026-04-17
+memory_type: semantic
+scope: repo
+owners: main/ui/custom/ui_font_assets.c, main/ui/custom/cbin_font_bridge.c, main/ui/generated
+triggers: ai, font, assets
+evidence_level: observed
 ---
 
 # AI 页面字体资源链

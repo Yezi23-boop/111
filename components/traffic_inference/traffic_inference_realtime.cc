@@ -232,6 +232,18 @@ void resample_24k_to_16k(const std::vector<int16_t> &mono_input,
 
 }  // namespace
 
+/**
+ * @brief 运行旧 traffic/Edge Impulse 实时滑窗推理循环。
+ *
+ * 该调试路径会读取麦克风，因此进入循环前必须通过 audio_codec 申请 input
+ * session。这样它和 ESP-DL 危险声音运行时不能同时抢占 I2S RX，退出时也不会
+ * 误释放其他模块仍持有的 codec 生命周期引用。
+ *
+ * @param[in] config 实时推理配置，NULL 表示使用默认读块和无限循环。
+ * @param[in] should_stop 外部停止回调，可为 NULL。
+ * @param[in] user_data 传给停止回调的用户上下文。
+ * @return `ESP_OK` 表示正常结束；其他错误表示 codec、滑窗或后处理失败。
+ */
 esp_err_t traffic_inference_run_realtime_sliding_window_loop(
     const traffic_inference_realtime_config_t *config,
     traffic_inference_realtime_should_stop_fn should_stop,
@@ -249,6 +261,7 @@ esp_err_t traffic_inference_run_realtime_sliding_window_loop(
   ResampleState resample_state = {};
   size_t total_results = 0U;
   esp_err_t ret = ESP_OK;
+  bool input_acquired = false;
   traffic_inference_postprocess_state_t postprocess_state = {};
   traffic_inference_sliding_window_t *sliding_state =
       static_cast<traffic_inference_sliding_window_t *>(heap_caps_malloc(
@@ -283,6 +296,16 @@ esp_err_t traffic_inference_run_realtime_sliding_window_loop(
     heap_caps_free(sliding_state);
     return ret;
   }
+
+  ret = audio_codec_acquire_input(AUDIO_CODEC_OWNER_TRAFFIC_INFERENCE, 0U);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "realtime demo codec input session failed: %s",
+             esp_err_to_name(ret));
+    (void)audio_codec_deinit();
+    heap_caps_free(sliding_state);
+    return ret;
+  }
+  input_acquired = true;
 
   ESP_LOGI(TAG,
            "starting realtime sliding-window traffic inference demo "
@@ -352,6 +375,14 @@ esp_err_t traffic_inference_run_realtime_sliding_window_loop(
         sliding_state, &postprocess_state, &total_results);
     if (ret != ESP_OK) {
       ESP_LOGE(TAG, "realtime demo final drain failed: %s", esp_err_to_name(ret));
+    }
+  }
+
+  if (input_acquired) {
+    const esp_err_t release_ret =
+        audio_codec_release_input(AUDIO_CODEC_OWNER_TRAFFIC_INFERENCE);
+    if (ret == ESP_OK && release_ret != ESP_OK) {
+      ret = release_ret;
     }
   }
 

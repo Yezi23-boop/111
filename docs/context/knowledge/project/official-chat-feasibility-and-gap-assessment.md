@@ -3,6 +3,13 @@ id: official-chat-feasibility-and-gap-assessment
 tags: [project, official-chat, esp32s3, migration, review, wifi, audio]
 summary: 历史评估卡：记录 111 仓库早期接入 official_chat 时的可实现性判断、与 idf-xiaozhi / idf-EDGE_lmpulse 的差异，以及在当前正式网络架构下应如何理解这些旧结论。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: main/services/official_chat_service.c, components/official_chat, main/services/network_service.c
+triggers: official, chat, feasibility, and, gap, assessment
+evidence_level: design
+status: superseded
+superseded_by: docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
 ---
 
 # official_chat 可实现性与差距评估

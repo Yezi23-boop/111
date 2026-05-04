@@ -3,6 +3,11 @@ id: hardware-capability-gap-map
 tags: project, hardware, gap, rtc, imu, power, roadmap
 summary: 原理图可见硬件能力与当前代码已接入能力之间的差距摘要，便于规划下一阶段集成。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: components/axp2101, components/co5300_panel, components/touch_ft5x06, components/audio_codec
+triggers: hardware, capability, gap, map
+evidence_level: observed
 ---
 
 # 硬件能力缺口图

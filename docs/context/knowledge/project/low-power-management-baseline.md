@@ -3,6 +3,11 @@ id: project-low-power-management-baseline
 tags: project, power, low-power, axp2101, lvgl, wifi
 summary: 当前仓库已落地的低功耗能力碎片、未落地缺口，以及后续统一功耗策略的接入起点。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: components/axp2101, main/app/board_power.c, main/services/power_service.c, main/ui/ui_refresh_policy.c
+triggers: low, power, management, baseline
+evidence_level: observed
 ---
 
 # 当前项目低功耗管理基线

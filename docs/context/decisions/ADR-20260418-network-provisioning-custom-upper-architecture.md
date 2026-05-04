@@ -3,6 +3,11 @@ id: adr-network-provisioning-custom-upper-architecture
 tags: decisions, wifi, provisioning, ble, ap, architecture, esp-idf
 summary: 用官方 network_provisioning 替换旧自定义 provisioning 内核，同时保留自定义上层网络架构与 AP 网页前端。
 last_reviewed: 2026-04-18
+memory_type: procedural
+scope: repo
+owners: docs/context/decisions
+triggers: adr, decision, ADR, 20260418, network, provisioning, custom, upper, architecture
+evidence_level: design
 ---
 # ADR: 采用官方 `network_provisioning` + 自定义上层网络架构
 

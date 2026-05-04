@@ -3,6 +3,13 @@ id: ble-provisioning-wifi-scan-over-ble
 tags: [project, ble, provisioning, wifi, scan, wechat, miniapp]
 summary: 历史知识卡：记录仓库早期“自定义 BLE GATT + 微信小程序”方案里的 scan_wifi 协议；当前仓库正式实现已切到官方 network_provisioning 路线，本卡不再代表当前代码现状。
 last_reviewed: 2026-04-22
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/wifi_control, components/network_manager
+triggers: ble, provisioning, wifi, scan, over, ble
+evidence_level: observed
+status: superseded
+superseded_by: docs/context/knowledge/project/wechat-miniapp-official-ble-provisioning.md
 ---
 
 # BLE 配网下发附近 Wi-Fi 列表（历史卡）

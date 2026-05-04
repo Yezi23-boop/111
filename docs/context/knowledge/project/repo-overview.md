@@ -3,6 +3,11 @@ id: project-repo-overview
 tags: project, architecture, modules, lvgl, audio, wifi, esp32-s3
 summary: 当前仓库的模块地图、启动链路和构建依赖摘要，便于定位 UI、音频和配网相关改动。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: main/app/app_main.c, main/services/network_service.c, components/network_manager
+triggers: repo-overview, startup, owner, architecture, network-manager, provisioning
+evidence_level: observed
 ---
 
 # 当前仓库概览

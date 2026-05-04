@@ -3,6 +3,11 @@ id: display-touch-audio-bus-map
 tags: project, display, touch, audio, bus, i2c, i2s, qspi
 summary: 当前仓库显示、触摸、音频与配网模块对应的总线、引脚和排障入口图。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: components/lvgl_port, components/co5300_panel, components/touch_ft5x06, components/audio_codec
+triggers: display, touch, audio, bus, map
+evidence_level: observed
 ---
 
 # 显示、触摸、音频与总线映射

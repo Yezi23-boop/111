@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _stdio import configure_utf8_stdio
+
+configure_utf8_stdio()
+
 TOKEN_RE = re.compile(r"[A-Za-z0-9_\-\u4e00-\u9fff]+")
 
 
@@ -22,6 +26,13 @@ class IndexedDoc:
     summary: str
     id: str
     last_reviewed: str
+    memory_type: str
+    scope: str
+    owners: str
+    triggers: str
+    evidence_level: str
+    status: str
+    superseded_by: str
     mtime_utc: str
     token_count: int
 
@@ -33,6 +44,13 @@ class IndexedDoc:
             "summary": self.summary,
             "id": self.id,
             "last_reviewed": self.last_reviewed,
+            "memory_type": self.memory_type,
+            "scope": self.scope,
+            "owners": self.owners,
+            "triggers": self.triggers,
+            "evidence_level": self.evidence_level,
+            "status": self.status,
+            "superseded_by": self.superseded_by,
             "mtime_utc": self.mtime_utc,
             "token_count": self.token_count,
         }
@@ -111,6 +129,13 @@ def index_markdown(root: Path, docs_root: Path) -> list[IndexedDoc]:
                 summary=summary,
                 id=str(meta.get("id", "")),
                 last_reviewed=str(meta.get("last_reviewed", "")),
+                memory_type=str(meta.get("memory_type", "")),
+                scope=str(meta.get("scope", "")),
+                owners=str(meta.get("owners", "")),
+                triggers=str(meta.get("triggers", "")),
+                evidence_level=str(meta.get("evidence_level", "")),
+                status=str(meta.get("status", "")),
+                superseded_by=str(meta.get("superseded_by", "")),
                 mtime_utc=mtime_utc,
                 token_count=token_count,
             )

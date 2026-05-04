@@ -8,6 +8,8 @@ AUDIO_PLATFORM_HEADER = REPO_ROOT / "components" / "audio_codec" / "include" / "
 AUDIO_CODEC_SOURCE = REPO_ROOT / "components" / "audio_codec" / "audio_codec.c"
 AUDIO_CODEC_BUS_SOURCE = REPO_ROOT / "components" / "audio_codec" / "audio_codec_bus.c"
 AUDIO_CODEC_CMAKE = REPO_ROOT / "components" / "audio_codec" / "CMakeLists.txt"
+ESPDL_AUDIO_RUNTIME_SOURCE = REPO_ROOT / "components" / "espdl_inference" / "espdl_audio_runtime.cpp"
+TRAFFIC_REALTIME_SOURCE = REPO_ROOT / "components" / "traffic_inference" / "traffic_inference_realtime.cc"
 MP3_PLAYER_SOURCE = REPO_ROOT / "components" / "mp3_player" / "mp3_player.c"
 I2C_MANAGER_HEADER = REPO_ROOT / "components" / "i2c_manager" / "include" / "i2c_manager.h"
 
@@ -47,6 +49,36 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         audio_codec = AUDIO_CODEC_SOURCE.read_text(encoding="utf-8")
         self.assertIn("i2c_manager_get_bus_handle", i2c_header)
         self.assertIn("i2c_manager_get_bus_handle()", audio_codec)
+
+    def test_audio_codec_exposes_owner_session_contract(self) -> None:
+        header = AUDIO_CODEC_HEADER.read_text(encoding="utf-8")
+        source = AUDIO_CODEC_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("audio_codec_owner_t", header)
+        self.assertIn("audio_codec_acquire_input", header)
+        self.assertIn("audio_codec_release_input", header)
+        self.assertIn("audio_codec_acquire_output", header)
+        self.assertIn("audio_codec_release_output", header)
+        self.assertIn("s_lifecycle_ref_count", source)
+        self.assertIn("s_input_session_owner", source)
+        self.assertIn("xSemaphoreCreateMutex", source)
+
+    def test_realtime_audio_clients_use_input_session_contract(self) -> None:
+        espdl_runtime = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
+        traffic_runtime = TRAFFIC_REALTIME_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "audio_codec_acquire_input(AUDIO_CODEC_OWNER_ESPDL_INFERENCE", espdl_runtime
+        )
+        self.assertIn(
+            "audio_codec_release_input(AUDIO_CODEC_OWNER_ESPDL_INFERENCE", espdl_runtime
+        )
+        self.assertIn(
+            "audio_codec_acquire_input(AUDIO_CODEC_OWNER_TRAFFIC_INFERENCE", traffic_runtime
+        )
+        self.assertIn(
+            "audio_codec_release_input(AUDIO_CODEC_OWNER_TRAFFIC_INFERENCE", traffic_runtime
+        )
 
 
 if __name__ == "__main__":

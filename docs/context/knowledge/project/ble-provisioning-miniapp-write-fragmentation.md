@@ -3,6 +3,11 @@ id: ble-provisioning-miniapp-write-fragmentation
 tags: [project, ble, provisioning, wechat, miniapp, nimble]
 summary: 记录微信小程序 BLE 写入的 20 字节兼容边界、自定义 JSON 分片重组方案，以及官方 protocomm BLE 路线的 MTU 处理边界。
 last_reviewed: 2026-04-25
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control
+triggers: ble, provisioning, miniapp, write, fragmentation
+evidence_level: observed
 ---
 
 # 微信小程序 BLE 写入分片兼容

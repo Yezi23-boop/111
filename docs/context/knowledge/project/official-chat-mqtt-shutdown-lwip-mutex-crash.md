@@ -3,6 +3,11 @@ id: official-chat-mqtt-shutdown-lwip-mutex-crash
 tags: [project, official-chat, mqtt, lwip, shutdown, esp32s3]
 summary: 记录 official_chat 在 MQTT 模式下离开 AI 页面时，`esp_mqtt_client_destroy()` 命中 `sys_mutex_lock` 断言的根因与最小修复策略。
 last_reviewed: 2026-04-01
+memory_type: semantic
+scope: repo
+owners: main/services/official_chat_service.c, components/official_chat, components/network_manager
+triggers: official, chat, mqtt, shutdown, lwip, mutex, crash
+evidence_level: observed
 ---
 
 # official_chat MQTT 停机触发 lwIP mutex 断言

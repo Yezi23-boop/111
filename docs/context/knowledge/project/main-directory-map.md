@@ -3,6 +3,11 @@ id: main-directory-map
 tags: project, architecture, main, layout, esp32-s3
 summary: 记录 main 组件当前按 app、services、features、ui 分层后的目录职责，便于后续整理与定位改动。
 last_reviewed: 2026-04-08
+memory_type: semantic
+scope: repo
+owners: main/app/app_main.c, main/app/hardware_init.c, main/services, main/features, main/ui
+triggers: main, directory, map
+evidence_level: observed
 ---
 
 # main 目录分层地图

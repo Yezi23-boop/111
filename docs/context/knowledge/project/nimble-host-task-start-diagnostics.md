@@ -3,6 +3,11 @@ id: nimble-host-task-start-diagnostics
 tags: [project, ble, provisioning, nimble, freertos, esp32-s3]
 summary: 记录在 NimBLE HCI 初始化已恢复后，板端仍未出现 `BLE host task started` / advertising 日志时，当前仓库采用的最小诊断探针与判断依据。
 last_reviewed: 2026-04-03
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control
+triggers: nimble, host, task, start, diagnostics
+evidence_level: observed
 ---
 
 # NimBLE Host Task 启动诊断

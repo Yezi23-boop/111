@@ -1,10 +1,9 @@
 ## espdl_inference 组件 CMakeLists.txt
-## 基于 ESP-DL 的双模型并行推理组件，支持 V3.2 DS-TCN-small 和 V3.3 DS-CNN-tiny。
+## 基于 ESP-DL 的单模型推理组件，当前 active 模型为 V3.3 DS-CNN-tiny。
 
 set(srcs
     espdl_model_runner.cpp
     espdl_feature_pipeline.cpp
-    espdl_dual_runner.cpp
     espdl_audio_runtime.cpp
 )
 
@@ -22,9 +21,8 @@ endif()
 set(cmake_dir ${espdl_dir}/fbs_loader/cmake)
 include(${cmake_dir}/utilities.cmake)
 
-# 嵌入 V3.2 DS-TCN-small 和 V3.3 DS-CNN-tiny .espdl 模型文件到 rodata
+# 只嵌入 active 模型，避免 V3.2 + V3.3 双模型同时占用 flash/PSRAM。
 set(embed_files
-    models/edge_mix_teacher_dstcn_small_1s_int8input_v20260503.espdl
     models/edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503.espdl
 )
 

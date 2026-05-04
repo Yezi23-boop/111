@@ -3,6 +3,11 @@ id: lvgl-display-tuning-log
 tags: project, lvgl, display, co5300, tuning, debugging
 summary: 按时间记录 LVGL 9.3 显示异常排查中的每轮参数修改、实测现象与当前结论，供后续 agent 直接复用，避免重复调参。
 last_reviewed: 2026-04-08
+memory_type: semantic
+scope: repo
+owners: components/lvgl_port, components/co5300_panel, main/ui/lvgl_task.c, main/ui/ui_refresh_policy.c
+triggers: lvgl, display, tuning, log
+evidence_level: observed
 ---
 
 # LVGL 显示调参实验记录

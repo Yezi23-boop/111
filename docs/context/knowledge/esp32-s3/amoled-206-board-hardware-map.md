@@ -3,6 +3,11 @@ id: esp32-s3-amoled-206-board-hardware-map
 tags: esp32-s3, schematic, hardware, display, touch, audio, power
 summary: 基于原理图和现有代码整理的 ESP32-S3-Touch-AMOLED-2.06 板级器件与关键网络映射。
 last_reviewed: 2026-04-09
+memory_type: semantic
+scope: board
+owners: components/co5300_panel, components/touch_ft5x06, components/audio_codec, components/axp2101
+triggers: amoled, 206, board, hardware, map
+evidence_level: observed
 ---
 
 # 板级器件与关键网络映射

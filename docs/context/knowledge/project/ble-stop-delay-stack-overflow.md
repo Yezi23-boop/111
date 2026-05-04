@@ -3,6 +3,11 @@ id: ble-stop-delay-stack-overflow
 tags: [project, ble, provisioning, freertos, stack, overflow, esp32-s3]
 summary: 记录 BLE 配网成功后延时关闭 BLE transport 的临时任务栈过小会触发 stack overflow，当前仓库已把 `ble_stop_delay` 栈从 2048 提升到 4096。
 last_reviewed: 2026-04-08
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control
+triggers: ble, stop, delay, stack, overflow
+evidence_level: observed
 ---
 
 # BLE 延时关闭任务栈溢出

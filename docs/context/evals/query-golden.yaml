@@ -1,0 +1,80 @@
+# 黄金查询样例，用于后续检索质量回归。
+# 建议未来配套实现自动评测脚本，对 expected_top3 / expected_top5 做回归校验。
+
+queries:
+  - id: agent-index-low-token-entry
+    query: "agent-index low-token routing"
+    scope: all
+    include_meta: true
+    expected_top3:
+      - docs/context/INDEX.agent.md
+
+  - id: context-garden-policy
+    query: "context garden stale promotion archive cleanup curator"
+    scope: procedures
+    expected_top3:
+      - docs/context/procedures/context-garden-policy.md
+
+  - id: project-profile-entry
+    query: "当前正式启动链路 当前真实 owner 入口"
+    expected_top1: docs/context/knowledge/project/project-profile.md
+    expected_top3:
+      - docs/context/knowledge/project/project-profile.md
+
+  - id: layering-boundary-map
+    query: "当前项目 分层 边界 App Service Manager Adapter Vendor"
+    expected_top1: docs/context/knowledge/project/layering-boundary-map.md
+    expected_top3:
+      - docs/context/knowledge/project/layering-boundary-map.md
+
+  - id: wifi-ui-lifecycle-crash
+    query: "wifi 管理页 二次进入 lifecycle crash"
+    expected_top3:
+      - docs/context/knowledge/project/wifi-management-ui-behavior.md
+
+  - id: axp2101-owner
+    query: "AXP2101 board_power power_service owner snapshot"
+    expected_top3:
+      - docs/context/knowledge/project/axp2101-power-component-design.md
+      - docs/context/knowledge/project/axp2101-power-component-implementation.md
+
+  - id: official-chat-tls-bootstrap
+    query: "official_chat TLS 时间 bootstrap"
+    expected_top1: docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
+    expected_top3:
+      - docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
+    forbidden_top3:
+      - docs/context/knowledge/project/official-chat-feasibility-and-gap-assessment.md
+      - docs/context/knowledge/project/official-chat-local-wifi-experiment.md
+
+  - id: official-chat-current-migration-time
+    query: "official_chat 迁移 时间"
+    expected_top1: docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
+    forbidden_top3:
+      - docs/context/knowledge/project/official-chat-feasibility-and-gap-assessment.md
+      - docs/context/knowledge/project/official-chat-local-wifi-experiment.md
+
+  - id: official-chat-history-query
+    query: "official_chat 历史 wifi_provision 实验"
+    expected_top1: docs/context/knowledge/project/official-chat-local-wifi-experiment.md
+    expected_top3:
+      - docs/context/knowledge/project/official-chat-local-wifi-experiment.md
+
+  - id: co5300-brightness-path
+    query: "CO5300 亮度路径"
+    expected_top3:
+      - docs/context/knowledge/project/display-render-touch-transfer-pipeline.md
+      - docs/context/knowledge/project/lvgl-display-tuning-log.md
+
+  - id: network-owner-split
+    query: "network_manager network_provisioning_adapter ap_portal_adapter 分工 owner"
+    expected_top5:
+      - docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md
+      - docs/context/knowledge/project/storage-and-provisioning-paths.md
+
+  - id: attempt-log-entry
+    query: "agent 做过什么 修改 尝试 避免重复"
+    scope: runs
+    expected_top5:
+      - docs/context/runs/README.md
+      - docs/context/runs/attempt-template.md

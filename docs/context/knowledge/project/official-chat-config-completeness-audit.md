@@ -3,6 +3,11 @@ id: official-chat-config-completeness-audit
 tags: [project, official-chat, sdkconfig, partition, esp32s3, review]
 summary: 审查当前 111 仓库的 official_chat 迁移完整性，结论是最小可编译配置、model/assets 分区、AEC 和基础唤醒词开关已补齐，但完整运行时策略仍未完全对齐源仓库。
 last_reviewed: 2026-03-31
+memory_type: semantic
+scope: repo
+owners: main/services/official_chat_service.c, components/official_chat
+triggers: official, chat, config, completeness, audit
+evidence_level: inferred
 ---
 
 # official_chat 配置完整性审查

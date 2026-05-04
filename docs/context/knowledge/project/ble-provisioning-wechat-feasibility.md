@@ -3,6 +3,13 @@ id: ble-provisioning-wechat-feasibility
 tags: [project, wifi, provisioning, ble, wechat, esp32-s3]
 summary: 历史可行性卡：记录仓库早期评估 BLE 配网与微信小程序时曾建议的“自定义 BLE GATT + AP 兜底”最小闭环方案；当前正式方向已切到官方 network_provisioning 内核。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control, components/network_manager
+triggers: ble, provisioning, wechat, feasibility
+evidence_level: design
+status: superseded
+superseded_by: docs/context/knowledge/project/wechat-miniapp-official-ble-provisioning.md
 ---
 
 # BLE 配网与微信小程序可行性

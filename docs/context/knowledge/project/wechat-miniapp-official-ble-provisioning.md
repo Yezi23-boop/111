@@ -3,6 +3,11 @@ id: wechat-miniapp-official-ble-provisioning
 tags: [project, wifi, provisioning, ble, wechat, miniapp]
 summary: 记录微信小程序 BLE 配网应对齐当前官方 network_provisioning 协议，而不是继续沿用历史 JSON GATT 协议。
 last_reviewed: 2026-04-25
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control, components/network_manager
+triggers: wechat, miniapp, official, ble, provisioning
+evidence_level: observed
 ---
 
 # 微信小程序官方 BLE 配网路线

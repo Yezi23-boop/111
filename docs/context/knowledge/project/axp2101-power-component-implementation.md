@@ -3,6 +3,11 @@ id: axp2101-power-component-implementation
 tags: project, axp2101, power, pmic, implementation
 summary: AXP2101 第一阶段只读电源组件的实际落地文件、状态语义、轮询策略和主链路接入位置。
 last_reviewed: 2026-04-13
+memory_type: semantic
+scope: component
+owners: components/axp2101, main/app/board_power.c, main/services/power_service.c
+triggers: axp2101, board_power, power_service, owner, snapshot
+evidence_level: observed
 ---
 
 # AXP2101 电源组件实现落点

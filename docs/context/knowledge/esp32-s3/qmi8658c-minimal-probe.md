@@ -3,6 +3,11 @@ id: qmi8658c-minimal-probe
 tags: esp32-s3, imu, qmi8658c, i2c, probe, wearable
 summary: QMI8658C 在当前板上的最小探测地址、共享总线风险和后续接入顺序摘要。
 last_reviewed: 2026-04-09
+memory_type: semantic
+scope: board
+owners: docs/context/knowledge/esp32-s3/qmi8658c-minimal-probe.md
+triggers: qmi8658c, minimal, probe
+evidence_level: observed
 ---
 
 # QMI8658C 最小探测

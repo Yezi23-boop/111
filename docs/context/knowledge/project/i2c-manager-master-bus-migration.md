@@ -3,6 +3,11 @@ id: i2c-manager-master-bus-migration
 tags: project, i2c, esp-idf, audio, touch
 summary: 当前仓库 i2c_manager 切换到 master bus 接口后的调用约束与兼容边界。
 last_reviewed: 2026-03-31
+memory_type: procedural
+scope: repo
+owners: components/lvgl_port, components/touch_ft5x06, components/audio_codec, components/axp2101
+triggers: i2c, manager, master, bus, migration
+evidence_level: design
 ---
 
 # i2c_manager master bus 迁移

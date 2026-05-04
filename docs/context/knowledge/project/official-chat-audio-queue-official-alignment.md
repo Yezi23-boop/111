@@ -3,6 +3,11 @@ id: official-chat-audio-queue-official-alignment
 tags: [project, official-chat, audio, queue, xiaozhi, esp32s3]
 summary: 记录当前仓库 official_chat 音频队列按 D:\xiaozhi-esp32 官方实现保持 STL 队列与 condition_variable 模型，不改成 FreeRTOS queue 或固定环形队列。
 last_reviewed: 2026-04-24
+memory_type: semantic
+scope: repo
+owners: main/services/official_chat_service.c, components/official_chat, components/audio_codec
+triggers: official, chat, audio, queue, official, alignment
+evidence_level: inferred
 ---
 
 # official_chat 音频队列官方对齐

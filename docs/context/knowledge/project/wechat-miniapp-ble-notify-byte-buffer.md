@@ -3,6 +3,11 @@ id: wechat-miniapp-ble-notify-byte-buffer
 tags: [project, wechat, miniapp, ble, notify, parser, wifi-scan]
 summary: 记录微信小程序侧 BLE notify 需要按字节缓冲拆帧，而不是按字符串直接拼接，否则在 ESP32 按 20 字节分片上行时容易一直等不到 hello/status/wifi_scan 完整回包。
 last_reviewed: 2026-04-08
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control
+triggers: wechat, miniapp, ble, notify, byte, buffer
+evidence_level: observed
 ---
 
 # 微信小程序 BLE notify 字节缓冲拆帧

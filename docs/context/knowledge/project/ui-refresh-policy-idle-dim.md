@@ -3,6 +3,11 @@ id: ui-refresh-policy-idle-dim
 tags: project, lvgl, ui, power, brightness, touch
 summary: 记录当前仓库 UI 空闲降频、亮度 dim 与强制高刷开关的最小实现策略。
 last_reviewed: 2026-04-13
+memory_type: semantic
+scope: repo
+owners: main/ui/ui_refresh_policy.c, components/co5300_panel, main/ui/lvgl_task.c
+triggers: ui, refresh, policy, idle, dim
+evidence_level: observed
 ---
 
 # UI 空闲降频与 dim 策略

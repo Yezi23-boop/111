@@ -3,6 +3,11 @@ id: esp32-ui-audio-teaching-milestones
 tags: teaching, milestone, validation, beginner, lvgl, audio, wifi
 summary: 面向新手的 ESP32-S3 显示/音频项目分阶段教学验收点。
 last_reviewed: 2026-03-11
+memory_type: procedural
+scope: repo
+owners: docs/context/knowledge/project/teaching-milestones.md
+triggers: teaching, milestones
+evidence_level: design
 ---
 
 # 里程碑 1：环境可用

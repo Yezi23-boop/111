@@ -3,6 +3,11 @@ id: softap-provisioning-placeholder-api-limit
 tags: [project, wifi, provisioning, softap, ap-portal, network-manager, diagnostics]
 summary: 记录 SoftAP 门户从旧设备侧 JSON 占位 API 迁移到浏览器端官方 provisioning client 之后的真实边界：主链路已切到 `prov-*` endpoint，旧 `/api/scan`、`/api/configure` 仅保留兼容提示。
 last_reviewed: 2026-04-24
+memory_type: semantic
+scope: repo
+owners: components/ap_portal_adapter, components/network_provisioning_adapter, components/network_manager
+triggers: softap, provisioning, placeholder, api, limit
+evidence_level: observed
 ---
 
 # SoftAP 门户官方客户端迁移边界

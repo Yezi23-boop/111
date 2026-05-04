@@ -3,6 +3,11 @@ id: audio-low-activity-filter-script
 tags: project, audio, ffmpeg, dataset, tooling
 summary: 使用 ffmpeg 解码后按静音占比、整体 RMS 和包络起伏系数筛选低活动音频的脚本入口与默认阈值。
 last_reviewed: 2026-04-01
+memory_type: semantic
+scope: repo
+owners: scripts/analyze_low_activity_audio.py, tests/test_low_activity_audio_script.py
+triggers: audio, low, activity, filter, script
+evidence_level: observed
 ---
 
 # 低活动音频筛选脚本

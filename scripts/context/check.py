@@ -10,7 +10,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from _stdio import configure_utf8_stdio
+
+configure_utf8_stdio()
+
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,127}$")
+
+ROOT_CONTENT_FILES = (
+    "INDEX.agent.md",
+)
 
 
 def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
@@ -52,15 +60,27 @@ def resolve_project_root(project_root_arg: str | None) -> Path:
 def collect_target_files(docs_root: Path) -> list[Path]:
     files: list[Path] = []
 
-    knowledge_root = docs_root / "knowledge"
-    decisions_root = docs_root / "decisions"
+    for file_name in ROOT_CONTENT_FILES:
+        file_path = docs_root / file_name
+        if file_path.exists():
+            files.append(file_path)
 
-    if knowledge_root.exists():
-        files.extend(sorted(knowledge_root.rglob("*.md")))
+    content_roots = (
+        "knowledge",
+        "decisions",
+        "procedures",
+        "runs",
+        "plans",
+        "handoffs",
+    )
 
-    if decisions_root.exists():
-        for file_path in sorted(decisions_root.rglob("*.md")):
-            if file_path.name.lower() == "readme.md":
+    for root_name in content_roots:
+        root_path = docs_root / root_name
+        if not root_path.exists():
+            continue
+
+        for file_path in sorted(root_path.rglob("*.md")):
+            if root_name == "decisions" and file_path.name.lower() == "readme.md":
                 continue
             files.append(file_path)
 

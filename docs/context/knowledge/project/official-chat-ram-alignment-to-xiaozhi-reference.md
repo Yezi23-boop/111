@@ -3,6 +3,11 @@ id: official-chat-ram-alignment-to-xiaozhi-reference
 tags: [project, official-chat, ram, esp32s3, audio, lwip]
 summary: 记录当前仓库按 D:\xiaozhiai\xiaozhi-esp32 例程对齐的 AI 对话内部 RAM 配置，仅收敛可一一对应的栈与 lwIP mailbox 参数。
 last_reviewed: 2026-04-02
+memory_type: semantic
+scope: repo
+owners: main/services/official_chat_service.c, components/official_chat, components/audio_codec
+triggers: official, chat, ram, alignment, to, xiaozhi, reference
+evidence_level: inferred
 ---
 
 # 背景

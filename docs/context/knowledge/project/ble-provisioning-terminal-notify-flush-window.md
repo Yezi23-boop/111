@@ -3,6 +3,11 @@ id: ble-provisioning-terminal-notify-flush-window
 tags: [project, ble, provisioning, wechat, notify, timing]
 summary: 记录 BLE 配网在返回终态 `connected` 后若立即关闭 transport，可能导致微信小程序收不到最后一条成功通知；当前固件通过短暂延迟 stop 解决。
 last_reviewed: 2026-04-02
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control
+triggers: ble, provisioning, terminal, notify, flush, window
+evidence_level: observed
 ---
 
 # BLE 配网终态通知冲刷窗口

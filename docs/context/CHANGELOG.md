@@ -1,5 +1,26 @@
 # 上下文库变更记录
 
+- 2026-05-04：新增 `knowledge/project/layering-boundary-map.md` 固化当前仓库的 App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK 分层边界；新增 `scripts/context/check_layering.py` 作为只读越层提示工具，并把分层卡接入 agent 首读路由、知识地图和 query golden 回归。
+- 2026-05-04：继续降低默认 agent 首读 token 并提升 Windows CLI 稳定性：`AGENTS.md` 的 context 流程压缩为 5 条低 token 入口规则，详细分层与园艺策略只指向 `INDEX.agent.md` / `context-garden-policy.md`；新增 `scripts/context/_stdio.py` 并让 context CLI 统一将 stdout/stderr 配置为 UTF-8，避免 PowerShell 下 JSON 输出遇到非 ASCII 字符时报编码错误。
+- 2026-05-04：修复记忆系统 review 发现的排序与入口问题：`query.py` 不再把单独“迁移”视为历史查询意图，避免 superseded 历史卡误回 top；`eval_query.py` 新增 `expected_top1` 严格排序断言并补 `official_chat 迁移 时间` 回归用例；`INDEX.agent.md` 与 `project-profile.md` 统一说明 `repo-overview.md` 只按 query/brief 或确需全局骨架时打开。
+- 2026-05-04：完善上下文记忆 curator 机制：新增 `procedures/context-garden-policy.md` 固化 `INDEX/runs/knowledge/procedures/archive` 分层、`status/superseded_by` 生命周期字段、清理梯子和晋升梯子；`build_index.py` 纳入生命周期字段，`query.py` 默认压低历史/退场/被替代卡并支持查历史时召回，`garden.py --verbose/json` 输出 `stale_candidates`、`promotion_candidates`、`archive_candidates` 与 `broken_owner_refs` 候选队列。
+- 2026-05-04：新增 `docs/context/INDEX.agent.md` 作为 80-120 行内的 agent 首读低 token 路由入口；`.codex/config.toml` fallback 收敛为 `INDEX.agent.md` 与 `project-profile.md`；`pack_context.py` 新增 `--mode brief|standard` 且默认 `brief`，并在 README 固化“先 query、再 brief pack、最后只读必要原文”的低 token 工作流。
+- 2026-05-04：回填首批 8 条高价值 `runs/attempt` 记录，覆盖 Wi-Fi 管理页 lifecycle crash、SoftAP captive portal、official_chat OTA TLS 授时、AXP2101 只读电源接入、ESP-DL 危险识别单模型/阈值、audio_codec owner session、官方 BLE provisioning MTU 边界，以及本轮 attempt log 防重复机制本身。
+- 2026-05-04：调整 `query.py` 的 `mixed` 检索评分：普通稳定知识查询会轻微压低 `runs/` episodic 记录，带 `attempt/run/crash/错误/日志/验证/重复` 等排障意图的查询仍正常返回 attempt；同时过滤单字符纯数字 token，避免 `0.80` 阈值类查询被无意义数字噪声污染。
+- 2026-05-04：新增 agent attempt log 防重复机制：补充 `scripts/context/log_attempt.py`、`runs/attempt-template.md`，并把 `AGENTS.md`、`README.md`、`project-profile` 的默认流程改为先用 `query.py --scope runs` 检索历史修改/尝试，再继续读取稳定知识，避免后续 agent 重复同一路线。
+- 2026-05-04：继续提升上下文知识卡 `owners` 精度，将启动链路、显示触摸、联网配网、电源、official_chat、ESP-DL 危险识别等高频卡从目录级 owner 收敛到真实代码模块或服务入口；同步调整 `query-golden.yaml`，让 CO5300 亮度查询优先验证专用显示链路卡而不是总览卡。
+- 2026-05-04：批量为 `knowledge/project`、`knowledge/esp32-s3` 和 `decisions/ADR-*` 回填结构化元数据，统一补上 `memory_type / scope / owners / triggers / evidence_level`，让 `garden.py` 与检索评分能开始真正利用这些字段，而不只是检查模板存在性。
+- 2026-05-04：继续推进上下文系统的“分层 + 评测 + 压缩”：新增 `plan-template.md`、`run-template.md`、`handoff-template.md` 三类模板，补强 `current-task` 的压缩字段；同时增强 `garden.py` 的 `owners` 路径检查与模板章节检查，增强 `eval_query.py` 对 `min_results`、`forbidden_top3/top5` 的支持。
+- 2026-05-04：继续增强上下文系统的 agent 首读与回归能力：新增 `docs/context/knowledge/project/project-profile.md` 作为仓库级首读画像，并将其加入 `.codex/config.toml` fallback；同时新增 `scripts/context/eval_query.py`，让 `docs/context/evals/query-golden.yaml` 能作为真实可执行的检索回归基线。
+- 2026-05-04：为上下文系统新增 `procedures / runs / plans / handoffs / evals` 分层，扩展 `AGENTS.md`、`docs/context/README.md`、`knowledge-map.md` 的记忆类型与晋升规则说明；同时让 `scripts/context/check.py`、`query.py`、`pack_context.py` 覆盖新目录，并新增 `garden.py` 骨架和 `query-golden.yaml` 检索基准样例。
+- 2026-05-04：补建仓库级 `.codex/config.toml`，显式声明 ESP-IDF 项目根标记和 `docs/context` fallback 入口；同时把 `AGENTS.md`、`docs/context/README.md`、`knowledge-map.md` 中的上下文脚本示例统一为当前真实工作流 `uv run python ...`。
+- 2026-05-04：继续修正局部 `AGENTS.md` 的历史 owner 词汇：`official_chat` 不再提不存在的 `feature-manager / app_feature_manager`，改为显式指向 `main/services/network_service.*`、`main/services/official_chat_service.*`；`traffic_inference` 的上游边界改为 `danger_detection_service.*` 与 `app_alert_manager.*`，并补挂 `main-directory-map`、`nonblocking-boot-network-service`、`ai-ui-entry-network-guidance` 等当前真实入口。
+- 2026-05-04：清理局部 `AGENTS.md` 的断链 `Read First` 入口：`components/official_chat` 与 `components/traffic_inference` 不再指向不存在的 `boards/...` 和历史缺失知识卡，统一改挂当前真实存在的仓库概览、总线/音频/网络架构与各自模块专属知识卡，保证局部上下文入口可达。
+- 2026-05-04：继续收紧仓库规则入口：修正 `AGENTS.md` 中失效的 `main/audio_app.c` / `main/hardware_init.c` 路径为 `main/features/audio/audio_app.c` / `main/app/hardware_init.c`，将“当前项目专项规则”正文压缩为“详细规则卡入口 + 两条红线”，并把“先给文件划分方案和模块职责说明”收窄到新增模块、跨文件改动或明显重构场景；同步更新 `agent-operational-rules` 与 `embedded-c-cpp-engineering-rules`。
+- 2026-05-04：更新 `AGENTS.md` 与 `agent-operational-rules` 中的配网 owner 路径，正式用 `network_provisioning_adapter / ap_portal_adapter / wifi_control / network_manager` 替换过期的 `wifi_provision` 入口；同时将“默认只处理注释”收窄为仅在注释/可读性任务时默认只改注释，减少对普通功能修改任务的误导。
+- 2026-05-04：删除 `AGENTS.md` 顶部重复的 `CLAUDE.md` 优先级说明句，改为仅通过“最高优先级，已内联”章节标题表达优先级，保持规则更简洁。
+- 2026-05-04：将仓库根目录 `CLAUDE.md` 行为准则完整内联到 `AGENTS.md`，并明确其为本仓库 agent 规则的最高优先级，避免后续会话只拿到 `AGENTS.md` 摘要却漏掉完整行为约束。
+- 2026-05-04：新增 `hearing-assist-danger-alert-system-architecture` 产品/系统架构草案，正式把危险识别能力定义为“面向听障用户的手表端危险提醒系统”，并固定系统分层、主线 `siren/horn/alarm` danger 边界、非目标和长期演进路线；同时在 `espdl-danger-model-plan-anchor` 与 `knowledge-map` 中挂接该文档，避免后续讨论继续被当前模型/特征实现绑死。
 - 2026-05-03：补记 `DS-TCN-small` 当前导出图的算子/热点分析：核心节点已全部落到 `ESPDL_S3_INT8`，`BatchNormalization` 已折叠为 `1x1 Conv`，当前结构已基本踩中 `Conv2D + DepthwiseConv2D` 的 ESP32-S3 高效路径，但仍保留 `FLOAT input -> QuantizeLinear` 入口与残差重标定开销，后续若继续优化应优先尝试纯 INT8 输入和更纯 DS-CNN 路线。
 - 2026-05-02：补记危险声音 teacher-student 新进展：mixed 数据集上的 `DS-TCN-small` challenger 已完成训练、INT8 导出和 ESP32-S3 样板工程板测，确认其 `FLOAT NCHW input + INT8 output` `.espdl` 需要板端 runtime 同时兼容旧 TDNN 的 `INT8 NHWC` 路径；实测 `FPR=0.00`、推理约 `63.5ms`，已成为比 mixed TDNN 更优的当前部署候选。
 - 2026-04-25：修复微信小程序官方 BLE 配网客户端两处真机联调风险：官方 protocomm BLE 路线新增 `wx.setBLEMTU()` 协商和 payload 上限保护，避免把 protobuf 请求按旧 JSON 方式拆坏；BLE 扫描默认收敛到官方/旧版配网服务并降低无关广播日志噪声，保留“显示全部”作为调试入口。
@@ -176,6 +197,7 @@
 - 2026-04-24：新增仓库级 `.gitattributes`，统一文本文件 `eol=crlf` 并标记常见二进制资源为 binary；同时将本仓库 Git 配置设为 `core.autocrlf=true`、`core.eol=crlf`，并让 `scripts/context/build_index.py` 显式以 CRLF 写出索引，按 Windows 默认换行约定避免 VSCode/Git 反复提示。
 - 2026-04-25：确认微信小程序 BLE 配网应对齐当前官方 `network_provisioning` 协议，优先实现 `proto-ver / prov-session / prov-scan / prov-config` 的 protocomm BLE client，并将历史 JSON GATT 协议收敛为旧镜像兜底。
 - 2026-04-25：分离主界面蓝牙总开关与 Wi-Fi 管理页 BLE 配网入口；`network_manager_set_ble_enabled()` 和 latest 失败自动路径都不再自动启动小程序配网，新增显式 `network_manager_start_ble_provisioning()` / `network_manager_start_softap_provisioning()`，允许 Wi-Fi 连接与 BLE enabled 并存。
+- 2026-05-03：补充嵌入式 C/C++ 编码约束，明确单次调用且缺乏独立语义的小函数默认内联，避免为形式上的面向对象或解耦引入一层转发 wrapper、空洞 getter/setter 和无信息增量接口。
 - 2026-04-25：新增 `components/ble_presence` 普通 BLE 可发现广播；主界面 Bluetooth 开关打开后广播 `ESP32S3-723C` 供扫描发现，Wi-Fi 管理页 `BLE Provision` 启动前会先停止 presence 并独占官方 BLE provisioning，同时 provisioning handler 改为保留 BLE 控制器资源以便后续恢复普通广播。
 - 2026-04-29：固化 AudioClassification-Pytorch 到 ESP32-S3 esp-dl 的 TDNN + Fbank 首版链路；导出侧采用等价 2D wrapper 避免 ESP-PPQ 1D BatchNorm 风险，部署样板已通过官方 `espressif/esp-dl` component manager 构建。
 - 2026-04-29：补齐 AudioClassification-Pytorch ESP-DL 样板的 Fbank 对齐工具；PC 侧可导出参考 `[298,40]` Fbank，板端样板可串口输出同格式 `FBANK,...` CSV，用于后续真机逐元素误差闭环。
@@ -212,3 +234,24 @@
 - 2026-05-03：补完 AudioClassification-Pytorch `V3.1 lightaug` 样板工程板测闭环；COM3 恢复枚举后 flash/串口抓日志成功，`Model::test()` 通过，实测 total internal `10768` B、PSRAM `258344` B、flash `69904` B，Fbank 约 `33.20 ms`、推理约 `63.20 ms`，三条 edge 嵌入样本均判对，当前应视为“样板工程已验证的 recall 候选”。
 - 2026-05-03：完成 AudioClassification-Pytorch `DS-TCN-small` 纯 INT8 输入导出优化；新增导出检查脚本并把 `.espdl` 入口从 `FLOAT` 收紧为 `INT8 [1,98,40,1], exponent=-3`，样板工程 flash/monitor 通过，实测 total internal `10192` B、PSRAM `261488` B、flash `56640` B，推理约 `61.52 ms`，新版本登记为 `edge_mix_teacher_dstcn_small_1s_int8input_v20260503`。
 - 2026-05-03：完成 AudioClassification-Pytorch `DS-CNN-tiny` 纯卷积 challenger；版本 `edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503` 已样板板测通过，实测 total internal `5644` B、PSRAM `137416` B、flash `22368` B，推理约 `61.77 ms`，结论是明显省内存和模型体积，但不明显快过 V3.2。
+- 2026-05-03：主工程音频 codec 层新增生命周期引用计数与 input/output owner session；ESP-DL 实时运行时和旧 traffic 实时推理均改为先申请录音 input session、退出后释放，避免 stop 时误拆全局 audio_codec。
+- 2026-05-03：主工程危险识别 ESP-DL 路线从 V3.2/V3.3 双模型并行改为单 active V3.3 DS-CNN-tiny；不再编译 dual runner 或嵌入 V3.2 模型，UI 入口默认启动 ESP-DL 单模型，并在 service 层增加连续窗口确认与 hold 防抖。
+- 2026-05-03：针对人声触发危险误报，将主工程 active DS-CNN-tiny V3.3 的 danger 阈值从 `0.40` 收紧到 `0.80`；后续需用真实人声、喇叭和警笛样本重新扫现场阈值。
+- 2026-05-03：固化危险声音训练/评估阈值策略：训练本身无阈值，但后续 student 版本验收必须默认报告 `0.80` 阈值指标，并单独统计人声等 hard negative 误报率。
+- 2026-05-04：新增主工程上下文锚点 `espdl-danger-model-plan-anchor.md`，固定危险声音模型计划、训练仓库文档、active V3.3 DS-CNN-tiny、V3.4 中文人声 hard negative 和 `0.80` 阈值策略的检索入口。
+- 2026-05-04：固化 V3.4 public hard negative 训练计划：中文人声收窄为大声/高频/喊话误报压制，优先 Common Voice 中文和少量 AISHELL-1，公开摩擦/衣物/刮擦先近似手表佩戴误触，同时补充 siren/horn/alarm/glass/crash 正样本。
+- 2026-05-04：训练仓库新增 `make_v34_public_teacher_sources.py`，并扩展 teacher/filter 规则支持 V3.4 大声中文人声、公开摩擦/刮擦、glass/crash/alarm 正样本和零人工 hard negative 自动吸收。
+- 2026-05-04：完成 V3.4 UrbanSound8K public smoke；45 条公开窗口经 AST/PaSST/student 打分和零人工过滤后 `auto_train=30/manual_review=0`，其中保留 `car_horn=3`、`siren=5` 和多类 hard negative。
+- 2026-05-04：完成本地 ESC-50 接入 V3.4 challenger；347 条公开样本自动入训，edge-only `threshold=0.85` 达到 `recall=0.950617/FPR=0`，但 `car_horn` 高阈值仍不稳，暂不替换 active。
+- 2026-05-04：固化危险类边界：active 主线只把 `siren/horn/alarm` 作为核心 danger；`glass_break/crash/impact` 仅属于 `--danger_profile extended` challenger，不进入默认 active 训练和上线口径。
+- 2026-05-04：将 `CLAUDE.md` 的通用行为准则并入 `AGENTS.md`，补充“先思考、简单优先、手术式修改、目标驱动执行”四类协作规则。
+- 2026-05-04：优化 `AGENTS.md` 主规则结构与措辞，统一章节表达、补充约束分组，并将上下文脚本调用示例统一为 `uv run python`。
+- 2026-05-04：将 `AGENTS.md` 瘦身为“入口索引 + 红线规则”，并新增 `docs/context/knowledge/project/agent-operational-rules.md` 承接环境、烧录、硬件和专项详细规则。
+- 2026-05-04：优化 `ESP-IDF Rules` 表述，统一为“默认原则 + export.ps1 查找顺序 + build 前置条件 + sdkconfig 变更后的强制动作”。
+- 2026-05-04：优化 `ESP-IDF Rules`、`Monitor And Flash Rules`、`Hardware And Safety Rules` 三段表述，统一为“默认原则 + 前置条件 + 强制动作/禁止项”的规则风格。
+- 2026-05-04：优化“规则优先级与作用域”表述，将优先级判断与默认补充约束拆分，减少编号段内混杂信息。
+- 2026-05-04：按当前协作需求从 `AGENTS.md` 删除“计划模式规则（仅在上层环境进入计划模式时生效）”整段，避免主规则文件继续膨胀。
+- 2026-05-04：确认 `plan-mode-rules.md` 已不存在后，继续清理 `AGENTS.md`、知识地图和 ADR 中的残留引用，并准备重建 context index。
+- 2026-05-04：简化“状态发布与 UI 读取原则”在 `AGENTS.md` 中的表述，保留核心分层和禁止项，并同步收紧详细规则卡措辞。
+- 2026-05-04：进一步将 `AGENTS.md` 中“状态发布与 UI 读取原则”压缩为 3 条红线版，详细展开继续保留在项目规则卡中。
+- 2026-05-04：将 `CLAUDE.md` 行为准则提升为 `AGENTS.md` 内最高优先级规则，并在优先级说明与章节标题中显式标注。

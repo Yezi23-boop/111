@@ -7,11 +7,13 @@
 ## Read First
 
 - 根目录 `AGENTS.md`
-- `boards/esp32-s3-touch-amoled-2.06/AGENTS.md`
-- `docs/context/knowledge/project/traffic-inference-realtime-mic.md`
-- `docs/context/knowledge/project/traffic-inference-postprocess-v1.md`
-- `docs/context/knowledge/project/traffic-inference-threshold-selection.md`
-- `docs/context/knowledge/project/traffic-audio-feature-manager.md`
+- `docs/context/knowledge/project/repo-overview.md`
+- `docs/context/knowledge/project/main-directory-map.md`
+- `docs/context/knowledge/project/display-touch-audio-bus-map.md`
+- `docs/context/knowledge/project/nonblocking-boot-network-service.md`
+- `docs/context/knowledge/project/traffic-inference-edge-impulse-manual-v5-integration.md`
+- `docs/context/knowledge/project/danger-signal-detection-port.md`
+- `docs/context/knowledge/project/espdl-audio-tdnn-port.md`
 
 ## Do
 
@@ -37,5 +39,5 @@
 
 ## Escalation
 
-- 若改 realtime 音频契约、阈值策略、PSRAM 依赖、feature-manager 边界或应用侧 alert 语义，需同步更新项目知识文档。
+- 若改 realtime 音频契约、阈值策略、PSRAM 依赖，或改动与 `main/features/danger_detection/danger_detection_service.*`、`main/features/alerts/app_alert_manager.*` 的边界或告警语义，需同步更新项目知识文档。
 </INSTRUCTIONS>

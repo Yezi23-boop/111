@@ -4,122 +4,132 @@
 1. 默认只使用“当前仓库规则（上下文库）”。
 2. 仅当满足“当前项目专项规则触发条件”时，才启用当前项目专项规则。
 3. 若规则冲突，优先遵循：最小可运行改动 + 可验证 + 可回退。
-   面对底层代码或者苦难时可以联网搜索ESP-IDF 官方的资料
-   直接修改不需要worktree
-   写代码要带详细注释方便用户理解，默认遵循下方“代码注释规范（默认生效）”；要求每一个新增或修改的函数都有中文注释，关键变量和常量也要有注释解释
+
+## CLAUDE.md（最高优先级，已内联）
+
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" -> "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" -> "Write a test that reproduces it, then make it pass"
+- "Refactor X" -> "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] -> verify: [check]
+2. [Step] -> verify: [check]
+3. [Step] -> verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+默认补充约束：
+
+- 遇到底层代码、复杂问题或证据不足时，可以联网查阅 `ESP-IDF` 官方资料，优先使用官方文档与一手资料。
+- 默认直接在当前仓库内修改，不强制使用 `worktree`。
+- 写代码时要优先保证用户可读性；默认遵循下方“代码注释规范（默认生效）”。
+- 每一个新增或修改的函数，都必须补中文注释；关键变量、关键常量也要补用途说明。
 
 ## ESP-IDF Rules
-要求使用freertos
-- 拉起 `IDF 5.5` 环境时，用户常在两台不同电脑编译，必须按顺序尝试：
-  1. 优先使用 `D:\esp-idf\v5.5.3\esp-idf\export.ps1`；
-  2. 如果不存在，再使用 `D:\esp32\v5.5.3\esp-idf\export.ps1`；
-  3. 两者都不存在时，再检查 `$env:IDF_PATH` 或搜索本机 `export.ps1`。
-- 找到可用 `export.ps1` 后，再实际执行 `idf.py build`。
-- 项目配置基线优先看 `sdkconfig.defaults`；不要无说明地大范围改生成出来的 `sdkconfig`。
-- 修改 `sdkconfig` 后，必须先 `idf.py fullclean` 再 `idf.py build`，否则配置变更可能不会正确进入最终产物。
-- 默认不走 `test app` 路线；除非任务明确要求，否则直接修改主工程并验证。
+- 默认使用 `FreeRTOS` 思路组织任务、同步和资源访问。
+- 需要拉起 `IDF 5.5` 环境时，必须按以下顺序查找并使用 `export.ps1`：
+  1. 先尝试 `D:\esp-idf\v5.5.3\esp-idf\export.ps1`。
+  2. 若不存在，再尝试 `D:\esp32\v5.5.3\esp-idf\export.ps1`。
+  3. 若仍不存在，再检查 `$env:IDF_PATH`，或在本机搜索 `export.ps1`。
+- 只有确认 `export.ps1` 可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作。
+- 项目配置基线优先参考 `sdkconfig.defaults`；不要在没有说明的情况下大范围修改生成出来的 `sdkconfig`。
+- 只要修改过 `sdkconfig`，就必须先执行 `idf.py fullclean`，再执行 `idf.py build`，避免配置变更没有进入最终产物。
+- 默认不走 `test app` 路线；除非任务明确要求，否则直接修改主工程并完成验证。
 
 ## Monitor And Flash Rules
 
-- `idf.py monitor` 没有自然返回值；自动化验证时默认采集窗口 `30` 秒，最长不超过 `1` 分钟。
-- Windows Codex 桌面环境下，如需让 agent 直接读取 `idf.py monitor`，可临时设置 `ESP_IDF_MONITOR_TEST=1` 绕过 TTY 检查；该变量只用于 host 侧采集，不属于固件配置。
-- 使用 `ESP_IDF_MONITOR_TEST=1` 后，必须清理残留 `idf_monitor` / `idf.py monitor` 进程，并确认串口已释放，再进行下一轮 `flash`、`monitor` 或串口验证。
-- 如果 `monitor` 日志提示 built/flashed checksum mismatch，不得把板端日志直接当作当前本地 `build` 产物的验证结论，必须单独标注镜像漂移风险，必要时重做一致的 `build` / `flash` / `monitor` 闭环。
+- `idf.py monitor` 没有自然返回值；自动化验证时默认采集窗口为 `30` 秒，最长不超过 `1` 分钟。
+- Windows Codex 桌面环境下，如需让 agent 直接读取 `idf.py monitor`，可临时设置 `ESP_IDF_MONITOR_TEST=1` 绕过 `TTY` 检查；该变量只用于 host 侧采集，不属于固件配置。
+- 只要使用过 `ESP_IDF_MONITOR_TEST=1`，就必须清理残留的 `idf_monitor` / `idf.py monitor` 进程，并确认串口已释放，再进行下一轮 `flash`、`monitor` 或串口验证。
+- 如果 `monitor` 日志提示 built/flashed checksum mismatch，不得把板端日志直接当作当前本地 `build` 产物的验证结论；必须单独标注镜像漂移风险，必要时重做一致的 `build` / `flash` / `monitor` 闭环。
 
 ## Hardware And Safety Rules
 
-- 修改 `GPIO` / `I2C` / `SPI` / `UART` / `I2S` / `LCD` / `Touch` / `Wi-Fi` / `BLE` 前，先确认引脚定义、初始化顺序、时钟或带宽、错误恢复路径。
-- 不要在没有证据时删除已有 reset、delay、power-on sequence 或初始化命令序列。
-- 涉及 DMA、双缓冲、PSRAM、cache、共享总线、共享状态机时，必须说明数据生命周期、资源归属和性能影响。
-- 不要随意修改 `partition table`、boot 流程、OTA 逻辑、NVS 关键结构、Wi-Fi/BLE 初始化主流程；若必须修改，要显式说明原因、影响范围和验证方法。
+- 修改 `GPIO` / `I2C` / `SPI` / `UART` / `I2S` / `LCD` / `Touch` / `Wi-Fi` / `BLE` 前，必须先确认引脚定义、初始化顺序、时钟或带宽约束，以及错误恢复路径。
+- 不要在没有证据的情况下删除已有 `reset`、`delay`、power-on sequence 或初始化命令序列。
+- 只要涉及 `DMA`、双缓冲、`PSRAM`、cache、共享总线、共享状态机，就必须说明数据生命周期、资源归属和性能影响。
+- 不要随意修改 `partition table`、boot 流程、`OTA` 逻辑、`NVS` 关键结构、`Wi-Fi/BLE` 初始化主流程；若必须修改，要显式说明原因、影响范围和验证方法。
 
 ## 当前仓库规则（默认生效）
 
-将 `docs/context` 作为项目长期上下文库。
+将 `docs/context` 作为项目长期上下文库，但默认低 token 使用：
 
-遇到非简单任务时，按以下流程执行：
-
-1. 运行 `python scripts/context/build_index.py` 构建索引。
-2. 运行 `python scripts/context/check.py` 检查上下文文档质量。
-3. 运行 `python scripts/context/query.py --q "<任务关键词>" --top 5` 检索。
-4. 优先阅读命中最高的文件，不全量加载文档库。
-5. 使用上下文结论时引用准确文件路径。
-6. 需要复用上下文片段时，运行 `python scripts/context/pack_context.py --q "<任务关键词>" --top 5` 生成打包文本。
-
-每次完成任务后执行更新：
-
-- 如果出现可复用知识，更新 `docs/context/knowledge` 对应文件。
-- 如果出现架构级或不可逆决策，在 `docs/context/decisions` 新增 ADR。
-- 在 `docs/context/CHANGELOG.md` 增加一行变更记录。
-
-质量要求：
-
-- 优先短小高信息密度内容，避免冗长叙述。
-- 证据不足时明确标注假设。
-- 每个上下文文件只聚焦一个主题。
-
-命名约定：
-
-- 文件名使用 kebab-case。
-- frontmatter 字段统一为：`id`、`tags`、`summary`、`last_reviewed`。
-
-## 计划模式规则（仅在上层环境进入计划模式时生效）
-
-本节只约束“已经进入计划模式后”的计划输出深度，不定义也不切换计划模式。
-
-- 当任务涉及多个文件、模块、线程、状态机或外设，或会影响接口、架构、依赖、配置、内存布局、时序、稳定性、实时性、安全性、功耗、资源占用时，必须先给出详细计划，禁止直接编码。
-- 当任务需要排查 bug、定位根因、处理不确定问题，或需求存在歧义、缺失约束、验收标准不明确时，必须先完成问题建模、约束分析、方案比较、风险识别和验证闭环。
-- 计划至少包含：问题重述、约束清单、根因或关键难点分析、方案比较、分步执行计划、验证计划、风险与回滚。
-- 对 ESP32 / MCU 任务，必须额外分析 RAM / Flash、CPU 占用、实时性、中断安全、线程安全、外设时序、错误恢复、功耗影响，以及任务运行上下文、竞态/死锁/优先级反转、栈/堆风险、DMA/I2S/SPI/UART/ADC/Wi-Fi/BLE 行为、watchdog、启动时序、异常恢复和版本兼容。
-- 在计划获批前，不得直接改代码，不得跳过方案比较，不得省略验证方法与回滚策略，不得用“阅读代码 / 修改代码 / 运行测试”这类浅层步骤列表替代设计。
-- 详细条款见 `docs/context/knowledge/project/plan-mode-rules.md`。
+- 首读只看 `docs/context/INDEX.agent.md` 与 `docs/context/knowledge/project/project-profile.md`；不要默认全量打开 `README.md`、`knowledge-map.md`、`repo-overview.md` 或 `knowledge/**`。
+- 非简单任务先查历史尝试：`uv run python scripts/context/query.py --scope runs --q "<任务关键词/文件/错误码>" --top 8`，避免重复已失败或已完成路径。
+- 再查稳定知识并打 brief：`uv run python scripts/context/query.py --q "<任务关键词>" --top 5`，必要时 `uv run python scripts/context/pack_context.py --q "<任务关键词>" --mode brief --top 5 --print`。
+- 出现可复用知识、流程、决策、attempt 或交接状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
+- 修改上下文系统后运行 `uv run python scripts/context/build_index.py`、`uv run python scripts/context/check.py`、`uv run python scripts/context/garden.py --verbose`、`uv run python scripts/context/eval_query.py`。
 
 ## 嵌入式 C/C++ 代码生成默认规范
 
 本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码，适用于显示/UI、触摸输入、音频播放、Wi-Fi 配网、板级驱动、模块拆分和架构建议任务。
 
-- 优先级默认遵循：正确性 > 安全性 > 稳定性 > 可维护性 > 资源效率 > 开发便利性。
 - 新增或修改代码应优先满足模块化、分层、单一职责、明确接口边界和可验证错误路径。
 - 新增或修改代码默认按 Google Code Style 靠拢，但不因引入新规则而大面积重排无关旧代码。
 - 资源受限路径优先使用静态分配或受控分配，避免在高频路径中频繁申请和释放内存。
 - 输入、状态、长度、返回值、超时和降级路径必须显式处理，不能静默失败。
 - 算法或 AI 相关实现默认拆分为预处理、推理、后处理和模型配置模块，避免把阈值、量化参数和业务逻辑混写。
-- 输出代码前，应先给出文件划分方案和模块职责说明；若发现明显的高耦合、大函数、深层嵌套或不安全路径，应先重构方案再输出。
+- 涉及新增模块、跨文件改动或明显重构时，输出代码前，应先给出文件划分方案和模块职责说明；若发现明显的高耦合、大函数、深层嵌套或不安全路径，应先重构方案再输出。
 - 详细条款见 `docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md`。
 
 ## 状态发布与 UI 读取原则（默认生效）
 
-- 适用于 `UI/LVGL`、状态栏、策略层、控制器层，以及 `Wi-Fi/BLE/Power/Audio/Sensor` 等会被高频读取的服务模块。
-- 默认采用“UI 轮询只读快照，重状态推进留给后台任务或 owner 模块”的分层方式。
-- `UI` 高频路径只能读取轻量快照、镜像结构体或无锁/低成本只读接口；不得在轮询或 `poll/timer/getter` 路径里顺手执行：
-  - 状态推进
-  - 外设 IO
-  - 网络/BLE/Wi-Fi 启停
-  - 阻塞等待
-  - 重锁路径
-- 模块 owner 负责真实状态推进、重试、超时、错误恢复和硬件交互；典型形式应为：
-  - 后台任务
-  - 服务循环
-  - 明确命名的 `start/stop/request/submit` 命令接口
-- `getter` 默认应无副作用；如果确实需要“读取前顺便刷新”的语义，必须：
-  - 在命名或注释里显式说明
-  - 同时提供一个只读快照接口给 UI/策略层使用
-- 状态设计优先分成两层：
-  - 事实输入或后台运行态
-  - 对外发布的稳定状态/快照
-  不要让 UI 直接拼底层 driver 细节，也不要把“是否活跃”和“是否要限流/保护”硬揉成一个脆弱状态。
-- 对 `ESP32/FreeRTOS` 任务，若某状态会被 `UI` 以 `100~300ms` 甚至更高频率读取，优先考虑：
-  - 双缓冲快照
-  - `volatile` 状态镜像
-  - 轻量 cached getter
-  - 后台周期同步
-  再决定是否需要 mutex 保护的完整查询接口。
-- 例外边界：以下场景允许不走纯快照，但必须明确标注原因、时序和风险：
-  - 调试探针
-  - 一次性配置页面提交
-  - 启动阶段尚未完成 owner 初始化
-  - 必须读取强一致结果的低频管理接口
-- 若发现 `UI` 卡顿、图标刷新抖动、锁竞争、getter 隐式启停外设或“读取状态导致行为变化”，默认优先按本原则重构，而不是先继续堆 `delay`、`flag` 或日志绕过。
+- `UI/LVGL` 高频路径默认只读快照，不在 `poll/timer/getter` 中顺手推进状态，也不做重 `IO`、网络启停、阻塞等待或重锁路径。
+- 真实状态推进、重试、超时、错误恢复和硬件交互应由后台任务或 owner 模块负责；`getter` 默认无副作用。
+- 若出现 `UI` 卡顿、刷新抖动、锁竞争或“读取状态导致行为变化”，优先按本原则重构，而不是继续堆 `delay`、`flag` 或日志绕过。
 
 ## 代码注释规范（默认生效）
 
@@ -133,12 +143,12 @@
 - 结构体成员、枚举值、协议字段、状态位等行尾文档可使用 `/**< ... */`。
 - 禁止无信息量注释，如“设置标志位”“调用初始化函数”“计数器加一”“进入循环”。
 - 禁止无说明保留被注释掉的旧代码、临时 workaround 或特殊初始化顺序。
-- 默认只处理注释；若注释仍无法解决可读性问题，必须先获得用户明确允许，才可做最小重构。
+- 当任务目标是补注释或仅提升代码可读性时，默认只处理注释；若注释仍无法解决可读性问题，必须先获得用户明确允许，才可做最小重构。
 
 兼容边界：
 
 - 该规范不覆盖更高优先级的 system / developer 指令。
-- 该规范不会替代现有上下文库流程或计划模式规则。
+- 该规范不会替代现有上下文库流程。
 - 该规范主要约束后续新增或修改代码，不要求一次性重构全部历史代码。
 
 ## 当前项目专项规则触发条件（限定作用域）
@@ -146,85 +156,13 @@
 仅当满足任一条件时，启用“当前项目专项规则”：
 
 - 用户明确要求参考或对齐当前仓库的显示/UI、触摸、音频播放、配网、时间天气或手表路线协作规范。
-- 任务明确涉及 `LVGL`、`CO5300`、`FT5x06`、`TE` 同步、`main/ui`、`components/lvgl_port`、`components/co5300_panel`、`components/touch_ft5x06`、`components/audio_codec`、`components/mp3_player`、`components/wifi_provision`、`main/hardware_init.c` 这些关键词或路径。
+- 任务明确涉及 `LVGL`、`CO5300`、`FT5x06`、`TE` 同步、`main/ui`、`components/lvgl_port`、`components/co5300_panel`、`components/touch_ft5x06`、`components/audio_codec`、`components/mp3_player`、`main/features/audio/audio_app.c`、`components/network_provisioning_adapter`、`components/ap_portal_adapter`、`components/wifi_control`、`components/network_manager`、`main/app/hardware_init.c` 这些关键词或路径。
 - 用户明确要求执行手表/屏幕路线，并提到表盘、多页面导航、触摸交互、传感器页面、BLE/WiFi 同步、时间天气、低功耗或电池续航。
 
 未命中以上条件时，不启用当前项目专项规则，避免放大约束。
 
 ## 当前项目专项规则（仅在触发时生效）
 
-### 角色与执行原则
-
-- 扮演 `ESP32-S3` UI/音频项目工程导师，强调工程可落地与可验证。
-- 回答与改动先稳定再优化，先可观测再调优。
-- 先讲目标和前提，再给步骤，再给代码，再给验证与排查。
-- 先输出证据（日志、编译结果、关键指标），再下结论。
-
-### 开工检查
-
-- 先确认开发环境：主机系统、`IDF_PATH`、目标板型、串口与烧录方式。
-- 先确认仓库上下文：当前分支、未提交改动、涉及模块、现网/硬件限制。
-- 先确认任务目标：功能目标、验收标准、风险边界、是否允许改接口。
-
-### 显示/触摸任务默认实践
-
-- 优先关注模块：`main/ui`、`components/lvgl_port`、`components/co5300_panel`、`components/touch_ft5x06`。
-- 显示问题优先做最小纯色填充或单控件复现，并保留分辨率、色彩格式、刷新周期和 `flush` 相关日志。
-- 触摸问题优先检查 I2C、坐标映射、旋转方向、中断/轮询频率，再谈动画或页面逻辑。
-- 涉及 `TE` 同步、刷新撕裂或时序问题时，先保留中断频率、等待点和耗时证据。
-- 未验证前不扩大 UI 资源体积或一次性重排生成代码。
-
-### 音频/存储任务默认实践
-
-- 优先关注模块：`components/audio_codec`、`components/mp3_player`、`main/audio_app.c`、`components/sd_card`。
-- 音频问题优先检查初始化顺序、I2S/codec 采样率、音量控制、SPIFFS/SD 路径和缓冲状态。
-- 任何优化前先补可观测性：关键日志、计时点、播放状态和失败返回码。
-- 未验证前不随意修改公共采样率、存储分区或播放器接口。
-
-### 配网/联网任务默认实践
-
-- 优先关注模块：`components/wifi_provision`、`components/wifi_provision/src/wifi_driver/wifi_manager.c`、`main/hardware_init.c`。
-- 配网问题优先检查按钮触发路径、NVS、AP 页面、连接状态回调和超时行为。
-- 网络/TLS 问题优先做最小复现并保留错误码与断连时序证据。
-- 未验证前不扩大阻塞等待范围或把临时凭据写死进仓库。
-
-### 手表/屏幕路线（触发手表关键词时）
-
-阶段 1：环境与底座
-
-- 完成 ESP-IDF 工具链可用性验证与最小工程运行。
-- 打通显示刷新与触摸输入，建立日志与性能观测基线。
-
-阶段 2：核心功能
-
-- 建立表盘与多页面导航。
-- 接入音频播放、时间天气或至少一类传感器/状态页面。
-- 接入 WiFi/BLE 最小同步链路与低功耗策略。
-
-阶段 3：项目化发布
-
-- 增加本地存储、异常处理、OTA 与回滚策略。
-- 输出发布前检查清单与演示脚本。
-
-### 进化与复盘（每次任务收尾）
-
-每次任务结束给出 2-5 行复盘，包含：
-
-1. 本轮假设
-2. 结果观测
-3. 偏差识别
-4. 下一轮动作（1-3 条，按优先级）
-5. 经验固化（已验证规则与未验证风险）
-
-约束：
-
-- 不凭空假设硬件寄存器行为，结论基于日志或文档证据。
-- 连续两轮失败时，强制回退最小复现工程再迭代。
-- 不把一次成功当通用结论，必须标注适用条件和失效边界。
-
-### 提交与注释规范（仅专项规则触发时）
-
-- `git` 提交信息使用中文。
-- 新增/修改代码注释优先使用中文。
-- 接口名、协议字段名、库名等不可翻译标识符保留英文。
+- 显示/触摸、音频/存储、配网/联网、手表/屏幕路线的详细默认实践，统一以 `docs/context/knowledge/project/agent-operational-rules.md` 为准。
+- 先稳定再优化，先可观测再调优；先输出证据（日志、编译结果、关键指标）再下结论。`git` 提交信息和新增/修改代码注释优先使用中文，接口名、协议字段名、库名等不可翻译标识符保留英文。
   </INSTRUCTIONS>

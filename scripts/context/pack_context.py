@@ -8,15 +8,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _stdio import configure_utf8_stdio
 from query import (
     SCOPE_ALL,
+    SCOPE_ARCHIVE,
     SCOPE_DECISIONS,
+    SCOPE_HANDOFFS,
     SCOPE_KNOWLEDGE,
     SCOPE_MIXED,
+    SCOPE_PLANS,
+    SCOPE_PROCEDURES,
+    SCOPE_RUNS,
     load_index,
     resolve_project_root,
     search_documents,
 )
+
+configure_utf8_stdio()
+
+MODE_BRIEF = "brief"
+MODE_STANDARD = "standard"
 
 
 def build_context_pack(
@@ -26,6 +37,7 @@ def build_context_pack(
     scope: str,
     include_meta: bool,
     tags: list[str],
+    mode: str,
 ) -> str:
     lines: list[str] = []
     lines.append("# 上下文包")
@@ -33,9 +45,12 @@ def build_context_pack(
     lines.append(f"- 生成时间(UTC): {datetime.now(timezone.utc).isoformat()}")
     lines.append(f"- 查询: {query_text}")
     lines.append(f"- 范围: {scope}")
+    lines.append(f"- 模式: {mode}")
     lines.append(f"- 包含导航文档: {include_meta}")
     if tags:
         lines.append(f"- 标签过滤: {', '.join(tags)}")
+    if mode == MODE_BRIEF:
+        lines.append("- 低 token 规则: 先读本包；只有命中项确实需要证据时再打开原文。")
     lines.append("")
     lines.append("## 命中文档")
     lines.append("")
@@ -48,23 +63,45 @@ def build_context_pack(
         tag_text = ", ".join(item["tags"]) if item["tags"] else "-"
         lines.append(f"{idx}. `{item['path']}` (score={item['score']})")
         lines.append(f"   - 标题: {item['title']}")
-        lines.append(f"   - 标签: {tag_text}")
         lines.append(f"   - 摘要: {item['summary']}")
+        if mode == MODE_STANDARD:
+            lines.append(f"   - 标签: {tag_text}")
     lines.append("")
-    lines.append("## 可直接粘贴给 Codex 的上下文")
+    if mode == MODE_BRIEF:
+        lines.append("## Brief Context")
+    else:
+        lines.append("## 可直接粘贴给 Codex 的上下文")
     lines.append("")
 
     used_chars = 0
     included = 0
 
     for item in results:
-        block = [
-            f"### 来源: {item['path']}",
-            f"- 相关分数: {item['score']}",
-            f"- 关键片段(L{item['line']}): {item['snippet']}",
-            f"- 摘要: {item['summary']}",
-            "",
-        ]
+        if mode == MODE_BRIEF:
+            owners = str(item.get("owners", "")).strip() or "-"
+            memory_type = str(item.get("memory_type", "")).strip() or "-"
+            evidence_level = str(item.get("evidence_level", "")).strip() or "-"
+            status = str(item.get("status", "")).strip() or "active"
+            block = [
+                f"- `{item['path']}` score={item['score']} type={memory_type} evidence={evidence_level} status={status}",
+                f"  title: {item['title']}",
+                f"  summary: {item['summary']}",
+                f"  owners: {owners}",
+                f"  snippet L{item['line']}: {item['snippet']}",
+                "",
+            ]
+        else:
+            block = [
+                f"### 来源: {item['path']}",
+                f"- 相关分数: {item['score']}",
+                f"- 关键片段(L{item['line']}): {item['snippet']}",
+                f"- 摘要: {item['summary']}",
+                f"- Owners: {str(item.get('owners', '')).strip() or '-'}",
+                f"- Triggers: {str(item.get('triggers', '')).strip() or '-'}",
+                f"- Status: {str(item.get('status', '')).strip() or 'active'}",
+                f"- Superseded By: {str(item.get('superseded_by', '')).strip() or '-'}",
+                "",
+            ]
         text = "\n".join(block)
         if used_chars + len(text) > max_chars:
             if included == 0:
@@ -98,9 +135,19 @@ def main() -> int:
     )
     parser.add_argument(
         "--scope",
-        choices=[SCOPE_MIXED, SCOPE_KNOWLEDGE, SCOPE_DECISIONS, SCOPE_ALL],
+        choices=[
+            SCOPE_MIXED,
+            SCOPE_KNOWLEDGE,
+            SCOPE_DECISIONS,
+            SCOPE_PROCEDURES,
+            SCOPE_RUNS,
+            SCOPE_PLANS,
+            SCOPE_HANDOFFS,
+            SCOPE_ARCHIVE,
+            SCOPE_ALL,
+        ],
         default=SCOPE_MIXED,
-        help="检索范围。默认 mixed（knowledge + decisions）。",
+        help="检索范围。默认 mixed（knowledge + decisions + procedures + runs）。",
     )
     parser.add_argument(
         "--include-meta",
@@ -116,8 +163,14 @@ def main() -> int:
     parser.add_argument(
         "--max-chars",
         type=int,
-        default=4000,
+        default=1800,
         help="打包片段总字符预算。",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=[MODE_BRIEF, MODE_STANDARD],
+        default=MODE_BRIEF,
+        help="打包模式。brief 默认低 token；standard 保留更多字段。",
     )
     parser.add_argument(
         "--output",
@@ -157,6 +210,7 @@ def main() -> int:
         scope=args.scope,
         include_meta=args.include_meta,
         tags=args.tag,
+        mode=args.mode,
     )
 
     output_path = (project_root / args.output).resolve()
@@ -167,6 +221,7 @@ def main() -> int:
     print(
         f"候选文档: {stats['candidates']}，命中: {stats['matched']}，打包: {len(results)}"
     )
+    print(f"模式: {args.mode}，字符预算: {max(500, args.max_chars)}")
     print(f"输出文件: {output_path}")
 
     if args.print:

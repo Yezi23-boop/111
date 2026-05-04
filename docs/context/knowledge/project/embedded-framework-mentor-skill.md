@@ -3,6 +3,11 @@ id: embedded-framework-mentor-skill
 tags: [project, skill, architecture, embedded, esp-idf, mentoring]
 summary: 仓库新增 `embedded-framework-mentor` 技能，用于在当前 ESP-IDF 项目中以“项目真实边界 + 外部权威原则”的双基线指导新功能设计、重构、评审和架构归属判断。
 last_reviewed: 2026-04-23
+memory_type: procedural
+scope: repo
+owners: docs/context/knowledge/project/embedded-framework-mentor-skill.md, docs/context/knowledge/project/agent-operational-rules.md
+triggers: embedded, framework, mentor, skill
+evidence_level: design
 ---
 
 # embedded-framework-mentor 技能

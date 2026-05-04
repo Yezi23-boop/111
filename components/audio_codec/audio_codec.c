@@ -19,6 +19,7 @@
 #include "esp_log.h"
 #include "es7210_adc.h"
 #include "es8311_codec.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "i2c_manager.h"
 
@@ -44,8 +45,100 @@ static int s_output_channels = AUDIO_PLATFORM_HW_OUTPUT_CHANNELS;              /
 static int s_bits_per_sample = AUDIO_PLATFORM_HW_BITS_PER_SAMPLE;              // 采样位宽，单位为 bit。
 static const uint8_t s_tx_silence_preload[2048] = {0};                         // TX flush 使用的静音预装缓冲。
 
+static SemaphoreHandle_t s_resource_mutex = NULL;                       // 保护 codec 生命周期引用和会话 owner。
+static uint32_t s_lifecycle_ref_count = 0;                               // 持有 audio_codec_init() 的模块数量。
+static audio_codec_owner_t s_input_session_owner = AUDIO_CODEC_OWNER_SYSTEM;  // 当前独占录音链路的 owner。
+static audio_codec_owner_t s_output_session_owner = AUDIO_CODEC_OWNER_SYSTEM; // 当前独占播放链路的 owner。
+static bool s_input_session_active = false;                              // true 表示 I2S RX/ES7210 已被某个运行时占用。
+static bool s_output_session_active = false;                             // true 表示 I2S TX/ES8311 已被某个播放者占用。
+
 #define ES8311_CODEC_ADDR 0x30
 #define ES7210_ADC_ADDR 0x80
+
+static esp_err_t audio_codec_deinit_hardware_locked(void);
+
+/**
+ * @brief 返回音频 owner 的日志名称。
+ *
+ * @param[in] owner 音频资源申请者。
+ * @return 静态字符串，便于在会话冲突时定位占用者。
+ */
+static const char *audio_codec_owner_name(audio_codec_owner_t owner)
+{
+    switch (owner)
+    {
+    case AUDIO_CODEC_OWNER_SYSTEM:
+        return "system";
+    case AUDIO_CODEC_OWNER_TRAFFIC_INFERENCE:
+        return "traffic_inference";
+    case AUDIO_CODEC_OWNER_ESPDL_INFERENCE:
+        return "espdl_inference";
+    case AUDIO_CODEC_OWNER_AUDIO_PLAYER:
+        return "audio_player";
+    case AUDIO_CODEC_OWNER_OFFICIAL_CHAT:
+        return "official_chat";
+    default:
+        return "unknown";
+    }
+}
+
+/**
+ * @brief 确保音频资源 mutex 已创建。
+ *
+ * 该 mutex 是 audio_codec 的 owner 边界：生命周期引用计数、录音会话和播放会话
+ * 都必须在同一把锁下修改，避免 UI/运行时任务交错 start/stop 时拆掉硬件资源。
+ *
+ * @return `ESP_OK` 表示 mutex 可用；`ESP_ERR_NO_MEM` 表示创建失败。
+ */
+static esp_err_t audio_codec_ensure_resource_mutex(void)
+{
+    if (s_resource_mutex != NULL)
+    {
+        return ESP_OK;
+    }
+
+    s_resource_mutex = xSemaphoreCreateMutex();
+    if (s_resource_mutex == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create audio codec resource mutex");
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief 按超时时间获取音频资源 mutex。
+ *
+ * @param[in] timeout_ms 等待时间，单位毫秒；`UINT32_MAX` 表示永久等待。
+ * @return `ESP_OK` 表示已持锁。
+ */
+static esp_err_t audio_codec_lock_resources(uint32_t timeout_ms)
+{
+    esp_err_t ret = audio_codec_ensure_resource_mutex();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    const TickType_t ticks =
+        timeout_ms == UINT32_MAX ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    if (xSemaphoreTake(s_resource_mutex, ticks) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief 释放音频资源 mutex。
+ */
+static void audio_codec_unlock_resources(void)
+{
+    if (s_resource_mutex != NULL)
+    {
+        (void)xSemaphoreGive(s_resource_mutex);
+    }
+}
 
 static int audio_codec_get_tx_slot_channels(void)
 {
@@ -413,10 +506,15 @@ static esp_err_t audio_es7210_init(void)
 }
 
 /**
- * @brief 初始化音频 codec 子系统。
+ * @brief 执行真正的 codec 硬件初始化。
+ *
+ * 该函数只允许在持有 `s_resource_mutex` 且生命周期引用计数为 0 时调用。
+ * 对外的 `audio_codec_init()` 负责幂等 retain，避免多个上层模块重复创建 I2S
+ * 与 codec 对象。
+ *
  * @return `ESP_OK` 表示成功；其他错误表示总线、控制接口或 codec 打开失败。
  */
-esp_err_t audio_codec_init(void)
+static esp_err_t audio_codec_init_hardware_locked(void)
 {
     esp_err_t ret;
     audio_codec_i2s_cfg_t i2s_cfg = {0};
@@ -480,15 +578,19 @@ esp_err_t audio_codec_init(void)
     return ESP_OK;
 
 init_failed:
-    audio_codec_deinit();
+    audio_codec_deinit_hardware_locked();
     return ret;
 }
 
 /**
- * @brief 反初始化音频 codec 子系统。
+ * @brief 反初始化真实 codec 硬件资源。
+ *
+ * 该函数只允许在持有 `s_resource_mutex` 且引用计数已经降到 0 时调用。
+ * 它不会处理引用计数和会话 owner，只负责按安全顺序释放底层硬件对象。
+ *
  * @return `ESP_OK` 表示成功。
  */
-esp_err_t audio_codec_deinit(void)
+static esp_err_t audio_codec_deinit_hardware_locked(void)
 {
     // 释放顺序遵循“先 device，再接口对象，再总线”，避免悬挂引用。
     if (s_playback_dev != NULL)
@@ -545,6 +647,301 @@ esp_err_t audio_codec_deinit(void)
 
     ESP_LOGI(TAG, "Audio codec deinitialized");
     return ESP_OK;
+}
+
+/**
+ * @brief 初始化音频 codec 子系统并持有一次生命周期引用。
+ *
+ * 该接口是幂等 retain：第一次调用真正打开 ES8311/ES7210/I2S，后续调用只增加
+ * 引用计数。这样危险识别、语音、播放等模块可以独立 start/stop，不会互相拆掉
+ * 全局音频硬件。
+ *
+ * @return `ESP_OK` 表示成功；其他错误表示 mutex、总线、控制接口或 codec 打开失败。
+ */
+esp_err_t audio_codec_init(void)
+{
+    esp_err_t ret = audio_codec_lock_resources(UINT32_MAX);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    if (s_lifecycle_ref_count > 0)
+    {
+        s_lifecycle_ref_count++;
+        ESP_LOGD(TAG, "Audio codec retain: refs=%lu",
+                 (unsigned long)s_lifecycle_ref_count);
+        audio_codec_unlock_resources();
+        return ESP_OK;
+    }
+
+    ret = audio_codec_init_hardware_locked();
+    if (ret == ESP_OK)
+    {
+        s_lifecycle_ref_count = 1;
+        ESP_LOGI(TAG, "Audio codec retain: refs=%lu",
+                 (unsigned long)s_lifecycle_ref_count);
+    }
+    audio_codec_unlock_resources();
+    return ret;
+}
+
+/**
+ * @brief 释放一次音频 codec 生命周期引用。
+ *
+ * 引用计数归零后才真正释放硬件；如果仍有录音或播放会话占用，返回
+ * `ESP_ERR_INVALID_STATE`，避免在活跃 I2S 传输中关闭 codec。
+ *
+ * @return `ESP_OK` 表示释放成功；其他错误表示引用计数异常或仍有会话占用。
+ */
+esp_err_t audio_codec_deinit(void)
+{
+    esp_err_t ret = audio_codec_lock_resources(UINT32_MAX);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    if (s_lifecycle_ref_count == 0)
+    {
+        audio_codec_unlock_resources();
+        return ESP_OK;
+    }
+
+    s_lifecycle_ref_count--;
+    ESP_LOGD(TAG, "Audio codec release: refs=%lu",
+             (unsigned long)s_lifecycle_ref_count);
+    if (s_lifecycle_ref_count > 0)
+    {
+        audio_codec_unlock_resources();
+        return ESP_OK;
+    }
+
+    if (s_input_session_active || s_output_session_active)
+    {
+        s_lifecycle_ref_count = 1;
+        ESP_LOGW(TAG,
+                 "Refuse to deinit audio codec while sessions are active: "
+                 "input=%s(%d), output=%s(%d)",
+                 audio_codec_owner_name(s_input_session_owner),
+                 s_input_session_active ? 1 : 0,
+                 audio_codec_owner_name(s_output_session_owner),
+                 s_output_session_active ? 1 : 0);
+        audio_codec_unlock_resources();
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ret = audio_codec_deinit_hardware_locked();
+    audio_codec_unlock_resources();
+    return ret;
+}
+
+/**
+ * @brief 通用申请音频独占会话。
+ *
+ * @param[in,out] active 会话激活标志。
+ * @param[in,out] current_owner 当前 owner 存储。
+ * @param[in] owner 申请者。
+ * @param[in] timeout_ms 等待互斥锁的超时，单位毫秒。
+ * @param[in] session_name 日志中的会话名称。
+ * @return `ESP_OK` 表示获得会话。
+ */
+static esp_err_t audio_codec_acquire_session(bool *active,
+                                             audio_codec_owner_t *current_owner,
+                                             audio_codec_owner_t owner,
+                                             uint32_t timeout_ms,
+                                             const char *session_name)
+{
+    bool busy_logged = false; // 避免等待期间反复刷屏，只记录第一次 owner 冲突。
+    const TickType_t start_ticks = xTaskGetTickCount();
+    TickType_t timeout_ticks =
+        timeout_ms == UINT32_MAX ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+
+    if (active == NULL || current_owner == NULL || session_name == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (timeout_ms > 0U && timeout_ms != UINT32_MAX && timeout_ticks == 0)
+    {
+        timeout_ticks = 1;
+    }
+
+    while (true)
+    {
+        uint32_t lock_timeout_ms = 0U; // 本轮等待 mutex 的时间，仍受总 timeout 约束。
+        if (timeout_ms == UINT32_MAX)
+        {
+            lock_timeout_ms = UINT32_MAX;
+        }
+        else if (timeout_ms > 0U)
+        {
+            const TickType_t elapsed = xTaskGetTickCount() - start_ticks;
+            const TickType_t remaining_ticks =
+                elapsed < timeout_ticks ? timeout_ticks - elapsed : 0;
+            lock_timeout_ms =
+                ((uint32_t)remaining_ticks * 1000U) / configTICK_RATE_HZ + 1U;
+        }
+
+        esp_err_t ret = audio_codec_lock_resources(lock_timeout_ms);
+        if (ret != ESP_OK)
+        {
+            return ret;
+        }
+
+        if (s_lifecycle_ref_count == 0 || s_record_dev == NULL ||
+            s_playback_dev == NULL)
+        {
+            audio_codec_unlock_resources();
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        if (!*active)
+        {
+            *active = true;
+            *current_owner = owner;
+            ESP_LOGI(TAG, "%s session acquired by %s",
+                     session_name, audio_codec_owner_name(owner));
+            audio_codec_unlock_resources();
+            return ESP_OK;
+        }
+
+        if (!busy_logged)
+        {
+            busy_logged = true;
+            ESP_LOGW(TAG, "%s session busy: owner=%s, requester=%s",
+                     session_name, audio_codec_owner_name(*current_owner),
+                     audio_codec_owner_name(owner));
+        }
+        audio_codec_unlock_resources();
+
+        if (timeout_ms == 0U)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
+
+        TickType_t delay_ticks = pdMS_TO_TICKS(10U);
+        if (delay_ticks == 0)
+        {
+            delay_ticks = 1;
+        }
+        if (timeout_ms != UINT32_MAX)
+        {
+            const TickType_t elapsed = xTaskGetTickCount() - start_ticks;
+            if (elapsed >= timeout_ticks)
+            {
+                return ESP_ERR_TIMEOUT;
+            }
+            const TickType_t remaining_ticks = timeout_ticks - elapsed;
+            if (delay_ticks > remaining_ticks)
+            {
+                delay_ticks = remaining_ticks;
+            }
+        }
+        vTaskDelay(delay_ticks);
+    }
+}
+
+/**
+ * @brief 通用释放音频独占会话。
+ *
+ * @param[in,out] active 会话激活标志。
+ * @param[in,out] current_owner 当前 owner 存储。
+ * @param[in] owner 释放者。
+ * @param[in] session_name 日志中的会话名称。
+ * @return `ESP_OK` 表示释放成功。
+ */
+static esp_err_t audio_codec_release_session(bool *active,
+                                             audio_codec_owner_t *current_owner,
+                                             audio_codec_owner_t owner,
+                                             const char *session_name)
+{
+    if (active == NULL || current_owner == NULL || session_name == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret = audio_codec_lock_resources(UINT32_MAX);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    if (!*active)
+    {
+        audio_codec_unlock_resources();
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (*current_owner != owner)
+    {
+        ESP_LOGW(TAG, "%s session release owner mismatch: owner=%s, requester=%s",
+                 session_name, audio_codec_owner_name(*current_owner),
+                 audio_codec_owner_name(owner));
+        audio_codec_unlock_resources();
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    *active = false;
+    *current_owner = AUDIO_CODEC_OWNER_SYSTEM;
+    ESP_LOGI(TAG, "%s session released by %s",
+             session_name, audio_codec_owner_name(owner));
+    audio_codec_unlock_resources();
+    return ESP_OK;
+}
+
+/**
+ * @brief 申请独占录音输入会话。
+ *
+ * @param[in] owner 申请者标识。
+ * @param[in] timeout_ms 等待已有 owner 释放的超时，单位毫秒；0 表示不等待。
+ * @return `ESP_OK` 表示获得会话。
+ */
+esp_err_t audio_codec_acquire_input(audio_codec_owner_t owner,
+                                    uint32_t timeout_ms)
+{
+    return audio_codec_acquire_session(&s_input_session_active,
+                                       &s_input_session_owner,
+                                       owner, timeout_ms, "input");
+}
+
+/**
+ * @brief 释放独占录音输入会话。
+ *
+ * @param[in] owner 释放者标识。
+ * @return `ESP_OK` 表示释放成功。
+ */
+esp_err_t audio_codec_release_input(audio_codec_owner_t owner)
+{
+    return audio_codec_release_session(&s_input_session_active,
+                                       &s_input_session_owner,
+                                       owner, "input");
+}
+
+/**
+ * @brief 申请独占播放输出会话。
+ *
+ * @param[in] owner 申请者标识。
+ * @param[in] timeout_ms 等待已有 owner 释放的超时，单位毫秒；0 表示不等待。
+ * @return `ESP_OK` 表示获得会话。
+ */
+esp_err_t audio_codec_acquire_output(audio_codec_owner_t owner,
+                                     uint32_t timeout_ms)
+{
+    return audio_codec_acquire_session(&s_output_session_active,
+                                       &s_output_session_owner,
+                                       owner, timeout_ms, "output");
+}
+
+/**
+ * @brief 释放独占播放输出会话。
+ *
+ * @param[in] owner 释放者标识。
+ * @return `ESP_OK` 表示释放成功。
+ */
+esp_err_t audio_codec_release_output(audio_codec_owner_t owner)
+{
+    return audio_codec_release_session(&s_output_session_active,
+                                       &s_output_session_owner,
+                                       owner, "output");
 }
 
 /**

@@ -3,6 +3,11 @@ id: ble-provisioning-ui-toggle-behavior
 tags: [project, ble, provisioning, ui, network-service, nvs, history]
 summary: 记录 BLE 总开关与 BLE 配网入口的分离语义，明确主界面蓝牙按钮只启动普通可发现广播，不自动启动小程序配网。
 last_reviewed: 2026-04-25
+memory_type: semantic
+scope: repo
+owners: main/ui/custom/wifi_management_controller.c, components/network_manager, components/ble_control
+triggers: ble, provisioning, ui, toggle, behavior
+evidence_level: observed
 ---
 
 # BLE 配网 UI 总开关行为

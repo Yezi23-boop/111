@@ -3,6 +3,11 @@ id: official-chat-migration-prerequisites
 tags: project, official-chat, sdkconfig, esp32s3, audio, speech
 summary: 将 idf-xiaozhi 的 official_chat 迁移到当前仓库前，需要先补齐的关键 sdkconfig 开关、内存策略和组件依赖。
 last_reviewed: 2026-03-31
+memory_type: procedural
+scope: repo
+owners: main/services/official_chat_service.c, components/official_chat
+triggers: official, chat, migration, prerequisites
+evidence_level: design
 ---
 
 # official_chat 迁移前置条件

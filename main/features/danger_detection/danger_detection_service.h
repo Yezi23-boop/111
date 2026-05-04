@@ -11,7 +11,7 @@
  * - 封装交通声音运行时与后处理告警回调；
  * - 对 UI 暴露统一状态快照，而不是底层推理链路细节；
  * - 负责把 horn / siren 等稳定标签转换成应用级告警动作；
- * - 支持两种推理后端：Edge Impulse (traffic_inference) 和 ESP-DL (espdl_inference)。
+ * - 支持两种推理后端：Edge Impulse (traffic_inference) 和 ESP-DL 单模型 (espdl_inference)。
  */
 
 #ifdef __cplusplus
@@ -42,7 +42,7 @@ extern "C"
     typedef enum
     {
         DANGER_DETECTION_BACKEND_EDGE_IMPULSE = 0, /**< Edge Impulse TFLite 3 分类。 */
-        DANGER_DETECTION_BACKEND_ESPDL_DUAL = 1,   /**< ESP-DL 双模型并行推理。 */
+        DANGER_DETECTION_BACKEND_ESPDL = 1,        /**< ESP-DL 单模型危险二分类。 */
     } danger_detection_backend_t;
 
     typedef struct
@@ -67,7 +67,7 @@ extern "C"
     esp_err_t danger_detection_service_init(void);
 
     /**
-     * @brief 启动危险检测运行时（默认使用 Edge Impulse 后端）。
+     * @brief 启动危险检测运行时（默认使用 ESP-DL 单模型后端）。
      * @return `ESP_OK` 表示已成功启动或之前已在运行；其他错误表示启动失败。
      */
     esp_err_t danger_detection_service_start(void);

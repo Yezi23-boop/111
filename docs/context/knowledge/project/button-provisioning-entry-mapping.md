@@ -3,6 +3,11 @@ id: button-provisioning-entry-mapping
 tags: [project, ble, provisioning, ap, button, esp32-s3]
 summary: 记录当前仓库 BOOT 按键已不再承担 BLE/AP 配网入口，BLE 总开关与 Wi-Fi 管理页配网入口已分离。
 last_reviewed: 2026-04-25
+memory_type: semantic
+scope: repo
+owners: main/app/hardware_init.c, components/network_manager, components/ble_control
+triggers: button, provisioning, entry, mapping
+evidence_level: observed
 ---
 
 # 配网按键入口映射

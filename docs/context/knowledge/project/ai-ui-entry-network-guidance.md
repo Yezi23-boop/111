@@ -3,6 +3,11 @@ id: ai-ui-entry-network-guidance
 tags: [project, ui, official-chat, lvgl, gui-guider, network-service]
 summary: 记录当前仓库在替换 GUI Guider 新导出层并升级到 LVGL 9.3 后，如何保持主菜单 AI 图标继续跳转到 hand-written AI 页面，以及当前 AI 页面布局与联网引导方案。
 last_reviewed: 2026-04-17
+memory_type: semantic
+scope: repo
+owners: main/ui/custom/ai_ui_controller.c, main/ui/custom/ai_chat_view.c, main/services/network_service.c
+triggers: ai, ui, entry, network, guidance
+evidence_level: observed
 ---
 
 # AI 页面入口与未联网引导

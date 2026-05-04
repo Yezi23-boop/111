@@ -3,6 +3,11 @@ id: display-render-touch-transfer-pipeline
 tags: project, lvgl, display, touch, co5300, ft5x06, qspi, dma, rendering
 summary: 记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。
 last_reviewed: 2026-04-08
+memory_type: semantic
+scope: repo
+owners: components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/ui/lvgl_task.c
+triggers: display, render, touch, transfer, pipeline
+evidence_level: observed
 ---
 
 # 显示渲染、传输与触摸输入链路

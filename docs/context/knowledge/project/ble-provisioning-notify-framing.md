@@ -3,6 +3,11 @@ id: ble-provisioning-notify-framing
 tags: [project, ble, provisioning, notify, framing, wechat, miniapp]
 summary: 记录当前仓库 BLE 配网 notify 回包需要显式补换行分隔，否则微信小程序在连续 notify 场景下可能把多条 JSON 粘连后解析失败。
 last_reviewed: 2026-04-08
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control
+triggers: ble, provisioning, notify, framing
+evidence_level: observed
 ---
 
 # BLE 配网 notify 分帧

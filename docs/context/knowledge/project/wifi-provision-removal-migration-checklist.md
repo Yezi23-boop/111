@@ -3,6 +3,11 @@ id: wifi-provision-removal-migration-checklist
 tags: [project, migration, wifi, provisioning, ble, softap, architecture]
 summary: 梳理删除旧 components/wifi_provision 前必须完成的接口迁移、真实依赖点、阶段顺序、风险与验证方法。
 last_reviewed: 2026-04-21
+memory_type: procedural
+scope: repo
+owners: components/network_manager, components/network_provisioning_adapter, components/ap_portal_adapter, components/wifi_control
+triggers: wifi, provision, removal, migration, checklist
+evidence_level: design
 ---
 
 # `wifi_provision` 删除迁移清单

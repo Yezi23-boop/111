@@ -3,6 +3,11 @@ id: wechat-miniapp-ble-provisioning-handoff-config
 tags: [project, ble, provisioning, wechat, miniapp, handoff]
 summary: 记录微信小程序 BLE 配网接手时必须确认的工程位置、协议基线、当前入口形态、真机限制与常见误判，避免把固件镜像不同步误当成小程序问题。
 last_reviewed: 2026-04-17
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control, components/network_manager
+triggers: wechat, miniapp, ble, provisioning, handoff, config
+evidence_level: observed
 ---
 
 # 微信小程序 BLE 配网接手配置

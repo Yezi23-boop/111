@@ -3,6 +3,11 @@ id: watch-low-power-management-architecture
 tags: project, power, low-power, axp2101, rtc, lvgl, wifi
 summary: 当前手表项目低功耗管理的推荐状态机、模块分层、实施顺序与硬件边界。
 last_reviewed: 2026-04-13
+memory_type: semantic
+scope: repo
+owners: components/axp2101, main/app/board_power.c, main/services/power_service.c, main/ui/ui_refresh_policy.c
+triggers: watch, low, power, management, architecture
+evidence_level: design
 ---
 
 # 手表项目低功耗管理架构

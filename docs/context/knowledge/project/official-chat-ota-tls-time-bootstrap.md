@@ -3,6 +3,11 @@ id: official-chat-ota-tls-time-bootstrap
 tags: [project, official-chat, ota, tls, sntp, time]
 summary: official_chat 的 OTA/激活 HTTPS 请求会先于正式时间同步链路发生；若系统仍停留在冷启动时间，TLS 证书有效期校验会失败，因此需要在首次 OTA HTTPS 前先确认系统时间有效并输出 TLS 诊断日志。
 last_reviewed: 2026-04-23
+memory_type: semantic
+scope: repo
+owners: main/services/official_chat_service.c, main/services/network_service.c, components/official_chat
+triggers: official, chat, ota, tls, time, bootstrap, 时间, 授时, 迁移
+evidence_level: observed
 ---
 
 # official_chat OTA TLS 首次授时约束

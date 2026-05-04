@@ -3,6 +3,11 @@ id: ble-provisioning-nimble-uuid-byte-order
 tags: [project, ble, provisioning, nimble, uuid, esp32-s3]
 summary: 记录当前仓库自定义 BLE GATT UUID 在 NimBLE 下必须使用 little-endian 字节序，否则小程序会出现已连接但找不到目标服务。
 last_reviewed: 2026-04-08
+memory_type: semantic
+scope: repo
+owners: components/network_provisioning_adapter, components/ble_control
+triggers: ble, provisioning, nimble, uuid, byte, order
+evidence_level: observed
 ---
 
 # BLE 配网 NimBLE UUID 字节序

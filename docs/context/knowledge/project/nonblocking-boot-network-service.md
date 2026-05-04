@@ -3,6 +3,11 @@ id: nonblocking-boot-network-service
 tags: [project, boot, wifi, network-service, esp32s3, official-chat]
 summary: 记录当前仓库把正式主流程从阻塞联网切换到后台联网后的当前启动底座，以及重整后的 main 目录位置。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: main/services/network_service.c, components/network_manager, components/wifi_control
+triggers: nonblocking, boot, network, service
+evidence_level: observed
 ---
 
 # 非阻塞启动与后台联网服务

@@ -3,6 +3,11 @@ id: audio-horn-like-segment-extraction
 tags: project, audio, ffmpeg, horn, dataset, tooling
 summary: 使用 ffmpeg 解码并结合短时 RMS 与过零率启发式提取 1 秒喇叭样候选片段的脚本入口与默认输出。
 last_reviewed: 2026-04-01
+memory_type: semantic
+scope: repo
+owners: scripts/extract_horn_like_segments.py, tests/test_extract_horn_like_segments_script.py
+triggers: audio, horn, like, segment, extraction
+evidence_level: observed
 ---
 
 # 喇叭样片段提取脚本

@@ -51,14 +51,21 @@ static const char *danger_detection_status_text(
     return "IDLE";
 }
 
-static const char *danger_detection_label_text(
-    danger_detection_label_t label)
+/**
+ * @brief 将服务层危险标签转换成页面展示文本。
+ *
+ * @param[in] label 服务层发布的稳定标签或最近触发标签。
+ * @return 静态字符串；未知值按 NONE 处理，避免 UI 显示未初始化文本。
+ */
+static const char *danger_detection_label_text(danger_detection_label_t label)
 {
     switch (label) {
         case DANGER_DETECTION_LABEL_HORN:
             return "HORN";
         case DANGER_DETECTION_LABEL_SIREN:
             return "SIREN";
+        case DANGER_DETECTION_LABEL_DANGER:
+            return "DANGER";
         case DANGER_DETECTION_LABEL_NONE:
         default:
             return "NONE";
@@ -260,6 +267,13 @@ void danger_detection_controller_init(lv_ui *ui)
     (void)danger_detection_service_init();
 }
 
+/**
+ * @brief 打开危险识别页面并启动 ESP-DL 单模型后端。
+ *
+ * 页面入口属于 UI 语义层，只表达“用户要开始危险识别”；实际音频资源、模型
+ * 和告警状态由 danger_detection_service 统一编排。这里显式选择 ESP-DL 后端，
+ * 避免误走旧 Edge Impulse 调试链路。
+ */
 void danger_detection_ui_open(void)
 {
     danger_detection_ensure_screen_created();
@@ -274,7 +288,8 @@ void danger_detection_ui_open(void)
     if (s_alert_timer != NULL) {
         lv_timer_pause(s_alert_timer);
     }
-    (void)danger_detection_service_start();
+    (void)danger_detection_service_start_with_backend(
+        DANGER_DETECTION_BACKEND_ESPDL);
     danger_detection_refresh_status();
     lv_screen_load_anim(danger_detection_view_get_screen(s_view),
                         LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, false);

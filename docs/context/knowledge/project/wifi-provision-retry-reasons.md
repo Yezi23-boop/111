@@ -3,6 +3,11 @@ id: wifi-provision-retry-reasons
 tags: [project, wifi, provision, diagnostics, esp32-s3]
 summary: 记录当前仓库 Wi-Fi 自动连接失败后常见断连 reason 码的含义，以及哪些告警是正常探测噪声。
 last_reviewed: 2026-04-25
+memory_type: semantic
+scope: repo
+owners: components/network_manager, components/wifi_control, components/network_provisioning_adapter
+triggers: wifi, provision, retry, reasons
+evidence_level: observed
 ---
 
 # Wi-Fi 自动连接重试诊断

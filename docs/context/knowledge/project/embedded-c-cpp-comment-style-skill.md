@@ -3,6 +3,11 @@ id: embedded-c-cpp-comment-style-skill
 tags: project, skill, embedded, c-cpp, comments, doxygen
 summary: 仓库新增 embedded-c-cpp-comment-style 技能，用于约束 agent 为嵌入式 C/C++ 代码生成说明型注释，强调 Doxygen 函数头、原因说明和关键变量/常量解释。
 last_reviewed: 2026-04-15
+memory_type: procedural
+scope: repo
+owners: docs/context/knowledge/project/embedded-c-cpp-comment-style-skill.md, AGENTS.md
+triggers: embedded, c, cpp, comment, style, skill
+evidence_level: design
 ---
 # embedded-c-cpp-comment-style 技能
 

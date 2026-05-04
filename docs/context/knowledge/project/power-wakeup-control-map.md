@@ -3,6 +3,11 @@ id: power-wakeup-control-map
 tags: project, power, wakeup, axp2101, rtc, button, boot
 summary: 基于原理图与现有代码整理的电源、按键、RTC 和唤醒控制链路摘要。
 last_reviewed: 2026-04-21
+memory_type: semantic
+scope: repo
+owners: components/axp2101, main/app/board_power.c, main/services/power_service.c
+triggers: power, wakeup, control, map
+evidence_level: observed
 ---
 
 # 电源与唤醒控制图

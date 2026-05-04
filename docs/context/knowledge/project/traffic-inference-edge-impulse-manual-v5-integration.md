@@ -3,6 +3,11 @@ id: traffic-inference-edge-impulse-manual-v5-integration
 tags: [project, audio, traffic-inference, edge-impulse, esp32s3]
 summary: 记录当前仓库将 Edge Impulse `v2-cpp-mcu-v5.zip` 作为 `manual_v5` 接入 `components/traffic_inference` 的最小改动与兼容结论。
 last_reviewed: 2026-04-02
+memory_type: semantic
+scope: repo
+owners: components/traffic_inference, main/features/danger_detection/danger_detection_service.c
+triggers: traffic, inference, edge, impulse, manual, v5, integration
+evidence_level: observed
 ---
 
 # traffic_inference Edge Impulse manual_v5 接入

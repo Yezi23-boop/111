@@ -3,6 +3,11 @@ id: ble-provisioning-advertising-payload-limit
 tags: [project, ble, provisioning, nimble, esp32-s3]
 summary: 记录当前仓库 BLE 配网在 NimBLE 广播阶段遇到的 31 字节 payload 上限问题、实机证据和修复方式。
 last_reviewed: 2026-04-02
+memory_type: semantic
+scope: repo
+owners: components/ble_presence, components/network_provisioning_adapter, components/ble_control
+triggers: ble, provisioning, advertising, payload, limit
+evidence_level: observed
 ---
 
 # BLE 配网广播负载上限
