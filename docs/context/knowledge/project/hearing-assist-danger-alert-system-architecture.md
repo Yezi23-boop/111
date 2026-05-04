@@ -201,3 +201,5 @@ evidence_level: design
 - 任何新模型、新特征或新训练策略，都应回答它是否提升了“可靠提醒”而不是只提升离线测试准确率。
 - 任何 extended 事件实验，都不得默认覆盖 active 主线 danger 定义。
 - 任何 UI/交互改动，都应优先服务于听障用户的及时感知与低打扰体验。
+- 更细的状态流转、提醒分级、震动与屏幕策略，应以下游文档 `hearing-assist-danger-alert-state-machine-and-notification-policy.md` 为准。
+- 更细的参数级别、默认值建议和用户可配置边界，应以下游文档 `hearing-assist-danger-alert-parameter-defaults-table.md` 为准。

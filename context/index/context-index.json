@@ -1,14 +1,14 @@
 {
-  "generated_at_utc": "2026-05-04T06:10:01.866203+00:00",
+  "generated_at_utc": "2026-05-04T18:57:38.102975+00:00",
   "project_root": "D:\\esp32S3\\111",
   "docs_root": "docs/context",
-  "doc_count": 99,
+  "doc_count": 108,
   "documents": [
     {
       "path": "docs/context/CHANGELOG.md",
       "title": "上下文库变更记录",
       "tags": [],
-      "summary": "- 2026-05-04：新增 `knowledge/project/layering-boundary-map.md` 固化当前仓库的 App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK 分层边界；新增 `scripts/context/check_layering.py`",
+      "summary": "- 2026-05-05：将入口层旧重流程替换为 `validate_context.py` 分级流程：`INDEX.agent.md` 与 `project-profile.md` 不再要求普通任务先跑 `build_index.py/check.py`，改为默认 `--level light --brief`，仅在文档、路由或机制变更时升级到 `stan",
       "id": "",
       "last_reviewed": "",
       "memory_type": "",
@@ -18,8 +18,8 @@
       "evidence_level": "",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-04T06:08:53.478109+00:00",
-      "token_count": 5451
+      "mtime_utc": "2026-05-04T18:57:17.963444+00:00",
+      "token_count": 5621
     },
     {
       "path": "docs/context/decisions/ADR-20260311-default-embedded-codegen-rules.md",
@@ -163,7 +163,7 @@
       ],
       "summary": "面向 agent 首读的低 token 上下文入口，固定先查 runs 防重复，再 query/brief pack，最后只读必要原文。",
       "id": "context-agent-index",
-      "last_reviewed": "2026-05-04",
+      "last_reviewed": "2026-05-05",
       "memory_type": "procedural",
       "scope": "repo",
       "owners": "docs/context/INDEX.agent.md, docs/context/knowledge/project/project-profile.md, scripts/context/query.py, scripts/context/pack_context.py",
@@ -171,8 +171,8 @@
       "evidence_level": "design",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-04T06:08:53.477108+00:00",
-      "token_count": 581
+      "mtime_utc": "2026-05-04T18:57:17.962936+00:00",
+      "token_count": 570
     },
     {
       "path": "docs/context/knowledge/esp32-s3/amoled-206-board-hardware-map.md",
@@ -828,6 +828,31 @@
       "token_count": 187
     },
     {
+      "path": "docs/context/knowledge/project/context-memory-policy.md",
+      "title": "Agent Context Memory Policy",
+      "tags": [
+        "context",
+        "memory",
+        "policy",
+        "planning",
+        "trial-error",
+        "knowledge",
+        "framework"
+      ],
+      "summary": "定义当前上下文系统的长期记忆边界：优先保存用户规划、试错总结、项目知识、项目框架、稳定约束和偏好，避免保存无复用价值的小事。",
+      "id": "context-memory-policy",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "framework",
+      "scope": "repo",
+      "owners": "docs/context, scripts/context/log_attempt.py, scripts/context/garden.py",
+      "triggers": "memory-policy, context-memory, project-plan, trial-error, framework, constraints, stable-preferences, 记忆政策, 上下文, 试错, 规划, 项目知识",
+      "evidence_level": "design",
+      "status": "active",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T18:43:40.855145+00:00",
+      "token_count": 183
+    },
+    {
       "path": "docs/context/knowledge/project/danger-signal-detection-port.md",
       "title": "危险信号识别移植",
       "tags": [
@@ -939,9 +964,9 @@
         "embedded",
         "c-cpp"
       ],
-      "summary": "本仓库默认采用的 ESP32/MCU 嵌入式 C/C++ 工程规则，覆盖分层、接口、复杂度、资源、安全和算法/AI 模块边界。",
+      "summary": "本仓库默认采用的 ESP32/MCU 嵌入式 C/C++ 工程规则，覆盖 App/UI、Service、Manager/Domain、Driver Adapter、Vendor/SDK 分层、接口、复杂度、资源、安全和算法/AI 模块边界。",
       "id": "embedded-c-cpp-engineering-rules",
-      "last_reviewed": "2026-05-04",
+      "last_reviewed": "2026-05-05",
       "memory_type": "procedural",
       "scope": "repo",
       "owners": "AGENTS.md, docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md",
@@ -949,8 +974,8 @@
       "evidence_level": "design",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-03T20:36:48.793134+00:00",
-      "token_count": 304
+      "mtime_utc": "2026-05-04T17:27:45.216865+00:00",
+      "token_count": 376
     },
     {
       "path": "docs/context/knowledge/project/embedded-framework-mentor-skill.md",
@@ -1042,8 +1067,8 @@
       "evidence_level": "design",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-03T20:36:48.797131+00:00",
-      "token_count": 315
+      "mtime_utc": "2026-05-04T18:14:43.667155+00:00",
+      "token_count": 380
     },
     {
       "path": "docs/context/knowledge/project/hardware-capability-gap-map.md",
@@ -1071,6 +1096,81 @@
       "token_count": 145
     },
     {
+      "path": "docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md",
+      "title": "听障危险提醒设计参数到当前固件实现的映射",
+      "tags": [
+        "project",
+        "hearing-assist",
+        "danger-detection",
+        "firmware",
+        "mapping",
+        "esp-dl",
+        "alerts"
+      ],
+      "summary": "将听障危险提醒设计参数映射到当前固件实现，明确各参数的归属模块、当前代码行为、实现状态与和目标架构的差距。",
+      "id": "hearing-assist-danger-alert-firmware-mapping",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "semantic",
+      "scope": "repo",
+      "owners": "main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, components/espdl_inference, main/ui/custom/danger_detection_controller.c",
+      "triggers": "firmware-mapping, danger-detection, app_alert_manager, espdl_runtime, threshold, cooldown, module-mapping",
+      "evidence_level": "observed",
+      "status": "",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T18:16:19.870878+00:00",
+      "token_count": 951
+    },
+    {
+      "path": "docs/context/knowledge/project/hearing-assist-danger-alert-parameter-defaults-table.md",
+      "title": "听障危险提醒参数与默认值建议表",
+      "tags": [
+        "project",
+        "product",
+        "hearing-assist",
+        "danger-detection",
+        "parameters",
+        "defaults",
+        "notification"
+      ],
+      "summary": "面向听障用户的手表端危险提醒功能参数与默认值建议表，统一收敛产品常量、规则固定数值可调项、可调默认值，以及用户可配置项。",
+      "id": "hearing-assist-danger-alert-parameter-defaults-table",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "semantic",
+      "scope": "repo",
+      "owners": "main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, components/espdl_inference",
+      "triggers": "parameter, default, threshold, vibration, cooldown, sensitivity",
+      "evidence_level": "design",
+      "status": "",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T18:15:15.126971+00:00",
+      "token_count": 530
+    },
+    {
+      "path": "docs/context/knowledge/project/hearing-assist-danger-alert-state-machine-and-notification-policy.md",
+      "title": "听障危险提醒状态机与提醒策略草案",
+      "tags": [
+        "project",
+        "product",
+        "architecture",
+        "hearing-assist",
+        "danger-detection",
+        "state-machine",
+        "notification"
+      ],
+      "summary": "面向听障用户的手表端危险提醒功能状态机与提醒策略草案，固定状态定义、触发条件、清除规则、震动与屏幕提醒分级，以及与模型输出的边界。",
+      "id": "hearing-assist-danger-alert-state-machine-and-notification-policy",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "semantic",
+      "scope": "repo",
+      "owners": "main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, main/ui/custom/danger_detection_controller.c",
+      "triggers": "hearing, assist, alert, state machine, notification, vibration, cooldown",
+      "evidence_level": "design",
+      "status": "",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T18:15:22.753302+00:00",
+      "token_count": 538
+    },
+    {
       "path": "docs/context/knowledge/project/hearing-assist-danger-alert-system-architecture.md",
       "title": "听障危险提醒系统架构草案",
       "tags": [
@@ -1092,8 +1192,8 @@
       "evidence_level": "design",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-03T20:36:48.797131+00:00",
-      "token_count": 467
+      "mtime_utc": "2026-05-04T18:06:48.349813+00:00",
+      "token_count": 482
     },
     {
       "path": "docs/context/knowledge/project/i2c-manager-master-bus-migration.md",
@@ -1131,7 +1231,7 @@
       ],
       "summary": "记录当前仓库推荐采用的 App/UI、Service、Manager/Domain、Driver Adapter、Vendor/SDK 分层边界，以及 UI/Service/Manager/Adapter 的调用红线和越界检查重点。",
       "id": "layering-boundary-map",
-      "last_reviewed": "2026-05-04",
+      "last_reviewed": "2026-05-05",
       "memory_type": "semantic",
       "scope": "repo",
       "owners": "main/app, main/services, main/features, main/ui, components",
@@ -1139,8 +1239,8 @@
       "evidence_level": "observed",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-04T06:09:30.947195+00:00",
-      "token_count": 405
+      "mtime_utc": "2026-05-04T17:27:45.216865+00:00",
+      "token_count": 410
     },
     {
       "path": "docs/context/knowledge/project/low-power-management-baseline.md",
@@ -1541,7 +1641,7 @@
       ],
       "summary": "面向 agent 首读的仓库画像，压缩记录正式启动链路、当前真实 owner、已退场旧链路和最重要的上下文入口。",
       "id": "project-profile",
-      "last_reviewed": "2026-05-04",
+      "last_reviewed": "2026-05-05",
       "memory_type": "semantic",
       "scope": "repo",
       "owners": "AGENTS.md, docs/context/knowledge/project/repo-overview.md",
@@ -1549,8 +1649,8 @@
       "evidence_level": "observed",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-04T05:41:42.607367+00:00",
-      "token_count": 274
+      "mtime_utc": "2026-05-04T18:57:17.963444+00:00",
+      "token_count": 266
     },
     {
       "path": "docs/context/knowledge/project/repo-overview.md",
@@ -1933,8 +2033,8 @@
       "evidence_level": "",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-04T06:08:53.477108+00:00",
-      "token_count": 312
+      "mtime_utc": "2026-05-04T18:44:31.877367+00:00",
+      "token_count": 332
     },
     {
       "path": "docs/context/plans/active/plan-template.md",
@@ -2011,9 +2111,9 @@
         "promotion",
         "archive"
       ],
-      "summary": "上下文库清理与沉淀流程：先标记和降权，再晋升稳定知识，最后归档或删除废弃卡，避免 agent 被过期记忆误导。",
+      "summary": "上下文库清理与沉淀流程：只保存高复用规划、决策、试错、项目知识和框架，先标记和降权，再晋升稳定知识，最后归档或删除废弃卡。",
       "id": "context-garden-policy",
-      "last_reviewed": "2026-05-04",
+      "last_reviewed": "2026-05-05",
       "memory_type": "procedural",
       "scope": "repo",
       "owners": "docs/context, scripts/context/garden.py, scripts/context/query.py",
@@ -2021,8 +2121,8 @@
       "evidence_level": "design",
       "status": "active",
       "superseded_by": "",
-      "mtime_utc": "2026-05-04T05:33:11.191442+00:00",
-      "token_count": 278
+      "mtime_utc": "2026-05-04T18:49:55.318280+00:00",
+      "token_count": 335
     },
     {
       "path": "docs/context/procedures/README.md",
@@ -2059,8 +2159,8 @@
       "evidence_level": "",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-04T05:33:30.240843+00:00",
-      "token_count": 545
+      "mtime_utc": "2026-05-04T18:49:55.317771+00:00",
+      "token_count": 684
     },
     {
       "path": "docs/context/runs/2026-05-04-attempt-audio-codec-owner-session.md",
@@ -2259,6 +2359,111 @@
       "token_count": 132
     },
     {
+      "path": "docs/context/runs/2026-05-05-attempt-context-memory-policy-write-gate.md",
+      "title": "Attempt Log: context memory policy write gate",
+      "tags": [
+        "context",
+        "run",
+        "attempt-log"
+      ],
+      "summary": "context memory policy write gate；结果：success。",
+      "id": "attempt-2026-05-05-context-memory-policy-write-gate",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "episodic",
+      "scope": "task",
+      "owners": "docs/context/knowledge/project/context-memory-policy.md, scripts/context/log_attempt.py, scripts/context/garden.py, docs/context/README.md, docs/context/procedures/context-garden-policy.md",
+      "triggers": "context memory policy write gate",
+      "evidence_level": "observed",
+      "status": "",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T18:45:52.869129+00:00",
+      "token_count": 141
+    },
+    {
+      "path": "docs/context/runs/2026-05-05-attempt-context-validation-level-runner.md",
+      "title": "Attempt Log: context validation level runner",
+      "tags": [
+        "context",
+        "run",
+        "attempt-log"
+      ],
+      "summary": "context validation level runner；结果：success。",
+      "id": "attempt-2026-05-05-context-validation-level-runner",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "episodic",
+      "scope": "task",
+      "owners": "scripts/context/validate_context.py, AGENTS.md, docs/context/README.md, docs/context/procedures/context-garden-policy.md, docs/context/evals/query-golden.yaml",
+      "triggers": "context validation level runner",
+      "evidence_level": "observed",
+      "status": "",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T18:50:39.010954+00:00",
+      "token_count": 141
+    },
+    {
+      "path": "docs/context/runs/2026-05-05-attempt-default-future-code-layering-rule.md",
+      "title": "Attempt Log: default future code layering rule",
+      "tags": [
+        "context",
+        "run",
+        "attempt-log"
+      ],
+      "summary": "default future code layering rule；结果：success。",
+      "id": "attempt-2026-05-05-default-future-code-layering-rule",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "episodic",
+      "scope": "task",
+      "owners": "AGENTS.md, docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md, docs/context/knowledge/project/layering-boundary-map.md, docs/context/evals/query-golden.yaml",
+      "triggers": "default future code layering rule",
+      "evidence_level": "observed",
+      "status": "",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T17:28:18.921619+00:00",
+      "token_count": 138
+    },
+    {
+      "path": "docs/context/runs/2026-05-05-attempt-entry-workflow-uses-validate-context-levels.md",
+      "title": "Attempt Log: entry workflow uses validate_context levels",
+      "tags": [
+        "context",
+        "run",
+        "attempt-log"
+      ],
+      "summary": "entry workflow uses validate_context levels；结果：success。",
+      "id": "attempt-2026-05-05-entry-workflow-uses-validate-context-levels",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "episodic",
+      "scope": "task",
+      "owners": "docs/context/INDEX.agent.md, docs/context/knowledge/project/project-profile.md, docs/context/CHANGELOG.md",
+      "triggers": "entry workflow uses validate_context levels",
+      "evidence_level": "observed",
+      "status": "",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T18:57:34.159187+00:00",
+      "token_count": 131
+    },
+    {
+      "path": "docs/context/runs/2026-05-05-attempt-hearing-assist-danger-firmware-mapping.md",
+      "title": "Attempt Log: hearing-assist-danger-firmware-mapping",
+      "tags": [
+        "context",
+        "run",
+        "attempt-log"
+      ],
+      "summary": "hearing-assist-danger-firmware-mapping；结果：success。",
+      "id": "attempt-2026-05-05-hearing-assist-danger-firmware-mapping",
+      "last_reviewed": "2026-05-05",
+      "memory_type": "episodic",
+      "scope": "task",
+      "owners": "docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md, docs/context/knowledge/project/espdl-danger-model-plan-anchor.md, docs/context/knowledge/project/hearing-assist-danger-alert-state-machine-and-notification-policy.md, docs/context/knowledge/project/hearing-assist-danger-alert-parameter-defaults-table.md, docs/context/knowledge-map.md, docs/context/INDEX.agent.md, docs/context/CHANGELOG.md",
+      "triggers": "hearing-assist-danger-firmware-mapping",
+      "evidence_level": "observed",
+      "status": "",
+      "superseded_by": "",
+      "mtime_utc": "2026-05-04T18:16:45.072210+00:00",
+      "token_count": 136
+    },
+    {
       "path": "docs/context/runs/attempt-template.md",
       "title": "Attempt Log 模板",
       "tags": [
@@ -2271,7 +2476,7 @@
       ],
       "summary": "agent 做过什么修改和尝试的记录模板，重点记录已改文件、已尝试路径、验证证据和避免重复的动作。",
       "id": "context-attempt-template",
-      "last_reviewed": "2026-05-04",
+      "last_reviewed": "2026-05-05",
       "memory_type": "episodic",
       "scope": "task",
       "owners": "docs/context/runs, scripts/context/log_attempt.py",
@@ -2279,8 +2484,8 @@
       "evidence_level": "design",
       "status": "",
       "superseded_by": "",
-      "mtime_utc": "2026-05-04T05:11:12.817184+00:00",
-      "token_count": 47
+      "mtime_utc": "2026-05-04T18:44:36.646947+00:00",
+      "token_count": 57
     },
     {
       "path": "docs/context/runs/README.md",

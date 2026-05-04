@@ -1,5 +1,12 @@
 # 上下文库变更记录
 
+- 2026-05-05：将入口层旧重流程替换为 `validate_context.py` 分级流程：`INDEX.agent.md` 与 `project-profile.md` 不再要求普通任务先跑 `build_index.py/check.py`，改为默认 `--level light --brief`，仅在文档、路由或机制变更时升级到 `standard/routing/full`。
+- 2026-05-05：新增 `scripts/context/validate_context.py` 分级入口，统一 `light / standard / routing / full` 四档上下文检索与验证；同步更新 `AGENTS.md`、`README.md`、`context-garden-policy.md` 和 query golden，避免普通任务默认跑完整四件套。
+- 2026-05-05：新增 `context-memory-policy.md` 固化上下文记忆写入边界：优先保存用户规划、试错总结、项目知识、项目框架、长期约束和稳定偏好，避免记录一次性小事；`log_attempt.py` 新增 `--record-because` 写入门槛，`garden.py` 收紧 `promotion_candidates` 并新增 `low_value_run_candidates` 审查队列。
+- 2026-05-05：新增 `hearing-assist-danger-alert-firmware-mapping`，把听障危险提醒设计参数正式映射到当前固件实现，明确 `espdl_model_runner / espdl_audio_runtime / danger_detection_service / app_alert_manager / danger_detection_controller` 的 owner 分工，以及哪些能力已实现、部分实现或仍停留在设计层；同时把映射卡回链到 `espdl-danger-model-plan-anchor`、`INDEX.agent` 和知识地图，方便后续直接按 owner 补状态机、持续提醒和 vibration-first 能力。
+- 2026-05-05：新增 `hearing-assist-danger-alert-parameter-defaults-table`，把听障危险提醒功能的参数继续收敛成正式建议表，统一区分产品常量、规则固定/数值可调、可调默认值和用户配置项，并覆盖功能启停、状态机、提醒、用户配置与工程内部参数；同时把该表回链到系统架构卡、状态机卡、模型计划锚点和知识地图。
+- 2026-05-05：新增 `hearing-assist-danger-alert-state-machine-and-notification-policy`，将听障危险提醒系统继续下钻为可执行的状态机与提醒策略草案，固定 `Off / Monitoring / Suspicious / Alerting / Cooldown` 状态、确认/清除/冷却口径，以及震动优先、屏幕辅助、避免单窗直达用户提醒的行为边界；同时回链到系统架构草案、模型计划锚点和知识地图。
+- 2026-05-05：将 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 固化为后续代码生成、评审、跨文件改动和重构的默认分层判断；同步更新 `AGENTS.md`、`embedded-c-cpp-engineering-rules.md`、`layering-boundary-map.md` 与 query golden，要求先判断 owner 与调用方向再落代码。
 - 2026-05-04：新增 `knowledge/project/layering-boundary-map.md` 固化当前仓库的 App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK 分层边界；新增 `scripts/context/check_layering.py` 作为只读越层提示工具，并把分层卡接入 agent 首读路由、知识地图和 query golden 回归。
 - 2026-05-04：继续降低默认 agent 首读 token 并提升 Windows CLI 稳定性：`AGENTS.md` 的 context 流程压缩为 5 条低 token 入口规则，详细分层与园艺策略只指向 `INDEX.agent.md` / `context-garden-policy.md`；新增 `scripts/context/_stdio.py` 并让 context CLI 统一将 stdout/stderr 配置为 UTF-8，避免 PowerShell 下 JSON 输出遇到非 ASCII 字符时报编码错误。
 - 2026-05-04：修复记忆系统 review 发现的排序与入口问题：`query.py` 不再把单独“迁移”视为历史查询意图，避免 superseded 历史卡误回 top；`eval_query.py` 新增 `expected_top1` 严格排序断言并补 `official_chat 迁移 时间` 回归用例；`INDEX.agent.md` 与 `project-profile.md` 统一说明 `repo-overview.md` 只按 query/brief 或确需全局骨架时打开。

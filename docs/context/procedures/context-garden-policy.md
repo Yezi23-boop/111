@@ -1,8 +1,8 @@
 ---
 id: context-garden-policy
 tags: context, garden, curator, stale, promotion, archive
-summary: 上下文库清理与沉淀流程：先标记和降权，再晋升稳定知识，最后归档或删除废弃卡，避免 agent 被过期记忆误导。
-last_reviewed: 2026-05-04
+summary: 上下文库清理与沉淀流程：只保存高复用规划、决策、试错、项目知识和框架，先标记和降权，再晋升稳定知识，最后归档或删除废弃卡。
+last_reviewed: 2026-05-05
 memory_type: procedural
 scope: repo
 owners: docs/context, scripts/context/garden.py, scripts/context/query.py
@@ -18,17 +18,31 @@ status: active
 - 让 agent 默认读到当前有效知识，而不是历史噪声。
 - 保留有价值的失败路径和实验记录，避免重复尝试。
 - 把多次验证成立的经验从 `runs/` 晋升到稳定层。
+- 阻止一次性小事、命令流水和无复用价值细节进入长期记忆。
 - 清理动作必须可逆、可追溯，不靠一次搜索结果直接删除。
 
 ## 记忆分层
 
 - `INDEX.agent.md`：低 token 首读入口，只负责路由和红线。
-- `runs/`：episodic memory，记录做过什么、失败什么、别重复什么。
-- `knowledge/`：semantic memory，只放稳定事实、当前 owner、模块边界。
-- `procedures/`：procedural memory，只放可复用流程和排查套路。
-- `decisions/`：长期设计取舍，尤其是不可逆或影响范围大的选择。
+- `plans/`：Project Plan，记录用户的项目规划、阶段目标和长期路线。
+- `decisions/`：Decision Log，记录重要设计取舍，尤其是不可逆或影响范围大的选择。
+- `runs/`：Trial-and-Error，只记录有复用价值的试错、失败路径、证据和不要重复的动作。
+- `knowledge/`：Project Knowledge / Framework / Constraints / Stable Preferences，只放稳定事实、当前 owner、模块边界、方法论、长期约束和稳定偏好。
+- `procedures/`：可复用流程和排查套路。
 - `handoffs/`：当前任务压缩摘要，不作为长期事实源。
 - `archive/`：默认不参与普通检索，只保留历史追溯入口。
+
+## 写入门槛
+
+写入 `runs/attempt` 前至少满足一项：
+
+- 后续 agent 很可能重复同一路径。
+- 失败代价高，重新试错会浪费明显时间。
+- 影响 owner、架构边界、项目框架、长期约束或用户规划。
+- 有关键证据，例如真机日志、构建结果、错误码、性能数据或明确复现步骤。
+- 当前任务需要跨会话接手。
+
+不满足这些条件时，不写长期上下文，只在本轮答复中说明即可。
 
 ## 生命周期字段
 
@@ -55,7 +69,7 @@ superseded_by: docs/context/knowledge/project/current-card.md
 
 ## 晋升梯子
 
-1. 单次动作、失败、日志和验证先写 `runs/attempt`。
+1. 有复用价值的动作、失败、日志和验证先写 `runs/attempt`，并用 `record_reasons` 说明长期记录理由。
 2. 同类问题重复出现，或一次结果已成为稳定 owner/边界，再写 `knowledge/`。
 3. 可复用的操作步骤、排障顺序、检查清单，写 `procedures/`。
 4. 影响架构路线或长期兼容边界，写 `decisions/ADR-*`。
@@ -66,7 +80,8 @@ superseded_by: docs/context/knowledge/project/current-card.md
 `garden.py` 应输出四类候选，而不是直接修改文件：
 
 - `stale_candidates`：过期、历史、退场、废弃、被替代或 `last_reviewed` 超阈值。
-- `promotion_candidates`：成功且有证据的 `runs/`，适合沉淀为知识或流程。
+- `promotion_candidates`：成功、有证据且具备长期记录理由或晋升提示的 `runs/`。
+- `low_value_run_candidates`：成功但缺少长期记录理由的 `runs/`，用于后续审查是否归档或删除。
 - `archive_candidates`：已有 `superseded_by` 且状态不是 active 的卡。
 - `broken_owner_refs`：frontmatter `owners` 指向不存在路径。
 
@@ -81,5 +96,5 @@ superseded_by: docs/context/knowledge/project/current-card.md
 ## 收尾要求
 
 - 每次 context 结构或策略变更都更新 `docs/context/CHANGELOG.md`。
-- 变更后运行 `build_index.py`、`check.py`、`garden.py --verbose`、`eval_query.py`。
+- 验证按影响范围分级运行 `scripts/context/validate_context.py`：只改文档用 `--level standard`，改入口或检索基准用 `--level routing`，改脚本或记忆/晋升/归档机制才用 `--level full`。
 - 如果 `garden.py` 给出候选，只把它当审查队列，不自动判定为可删。

@@ -111,13 +111,14 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 非简单任务先查历史尝试：`uv run python scripts/context/query.py --scope runs --q "<任务关键词/文件/错误码>" --top 8`，避免重复已失败或已完成路径。
 - 再查稳定知识并打 brief：`uv run python scripts/context/query.py --q "<任务关键词>" --top 5`，必要时 `uv run python scripts/context/pack_context.py --q "<任务关键词>" --mode brief --top 5 --print`。
 - 出现可复用知识、流程、决策、attempt 或交接状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
-- 修改上下文系统后运行 `uv run python scripts/context/build_index.py`、`uv run python scripts/context/check.py`、`uv run python scripts/context/garden.py --verbose`、`uv run python scripts/context/eval_query.py`。
+- 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
 
 ## 嵌入式 C/C++ 代码生成默认规范
 
 本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码，适用于显示/UI、触摸输入、音频播放、Wi-Fi 配网、板级驱动、模块拆分和架构建议任务。
 
 - 新增或修改代码应优先满足模块化、分层、单一职责、明确接口边界和可验证错误路径。
+- 后续新增功能、跨文件改动和重构默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；详细边界见 `docs/context/knowledge/project/layering-boundary-map.md`。
 - 新增或修改代码默认按 Google Code Style 靠拢，但不因引入新规则而大面积重排无关旧代码。
 - 资源受限路径优先使用静态分配或受控分配，避免在高频路径中频繁申请和释放内存。
 - 输入、状态、长度、返回值、超时和降级路径必须显式处理，不能静默失败。

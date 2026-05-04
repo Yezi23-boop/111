@@ -2,7 +2,7 @@
 id: context-agent-index
 tags: context, index, agent, low-token, entrypoint
 summary: 面向 agent 首读的低 token 上下文入口，固定先查 runs 防重复，再 query/brief pack，最后只读必要原文。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-05-05
 memory_type: procedural
 scope: repo
 owners: docs/context/INDEX.agent.md, docs/context/knowledge/project/project-profile.md, scripts/context/query.py, scripts/context/pack_context.py
@@ -31,24 +31,18 @@ evidence_level: design
 
 ## Low Token Workflow
 
-1. Rebuild index:
-   `uv run python scripts/context/build_index.py`
-2. Check context health:
-   `uv run python scripts/context/check.py`
-3. Search past attempts first:
-   `uv run python scripts/context/query.py --scope runs --q "<module file error symptom>" --top 8`
-4. Search stable knowledge:
-   `uv run python scripts/context/query.py --q "<task keywords>" --top 5`
-5. Pack only concise context:
-   `uv run python scripts/context/pack_context.py --q "<task keywords>" --top 5 --mode brief --max-chars 1800 --print`
-6. Open raw files only for top hits or exact evidence.
+1. For normal tasks, use light retrieval:
+   `uv run python scripts/context/validate_context.py --level light --q "<module file error symptom>" --brief`
+2. This searches `runs/`, searches stable knowledge, and emits a brief pack.
+3. Open raw Markdown only for top hits or exact evidence.
+4. Use `--level standard|routing|full` only when editing context docs, routing, or context mechanisms.
 
 ## When Runs Hit
 
 - If `runs/` shows the same attempt, say whether you will reuse, avoid, or extend it.
 - If a previous route failed, do not repeat it unless new evidence changes the premise.
 - If you create a new meaningful attempt, record it:
-  `uv run python scripts/context/log_attempt.py --title "<short-title>" --status partial --changed <path> --tried "<action>" --avoid "<do-not-repeat>" --evidence "<proof>" --next "<next>"`
+  `uv run python scripts/context/log_attempt.py --title "<short-title>" --record-because repeat-risk --status partial --changed <path> --tried "<action>" --avoid "<do-not-repeat>" --evidence "<proof>" --next "<next>"`
 
 ## Routing
 
@@ -103,16 +97,18 @@ evidence_level: design
   `docs/context/runs/2026-05-04-attempt-audio-codec-owner-session.md`
 - Danger model plan:
   `docs/context/knowledge/project/espdl-danger-model-plan-anchor.md`
+- Firmware mapping:
+  `docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md`
 - Single active threshold attempt:
   `docs/context/runs/2026-05-04-attempt-espdl-danger-single-active-threshold.md`
 
 ## Memory Writes
 
+- Memory policy: `docs/context/knowledge/project/context-memory-policy.md`
 - Stable facts go to `docs/context/knowledge/`.
 - Decisions go to `docs/context/decisions/`.
 - Repeatable procedures go to `docs/context/procedures/`.
 - Attempts, failures, board logs, and verification go to `docs/context/runs/`.
 - Current task compression goes to `docs/context/handoffs/current-task.md`.
-- Cleanup and promotion policy:
-  `docs/context/procedures/context-garden-policy.md`
+- Cleanup and promotion policy: `docs/context/procedures/context-garden-policy.md`
 - Always update `docs/context/CHANGELOG.md` for context-system changes.

@@ -2,7 +2,7 @@
 id: layering-boundary-map
 tags: project, architecture, layering, boundary, owner, esp32-s3
 summary: 记录当前仓库推荐采用的 App/UI、Service、Manager/Domain、Driver Adapter、Vendor/SDK 分层边界，以及 UI/Service/Manager/Adapter 的调用红线和越界检查重点。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-05-05
 memory_type: semantic
 scope: repo
 owners: main/app, main/services, main/features, main/ui, components
@@ -100,6 +100,7 @@ UI/alerts
 
 ## 落地规则
 
+- 后续代码生成、评审和重构默认先按本卡判断层级与 owner，再决定文件落点和调用方向。
 - 不为了分层而批量重命名目录；先尊重当前 `main/* + components/*` 结构。
 - 新增抽象前先回答：是否有真实替换风险、是否有两个以上调用者、是否能减少上层变化。
 - 新增跨层接口前先回答：owner 是谁、谁能调用、生命周期谁释放、错误如何返回、如何验证。

@@ -19,6 +19,7 @@
 ## 项目规则与结构
 
 - `knowledge/project/project-profile.md`
+- `knowledge/project/context-memory-policy.md`
 - `knowledge/project/repo-overview.md`
 - `knowledge/project/layering-boundary-map.md`
 - `knowledge/project/display-touch-audio-bus-map.md`
@@ -59,6 +60,9 @@
 
 - `knowledge/project/espdl-danger-model-plan-anchor.md`
 - `knowledge/project/hearing-assist-danger-alert-system-architecture.md`
+- `knowledge/project/hearing-assist-danger-alert-state-machine-and-notification-policy.md`
+- `knowledge/project/hearing-assist-danger-alert-parameter-defaults-table.md`
+- `knowledge/project/hearing-assist-danger-alert-firmware-mapping.md`
 - `knowledge/project/espdl-audio-tdnn-port.md`
 - `knowledge/project/danger-signal-detection-port.md`
 - `knowledge/project/audio-horn-like-segment-extraction.md`

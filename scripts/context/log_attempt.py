@@ -15,6 +15,17 @@ configure_utf8_stdio()
 
 SLUG_RE = re.compile(r"[^a-z0-9]+")
 
+RECORD_REASONS = (
+    "repeat-risk",
+    "high-cost",
+    "owner-architecture",
+    "evidence",
+    "handoff",
+    "plan-decision",
+    "project-knowledge",
+    "framework-constraint",
+)
+
 
 def resolve_project_root(project_root_arg: str | None) -> Path:
     script_path = Path(__file__).resolve()
@@ -59,6 +70,7 @@ def build_document(args: argparse.Namespace, date_text: str, doc_id_slug: str) -
     triggers = csv(args.trigger) or args.title
     tags = csv(args.tag) or "context, run, attempt-log"
     evidence_level = "observed" if status in {"success", "partial", "failed"} else "inferred"
+    record_reasons = csv(args.record_because)
 
     lines: list[str] = [
         "---",
@@ -71,6 +83,7 @@ def build_document(args: argparse.Namespace, date_text: str, doc_id_slug: str) -
         f"owners: {owners}",
         f"triggers: {triggers}",
         f"evidence_level: {evidence_level}",
+        f"record_reasons: {record_reasons}",
         "---",
         "",
         f"# Attempt Log: {args.title}",
@@ -80,6 +93,7 @@ def build_document(args: argparse.Namespace, date_text: str, doc_id_slug: str) -
         f"- 本次要验证什么：{args.goal or args.title}",
         f"- 对应任务或计划：{args.task or '未绑定计划'}",
         f"- 结果状态：{status}",
+        f"- 长期记录理由：{record_reasons or '未记录'}",
         "",
         "## 环境",
         "",
@@ -142,6 +156,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tag", action="append", default=[], help="额外标签，可重复。")
     parser.add_argument("--trigger", action="append", default=[], help="检索触发词，可重复。")
     parser.add_argument(
+        "--record-because",
+        action="append",
+        choices=RECORD_REASONS,
+        default=[],
+        help=(
+            "长期记录理由，可重复。只有满足重复风险、失败代价、owner/架构影响、"
+            "关键证据、交接、规划/决策、项目知识或框架约束时才应写入 runs。"
+        ),
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="绕过 record-because 门槛。仅用于人工确认确实需要记录的特殊情况。",
+    )
+    parser.add_argument(
         "--project-root",
         default=None,
         help="项目根目录。默认根据脚本路径自动识别。",
@@ -158,6 +187,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    if not args.record_because and not args.force:
+        allowed = ", ".join(RECORD_REASONS)
+        raise SystemExit(
+            "未记录 attempt：缺少 --record-because。"
+            "上下文只保存有长期复用价值的规划、决策、试错、项目知识和框架。"
+            f"可选值：{allowed}；如人工确认仍需记录，可加 --force。"
+        )
 
     project_root = resolve_project_root(args.project_root)
     runs_root = (project_root / args.runs_root).resolve()

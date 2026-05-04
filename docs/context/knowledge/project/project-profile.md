@@ -2,7 +2,7 @@
 id: project-profile
 tags: project, profile, entrypoint, architecture, network, ui
 summary: 面向 agent 首读的仓库画像，压缩记录正式启动链路、当前真实 owner、已退场旧链路和最重要的上下文入口。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-05-05
 memory_type: semantic
 scope: repo
 owners: AGENTS.md, docs/context/knowledge/project/repo-overview.md
@@ -52,9 +52,8 @@ evidence_level: observed
 
 ## 任务推进的默认姿势
 
-- 先运行 `uv run python scripts/context/build_index.py`
-- 再运行 `uv run python scripts/context/check.py`
-- 先用 `uv run python scripts/context/query.py --scope runs --q "<任务关键词/文件/错误码>" --top 8` 查历史尝试，避免重复同一修改或失败路径
-- 用 `uv run python scripts/context/query.py --q "<任务关键词>" --top 5` 只读高命中文档
+- 普通任务默认先运行 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`
+- `light` 会先查历史尝试，再查稳定知识，并生成 brief pack；不要为普通代码任务默认跑完整四件套。
+- 只改 context 文档时用 `--level standard`；改入口/检索基准时用 `--level routing`；改 `scripts/context` 或记忆机制时才用 `--level full`。
 - 复杂任务先在 `docs/context/plans/active/` 落计划
-- 单次联调、日志、板测证据，以及 agent 已经做过的修改/尝试，优先进 `docs/context/runs/`
+- 有长期复用价值的联调、日志、板测证据，以及 agent 已经做过且不应重复的修改/尝试，按 `context-memory-policy.md` 写入 `docs/context/runs/`

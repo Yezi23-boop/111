@@ -1,8 +1,8 @@
 ---
 id: embedded-c-cpp-engineering-rules
 tags: project, rules, esp32, mcu, embedded, c-cpp
-summary: 本仓库默认采用的 ESP32/MCU 嵌入式 C/C++ 工程规则，覆盖分层、接口、复杂度、资源、安全和算法/AI 模块边界。
-last_reviewed: 2026-05-04
+summary: 本仓库默认采用的 ESP32/MCU 嵌入式 C/C++ 工程规则，覆盖 App/UI、Service、Manager/Domain、Driver Adapter、Vendor/SDK 分层、接口、复杂度、资源、安全和算法/AI 模块边界。
+last_reviewed: 2026-05-05
 memory_type: procedural
 scope: repo
 owners: AGENTS.md, docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md
@@ -24,10 +24,16 @@ evidence_level: design
 ## 架构与模块边界
 
 - 必须优先采用模块化、组件化、单一职责设计。
-- 代码应按驱动层、平台/系统层、服务层、应用层、算法/AI 层分层组织。
+- 后续新增功能、跨文件改动、模块重构和架构评审，默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；详细项目边界见 `docs/context/knowledge/project/layering-boundary-map.md`。
+- `App/UI` 只表达用户动作、页面状态和业务入口；不得直接拥有底层 SDK、器件、协议或后台生命周期。
+- `Service` 负责后台生命周期、状态推进、重试、超时、任务协作和跨模块编排；不得反向依赖具体页面对象。
+- `Manager/Domain` 负责领域语义、资源 owner 和稳定公开接口；不得退化成“什么都能塞”的大杂烩。
+- `Driver Adapter` 负责 SDK、协议、寄存器、上电顺序、总线时序和错误码翻译；不得把产品策略塞进驱动适配层。
+- `Vendor/SDK` 是不可控变化点，只能由对应 adapter/driver owner 直接接触；上层不得散落直接调用。
 - 禁止业务逻辑直接访问硬件寄存器。
 - 禁止应用层直接依赖底层驱动内部实现。
 - 模块之间只能通过公开接口通信，禁止跨模块直接访问内部状态。
+- 新增抽象前必须确认是否存在真实替换风险、多个调用者、测试替身需求或明显的错误处理收敛价值；禁止为了形式分层增加空 wrapper。
 - 算法/AI 层必须拆分为以下最小职责单元：
   - 预处理
   - 推理

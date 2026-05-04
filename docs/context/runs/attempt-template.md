@@ -2,12 +2,13 @@
 id: context-attempt-template
 tags: context, runs, attempt-log, anti-repeat, template, agent
 summary: agent 做过什么修改和尝试的记录模板，重点记录已改文件、已尝试路径、验证证据和避免重复的动作。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-05-05
 memory_type: episodic
 scope: task
 owners: docs/context/runs, scripts/context/log_attempt.py
 triggers: attempt-log, anti-repeat, tried, failed, repeated-action, agent, 做过什么, 修改, 尝试, 避免重复
 evidence_level: design
+record_reasons: repeat-risk, evidence
 ---
 
 # Attempt Log 模板
@@ -17,6 +18,7 @@ evidence_level: design
 - 本次要验证什么：
 - 对应任务或计划：
 - 结果状态：`success | partial | failed | abandoned | superseded`
+- 长期记录理由：`repeat-risk | high-cost | owner-architecture | evidence | handoff | plan-decision | project-knowledge | framework-constraint`
 
 ## 环境
 

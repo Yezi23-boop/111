@@ -17,6 +17,9 @@ evidence_level: design
 ## 关键文档
 
 - 产品/系统架构草案：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-system-architecture.md`
+- 状态机与提醒策略草案：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-state-machine-and-notification-policy.md`
+- 参数与默认值建议表：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-parameter-defaults-table.md`
+- 当前固件实现映射：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-firmware-mapping.md`
 - 主训练路线：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl_danger_sound_roadmap.md`
 - 训练侧命令与导出说明：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl_training_side.md`
 - 模型版本矩阵：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl_model_versions\model-version-matrix-20260502.md`
@@ -28,6 +31,9 @@ evidence_level: design
 - 固件当前 active 模型是 `edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503`。
 - 产品长期目标是“面向听障用户的危险提醒系统”，不是泛音频分类；用户最终拿到的是稳定提醒，不是类别名本身。
 - active 主线 danger 定义固定聚焦 `siren / horn / alarm`，扩展事件不得默认覆盖该边界。
+- 产品行为层应通过状态机与提醒策略完成误报吸收，单窗高风险不得直接等同于用户级危险提醒。
+- 参数管理上应区分“产品常量”“规则固定 / 数值可调”“可调默认值”和“用户配置项”，避免阈值、提醒节奏和产品边界混在一起漂移。
+- 当前固件已具备 `threshold -> 连续 confirm/clear -> hold -> 一次性告警` 的最小闭环，但 `Suspicious/Cooldown` 显式状态、持续提醒和 vibration-first 提醒层仍未真正落地。
 - 首版主工程只跑单模型 V3.3 DS-CNN-tiny，不并行跑 V3.2/V3.3，原因是 RAM 不够且双模型 ANY_DANGER 融合没有独立验证指标。
 - 输入是 16 kHz mono 音频，1 秒窗口，Fbank 40 bins，模型入口为 INT8。
 - 部署侧默认危险阈值是 `0.80`，并使用连续 2 个 danger 窗口确认、连续 non_danger 窗口和 hold/cooldown 清除，目标是降低人声误报。

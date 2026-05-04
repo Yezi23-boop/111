@@ -60,6 +60,54 @@ SUCCESS_HINTS = (
     "已验证",
 )
 
+PROMOTION_RECORD_REASONS = {
+    "repeat-risk",
+    "high-cost",
+    "owner-architecture",
+    "evidence",
+    "handoff",
+    "plan-decision",
+    "project-knowledge",
+    "framework-constraint",
+}
+
+PROMOTION_MEMORY_TYPES = {
+    "project_plan",
+    "decision_log",
+    "trial_error",
+    "project_knowledge",
+    "framework",
+    "constraints",
+    "stable_preferences",
+}
+
+PROMOTION_HINTS = (
+    "用户规划",
+    "项目规划",
+    "长期规划",
+    "重要决策",
+    "决策",
+    "取舍",
+    "试错",
+    "失败路径",
+    "稳定事实",
+    "项目知识",
+    "真实 owner",
+    "owner 分工",
+    "owner 边界",
+    "模块边界",
+    "架构边界",
+    "项目框架",
+    "长期约束",
+    "稳定偏好",
+    "真机",
+    "monitor",
+    "panic",
+    "crash",
+    "错误码",
+    "验证闭环",
+)
+
 REQUIRED_SECTIONS_BY_MATCH = (
     (
         "plans/active/",
@@ -221,6 +269,7 @@ def check_file(
         "promotion_candidates": [],
         "archive_candidates": [],
         "broken_owner_refs": [],
+        "low_value_run_candidates": [],
     }
 
     rel_path = path.relative_to(docs_root).as_posix()
@@ -311,11 +360,35 @@ def check_file(
     if is_run_record and not is_template:
         run_text = f"{meta.get('summary', '')}\n{body}".lower()
         looks_successful = any(hint.lower() in run_text for hint in SUCCESS_HINTS)
-        if looks_successful and evidence_level == "observed":
+        record_reasons = {
+            item.strip()
+            for item in split_csv_like(str(meta.get("record_reasons", "")))
+            if item.strip()
+        }
+        has_promotion_reason = bool(record_reasons & PROMOTION_RECORD_REASONS)
+        has_promotion_type = memory_type in PROMOTION_MEMORY_TYPES
+        has_promotion_hint = any(hint.lower() in run_text for hint in PROMOTION_HINTS)
+        if looks_successful and evidence_level == "observed" and (
+            has_promotion_reason or has_promotion_type or has_promotion_hint
+        ):
+            reason_parts: list[str] = []
+            if has_promotion_reason:
+                reason_parts.append(f"record_reasons={','.join(sorted(record_reasons))}")
+            if has_promotion_type:
+                reason_parts.append(f"memory_type={memory_type}")
+            if has_promotion_hint:
+                reason_parts.append("promotion hint")
             candidates["promotion_candidates"].append(
                 {
                     "path": rel_path,
-                    "reason": f"successful {memory_type or 'run'} with observed evidence",
+                    "reason": "; ".join(reason_parts),
+                }
+            )
+        elif looks_successful and evidence_level == "observed":
+            candidates["low_value_run_candidates"].append(
+                {
+                    "path": rel_path,
+                    "reason": "successful run lacks long-term promotion reason",
                 }
             )
 
@@ -361,6 +434,7 @@ def main() -> int:
         "promotion_candidates": [],
         "archive_candidates": [],
         "broken_owner_refs": [],
+        "low_value_run_candidates": [],
     }
 
     for file_path in files:
@@ -402,6 +476,7 @@ def main() -> int:
                 "promotion_candidates",
                 "archive_candidates",
                 "broken_owner_refs",
+                "low_value_run_candidates",
             ):
                 items = candidate_buckets[key]
                 print(f"- {key}: {len(items)}")

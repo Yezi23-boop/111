@@ -15,6 +15,17 @@ queries:
     expected_top3:
       - docs/context/procedures/context-garden-policy.md
 
+  - id: context-memory-policy
+    query: "上下文 记忆政策 用户规划 试错总结 项目知识 项目框架 稳定偏好"
+    expected_top1: docs/context/knowledge/project/context-memory-policy.md
+    expected_top3:
+      - docs/context/knowledge/project/context-memory-policy.md
+
+  - id: validate-context-levels
+    query: "context 验证 分级 light standard routing full"
+    expected_top3:
+      - docs/context/procedures/context-garden-policy.md
+
   - id: project-profile-entry
     query: "当前正式启动链路 当前真实 owner 入口"
     expected_top1: docs/context/knowledge/project/project-profile.md
@@ -23,6 +34,12 @@ queries:
 
   - id: layering-boundary-map
     query: "当前项目 分层 边界 App Service Manager Adapter Vendor"
+    expected_top1: docs/context/knowledge/project/layering-boundary-map.md
+    expected_top3:
+      - docs/context/knowledge/project/layering-boundary-map.md
+
+  - id: future-code-layering-default
+    query: "后续代码 默认 按 App UI Service Manager Domain Driver Adapter Vendor 分层 owner"
     expected_top1: docs/context/knowledge/project/layering-boundary-map.md
     expected_top3:
       - docs/context/knowledge/project/layering-boundary-map.md
