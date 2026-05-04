@@ -15,6 +15,8 @@ configure_utf8_stdio()
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9_\-\u4e00-\u9fff]+")
 
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
 SCOPE_MIXED = "mixed"
 SCOPE_KNOWLEDGE = "knowledge"
 SCOPE_DECISIONS = "decisions"
@@ -93,12 +95,26 @@ EPISODIC_INTENT_TERMS = (
 
 
 def tokenize(text: str) -> list[str]:
+    """分词：CJK 连续序列只保留 bigram（丢弃单字噪声），其余按原逻辑。
+
+    示例:
+      "修改模型 esp-dl" -> ['修改','模型','esp-dl']
+      "模型"           -> ['模型']
+      "危险detection"  -> ['危险','detection']
+
+    不引入 jieba 等外部依赖，bigram 在 title/summary/triggers 中已有足够召回。
+    """
     tokens: list[str] = []
     for token in TOKEN_RE.findall(text):
         lowered = token.lower()
         if len(lowered) == 1 and lowered.isdigit():
             continue
-        tokens.append(lowered)
+        # 纯 CJK 序列 >=2 字符：只保留 bigram，丢弃单字
+        if len(lowered) >= 2 and all(CJK_RE.match(ch) for ch in lowered):
+            for i in range(len(lowered) - 1):
+                tokens.append(lowered[i : i + 2])
+        else:
+            tokens.append(lowered)
     return tokens
 
 
