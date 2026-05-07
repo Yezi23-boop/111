@@ -1,5 +1,15 @@
 # 上下文库变更记录
 
+- 2026-05-08：在 `lvgl-chinese-ui-binfonts` 中补充“Agent 生成中文 UI 默认流程”，固定含中文 label 使用 `ui_chinese_fonts.h` 声明的编译期字体符号、英文/数字可继续使用 Montserrat，并要求生成后运行中文字体防呆扫描。
+- 2026-05-08：中文 LVGL UI 外部用法进一步简化为直接引用编译期字体符号，例如 `&lv_font_montserrat_lxgw_tghz_level1_3500_24_4`；`ui_chinese_fonts.h` 统一声明四个预置字号，移除 `ui_runtime_fonts_get(size)` 作为默认主路径。
+- 2026-05-08：中文 LVGL UI 字体主路径调整为编译进固件的 LVGL C 字体；`resources/fonts/*.bin` 保留为后续可替换字体升级路径。
+- 2026-05-08：为通用中文 LVGL UI 新增 `ui_runtime_fonts_get(size)` helper 约定，统一中文字体入口，失败时只记录明确错误，不回退到 Montserrat 或 AI 页面字体链。
+- 2026-05-08：新增 `knowledge/project/lvgl-chinese-ui-binfonts.md`，记录通用中文 LVGL UI 使用 `resources` LittleFS + `lv_binfont_create("A:/fonts/...")` 的字体链路，以及与 AI 页面 xiaozhi cbin 字体链的边界。
+- 2026-05-06：补记通用 `resources` LittleFS 分区方案：当前分区布局为 `factory 10M -> assets 2M -> model 4M -> audio 6M -> resources 4M`，启动时挂载到 `/resources`，LVGL POSIX 驱动把 `A:` 映射到该目录；`assets` 继续作为 AI 页面 xiaozhi cbin 字体运行时覆盖路径，`resources` 面向 LVGL 原生 binfont、图片、小音频和普通文件。
+- 2026-05-06：更新 `ai-font-assets` 与 `ai-ui-entry-network-guidance`，把 AI 页面字体主路径改为 `78/xiaozhi-fonts` 的 `cbin/font_puhui_common_20_4.bin` 内嵌字体，并明确 `assets` 分区只作为可替换运行时字体来源；后续布局保留 `assets 2M`，避免 AI 字体包余量过窄。
+- 2026-05-05：更新 `runs/2026-05-05-attempt-agent-ui-poc-shell-skeleton.md`，补记 `scripts/pc_sim/capture_preview.ps1` 自动截图闭环、`pc_sim/artifacts/agent-ui-preview.png` 证据产物，以及为绕开当前 `Montserrat` 中文缺字形而采用 ASCII 预览文案的经验，方便后续继续按“改 UI -> 自动截图 -> agent 自评”推进 Agent UI 路线。
+- 2026-05-05：新增 `runs/2026-05-05-attempt-agent-ui-poc-shell-skeleton.md`，记录 `main/ui/agent_ui/` 共享壳层、`pc_sim/` 预览骨架、`CONFIG_AGENT_UI_POC` 接入点，以及 `pc_sim` 存活验证与 `idf.py build` 通过证据，避免后续重复走回“多 screen + cached pointer”或“共享 UI 直读平台 owner”的旧路。
+- 2026-05-05：新增 `plans/active/2026-05-05-agent-ui-poc-execution-plan.md`，将“Agent 直接生成 LVGL C + pc_sim 预览 + 最小板端验证”的并行 UI 路线正式收敛为可执行 PoC 计划，固定目录落点、Agent-owned/Human-owned 边界、单根 screen 壳层模型、overlay 两态语义、`home_entry_defs` 契约与最小验证闭环。
 - 2026-05-05：将入口层旧重流程替换为 `validate_context.py` 分级流程：`INDEX.agent.md` 与 `project-profile.md` 不再要求普通任务先跑 `build_index.py/check.py`，改为默认 `--level light --brief`，仅在文档、路由或机制变更时升级到 `standard/routing/full`。
 - 2026-05-05：新增 `scripts/context/validate_context.py` 分级入口，统一 `light / standard / routing / full` 四档上下文检索与验证；同步更新 `AGENTS.md`、`README.md`、`context-garden-policy.md` 和 query golden，避免普通任务默认跑完整四件套。
 - 2026-05-05：新增 `context-memory-policy.md` 固化上下文记忆写入边界：优先保存用户规划、试错总结、项目知识、项目框架、长期约束和稳定偏好，避免记录一次性小事；`log_attempt.py` 新增 `--record-because` 写入门槛，`garden.py` 收紧 `promotion_candidates` 并新增 `low_value_run_candidates` 审查队列。

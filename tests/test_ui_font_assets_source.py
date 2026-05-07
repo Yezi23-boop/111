@@ -10,6 +10,7 @@ FONT_ASSETS_SOURCE = REPO_ROOT / "main" / "ui" / "custom" / "ui_font_assets.c"
 CBIN_FONT_BRIDGE_SOURCE = REPO_ROOT / "main" / "ui" / "custom" / "cbin_font_bridge.c"
 CUSTOM_HEADER = REPO_ROOT / "main" / "ui" / "custom" / "custom.h"
 MAIN_CMAKELISTS = REPO_ROOT / "main" / "CMakeLists.txt"
+MAIN_MANIFEST = REPO_ROOT / "main" / "idf_component.yml"
 ROOT_CMAKELISTS = REPO_ROOT / "CMakeLists.txt"
 ASSET_INDEX = REPO_ROOT / "assets" / "ai-fonts" / "index.json"
 ASSET_TEXT_FONT = REPO_ROOT / "assets" / "ai-fonts" / "font_puhui_common_20_4.bin"
@@ -64,9 +65,14 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertIn("s_runtime.title_font = cbin_font_bridge_create", source)
         self.assertIn("s_runtime.body_font = s_runtime.title_font;", source)
         self.assertIn("s_runtime.meta_font = s_runtime.title_font;", source)
-        self.assertIn("&lv_font_SourceHanSerifSC_Regular_22", source)
-        self.assertIn("&lv_font_montserratMedium_16", source)
+        self.assertIn("UI_FONT_ASSETS_BUILTIN_TEXT_NAME", source)
+        self.assertIn("s_builtin_text_font_start", source)
+        self.assertIn("ui_font_assets_create_builtin_text", source)
+        self.assertIn("ui_font_assets_builtin_text", source)
+        self.assertIn("s_runtime.builtin_text_font", source)
+        self.assertIn("return &lv_font_montserratMedium_16;", source)
         self.assertIn("return s_runtime.ready && s_runtime.meta_font != NULL", source)
+        self.assertIn("return ESP_OK;", source)
 
     def test_custom_header_exposes_font_assets_layer(self) -> None:
         source = CUSTOM_HEADER.read_text(encoding="utf-8")
@@ -111,7 +117,16 @@ class UiFontAssetsSourceTests(unittest.TestCase):
 
         self.assertIn("ui_font_assets.c", source)
         self.assertIn("cbin_font_bridge.c", source)
-        self.assertIn("78__xiaozhi_fonts", source)
+        self.assertIn("78__xiaozhi-fonts", source)
+        self.assertIn("BUILTIN_TEXT_FONT font_puhui_common_20_4", source)
+        self.assertIn("EMBED_FILES ${BUILTIN_TEXT_FONT_FILE}", source)
+        self.assertIn("UI_FONT_ASSETS_BUILTIN_TEXT_START_SYMBOL", source)
+        self.assertIn("font_noto_qwen_20_4", source)
+
+    def test_manifest_uses_managed_xiaozhi_fonts_dependency(self) -> None:
+        source = MAIN_MANIFEST.read_text(encoding="utf-8")
+
+        self.assertIn("78/xiaozhi-fonts: ^1.6.0", source)
 
     def test_cbin_font_bridge_source_uses_cbin_font_dependency(self) -> None:
         source = CBIN_FONT_BRIDGE_SOURCE.read_text(encoding="utf-8")

@@ -24,3 +24,5 @@ dependencies:
   espressif/button: =*
   espressif/network_provisioning: ^1.2.4
   espressif/esp-dl: "^3.1.0"
+  78/xiaozhi-fonts: ^1.6.0
+  joltwallet/littlefs: ^1.21.1

@@ -14,6 +14,23 @@
 static const char *TAG = "ui_font_assets";
 // 这里通过 cbin_font_bridge_create 间接使用上游的 cbin_font_create。
 
+#ifndef UI_FONT_ASSETS_BUILTIN_TEXT_NAME
+#define UI_FONT_ASSETS_BUILTIN_TEXT_NAME "font_puhui_common_20_4.bin"
+#endif
+
+#ifndef UI_FONT_ASSETS_BUILTIN_TEXT_START_SYMBOL
+#define UI_FONT_ASSETS_BUILTIN_TEXT_START_SYMBOL "_binary_font_puhui_common_20_4_bin_start"
+#endif
+
+#ifndef UI_FONT_ASSETS_BUILTIN_TEXT_END_SYMBOL
+#define UI_FONT_ASSETS_BUILTIN_TEXT_END_SYMBOL "_binary_font_puhui_common_20_4_bin_end"
+#endif
+
+extern const uint8_t s_builtin_text_font_start[] asm(
+    UI_FONT_ASSETS_BUILTIN_TEXT_START_SYMBOL);
+extern const uint8_t s_builtin_text_font_end[] asm(
+    UI_FONT_ASSETS_BUILTIN_TEXT_END_SYMBOL);
+
 enum {
     UI_FONT_ASSETS_NAME_LEN = 32,
     UI_FONT_ASSETS_ENTRY_SIZE = 44,
@@ -35,6 +52,7 @@ typedef struct {
     const esp_partition_t *partition;
     esp_partition_mmap_handle_t mmap_handle;
     const uint8_t *mmap_root;
+    lv_font_t *builtin_text_font;
     lv_font_t *title_font;
     lv_font_t *body_font;
     lv_font_t *meta_font;
@@ -42,6 +60,33 @@ typedef struct {
 } ui_font_assets_runtime_t;
 
 static ui_font_assets_runtime_t s_runtime = {0};
+
+/**
+ * @brief 返回随固件嵌入的默认 cbin 中文字体。
+ *
+ * assets 分区只作为运行时可替换资源；缺少或校验失败时，AI UI 仍然依赖
+ * 这个内置 cbin 字体保证中文文本可显示。
+ *
+ * @return 内置 cbin 字体指针；极端内存不足时返回 GUI Guider 字体兜底。
+ */
+static const lv_font_t *ui_font_assets_builtin_text(void) {
+    if (s_runtime.builtin_text_font != NULL) {
+        return s_runtime.builtin_text_font;
+    }
+    return &lv_font_SourceHanSerifSC_Regular_22;
+}
+
+/**
+ * @brief 返回内置图标/符号文本的兜底字体。
+ *
+ * 当前 xiaozhi 字体只承接中文文本默认路径，图标字体仍沿用 GUI Guider
+ * 生成资源，避免把文本字体误用于符号位图。
+ *
+ * @return 编译进固件的图标兜底字体指针。
+ */
+static const lv_font_t *ui_font_assets_compiled_icon(void) {
+    return &lv_font_montserratMedium_16;
+}
 
 static uint32_t ui_font_assets_read_u32(const uint8_t *data) {
     return ((uint32_t)data[0]) | ((uint32_t)data[1] << 8) |
@@ -137,6 +182,34 @@ static void ui_font_assets_reset_runtime(void) {
     s_runtime.mmap_handle = 0;
     s_runtime.partition = NULL;
     s_runtime.ready = false;
+}
+
+/**
+ * @brief 从编译期嵌入的 cbin 数据创建默认文本字体。
+ *
+ * `BUILTIN_TEXT_FONT` 由 `main/CMakeLists.txt` 选择，C 侧只依赖稳定的
+ * 二进制符号定义；这样更换内置字体时无需修改源码。
+ *
+ * @return 创建成功返回 ESP_OK；内存不足时返回 ESP_ERR_NO_MEM。
+ */
+static esp_err_t ui_font_assets_create_builtin_text(void) {
+    if (s_runtime.builtin_text_font != NULL) {
+        return ESP_OK;
+    }
+
+    const size_t font_size =
+        (size_t)(s_builtin_text_font_end - s_builtin_text_font_start);
+    s_runtime.builtin_text_font =
+        cbin_font_bridge_create((void *)s_builtin_text_font_start);
+    if (s_runtime.builtin_text_font == NULL) {
+        ESP_LOGE(TAG, "failed to create builtin text font: %s",
+                 UI_FONT_ASSETS_BUILTIN_TEXT_NAME);
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "builtin text font ready: %s, size=%u",
+             UI_FONT_ASSETS_BUILTIN_TEXT_NAME, (unsigned int)font_size);
+    return ESP_OK;
 }
 
 static esp_err_t ui_font_assets_load_from_partition(void) {
@@ -289,21 +362,42 @@ static esp_err_t ui_font_assets_load_from_partition(void) {
     return ESP_OK;
 }
 
+/**
+ * @brief 初始化运行时字体替换层。
+ *
+ * 该函数先从固件内嵌 cbin 数据创建默认字体，再尝试从 assets 分区加载
+ * 可替换字体；无分区、CRC 失败或资源缺失都不会影响主路径。
+ *
+ * @return 默认内置字体可用返回 ESP_OK，否则返回具体错误码。
+ */
 esp_err_t ui_font_assets_init(void) {
     if (s_runtime.init_done) {
-        return s_runtime.init_error;
+        return s_runtime.builtin_text_font != NULL ? ESP_OK : ESP_ERR_NO_MEM;
     }
 
     s_runtime.init_done = true;
+    esp_err_t builtin_err = ui_font_assets_create_builtin_text();
+    if (builtin_err != ESP_OK) {
+        return builtin_err;
+    }
+
     s_runtime.init_error = ui_font_assets_load_from_partition();
     if (s_runtime.init_error != ESP_OK) {
-        ESP_LOGW(TAG, "font assets fallback to compiled fonts: %s",
+        ESP_LOGW(TAG, "runtime font assets unavailable, keep builtin font: %s",
                  esp_err_to_name(s_runtime.init_error));
         ui_font_assets_reset_runtime();
     }
-    return s_runtime.init_error;
+    return ESP_OK;
 }
 
+/**
+ * @brief 查询 assets 运行时字体是否已经覆盖默认编译字体。
+ *
+ * 返回 true 仅代表可替换字体资源加载成功；返回 false 不代表 UI 字体不可用，
+ * 因为默认 cbin 字体已经嵌入固件。
+ *
+ * @return assets 运行时字体可用返回 true，否则返回 false。
+ */
 bool ui_font_assets_ready(void) {
     if (!s_runtime.init_done) {
         (void)ui_font_assets_init();
@@ -311,36 +405,68 @@ bool ui_font_assets_ready(void) {
     return s_runtime.ready;
 }
 
+/**
+ * @brief 获取 AI 页面标题字体。
+ *
+ * 优先使用 assets 分区加载出的运行时替换字体；不可用时回落到
+ * 固件内嵌 cbin 字体。
+ *
+ * @return 标题字体指针。
+ */
 const lv_font_t *ui_font_assets_title(void) {
     if (!s_runtime.init_done) {
         (void)ui_font_assets_init();
     }
     return s_runtime.ready && s_runtime.title_font != NULL
                ? s_runtime.title_font
-               : &lv_font_SourceHanSerifSC_Regular_22;
+               : ui_font_assets_builtin_text();
 }
 
+/**
+ * @brief 获取 AI 页面正文和按钮字体。
+ *
+ * 优先使用 assets 分区加载出的运行时替换字体；不可用时回落到
+ * 固件内嵌 cbin 字体。
+ *
+ * @return 正文字体指针。
+ */
 const lv_font_t *ui_font_assets_body(void) {
     if (!s_runtime.init_done) {
         (void)ui_font_assets_init();
     }
     return s_runtime.ready && s_runtime.body_font != NULL ? s_runtime.body_font
-                                                          : &lv_font_SourceHanSerifSC_Regular_22;
+                                                          : ui_font_assets_builtin_text();
 }
 
+/**
+ * @brief 获取 AI 页面辅助信息字体。
+ *
+ * 优先使用 assets 分区加载出的运行时替换字体；不可用时回落到
+ * 固件内嵌 cbin 字体。
+ *
+ * @return 辅助信息字体指针。
+ */
 const lv_font_t *ui_font_assets_meta(void) {
     if (!s_runtime.init_done) {
         (void)ui_font_assets_init();
     }
     return s_runtime.ready && s_runtime.meta_font != NULL
                ? s_runtime.meta_font
-               : &lv_font_SourceHanSerifSC_Regular_22;
+               : ui_font_assets_builtin_text();
 }
 
+/**
+ * @brief 获取 AI 页面图标字体。
+ *
+ * 如果 assets 分区提供了图标字体则使用运行时替换版本；否则继续使用
+ * GUI Guider 生成的内置符号字体。
+ *
+ * @return 图标字体指针。
+ */
 const lv_font_t *ui_font_assets_icon(void) {
     if (!s_runtime.init_done) {
         (void)ui_font_assets_init();
     }
     return s_runtime.ready && s_runtime.icon_font != NULL ? s_runtime.icon_font
-                                                          : &lv_font_montserratMedium_16;
+                                                          : ui_font_assets_compiled_icon();
 }

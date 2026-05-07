@@ -21,6 +21,7 @@ extern "C"
 #include "main_dropdown_controller.h"
 #include "wifi_management_controller.h"
 #include "ui_font_assets.h"
+#include "ui_chinese_fonts.h"
 #include "scroll_functions.h" // 滚动功能模块
                               //   LV_IMG_DECLARE(_20221103102551_80994_240x280);
     /**

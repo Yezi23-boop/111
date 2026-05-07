@@ -5,6 +5,7 @@
 #include "sd_manager.h"
 #include "audio_codec.h"
 #include "board_power.h"
+#include "resource_fs.h"
 #include "i2c_manager.h"
 #include "button_gpio.h"
 #include "driver/gpio.h"
@@ -119,7 +120,7 @@ static esp_err_t hardware_nvs_init(void)
 /**
  * @brief 统一初始化基础硬件能力。
  *
- * 该入口负责准备 NVS、音频资源、SD、codec、板级电源和按键输入，
+ * 该入口负责准备 NVS、音频资源、通用资源分区、SD、codec、板级电源和按键输入，
  * 但不会阻塞等待 Wi-Fi 真正连通。
  *
  * @return `ESP_OK` 表示基础硬件初始化成功；
@@ -143,6 +144,17 @@ esp_err_t hardware_init(void)
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Audio SPIFFS init failed: %s", esp_err_to_name(ret));
+    }
+
+    /*
+     * 通用资源分区给 LVGL POSIX `A:` 盘符提供 `/resources` 根目录。
+     * 挂载失败只影响运行时字体/图片/音频资源，不阻断基础 UI 启动。
+     */
+    ESP_LOGI(TAG, "Initializing Resource LittleFS...");
+    ret = resource_fs_init();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Resource LittleFS init failed: %s", esp_err_to_name(ret));
     }
 
     ESP_LOGI(TAG, "Initializing SD Card...");

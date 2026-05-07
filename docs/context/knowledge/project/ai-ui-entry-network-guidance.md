@@ -83,7 +83,7 @@ evidence_level: observed
 - 历史上的独立实验页 `main/ai_experiment_ui.c` / `main_ai_chat_experiment.c` 已从仓库删除；
   当前只应以 `main/app/app_main.c + main/ui/custom/ai_ui_controller.c + official_chat_service` 作为正式 AI 链路理解。
 - `main/CMakeLists.txt` 现已显式维护 `app/services/features/ui` 的 hand-written 源码清单，并仅对 `main/ui/generated/*.c` 保留 glob 收集，避免入口与服务文件继续混在根目录或重复注册。
-- `ui_font_assets` 若因 `assets` 分区内容非法而回退到编译字体，`title/body/meta` 三类中文文本当前都应继续走 `lv_font_SourceHanSerifSC_Regular_22`，避免 AI 页出现中文方框；若仍看到 `invalid assets package`，优先重新执行完整 `idf.py flash` 以确保 `0x1310000` 的 `assets` 分区与当前构建一致。
+- `ui_font_assets` 当前默认用 `78/xiaozhi-fonts` 的 `cbin/font_puhui_common_20_4.bin` 内嵌字体承接 `title/body/meta`，`assets` 分区只作为运行时可替换版本；若仍看到 `invalid assets package`，优先重新执行完整 `idf.py flash` 以确保 `assets` 分区与当前构建一致。
 
 ## official_chat_service 位置
 

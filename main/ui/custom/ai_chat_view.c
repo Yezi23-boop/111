@@ -336,6 +336,15 @@ static void ai_chat_view_apply_footer_layout(ai_chat_view_t *view) {
     }
 }
 
+/**
+ * @brief 创建 AI 聊天页面并提前准备字体 seam。
+ *
+ * 字体主路径已经随 78/xiaozhi-fonts 编译进固件，assets 分区只负责运行时
+ * 替换；这里提前初始化 seam，避免后续创建 label 时才触发分区 mmap。
+ *
+ * @param config 页面初始文案和按钮回调配置，传 NULL 时使用默认配置。
+ * @return 创建成功返回页面对象，内存不足时返回 NULL。
+ */
 ai_chat_view_t *ai_chat_view_create(const ai_chat_view_config_t *config) {
     esp_err_t font_assets_ret = ui_font_assets_init();
     if (font_assets_ret != ESP_OK) {

@@ -15,7 +15,7 @@
  *
  * 当前初始化顺序依次覆盖：
  * - NVS
- * - 音频资源与 SD
+ * - 音频资源、通用资源 LittleFS 与 SD
  * - audio codec
  * - board power
  * - 按键与配网入口
