@@ -125,7 +125,7 @@ def main() -> int:
     parser.add_argument("--top", type=int, default=5, help="最多打包前 N 条命中。")
     parser.add_argument(
         "--index",
-        default="context/index/context-index.json",
+        default="docs/context/index/context-index.json",
         help="索引文件路径（相对项目根目录）。",
     )
     parser.add_argument(
@@ -178,6 +178,11 @@ def main() -> int:
         help="输出文件路径（相对项目根目录）。",
     )
     parser.add_argument(
+        "--no-write",
+        action="store_true",
+        help="只打印/返回上下文包，不写入输出文件；用于普通 light 检索避免污染工作区。",
+    )
+    parser.add_argument(
         "--print",
         action="store_true",
         help="在终端额外打印打包内容。",
@@ -214,15 +219,19 @@ def main() -> int:
     )
 
     output_path = (project_root / args.output).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(packed, encoding="utf-8")
+    if not args.no_write:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(packed, encoding="utf-8")
 
     print(f"查询: {args.q}")
     print(
         f"候选文档: {stats['candidates']}，命中: {stats['matched']}，打包: {len(results)}"
     )
     print(f"模式: {args.mode}，字符预算: {max(500, args.max_chars)}")
-    print(f"输出文件: {output_path}")
+    if args.no_write:
+        print("输出文件: 未写入 (--no-write)")
+    else:
+        print(f"输出文件: {output_path}")
 
     if args.print:
         print("")

@@ -65,25 +65,28 @@ def unique_output_path(runs_root: Path, date_text: str, slug: str) -> Path:
 
 
 def build_document(args: argparse.Namespace, date_text: str, doc_id_slug: str) -> str:
-    status = args.status
+    result = args.status
     owners = csv(args.changed) or "docs/context/runs"
     triggers = csv(args.trigger) or args.title
     tags = csv(args.tag) or "context, run, attempt-log"
-    evidence_level = "observed" if status in {"success", "partial", "failed"} else "inferred"
-    record_reasons = csv(args.record_because)
+    evidence_level = "observed" if result in {"success", "partial", "failed"} else "inferred"
+    record_reasons = csv(args.record_because) or ("force" if args.force else "")
 
     lines: list[str] = [
         "---",
         f"id: attempt-{date_text}-{doc_id_slug}",
         f"tags: {tags}",
-        f"summary: {args.title}；结果：{status}。",
+        f"summary: {args.title}；结果：{result}。",
         f"last_reviewed: {date_text}",
         "memory_type: episodic",
         "scope: task",
+        "status: active",
+        f"result: {result}",
         f"owners: {owners}",
         f"triggers: {triggers}",
         f"evidence_level: {evidence_level}",
         f"record_reasons: {record_reasons}",
+        f"force_reason: {'manual override without record-because' if args.force and not args.record_because else ''}",
         "---",
         "",
         f"# Attempt Log: {args.title}",
@@ -92,7 +95,7 @@ def build_document(args: argparse.Namespace, date_text: str, doc_id_slug: str) -
         "",
         f"- 本次要验证什么：{args.goal or args.title}",
         f"- 对应任务或计划：{args.task or '未绑定计划'}",
-        f"- 结果状态：{status}",
+        f"- 结果状态：{result}",
         f"- 长期记录理由：{record_reasons or '未记录'}",
         "",
         "## 环境",

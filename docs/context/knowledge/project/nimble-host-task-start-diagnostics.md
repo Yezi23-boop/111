@@ -1,19 +1,23 @@
 ---
 id: nimble-host-task-start-diagnostics
 tags: [project, ble, provisioning, nimble, freertos, esp32-s3]
-summary: 记录在 NimBLE HCI 初始化已恢复后，板端仍未出现 `BLE host task started` / advertising 日志时，当前仓库采用的最小诊断探针与判断依据。
-last_reviewed: 2026-04-03
+summary: 历史卡：记录旧自定义 BLE transport 中 NimBLE host task 未启动时的诊断探针；当前正式 BLE 配网入口已迁到 network_provisioning_adapter。
+last_reviewed: 2026-05-08
 memory_type: semantic
 scope: repo
 owners: components/network_provisioning_adapter, components/ble_control
 triggers: nimble, host, task, start, diagnostics
 evidence_level: observed
+status: superseded
+superseded_by: docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md
 ---
 
 # NimBLE Host Task 启动诊断
 
 ## 现象
 
+- 本卡记录的是旧 `components/wifi_provision` 自定义 BLE transport 阶段的诊断经验。
+- 当前正式 BLE provisioning 入口已经迁到 `components/network_provisioning_adapter`，不要再把旧文件路径当作当前排查入口。
 - 单击按键后，板端已经进入 BLE 启动路径。
 - `hci inits failed / nimble host init failed` 已经消失。
 - 但串口仍未出现：
@@ -23,7 +27,7 @@ evidence_level: observed
 ## 当前判断
 
 - 当前阻塞点已经从 `esp_nimble_hci_init()` 前移到更后面的阶段。
-- `components/wifi_provision/src/ble_server/ble_provision_transport.c` 中，
+- 旧 `components/wifi_provision/src/ble_server/ble_provision_transport.c` 中，
   `BLE host task started` 日志位于 `ble_provision_host_task()` 的第一行。
 - 如果这条日志完全没有出现，优先怀疑：
   - `nimble_port_freertos_init()` 内部没有真正创建出 `nimble_host`
@@ -60,4 +64,5 @@ evidence_level: observed
 ## 对后续 agent 的建议
 
 - 不要再把这类现象直接归因为 advertising payload 或微信小程序。
-- 先看是否已有 `nimble host task created/missing after init` 证据，再决定下一步是查 FreeRTOS 资源，还是继续追 NimBLE 同步/广告阶段。
+- 如果排查当前正式配网链路，先从 `network_provisioning_adapter` 和官方 `network_provisioning / wifi_prov_mgr` 生命周期证据开始。
+- 只有在用户明确追溯旧自定义 BLE transport 历史问题时，才使用本卡里的 `nimble host task created/missing after init` 诊断语义。

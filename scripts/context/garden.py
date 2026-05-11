@@ -419,6 +419,11 @@ def main() -> int:
         help="打印完整警告列表。",
     )
     parser.add_argument("--json", action="store_true", help="以 JSON 输出。")
+    parser.add_argument(
+        "--summary-json",
+        action="store_true",
+        help="只输出候选桶和计数，不输出 freshness notes，适合低 token 自动化周检。",
+    )
     args = parser.parse_args()
 
     project_root = resolve_project_root(args.project_root)
@@ -455,8 +460,18 @@ def main() -> int:
         "notes": notes,
         **candidate_buckets,
     }
+    summary_payload = {
+        "checked_files": len(files),
+        "warning_count": len(warnings),
+        "candidate_counts": {
+            key: len(value) for key, value in candidate_buckets.items()
+        },
+        **candidate_buckets,
+    }
 
-    if args.json:
+    if args.summary_json:
+        print(json.dumps(summary_payload, ensure_ascii=False, indent=2))
+    elif args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(f"已园艺检查文件: {len(files)}")

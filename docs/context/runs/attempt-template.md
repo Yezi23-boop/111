@@ -5,6 +5,8 @@ summary: agent 做过什么修改和尝试的记录模板，重点记录已改�
 last_reviewed: 2026-05-05
 memory_type: episodic
 scope: task
+status: active
+result: success | partial | failed | abandoned | superseded
 owners: docs/context/runs, scripts/context/log_attempt.py
 triggers: attempt-log, anti-repeat, tried, failed, repeated-action, agent, 做过什么, 修改, 尝试, 避免重复
 evidence_level: design
@@ -17,7 +19,8 @@ record_reasons: repeat-risk, evidence
 
 - 本次要验证什么：
 - 对应任务或计划：
-- 结果状态：`success | partial | failed | abandoned | superseded`
+- 生命周期状态：`status` 用于记忆生命周期，默认 `active`；不要写成 `success`。
+- 结果状态：`result` 用于记录本次尝试结果，可选 `success | partial | failed | abandoned | superseded`
 - 长期记录理由：`repeat-risk | high-cost | owner-architecture | evidence | handoff | plan-decision | project-knowledge | framework-constraint`
 
 ## 环境

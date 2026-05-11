@@ -29,6 +29,11 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+
+# 上下文索引生成产物
+context/index/
+docs/context/index/
 
 # C/C++ 编译产物
 *.o

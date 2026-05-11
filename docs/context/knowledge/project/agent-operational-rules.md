@@ -111,6 +111,21 @@ evidence_level: design
 - 网络 / `TLS` 问题优先做最小复现，并保留错误码与断连时序证据。
 - 未验证前，不扩大阻塞等待范围，也不要把临时凭据写死进仓库。
 
+### Hearing-assist / Danger Reminder 任务默认实践
+
+- 先读产品边界与实现映射，再谈模型或阈值：
+  - `hearing-assist-danger-alert-system-architecture.md`
+  - `hearing-assist-danger-alert-state-machine-and-notification-policy.md`
+  - `hearing-assist-danger-alert-parameter-defaults-table.md`
+  - `hearing-assist-danger-alert-firmware-mapping.md`
+- active danger 默认固定为 `siren / horn / alarm`；`glass_break / crash / impact` 默认只保留在 challenger / 扩展实验，除非用户明确扩大产品定义。
+- 先区分 3 层责任，再决定改哪里：
+  - `espdl_model_runner / espdl_audio_runtime`：模型门限、窗口、特征与实时推理
+  - `danger_detection_service`：公共状态机、连续证据融合、hold / clear / cooldown / realert
+  - `app_alert_manager`：提醒编排；`danger_detection_controller`：页面展示
+- 默认目标是“后台系统级 hearing-assist 提醒”，不是“只有危险识别页打开时才工作的专页功能”。
+- 如果任务涉及误报、漏报、持续提醒或 UI 抖动，先判断它是模型分数问题、service 后处理问题，还是提醒层策略问题，再动代码。
+
 ### 手表 / 屏幕路线
 
 阶段 1：环境与底座

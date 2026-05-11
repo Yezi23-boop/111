@@ -24,11 +24,11 @@ evidence_level: observed
 
 ## 维护脚本
 
-- `uv run python scripts/context/build_index.py`
-- `uv run python scripts/context/check.py`
-- `uv run python scripts/context/query.py --q "<关键词>" --top 5`
-- `uv run python scripts/context/pack_context.py --q "<关键词>" --top 5`
-- `uv run python scripts/context/garden.py`
+- 普通任务低 token 检索：`uv run python scripts/context/validate_context.py --level light --q "<关键词>" --brief`
+- 只改 context 文档：`uv run python scripts/context/validate_context.py --level standard`
+- 改入口或检索基准：`uv run python scripts/context/validate_context.py --level routing`
+- 改 `scripts/context` 或记忆机制：`uv run python scripts/context/validate_context.py --level full`
+- 底层脚本 `build_index.py`、`check.py`、`query.py`、`pack_context.py`、`garden.py` 只作为高级调试或 `validate_context.py` 的实现细节使用。
 
 ## 当前维护原则
 
@@ -38,6 +38,7 @@ evidence_level: observed
 
 ## 首读入口
 
+- agent 首读入口：`docs/context/INDEX.agent.md`
 - 仓库级首读画像：`docs/context/knowledge/project/project-profile.md`
-- 总体模块地图：`docs/context/knowledge/project/repo-overview.md`
+- 总体模块地图：`docs/context/knowledge/project/repo-overview.md`，仅在 brief 命中或确实需要全局骨架时打开
 - 目录/owner 映射：`docs/context/knowledge/project/main-directory-map.md`

@@ -1,5 +1,15 @@
 # 上下文库变更记录
 
+- 2026-05-11：本轮 biweekly garden 复核确认 `context` 路由与 `gui-guider` host preview 的稳定结论已被现有卡覆盖；`project-profile.md` 进一步明确普通任务只把 `query.py / pack_context.py` 视为实现细节或高级调试路径，`context-memory-policy.md` 补充“同主题已有稳定卡时优先原卡增量更新，避免重复造卡”的晋升边界。
+- 2026-05-08：补记危险声音 `V3.4-core` 本地 hard negative 候选训练闭环：训练仓库新增 core source/teacher/filter/mixed/train/eval 证据，active danger 继续限定 `siren / horn / alarm`，`glass_break / crash / impact` 未进入本轮 active 口径；PC 侧 `DSCNNTiny` 在 `threshold=0.80/0.85` 下 `recall=0.950617`、`precision=1.0`、`FPR=0.0`，但仍标记为 `candidate_not_active`，因为尚未导出 `.espdl` 和板端验证。
+- 2026-05-08：补充 hearing-assist / danger reminder 仓库约束：`AGENTS.md` 新增专项短规则，要求命中该产品线任务时先对齐系统架构卡、状态机卡、参数表和固件映射卡，并固定 active danger 只认 `siren / horn / alarm`；`agent-operational-rules.md` 同步补充详细执行口径，明确 `espdl_model_runner / espdl_audio_runtime`、`danger_detection_service`、`app_alert_manager / danger_detection_controller` 的责任边界，以及“后台系统级提醒优先于专页功能”的默认方向。
+- 2026-05-08：新增 `scripts/context/test_memory_flow.py` 作为 Agent Context Memory 闭环自检脚本，覆盖首读触发入口、attempt 写入门槛与 schema、`--force` 旁路可审计、runs 检索、light brief 不落盘、context index 新鲜度、garden summary 和 query golden 回归；同步在 `docs/context/README.md` 暴露该命令。
+- 2026-05-08：修复经验总结元数据契约：`log_attempt.py` 生成的 attempt frontmatter 改为 `status: active` 表示生命周期、`result: success|partial|failed|...` 表示尝试结果；同步更新 `attempt-template.md`、`runs/README.md`，并修正 GUI Guider host preview 两张新卡的无效 owner/status。
+- 2026-05-08：补记 `gui-guider-lvgl-preview` skill 的真实试跑经验：新增 `knowledge/project/gui-guider-lvgl-host-preview-workflow.md` 固化 host/pc_sim 预览定位、板端边界、当前仓库 `main/ui/agent_preview` fallback 目录和 Windows/MSYS2 构建坑；新增 `runs/2026-05-08-attempt-gui-guider-lvgl-preview-skill-trial.md` 记录 Apple Watch S5 风格预览构建与截图证据，并在 `INDEX.agent.md` 的 Display And Touch 路由中挂接该工作流。
+- 2026-05-08：为 context garden 自动化新增低 token 输出：`garden.py --summary-json` 只输出候选桶、计数和警告数量，不再输出大量 freshness notes；用于周检自动化保持轻量，双周/人工复核再运行更完整的标准验证。
+- 2026-05-08：继续修复 agent context 复查 findings：`pack_context.py` 新增 `--no-write`，`validate_context.py --level light --brief` 默认只打印不写 `context/pack/context-pack.md`；将旧 BLE `wifi_provision` notify/NimBLE 诊断卡标记为 `superseded` 并指向当前 `network_provisioning_adapter` 主线；同步 `README.md` 与 `handoffs/current-repo-state.md` 的默认维护入口为 `validate_context` 分级流程；修正 `official_chat` 局部 AGENTS 的 board metadata 按需读取边界；修正 `project-profile.md` owners 指向自身。
+- 2026-05-08：修复 `AGENTS.md` 定位复查 findings：明确 `CLAUDE.md` 内联准则先于仓库冲突裁决；将根入口中的 IDF/monitor/hardware 细则压缩为红线索引并指向 `agent-operational-rules.md`；同步 `INDEX.agent.md` 为 `validate_context.py --level light --brief` 单入口；收窄工程规则卡的 Doxygen 默认范围；将 `official_chat` / `traffic_inference` 局部 `AGENTS.md` 的 `Read First` 改为先 light 检索、再按命中打开原文；同时将宽泛 `fonts` 触发词收窄为具体 UI 字体路径/符号。
+- 2026-05-08：优化 `AGENTS.md` 轻量入口：当前仓库规则不再同时暴露 `query.py/pack_context.py` 与 `validate_context.py` 双入口，统一用 `validate_context.py --level light --brief`；同时压缩根规则中的注释规范，并把 `main/ui/custom`、`ai_chat_view`、`ui_runtime_fonts`、`ui_chinese_fonts`、`fonts` 纳入 UI/字体专项触发词。
 - 2026-05-08：在 `lvgl-chinese-ui-binfonts` 中补充“Agent 生成中文 UI 默认流程”，固定含中文 label 使用 `ui_chinese_fonts.h` 声明的编译期字体符号、英文/数字可继续使用 Montserrat，并要求生成后运行中文字体防呆扫描。
 - 2026-05-08：中文 LVGL UI 外部用法进一步简化为直接引用编译期字体符号，例如 `&lv_font_montserrat_lxgw_tghz_level1_3500_24_4`；`ui_chinese_fonts.h` 统一声明四个预置字号，移除 `ui_runtime_fonts_get(size)` 作为默认主路径。
 - 2026-05-08：中文 LVGL UI 字体主路径调整为编译进固件的 LVGL C 字体；`resources/fonts/*.bin` 保留为后续可替换字体升级路径。
@@ -272,3 +282,6 @@
 - 2026-05-04：简化“状态发布与 UI 读取原则”在 `AGENTS.md` 中的表述，保留核心分层和禁止项，并同步收紧详细规则卡措辞。
 - 2026-05-04：进一步将 `AGENTS.md` 中“状态发布与 UI 读取原则”压缩为 3 条红线版，详细展开继续保留在项目规则卡中。
 - 2026-05-04：将 `CLAUDE.md` 行为准则提升为 `AGENTS.md` 内最高优先级规则，并在优先级说明与章节标题中显式标注。
+- 2026-05-11：AudioClassification-Pytorch 新增模型登记目录 `models/espdl_registry/board_verified` 与 `in_progress`；冻结已上板 DS-CNN-tiny V3.3 为回退锚点，并将 T90 sharp 结构/训练参数优化候选记录为 `candidate_not_active`，PC 侧 `threshold=0.90` 达到 danger_recall `0.962963`、FPR `0.0`。
+- 2026-05-11：AudioClassification-Pytorch 模型登记扩展为完整发布管理：`board_verified` 统一登记 6 个历史实测版本，`in_progress` 登记 2 个未上板候选，并新增 `models/espdl_registry/model_release_table.md` 作为后续回退、对比和晋升门禁总表。
+- 2026-05-11：AudioClassification-Pytorch 模型总表和 registry version json 拆分 `eval_threshold` 与 `runtime_threshold`，明确 V3.3 历史评估阈值 `0.40` 不等于当前主工程实际运行阈值 `0.80`。

@@ -5,8 +5,8 @@ summary: 面向 agent 首读的仓库画像，压缩记录正式启动链路、�
 last_reviewed: 2026-05-05
 memory_type: semantic
 scope: repo
-owners: AGENTS.md, docs/context/knowledge/project/repo-overview.md
-triggers: profile, entrypoint, repo-state, startup, owner
+owners: AGENTS.md, docs/context/knowledge/project/project-profile.md
+triggers: profile, entrypoint, repo-state, startup, owner, 当前正式启动链路, 当前真实 owner, 入口, 项目画像, 仓库画像
 evidence_level: observed
 ---
 
@@ -54,6 +54,7 @@ evidence_level: observed
 
 - 普通任务默认先运行 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`
 - `light` 会先查历史尝试，再查稳定知识，并生成 brief pack；不要为普通代码任务默认跑完整四件套。
+- `query.py` / `pack_context.py` 只作为实现细节或高级调试路径，不作为普通任务的默认入口。
 - 只改 context 文档时用 `--level standard`；改入口/检索基准时用 `--level routing`；改 `scripts/context` 或记忆机制时才用 `--level full`。
 - 复杂任务先在 `docs/context/plans/active/` 落计划
 - 有长期复用价值的联调、日志、板测证据，以及 agent 已经做过且不应重复的修改/尝试，按 `context-memory-policy.md` 写入 `docs/context/runs/`

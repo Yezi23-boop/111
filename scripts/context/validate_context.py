@@ -89,6 +89,7 @@ def build_commands(args: argparse.Namespace, project_root: Path) -> list[list[st
                     "brief",
                     "--max-chars",
                     str(args.max_chars),
+                    "--no-write",
                     "--print",
                 ]
             )

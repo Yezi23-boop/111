@@ -1,11 +1,11 @@
 ---
 id: context-agent-index
 tags: context, index, agent, low-token, entrypoint
-summary: 面向 agent 首读的低 token 上下文入口，固定先查 runs 防重复，再 query/brief pack，最后只读必要原文。
+summary: 面向 agent 首读的低 token 上下文入口，固定使用 validate_context light 先查 runs 与稳定知识，最后只读必要原文。
 last_reviewed: 2026-05-05
 memory_type: procedural
 scope: repo
-owners: docs/context/INDEX.agent.md, docs/context/knowledge/project/project-profile.md, scripts/context/query.py, scripts/context/pack_context.py
+owners: docs/context/INDEX.agent.md, docs/context/knowledge/project/project-profile.md, scripts/context/validate_context.py
 triggers: agent-index, low-token, context-entry, routing, anti-repeat
 evidence_level: design
 ---
@@ -26,8 +26,9 @@ evidence_level: design
 - If `project-profile.md` mentions `repo-overview.md`, treat it as on-demand, not default.
 - Do not bulk-open `docs/context/knowledge/**`.
 - Do not treat `CHANGELOG.md` as the primary memory; it is too long.
-- Use `query.py` first, then `pack_context.py --mode brief`.
-- Open raw Markdown only when the brief pack points to a file you truly need.
+- Use `validate_context.py --level light --brief` as the default entry.
+- Treat `query.py` and `pack_context.py` as implementation details or advanced debugging tools, not the normal first step.
+- Open raw Markdown only when the brief output points to a file you truly need.
 
 ## Low Token Workflow
 
@@ -62,6 +63,8 @@ evidence_level: design
 - Owners: `components/lvgl_port`, `components/co5300_panel`, `components/touch_ft5x06`, `main/ui`.
 - Start with:
   `docs/context/knowledge/project/display-render-touch-transfer-pipeline.md`
+- For Agent-generated LVGL host previews:
+  `docs/context/knowledge/project/gui-guider-lvgl-host-preview-workflow.md`
 - For Wi-Fi UI lifecycle crash:
   `docs/context/runs/2026-05-04-attempt-wifi-ui-lifecycle-crash.md`
 

@@ -157,7 +157,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--output",
-        default="context/index/context-index.json",
+        default="docs/context/index/context-index.json",
         help="索引 JSON 输出路径（相对项目根目录）。",
     )
     args = parser.parse_args()

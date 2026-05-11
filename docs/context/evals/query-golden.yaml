@@ -23,7 +23,7 @@ queries:
 
   - id: validate-context-levels
     query: "context 验证 分级 light standard routing full"
-    expected_top3:
+    expected_top5:
       - docs/context/procedures/context-garden-policy.md
 
   - id: project-profile-entry

@@ -32,8 +32,10 @@ uv run python scripts/context/query.py --scope runs --q "模块 文件 错误码
 快速记录一次尝试：
 
 ```bash
-uv run python scripts/context/log_attempt.py --title "短标题" --status partial --changed path/to/file.c --tried "做过的动作" --avoid "不要重复的动作" --evidence "日志或验证证据" --next "下一步"
+uv run python scripts/context/log_attempt.py --title "短标题" --status partial --record-because repeat-risk --changed path/to/file.c --tried "做过的动作" --avoid "不要重复的动作" --evidence "日志或验证证据" --next "下一步"
 ```
+
+`--status` 表示本次尝试结果，会写入 frontmatter 的 `result` 字段；frontmatter 的 `status` 保留给记忆生命周期，默认应为 `active`。
 
 推荐文件名：
 

@@ -169,7 +169,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--index",
-        default="context/index/context-index.json",
+        default="docs/context/index/context-index.json",
         help="索引文件路径（相对项目根目录）。",
     )
     parser.add_argument(

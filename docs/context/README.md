@@ -56,6 +56,8 @@ uv run python scripts/context/validate_context.py --level routing
 uv run python scripts/context/validate_context.py --level full
 ```
 
+底层维护脚本（普通任务不要默认从这里开始）：
+
 构建索引：
 
 ```bash
@@ -68,25 +70,25 @@ uv run python scripts/context/build_index.py
 uv run python scripts/context/check.py
 ```
 
-检索上下文：
+高级调试：直接检索上下文：
 
 ```bash
 uv run python scripts/context/query.py --q "esp32 s3 lvgl 触摸漂移" --top 5
 ```
 
-按标签过滤检索：
+高级调试：按标签过滤检索：
 
 ```bash
 uv run python scripts/context/query.py --q "待机电流过高" --tag power --tag esp32-s3
 ```
 
-打包可复用上下文片段：
+高级调试：手动打包可复用上下文片段：
 
 ```bash
-uv run python scripts/context/pack_context.py --q "待机功耗优化" --top 5 --mode brief --max-chars 1800
+uv run python scripts/context/pack_context.py --q "待机功耗优化" --top 5 --mode brief --max-chars 1800 --print --no-write
 ```
 
-检索历史尝试，避免重复动作：
+高级调试：直接检索历史尝试，避免重复动作：
 
 ```bash
 uv run python scripts/context/query.py --scope runs --q "模块 文件 错误码 症状" --top 8
@@ -115,6 +117,14 @@ uv run python scripts/context/garden.py --verbose
 ```bash
 uv run python scripts/context/eval_query.py
 ```
+
+经验总结闭环自检：
+
+```bash
+uv run python scripts/context/test_memory_flow.py
+```
+
+该脚本会验证首读触发入口、`log_attempt.py` 写入门槛、`--force` 旁路可审计、临时 attempt schema、`runs/` 检索、`validate_context light --brief` 不落盘、context index 新鲜度、`garden --summary-json` 与 query golden 回归。
 
 ## 低 token 工作流
 

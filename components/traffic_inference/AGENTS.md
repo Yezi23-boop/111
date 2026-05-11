@@ -7,13 +7,15 @@
 ## Read First
 
 - 根目录 `AGENTS.md`
-- `docs/context/knowledge/project/repo-overview.md`
-- `docs/context/knowledge/project/main-directory-map.md`
-- `docs/context/knowledge/project/display-touch-audio-bus-map.md`
-- `docs/context/knowledge/project/nonblocking-boot-network-service.md`
-- `docs/context/knowledge/project/traffic-inference-edge-impulse-manual-v5-integration.md`
-- `docs/context/knowledge/project/danger-signal-detection-port.md`
-- `docs/context/knowledge/project/espdl-audio-tdnn-port.md`
+- 默认先运行：
+  `uv run python scripts/context/validate_context.py --level light --q "traffic_inference <任务关键词/错误码>" --brief`
+- 仅当 brief 命中或改动确实相关时，再打开以下原文：
+  - `docs/context/knowledge/project/main-directory-map.md`
+  - `docs/context/knowledge/project/display-touch-audio-bus-map.md`
+  - `docs/context/knowledge/project/nonblocking-boot-network-service.md`
+  - `docs/context/knowledge/project/traffic-inference-edge-impulse-manual-v5-integration.md`
+  - `docs/context/knowledge/project/danger-signal-detection-port.md`
+  - `docs/context/knowledge/project/espdl-audio-tdnn-port.md`
 
 ## Do
 

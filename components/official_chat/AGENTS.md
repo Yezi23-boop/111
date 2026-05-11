@@ -7,15 +7,17 @@
 ## Read First
 
 - 根目录 `AGENTS.md`
-- `docs/context/knowledge/project/repo-overview.md`
-- `docs/context/knowledge/project/main-directory-map.md`
-- `docs/context/knowledge/project/display-touch-audio-bus-map.md`
-- `docs/context/knowledge/project/nonblocking-boot-network-service.md`
-- `docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md`
-- `docs/context/knowledge/project/ai-ui-entry-network-guidance.md`
-- `docs/context/knowledge/project/official-chat-audio-queue-official-alignment.md`
-- `docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md`
-- `components/official_chat/board_metadata/esp32-s3-touch-amoled-2.06.json`
+- 默认先运行：
+  `uv run python scripts/context/validate_context.py --level light --q "official_chat <任务关键词/错误码>" --brief`
+- 仅当 brief 命中或改动确实相关时，再打开以下原文：
+  - `docs/context/knowledge/project/main-directory-map.md`
+  - `docs/context/knowledge/project/display-touch-audio-bus-map.md`
+  - `docs/context/knowledge/project/nonblocking-boot-network-service.md`
+  - `docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md`
+  - `docs/context/knowledge/project/ai-ui-entry-network-guidance.md`
+  - `docs/context/knowledge/project/official-chat-audio-queue-official-alignment.md`
+  - `docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md`
+  - `components/official_chat/board_metadata/esp32-s3-touch-amoled-2.06.json`（仅 board metadata 任务或 brief 命中时打开）
 
 ## Do
 
