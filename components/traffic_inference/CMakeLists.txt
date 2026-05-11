@@ -1,7 +1,7 @@
 set(EDGE_IMPULSE_MODEL_DIR
-    "${CMAKE_CURRENT_LIST_DIR}/edge_impulse/manual_v5")
+    "${CMAKE_CURRENT_LIST_DIR}/edge_impulse/manual_v7_1s")
 set(EDGE_IMPULSE_SDK_DIR
-    "${EDGE_IMPULSE_MODEL_DIR}/edge-impulse-sdk")
+    "${CMAKE_CURRENT_LIST_DIR}/edge_impulse/manual_v5/edge-impulse-sdk")
 set(EDGE_IMPULSE_PORTING_ESPRESSIF_DIR
     "${EDGE_IMPULSE_SDK_DIR}/porting/espressif")
 set(EDGE_IMPULSE_ESP_DSP_DIR
@@ -115,6 +115,7 @@ idf_component_register(
         "${EDGE_IMPULSE_MODEL_DIR}"
         "${EDGE_IMPULSE_MODEL_DIR}/model-parameters"
         "${EDGE_IMPULSE_MODEL_DIR}/tflite-model"
+        "${CMAKE_CURRENT_LIST_DIR}/edge_impulse/manual_v5"
         "${EDGE_IMPULSE_SDK_DIR}"
         "${EDGE_IMPULSE_SDK_DIR}/porting"
         "${EDGE_IMPULSE_ESP_DSP_DIR}/modules/common/include"

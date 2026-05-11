@@ -285,3 +285,4 @@
 - 2026-05-11：AudioClassification-Pytorch 新增模型登记目录 `models/espdl_registry/board_verified` 与 `in_progress`；冻结已上板 DS-CNN-tiny V3.3 为回退锚点，并将 T90 sharp 结构/训练参数优化候选记录为 `candidate_not_active`，PC 侧 `threshold=0.90` 达到 danger_recall `0.962963`、FPR `0.0`。
 - 2026-05-11：AudioClassification-Pytorch 模型登记扩展为完整发布管理：`board_verified` 统一登记 6 个历史实测版本，`in_progress` 登记 2 个未上板候选，并新增 `models/espdl_registry/model_release_table.md` 作为后续回退、对比和晋升门禁总表。
 - 2026-05-11：AudioClassification-Pytorch 模型总表和 registry version json 拆分 `eval_threshold` 与 `runtime_threshold`，明确 V3.3 历史评估阈值 `0.40` 不等于当前主工程实际运行阈值 `0.80`。
+- 2026-05-12：从 `实验-LVGLv7模型-flush对比` 分支仅提取 `traffic_inference` 的 Edge Impulse `manual_v7_1s` 模型文件，当前编译模型切到 deploy version 7，同时继续复用 `manual_v5/edge-impulse-sdk`，避免合入旧实验分支的大范围结构回退。
