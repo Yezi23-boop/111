@@ -29,6 +29,7 @@ evidence_level: design
 - Use `validate_context.py --level light --brief` as the default entry.
 - Treat `query.py` and `pack_context.py` as implementation details or advanced debugging tools, not the normal first step.
 - Open raw Markdown only when the brief output points to a file you truly need.
+- For planning/framework/route/architecture tasks, open matched planning or architecture Markdown before reading implementation code; do not infer product framework directly from current code.
 
 ## Low Token Workflow
 
@@ -37,6 +38,15 @@ evidence_level: design
 2. This searches `runs/`, searches stable knowledge, and emits a brief pack.
 3. Open raw Markdown only for top hits or exact evidence.
 4. Use `--level standard|routing|full` only when editing context docs, routing, or context mechanisms.
+
+## Planning And Framework Tasks
+
+- Trigger words include: `规划`, `框架`, `整体方案`, `路线`, `架构`, `先搭起来`, `按之前方案`, `上下文库里有`.
+- First run:
+  `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`
+- If retrieval hits `docs/context/knowledge/project/*.md`, `docs/context/plans/**/*.md`, or `docs/context/runs/**/*.md`, open those planning/architecture docs first.
+- Summarize the document goal, owner, boundary, and forbidden paths before deciding where code should change.
+- Read implementation code only after the matched documents cannot answer the owner or layer question.
 
 ## When Runs Hit
 
@@ -89,6 +99,8 @@ evidence_level: design
 ## Power
 
 - Owners: `components/axp2101`, `main/app/board_power.c`, `main/services/power_service.c`.
+- For whole-watch resource framework / state budget / background feature arbitration:
+  `docs/context/plans/active/2026-05-12-watch-resource-framework-plan.md`
 - Start with:
   `docs/context/knowledge/project/axp2101-power-component-implementation.md`
 - Attempt record:

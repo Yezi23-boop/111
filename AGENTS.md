@@ -96,6 +96,20 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 出现可复用知识、流程、决策、attempt 或交接状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
 - 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
 
+## 规划/框架类任务强制路由
+
+当用户说“规划、框架、整体方案、路线、架构、先搭起来、按之前方案、上下文库里有”等关键词时：
+
+1. 不要先读代码实现文件。
+2. 先运行：
+   `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`
+3. 如果命中 `docs/context/knowledge/project/*.md`、`docs/context/plans/**/*.md` 或 `docs/context/runs/**/*.md`：
+   - 先打开命中的规划/架构文档；
+   - 先总结文档里的目标、owner、边界、禁止项；
+   - 再决定代码落点。
+4. 只有在规划文档无法回答“改哪一层/哪个 owner”时，才继续读代码。
+5. 禁止直接从当前代码现状反推产品框架。
+
 ## 嵌入式 C/C++ 代码生成默认规范
 
 本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码，适用于显示/UI、触摸输入、音频播放、Wi-Fi 配网、板级驱动、模块拆分和架构建议任务。

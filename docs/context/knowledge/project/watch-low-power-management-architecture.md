@@ -2,7 +2,7 @@
 id: watch-low-power-management-architecture
 tags: project, power, low-power, axp2101, rtc, lvgl, wifi
 summary: 当前手表项目低功耗管理的推荐状态机、模块分层、实施顺序与硬件边界。
-last_reviewed: 2026-04-13
+last_reviewed: 2026-05-12
 memory_type: semantic
 scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power_service.c, main/ui/ui_refresh_policy.c
@@ -20,6 +20,10 @@ evidence_level: design
 2. `Idle-Dim`
 3. `Standby`
 4. `Deep Sleep / Power Off`
+
+如果问题不是单纯低功耗，而是“手表整体资源框架、后台功能冲突、危险识别后台化、音频/屏幕/网络/AI 推理资源预算”，优先打开：
+
+- `docs/context/plans/active/2026-05-12-watch-resource-framework-plan.md`
 
 ## 为什么不能一上来就深睡
 
