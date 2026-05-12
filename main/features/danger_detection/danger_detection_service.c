@@ -15,9 +15,6 @@
 
 #define TAG "danger_detection"
 #define DANGER_DETECTION_STOP_TIMEOUT_MS 2000U /**< 默认停止等待时间，单位为毫秒。 */
-#define ESPDL_DANGER_CONFIRM_WINDOWS 2U        /**< 连续 danger 窗口数，达到后才触发告警。 */
-#define ESPDL_CLEAR_CONFIRM_WINDOWS 3U         /**< 连续 non-danger 窗口数，达到后才允许清除。 */
-#define ESPDL_ALERT_HOLD_MS 2000U              /**< 告警最短保持时间，单位为毫秒。 */
 
 /*
  * 危险检测服务实现说明：
@@ -26,6 +23,15 @@
  * - 对外发布快照时，会把运行时状态与后处理分数整合到同一结构；
  * - 快照通过临界区保护，避免 UI 在读取时看到半更新状态。
  */
+
+static const danger_detection_policy_profile_t k_espdl_policy_profile = {
+    .deployment_profile_id = "espdl_dscnn_v3_3_core_t90_2w3c_h2s_cd3s",
+    .danger_class_profile = "core_siren_horn_alarm",
+    .confirm_windows = 2U,
+    .clear_windows = 3U,
+    .alert_hold_ms = 2000U,
+    .cooldown_ms = 3000U,
+};
 
 typedef struct
 {
@@ -44,6 +50,7 @@ static danger_detection_service_state_t s_service_state = {
     .active_backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE,
     .snapshot = {
         .state = DANGER_DETECTION_STATE_IDLE,
+        .risk_state = DANGER_DETECTION_RISK_OFF,
         .stable_label = DANGER_DETECTION_LABEL_NONE,
         .last_detected_label = DANGER_DETECTION_LABEL_NONE,
         .last_detected_confidence = 0.0f,
@@ -61,6 +68,7 @@ static danger_detection_service_state_t s_service_state = {
 static uint32_t s_espdl_danger_window_count = 0U; /**< ESP-DL 连续 danger 窗口计数。 */
 static uint32_t s_espdl_clear_window_count = 0U;  /**< ESP-DL 连续 non-danger 窗口计数。 */
 static TickType_t s_espdl_hold_until_tick = 0;    /**< ESP-DL 告警保持到期 tick。 */
+static TickType_t s_espdl_cooldown_until_tick = 0; /**< ESP-DL 冷却到期 tick。 */
 
 /**
  * @brief 重置 ESP-DL 后处理短状态。
@@ -73,6 +81,32 @@ static void danger_detection_reset_espdl_postprocess(void)
     s_espdl_danger_window_count = 0U;
     s_espdl_clear_window_count = 0U;
     s_espdl_hold_until_tick = 0;
+    s_espdl_cooldown_until_tick = 0;
+}
+
+const char *danger_detection_risk_state_text(
+    danger_detection_risk_state_t risk_state)
+{
+    switch (risk_state)
+    {
+    case DANGER_DETECTION_RISK_MONITORING:
+        return "MONITORING";
+    case DANGER_DETECTION_RISK_SUSPICIOUS:
+        return "SUSPICIOUS";
+    case DANGER_DETECTION_RISK_ALERTING:
+        return "ALERTING";
+    case DANGER_DETECTION_RISK_COOLDOWN:
+        return "COOLDOWN";
+    case DANGER_DETECTION_RISK_OFF:
+    default:
+        return "OFF";
+    }
+}
+
+const danger_detection_policy_profile_t *
+danger_detection_service_get_policy_profile(void)
+{
+    return &k_espdl_policy_profile;
 }
 
 /**
@@ -148,6 +182,18 @@ static void danger_detection_set_state(danger_detection_state_t state,
     taskENTER_CRITICAL(&s_service_state.lock);
     s_service_state.snapshot.state = state;
     s_service_state.snapshot.last_error = last_error;
+    if (state == DANGER_DETECTION_STATE_IDLE ||
+        state == DANGER_DETECTION_STATE_ERROR ||
+        state == DANGER_DETECTION_STATE_STOPPING)
+    {
+        s_service_state.snapshot.risk_state = DANGER_DETECTION_RISK_OFF;
+    }
+    else if (state == DANGER_DETECTION_STATE_RUNNING &&
+             s_service_state.snapshot.risk_state == DANGER_DETECTION_RISK_OFF)
+    {
+        s_service_state.snapshot.risk_state =
+            DANGER_DETECTION_RISK_MONITORING;
+    }
     taskEXIT_CRITICAL(&s_service_state.lock);
 }
 
@@ -179,6 +225,7 @@ static void danger_detection_on_alert(
 
         taskENTER_CRITICAL(&s_service_state.lock);
         s_service_state.snapshot.state = DANGER_DETECTION_STATE_RUNNING;
+        s_service_state.snapshot.risk_state = DANGER_DETECTION_RISK_ALERTING;
         s_service_state.snapshot.stable_label =
             danger_detection_map_label(alert->label);
         s_service_state.snapshot.last_detected_label =
@@ -196,6 +243,7 @@ static void danger_detection_on_alert(
 
         taskENTER_CRITICAL(&s_service_state.lock);
         s_service_state.snapshot.state = DANGER_DETECTION_STATE_RUNNING;
+        s_service_state.snapshot.risk_state = DANGER_DETECTION_RISK_MONITORING;
         s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
         s_service_state.snapshot.danger_overlay_active = false;
         taskEXIT_CRITICAL(&s_service_state.lock);
@@ -223,15 +271,27 @@ static void danger_detection_on_espdl_result(
     const bool is_danger = result->label_index == 1;
     const float danger_prob = result->probabilities[1];
     const TickType_t now_tick = xTaskGetTickCount();
-    const TickType_t hold_ticks = pdMS_TO_TICKS(ESPDL_ALERT_HOLD_MS);
+    const danger_detection_policy_profile_t *profile =
+        danger_detection_service_get_policy_profile();
+    const TickType_t hold_ticks = pdMS_TO_TICKS(profile->alert_hold_ms);
+    const TickType_t cooldown_ticks = pdMS_TO_TICKS(profile->cooldown_ms);
     bool should_raise_alert = false;
     bool should_clear_alert = false;
+    danger_detection_risk_state_t old_risk_state =
+        DANGER_DETECTION_RISK_OFF;
+    danger_detection_risk_state_t new_risk_state =
+        DANGER_DETECTION_RISK_MONITORING;
 
     taskENTER_CRITICAL(&s_service_state.lock);
 
+    old_risk_state = s_service_state.snapshot.risk_state;
+    new_risk_state = old_risk_state;
     s_service_state.snapshot.danger_confidence = danger_prob;
     s_service_state.snapshot.state = DANGER_DETECTION_STATE_RUNNING;
     s_service_state.snapshot.active_backend = DANGER_DETECTION_BACKEND_ESPDL;
+    const bool cooldown_active =
+        old_risk_state == DANGER_DETECTION_RISK_COOLDOWN &&
+        (int32_t)(now_tick - s_espdl_cooldown_until_tick) < 0;
 
     if (is_danger)
     {
@@ -251,11 +311,20 @@ static void danger_detection_on_espdl_result(
         }
     }
 
-    if (is_danger &&
-        s_espdl_danger_window_count >= ESPDL_DANGER_CONFIRM_WINDOWS &&
+    if (cooldown_active)
+    {
+        /*
+         * 冷却期仍记录模型证据和窗口计数，但不重复触发强提醒。
+         * 若危险证据持续到冷却结束，后续窗口会重新走连续确认逻辑。
+         */
+        new_risk_state = DANGER_DETECTION_RISK_COOLDOWN;
+    }
+    else if (is_danger &&
+        s_espdl_danger_window_count >= profile->confirm_windows &&
         !s_service_state.snapshot.danger_overlay_active)
     {
         /* 连续 danger 窗口达到门限后才触发，降低单窗误报概率。 */
+        new_risk_state = DANGER_DETECTION_RISK_ALERTING;
         s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_DANGER;
         s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_DANGER;
         s_service_state.snapshot.last_detected_confidence = danger_prob;
@@ -266,24 +335,63 @@ static void danger_detection_on_espdl_result(
     else if (is_danger && s_service_state.snapshot.danger_overlay_active)
     {
         /* 告警保持期间继续刷新置信度，但不重复增加 alert_sequence。 */
+        new_risk_state = DANGER_DETECTION_RISK_ALERTING;
         s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_DANGER;
         s_service_state.snapshot.last_detected_confidence = danger_prob;
+    }
+    else if (is_danger)
+    {
+        /*
+         * 首个高风险窗只进入可疑态。正式告警仍需连续窗口确认，
+         * 这样可以吸收人声爆破音、摩擦和短促外放尖峰。
+         */
+        new_risk_state = DANGER_DETECTION_RISK_SUSPICIOUS;
     }
     else if (!is_danger && s_service_state.snapshot.danger_overlay_active)
     {
         const bool hold_expired =
             (int32_t)(now_tick - s_espdl_hold_until_tick) >= 0;
         if (hold_expired &&
-            s_espdl_clear_window_count >= ESPDL_CLEAR_CONFIRM_WINDOWS)
+            s_espdl_clear_window_count >= profile->clear_windows)
         {
             /* danger 消失也要连续确认，避免边界窗口导致 UI 来回抖动。 */
             s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
             s_service_state.snapshot.danger_overlay_active = false;
+            s_espdl_cooldown_until_tick = now_tick + cooldown_ticks;
+            new_risk_state = DANGER_DETECTION_RISK_COOLDOWN;
             should_clear_alert = true;
         }
+        else
+        {
+            new_risk_state = DANGER_DETECTION_RISK_ALERTING;
+        }
+    }
+    else if (old_risk_state == DANGER_DETECTION_RISK_COOLDOWN)
+    {
+        const bool cooldown_expired =
+            (int32_t)(now_tick - s_espdl_cooldown_until_tick) >= 0;
+        new_risk_state = cooldown_expired
+                             ? DANGER_DETECTION_RISK_MONITORING
+                             : DANGER_DETECTION_RISK_COOLDOWN;
+    }
+    else
+    {
+        new_risk_state = DANGER_DETECTION_RISK_MONITORING;
     }
 
+    s_service_state.snapshot.risk_state = new_risk_state;
     taskEXIT_CRITICAL(&s_service_state.lock);
+
+    if (old_risk_state != new_risk_state)
+    {
+        ESP_LOGI(TAG,
+                 "danger risk: %s -> %s, prob=%.4f, danger_windows=%lu, clear_windows=%lu",
+                 danger_detection_risk_state_text(old_risk_state),
+                 danger_detection_risk_state_text(new_risk_state),
+                 danger_prob,
+                 (unsigned long)s_espdl_danger_window_count,
+                 (unsigned long)s_espdl_clear_window_count);
+    }
 
     if (should_raise_alert)
     {
@@ -291,12 +399,14 @@ static void danger_detection_on_espdl_result(
         app_alert_request_t request = {
             .source = APP_ALERT_SOURCE_TRAFFIC_AUDIO,
             .severity = APP_ALERT_SEVERITY_DANGER,
-            .label = APP_ALERT_LABEL_HORN,  /* ESP-DL 二分类模式统一用 HORN */
+            .label = APP_ALERT_LABEL_DANGER,
         };
         (void)app_alert_manager_raise(&request);
 
         ESP_LOGW(TAG,
-                 "ESPDL danger 检测: model=dscnn_v3.3, danger_prob=%.4f, windows=%lu",
+                 "ESPDL danger 检测: profile=%s, class=%s, danger_prob=%.4f, windows=%lu",
+                 profile->deployment_profile_id,
+                 profile->danger_class_profile,
                  danger_prob,
                  (unsigned long)s_espdl_danger_window_count);
     }
@@ -329,6 +439,7 @@ esp_err_t danger_detection_service_init(void)
     taskENTER_CRITICAL(&s_service_state.lock);
     s_service_state.initialized = true;
     s_service_state.snapshot.state = DANGER_DETECTION_STATE_IDLE;
+    s_service_state.snapshot.risk_state = DANGER_DETECTION_RISK_OFF;
     s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
     s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_NONE;
     s_service_state.snapshot.last_detected_confidence = 0.0f;
@@ -384,6 +495,7 @@ static esp_err_t start_edge_impulse_backend(void)
     taskENTER_CRITICAL(&s_service_state.lock);
     s_service_state.runtime_started = true;
     s_service_state.active_backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE;
+    s_service_state.snapshot.risk_state = DANGER_DETECTION_RISK_MONITORING;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
     ESP_LOGI(TAG, "Edge Impulse 运行时已启动");
@@ -431,6 +543,7 @@ static esp_err_t start_espdl_backend(void)
     taskENTER_CRITICAL(&s_service_state.lock);
     s_service_state.runtime_started = true;
     s_service_state.active_backend = DANGER_DETECTION_BACKEND_ESPDL;
+    s_service_state.snapshot.risk_state = DANGER_DETECTION_RISK_MONITORING;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
     ESP_LOGI(TAG, "ESP-DL 单模型运行时已启动");
@@ -469,6 +582,7 @@ esp_err_t danger_detection_service_start_with_backend(
     /* 重置快照 */
     taskENTER_CRITICAL(&s_service_state.lock);
     s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.risk_state = DANGER_DETECTION_RISK_OFF;
     s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_NONE;
     s_service_state.snapshot.last_detected_confidence = 0.0f;
     s_service_state.snapshot.horn_confidence = 0.0f;
@@ -551,6 +665,7 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     s_service_state.callback_registered = false;
     s_service_state.runtime_started = false;
     s_service_state.snapshot.stable_label = DANGER_DETECTION_LABEL_NONE;
+    s_service_state.snapshot.risk_state = DANGER_DETECTION_RISK_OFF;
     s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_NONE;
     s_service_state.snapshot.last_detected_confidence = 0.0f;
     s_service_state.snapshot.horn_confidence = 0.0f;

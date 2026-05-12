@@ -29,6 +29,16 @@ extern "C"
         DANGER_DETECTION_STATE_ERROR,
     } danger_detection_state_t;
 
+    /* 面向用户提醒策略的危险风险状态。 */
+    typedef enum
+    {
+        DANGER_DETECTION_RISK_OFF = 0,     /**< 服务未运行或不可用。 */
+        DANGER_DETECTION_RISK_MONITORING,  /**< 正在监听，当前无稳定危险证据。 */
+        DANGER_DETECTION_RISK_SUSPICIOUS,  /**< 已出现高风险窗口，但尚未正式告警。 */
+        DANGER_DETECTION_RISK_ALERTING,    /**< 已确认危险，提醒层应保持告警。 */
+        DANGER_DETECTION_RISK_COOLDOWN,    /**< 刚解除告警，短暂抑制重复强提醒。 */
+    } danger_detection_risk_state_t;
+
     /* 对外暴露的稳定危险标签。 */
     typedef enum
     {
@@ -48,6 +58,7 @@ extern "C"
     typedef struct
     {
         danger_detection_state_t state;               /**< 服务当前状态。 */
+        danger_detection_risk_state_t risk_state;      /**< 危险提醒状态机当前状态。 */
         danger_detection_label_t stable_label;        /**< 后处理稳定标签。 */
         danger_detection_label_t last_detected_label; /**< 最近一次触发的标签。 */
         float last_detected_confidence;               /**< 最近一次触发的置信度。 */
@@ -59,6 +70,22 @@ extern "C"
         bool danger_overlay_active;                   /**< UI 危险覆盖层当前是否激活。 */
         danger_detection_backend_t active_backend;    /**< 当前活跃的推理后端。 */
     } danger_detection_snapshot_t;
+
+    /**
+     * @brief 危险检测部署策略 profile。
+     *
+     * 该结构记录当前固件使用的 active danger 口径和后处理参数。它不是用户设置，
+     * 而是发布版本的一部分，避免阈值、连续窗口和冷却策略散落在多个模块里。
+     */
+    typedef struct
+    {
+        const char *deployment_profile_id; /**< 后处理策略版本标识。 */
+        const char *danger_class_profile;  /**< active danger 类别边界。 */
+        uint32_t confirm_windows;          /**< 进入正式告警所需连续 danger 窗口数。 */
+        uint32_t clear_windows;            /**< 退出正式告警所需连续 non-danger 窗口数。 */
+        uint32_t alert_hold_ms;            /**< 正式告警最短保持时间，单位毫秒。 */
+        uint32_t cooldown_ms;              /**< 告警解除后的冷却时间，单位毫秒。 */
+    } danger_detection_policy_profile_t;
 
     /**
      * @brief 初始化危险检测服务。
@@ -93,6 +120,23 @@ extern "C"
      * @return 当前服务状态、稳定标签和实时分数的组合快照。
      */
     danger_detection_snapshot_t danger_detection_service_get_snapshot(void);
+
+    /**
+     * @brief 获取当前危险检测部署策略 profile。
+     *
+     * @return 指向静态只读 profile 的指针，调用方不得修改。
+     */
+    const danger_detection_policy_profile_t *
+    danger_detection_service_get_policy_profile(void);
+
+    /**
+     * @brief 将危险风险状态转换成稳定英文标识。
+     *
+     * @param[in] risk_state 危险提醒状态机状态。
+     * @return 静态字符串，适合日志、调试 UI 和串口输出使用。
+     */
+    const char *danger_detection_risk_state_text(
+        danger_detection_risk_state_t risk_state);
 
 #ifdef __cplusplus
 }

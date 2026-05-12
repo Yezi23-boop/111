@@ -10,13 +10,9 @@
 #include "lvgl.h"
 
 static const char *TAG = "danger_ui";
-static const uint32_t DANGER_ALERT_DURATION_MS = 2000U;
 
 static lv_ui *s_ui = NULL;
 static danger_detection_view_t *s_view = NULL;
-static lv_timer_t *s_alert_timer = NULL;
-static uint32_t s_last_alert_sequence = 0U;
-static bool s_alert_visible = false;
 
 typedef struct {
     bool valid;
@@ -31,11 +27,15 @@ typedef struct {
 static danger_detection_render_cache_t s_render_cache = {0};
 
 static void danger_detection_refresh_status(void);
-static void danger_detection_alert_timer_cb(lv_timer_t *timer);
 
 static const char *danger_detection_status_text(
-    danger_detection_state_t state)
+    const danger_detection_snapshot_t *snapshot)
 {
+    if (snapshot == NULL) {
+        return "IDLE";
+    }
+
+    const danger_detection_state_t state = snapshot->state;
     if (state == DANGER_DETECTION_STATE_ERROR) {
         return "ERROR";
     }
@@ -46,6 +46,18 @@ static const char *danger_detection_status_text(
         return "STARTING";
     }
     if (state == DANGER_DETECTION_STATE_RUNNING) {
+        switch (snapshot->risk_state) {
+            case DANGER_DETECTION_RISK_ALERTING:
+                return "ALERTING";
+            case DANGER_DETECTION_RISK_SUSPICIOUS:
+                return "CHECKING";
+            case DANGER_DETECTION_RISK_COOLDOWN:
+                return "COOLDOWN";
+            case DANGER_DETECTION_RISK_MONITORING:
+            case DANGER_DETECTION_RISK_OFF:
+            default:
+                break;
+        }
         return "LISTENING";
     }
     return "IDLE";
@@ -70,6 +82,21 @@ static const char *danger_detection_label_text(danger_detection_label_t label)
         default:
             return "NONE";
     }
+}
+
+static bool danger_detection_page_alert_visible(
+    const danger_detection_snapshot_t *snapshot)
+{
+    if (snapshot == NULL) {
+        return false;
+    }
+
+    /*
+     * 专页上的红色危险态跟随服务层风险状态机，而不是本地 2 秒计时器。
+     * 这样页面显示、全局提醒和后处理状态使用同一个生命周期。
+     */
+    return snapshot->state == DANGER_DETECTION_STATE_RUNNING &&
+           snapshot->risk_state == DANGER_DETECTION_RISK_ALERTING;
 }
 
 static void danger_detection_format_confidence(float confidence,
@@ -149,13 +176,6 @@ static void danger_detection_render_cache_store(
                                model->siren_confidence_text);
 }
 
-static void danger_detection_alert_timer_cb(lv_timer_t *timer)
-{
-    (void)timer;
-    s_alert_visible = false;
-    danger_detection_refresh_status();
-}
-
 static void danger_detection_back_event(void *user_data)
 {
     (void)user_data;
@@ -167,12 +187,7 @@ static void danger_detection_back_event(void *user_data)
 
     (void)danger_detection_service_stop(2000U);
     (void)app_alert_manager_set_traffic_audio_overlay_enabled(true);
-    s_last_alert_sequence = 0U;
-    s_alert_visible = false;
     s_render_cache.valid = false;
-    if (s_alert_timer != NULL) {
-        lv_timer_pause(s_alert_timer);
-    }
     lv_screen_load_anim(s_ui->screen_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0,
                         false);
 }
@@ -193,16 +208,6 @@ static void danger_detection_ensure_screen_created(void)
         ESP_LOGE(TAG, "danger_detection_view_create failed");
         return;
     }
-
-    if (s_alert_timer == NULL) {
-        s_alert_timer = lv_timer_create(danger_detection_alert_timer_cb,
-                                        DANGER_ALERT_DURATION_MS, NULL);
-        if (s_alert_timer != NULL) {
-            lv_timer_set_repeat_count(s_alert_timer, 1);
-            lv_timer_set_auto_delete(s_alert_timer, false);
-            lv_timer_pause(s_alert_timer);
-        }
-    }
 }
 
 static void danger_detection_refresh_status(void)
@@ -213,17 +218,6 @@ static void danger_detection_refresh_status(void)
 
     const danger_detection_snapshot_t snapshot =
         danger_detection_service_get_snapshot();
-    if (snapshot.alert_sequence != 0U &&
-        snapshot.alert_sequence != s_last_alert_sequence) {
-        s_last_alert_sequence = snapshot.alert_sequence;
-        s_alert_visible = true;
-        if (s_alert_timer != NULL) {
-            lv_timer_set_period(s_alert_timer, DANGER_ALERT_DURATION_MS);
-            lv_timer_set_repeat_count(s_alert_timer, 1);
-            lv_timer_resume(s_alert_timer);
-            lv_timer_reset(s_alert_timer);
-        }
-    }
     const char *last_result_text =
         danger_detection_label_text(snapshot.last_detected_label);
 
@@ -241,17 +235,13 @@ static void danger_detection_refresh_status(void)
                                        sizeof(siren_confidence_text));
 
     const danger_detection_view_model_t model = {
-        .status_text = danger_detection_status_text(snapshot.state),
+        .status_text = danger_detection_status_text(&snapshot),
         .category_text = category_text,
         .primary_result_text = last_result_text,
         .horn_confidence_text = horn_confidence_text,
         .siren_confidence_text = siren_confidence_text,
-        .alert_visible = s_alert_visible,
+        .alert_visible = danger_detection_page_alert_visible(&snapshot),
     };
-
-    if (s_alert_visible && s_render_cache.valid && s_render_cache.alert_visible) {
-        return;
-    }
 
     if (danger_detection_render_cache_matches(&s_render_cache, &model)) {
         return;
@@ -282,12 +272,7 @@ void danger_detection_ui_open(void)
     }
 
     (void)app_alert_manager_set_traffic_audio_overlay_enabled(false);
-    s_last_alert_sequence = 0U;
-    s_alert_visible = false;
     s_render_cache.valid = false;
-    if (s_alert_timer != NULL) {
-        lv_timer_pause(s_alert_timer);
-    }
     (void)danger_detection_service_start_with_backend(
         DANGER_DETECTION_BACKEND_ESPDL);
     danger_detection_refresh_status();
