@@ -1,7 +1,7 @@
 ---
 id: ui-management-prd
 tags: context, plans, prd, ui, lvgl, gui-guider, ui-manager
-summary: 已降级为历史 PRD 草案；最终采用 ADR-20260513 的轻量边界决策：GUI Guider 作为视觉主编辑器和 intent 入口生成器，当前不新增 ui_manager、bridge 或事件队列。
+summary: 已降级为历史 PRD 草案；最终采用 GUI Guider runtime 边界知识卡：GUI Guider 作为视觉主编辑器和 intent 入口生成器，当前不新增 ui_manager、bridge 或事件队列。
 last_reviewed: 2026-05-15
 memory_type: task
 scope: repo
@@ -9,13 +9,13 @@ owners: main/ui, main/ui/custom, main/ui/generated, components/lvgl_port, main/f
 triggers: ui-management, ui_manager, LVGL管理, GUI Guider, generated bridge, UI事件队列
 evidence_level: design
 status: superseded
-superseded_by: docs/context/decisions/ADR-20260513-gui-guider-visual-editor-ui-runtime-boundary.md
+superseded_by: docs/context/knowledge/project/gui-guider-visual-editor-runtime-boundary.md
 ---
 
 # UI 管理收敛 PRD
 
 > 当前文档已不再作为 active execution plan。最终沉淀结论见
-> `docs/context/decisions/ADR-20260513-gui-guider-visual-editor-ui-runtime-boundary.md`。
+> `docs/context/knowledge/project/gui-guider-visual-editor-runtime-boundary.md`。
 > 当前不推进 `ui_manager`、`ui_generated_bridge` 或 UI 事件队列；仅保留本草案作为讨论背景。
 > 2026-05-15 已移出 `plans/active/`，避免被后续 agent 当作待执行计划。
 
@@ -139,4 +139,4 @@ superseded_by: docs/context/decisions/ADR-20260513-gui-guider-visual-editor-ui-r
 
 ## Next Safe Step
 
-- 不执行本 PRD 的原第一步。若未来触发 ADR 中的重评估条件，再重新创建 active plan。
+- 不执行本 PRD 的原第一步。若未来触发 GUI Guider runtime 边界卡中的重评估条件，再重新创建 active plan。

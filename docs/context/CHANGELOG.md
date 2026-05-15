@@ -1,7 +1,8 @@
 # 上下文库变更记录
 
+- 2026-05-16：删除独立决策目录并完成迁移：将 GUI Guider 视觉编辑/runtime 边界迁入 `knowledge/project/gui-guider-visual-editor-runtime-boundary.md`，同步更新 `CONTEXT.md`、`docs/agents/domain.md`、`INDEX.agent.md`、`README.md`、`knowledge-map.md`、context garden policy、handoff 和 ui-management superseded 指针；`query.py / pack_context.py / check.py / garden.py` 移除旧 `decisions` scope，避免后续 agent 继续走已退场入口；`test_memory_flow.py` 将 `garden` warning 保留为整理队列计数，不再把非零 warning 当机制失败。
 - 2026-05-16：新增 `plans/active/2026-05-16-mini-games-porting-plan.md`，将手表小游戏移植顺序收敛为 `2048 -> 贪吃蛇 -> 小恐龙/Flappy Bird 评估`；固定一个物理按键 + 触摸屏的统一输入契约、LVGL 页面生命周期、资源非目标和板端验收口径，第一阶段只做前台轻量 UI，不新增后台 service、不改 `sdkconfig`、不上音效/联网/大图资源。
-- 2026-05-15：清理 `plans/active/` 中的历史计划噪声：将已被 ADR 替代的 `2026-05-12-ui-management-prd.md` 和已被 `agent_preview` host-preview 路线替代的 `2026-05-05-agent-ui-poc-execution-plan.md` 移到 `plans/completed/`，保留 `status: superseded` / `superseded_by` 追溯；`plans/completed/README.md` 同步说明可归档被替代但仍有复盘价值的计划。
+- 2026-05-15：清理 `plans/active/` 中的历史计划噪声：将已被 GUI Guider 边界结论替代的 `2026-05-12-ui-management-prd.md` 和已被 `agent_preview` host-preview 路线替代的 `2026-05-05-agent-ui-poc-execution-plan.md` 移到 `plans/completed/`，保留 `status: superseded` / `superseded_by` 追溯；`plans/completed/README.md` 同步说明可归档被替代但仍有复盘价值的计划。
 - 2026-05-15：将 Apple Watch 风格开机启动流程计划按 Phase 1 完成归档到 `plans/completed/2026-05-12-apple-watch-like-boot-flow-plan.md`；完成口径是 UI-first stage 编排、`ui_first_frame_ready` readiness gate、Safety Monitor 会话授权和后台重任务延后模型已落地，后续 NVS 持久化、STANDBY/RTC/PMIC 唤醒和 deep sleep 作为独立 gates。
 - 2026-05-15：将危险识别状态机框架书按 Phase 1 完成归档到 `plans/completed/2026-05-12-danger-detection-state-machine-framework-plan.md`；完成口径是 `danger_detection_service` 的 `risk_state` 已成为 UI/提醒层只读事实源，后续真机状态转移、普通人声误报和 horn/siren/alarm 触发验证作为独立 gates。
 - 2026-05-15：将手表资源框架书按 Phase 1 完成归档到 `plans/completed/2026-05-12-watch-resource-framework-plan.md`；保留稳定契约作为后续代码生成边界，低电量并发日志、STANDBY 唤醒证据和 haptic driver 作为独立后续 gates。
@@ -18,7 +19,7 @@
 - 2026-05-13：按 Apple Watch 启动框架将后台 Safety Monitor 的固定 5s boot defer 替换为 `ui_first_frame_ready` readiness gate：新增 `startup_readiness.[ch]`，`lvgl_task` 在 UI 首帧边界置位，`background_service_manager` 等该标志后再进入策略循环；复烧后冷启动日志确认 `background_gate_wait -> ui_first_frame_ready -> background_gate_ready` 顺序正确，且 35s 内未自动启动危险识别、无推理日志、无 `Display flush failed` / `ESP_ERR_NO_MEM` / panic。
 - 2026-05-13：继续按 Apple Watch 风格后台框架收敛危险识别页状态映射：页面读取 `background_service_manager` 的 `danger_runtime_running` 快照，用户已开启且策略允许但 runtime 尚未确认运行时显示 `正在启动`，`STOPPING` 过渡态优先显示 `正在停止`；补 `tests/test_danger_detection_controller_source.py` 回归，`idf.py build` 通过。
 - 2026-05-13：继续收紧 Apple Watch 风格启动链路：`start_display_and_ui()` 改为返回创建结果，若 `lvgl_task` 创建失败则停止后续 `power_policy / background_service_manager / network_service / official_chat` 阶段，避免无 UI 的半初始化系统继续拉起后台服务；同步补 `tests/test_power_integration_source.py` source 回归，`idf.py build` 通过。
-- 2026-05-13：将 UI 管理讨论从 active PRD 沉淀为 `decisions/ADR-20260513-gui-guider-visual-editor-ui-runtime-boundary.md`：保留 GUI Guider 视觉主编辑器 + intent 入口的边界结论，明确当前不新增 `ui_manager`、`ui_generated_bridge` 或 UI 事件队列；原 `plans/active/2026-05-12-ui-management-prd.md` 标记为 `superseded`，仅保留为讨论背景。
+- 2026-05-13：将 UI 管理讨论从 active PRD 沉淀为 GUI Guider 视觉编辑/runtime 边界结论：保留 GUI Guider 视觉主编辑器 + intent 入口的边界结论，明确当前不新增 `ui_manager`、`ui_generated_bridge` 或 UI 事件队列；原 `plans/active/2026-05-12-ui-management-prd.md` 标记为 `superseded`，仅保留为讨论背景。
 - 2026-05-13：定稿 UI 管理 PRD 的 GUI Guider 上帝视角边界：GUI Guider 作为页面视觉主编辑器和 intent 入口生成器，允许继续拥有控件树、样式、动画、资源、纯视觉跳转和 custom event 入口；运行时状态、资源生命周期、功耗策略、跨任务同步、后台服务和错误恢复仍由 `ui_manager` / controller / service owner 承担。
 - 2026-05-13：根据 subagent 复查补强 `plans/active/2026-05-12-ui-management-prd.md`：明确第一阶段 `ui_manager` 不接管 `lv_timer_handler()`、`ui_refresh_policy` 或 `vTaskDelay()` 编排；补充 generated 中 time / wallpaper / dropdown / brightness icon 等暂留边界；要求 bridge 化时同步迁移现有 source tests；frontmatter owners 补上 `main/features/alerts`。
 - 2026-05-12：修复 LVGL 中文压缩字体绘制崩溃：板端 `draw_letter_cb` / `EXCVADDR=0x10` 根因是 `main/ui/custom/fonts/*.c` 使用 `.bitmap_format = 1` 压缩字体，但 `sdkconfig` 未启用 `CONFIG_LV_USE_FONT_COMPRESSED`；已在 `sdkconfig` 与 `sdkconfig.defaults` 开启该配置，补 `tests/test_ui_chinese_fonts_source.py` 回归测试，并新增 `runs/2026-05-12-attempt-lvgl-compressed-font-draw-crash.md` 记录诊断证据。
@@ -75,7 +76,7 @@
 - 2026-05-04：调整 `query.py` 的 `mixed` 检索评分：普通稳定知识查询会轻微压低 `runs/` episodic 记录，带 `attempt/run/crash/错误/日志/验证/重复` 等排障意图的查询仍正常返回 attempt；同时过滤单字符纯数字 token，避免 `0.80` 阈值类查询被无意义数字噪声污染。
 - 2026-05-04：新增 agent attempt log 防重复机制：补充 `scripts/context/log_attempt.py`、`runs/attempt-template.md`，并把 `AGENTS.md`、`README.md`、`project-profile` 的默认流程改为先用 `query.py --scope runs` 检索历史修改/尝试，再继续读取稳定知识，避免后续 agent 重复同一路线。
 - 2026-05-04：继续提升上下文知识卡 `owners` 精度，将启动链路、显示触摸、联网配网、电源、official_chat、ESP-DL 危险识别等高频卡从目录级 owner 收敛到真实代码模块或服务入口；同步调整 `query-golden.yaml`，让 CO5300 亮度查询优先验证专用显示链路卡而不是总览卡。
-- 2026-05-04：批量为 `knowledge/project`、`knowledge/esp32-s3` 和 `decisions/ADR-*` 回填结构化元数据，统一补上 `memory_type / scope / owners / triggers / evidence_level`，让 `garden.py` 与检索评分能开始真正利用这些字段，而不只是检查模板存在性。
+- 2026-05-04：批量为 `knowledge/project`、`knowledge/esp32-s3` 和当时的决策卡回填结构化元数据，统一补上 `memory_type / scope / owners / triggers / evidence_level`，让 `garden.py` 与检索评分能开始真正利用这些字段，而不只是检查模板存在性。
 - 2026-05-04：继续推进上下文系统的“分层 + 评测 + 压缩”：新增 `plan-template.md`、`run-template.md`、`handoff-template.md` 三类模板，补强 `current-task` 的压缩字段；同时增强 `garden.py` 的 `owners` 路径检查与模板章节检查，增强 `eval_query.py` 对 `min_results`、`forbidden_top3/top5` 的支持。
 - 2026-05-04：继续增强上下文系统的 agent 首读与回归能力：新增 `docs/context/knowledge/project/project-profile.md` 作为仓库级首读画像，并将其加入 `.codex/config.toml` fallback；同时新增 `scripts/context/eval_query.py`，让 `docs/context/evals/query-golden.yaml` 能作为真实可执行的检索回归基线。
 - 2026-05-04：为上下文系统新增 `procedures / runs / plans / handoffs / evals` 分层，扩展 `AGENTS.md`、`docs/context/README.md`、`knowledge-map.md` 的记忆类型与晋升规则说明；同时让 `scripts/context/check.py`、`query.py`、`pack_context.py` 覆盖新目录，并新增 `garden.py` 骨架和 `query-golden.yaml` 检索基准样例。
@@ -111,7 +112,7 @@
 - 2026-04-21：新增 `wifi-provision-removal-migration-checklist`，系统梳理旧 `components/wifi_provision` 的公网接口替代映射、当前真实依赖点、阶段化删除顺序，以及 `official_chat` helper 缺口、启动链路回归和语义漂移等删除风险；并在 `network-provisioning-custom-upper-architecture` 中补入该迁移卡作为后续删除旧组件的唯一执行入口。
 - 2026-04-19：更新 `network-provisioning-custom-upper-architecture` 与 `wifi-management-ui-behavior`，写回当前真实代码基线：`ap_portal_adapter` 已完成网页资源迁移与 HTTP API 壳，主界面 `screen_main_Wifi / screen_main_Bluetooth` 和 `wifi_management_controller` 已切到 `network_manager`，Wi-Fi 管理页 transport 已收敛为 `BLE / SoftAP`，旧 `network_service` 已收口为 `network_manager` 之上的兼容 shim + service-ready 探测层。
 - 2026-04-18：更新 `network-provisioning-custom-upper-architecture`，补记 `ble_control / network_credentials / network_manager` 已落地，以及 `ap_portal_adapter` 已完成最小 HTTPD handle 复用接缝；当前剩余重点转为 AP 门户资源迁移、设备侧接口和旧 `network_service` shim 收敛。
-- 2026-04-18：新增 `network-provisioning-custom-upper-architecture` 知识卡与对应 ADR/设计/实施计划，正式锁定“官方 `network_provisioning` + 自定义上层网络架构”路线，并明确当前已落地 `network_provisioning_adapter`、`wifi_control`，其余 `ble_control / network_credentials / network_manager / ap_portal_adapter` 仍在迁移中。
+- 2026-04-18：新增 `network-provisioning-custom-upper-architecture` 知识卡与对应设计/实施计划，正式锁定“官方 `network_provisioning` + 自定义上层网络架构”路线，并明确当前已落地 `network_provisioning_adapter`、`wifi_control`，其余 `ble_control / network_credentials / network_manager / ap_portal_adapter` 仍在迁移中。
 - 2026-04-17：落地 `screen_main_Wifi` 真实联网入口与 hand-written `wifi_management_controller` 全屏管理页，为 `network_service` 补齐 Wi-Fi façade、默认配网方式持久化与“断开联网后暂停自动重连”能力，并新增 `wifi-management-ui-behavior`、更新 `ble-provisioning-ui-toggle-behavior`，把主界面入口已从蓝牙迁移到 Wi-Fi 的事实写回上下文库。
 - 2026-04-17：新增 `2026-04-17-wifi-management-ui-design.md` 与 `2026-04-17-wifi-management-ui-implementation.md`，把“主界面 Wi-Fi 图标接成真实联网入口 + 新增全屏 Wi-Fi 管理页 + BLE/AP 选择下沉到设置区”的后续落地边界写成已批准 spec 和待执行计划，避免旧 BLE 主入口上下文继续指挥当前实现。
 - 2026-04-17：新增 `low-power-management-baseline`，对齐真实代码沉淀当前低功耗现状：已落地 `AXP2101 -> board_power -> power_service` 只读观测、`ui_refresh_policy` 的 `Idle-Dim`、以及 `official_chat` 按状态切换 Wi-Fi power save；同时明确系统级 `Standby / Light Sleep / Deep Sleep`、`RTC_INT / AXP_IRQ` 与统一 `power_policy` 仍未接入。
@@ -171,7 +172,7 @@
 - 2026-03-11：初始化 `docs/context`、`scripts/context` 和 `context/index` 上下文工作流，接入索引、质量检查、检索和打包脚本。
 - 2026-03-11：新增仓库级 `AGENTS.md`，引入默认上下文流程、计划模式摘要和 ESP32/MCU 嵌入式 C/C++ 默认规范。
 - 2026-03-11：导入并适配首批通用知识文档，包括 LVGL 点亮、功耗检查、计划模式规则、工程规则、教学里程碑和仓库概览。
-- 2026-03-11：新增默认嵌入式代码生成规范 ADR，并为当前仓库生成首个本地上下文索引。
+- 2026-03-11：新增默认嵌入式代码生成规范上下文卡，并为当前仓库生成首个本地上下文索引。
 - 2026-03-11：基于 `ESP32-S3-Touch-AMOLED-2.06.pdf` 和现有代码新增板级硬件映射、共享总线与模块归属知识卡，补强显示、触摸、音频、配网排障上下文。
 - 2026-03-11：新增启动阻塞链路、电源与唤醒控制，以及硬件能力缺口知识卡，补强首启、低功耗和后续功能接入的上下文基线。
 - 2026-03-11：新增存储与配网路径知识卡，固化 SD 卡总线选择、录音/MP3 路径和 AP 配网页面嵌入方式。
@@ -317,7 +318,7 @@
 - 2026-05-04：优化 `ESP-IDF Rules`、`Monitor And Flash Rules`、`Hardware And Safety Rules` 三段表述，统一为“默认原则 + 前置条件 + 强制动作/禁止项”的规则风格。
 - 2026-05-04：优化“规则优先级与作用域”表述，将优先级判断与默认补充约束拆分，减少编号段内混杂信息。
 - 2026-05-04：按当前协作需求从 `AGENTS.md` 删除“计划模式规则（仅在上层环境进入计划模式时生效）”整段，避免主规则文件继续膨胀。
-- 2026-05-04：确认 `plan-mode-rules.md` 已不存在后，继续清理 `AGENTS.md`、知识地图和 ADR 中的残留引用，并准备重建 context index。
+- 2026-05-04：确认 `plan-mode-rules.md` 已不存在后，继续清理 `AGENTS.md`、知识地图和旧决策卡中的残留引用，并准备重建 context index。
 - 2026-05-04：简化“状态发布与 UI 读取原则”在 `AGENTS.md` 中的表述，保留核心分层和禁止项，并同步收紧详细规则卡措辞。
 - 2026-05-04：进一步将 `AGENTS.md` 中“状态发布与 UI 读取原则”压缩为 3 条红线版，详细展开继续保留在项目规则卡中。
 - 2026-05-04：将 `CLAUDE.md` 行为准则提升为 `AGENTS.md` 内最高优先级规则，并在优先级说明与章节标题中显式标注。

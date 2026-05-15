@@ -25,7 +25,6 @@ status: active
 
 - `INDEX.agent.md`：低 token 首读入口，只负责路由和红线。
 - `plans/`：Project Plan，记录用户的项目规划、阶段目标和长期路线。
-- `decisions/`：Decision Log，记录重要设计取舍，尤其是不可逆或影响范围大的选择。
 - `runs/`：Trial-and-Error，只记录有复用价值的试错、失败路径、证据和不要重复的动作。
 - `knowledge/`：Project Knowledge / Framework / Constraints / Stable Preferences，只放稳定事实、当前 owner、模块边界、方法论、长期约束和稳定偏好。
 - `procedures/`：可复用流程和排查套路。
@@ -72,7 +71,7 @@ superseded_by: docs/context/knowledge/project/current-card.md
 1. 有复用价值的动作、失败、日志和验证先写 `runs/attempt`，并用 `record_reasons` 说明长期记录理由。
 2. 同类问题重复出现，或一次结果已成为稳定 owner/边界，再写 `knowledge/`。
 3. 可复用的操作步骤、排障顺序、检查清单，写 `procedures/`。
-4. 影响架构路线或长期兼容边界，写 `decisions/ADR-*`。
+4. 影响架构路线或长期兼容边界，写 `knowledge/project/` 稳定边界卡，并在正文记录取舍原因和替代方案。
 5. 晋升后保留原 `runs/` 作为证据入口，并从稳定卡链接回关键 attempt。
 
 ## Garden Curator 输出

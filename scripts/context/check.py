@@ -67,7 +67,6 @@ def collect_target_files(docs_root: Path) -> list[Path]:
 
     content_roots = (
         "knowledge",
-        "decisions",
         "procedures",
         "runs",
         "plans",
@@ -80,8 +79,6 @@ def collect_target_files(docs_root: Path) -> list[Path]:
             continue
 
         for file_path in sorted(root_path.rglob("*.md")):
-            if root_name == "decisions" and file_path.name.lower() == "readme.md":
-                continue
             files.append(file_path)
 
     return files

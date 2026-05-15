@@ -15,7 +15,6 @@ configure_utf8_stdio()
 
 CONTENT_ROOTS = (
     "knowledge",
-    "decisions",
     "procedures",
     "runs",
     "plans",
@@ -73,7 +72,6 @@ PROMOTION_RECORD_REASONS = {
 
 PROMOTION_MEMORY_TYPES = {
     "project_plan",
-    "decision_log",
     "trial_error",
     "project_knowledge",
     "framework",
@@ -214,8 +212,6 @@ def collect_files(docs_root: Path) -> list[Path]:
         if not root_path.exists():
             continue
         for file_path in sorted(root_path.rglob("*.md")):
-            if root_name == "decisions" and file_path.name.lower() == "readme.md":
-                continue
             files.append(file_path)
     return files
 

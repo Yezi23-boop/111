@@ -121,7 +121,7 @@ evidence_level: design
 
 - Memory policy: `docs/context/knowledge/project/context-memory-policy.md`
 - Stable facts go to `docs/context/knowledge/`.
-- Decisions go to `docs/context/decisions/`.
+- Long-lived architecture boundaries and project decisions go to stable `docs/context/knowledge/project/` cards.
 - Repeatable procedures go to `docs/context/procedures/`.
 - Attempts, failures, board logs, and verification go to `docs/context/runs/`.
 - Current task compression goes to `docs/context/handoffs/current-task.md`.

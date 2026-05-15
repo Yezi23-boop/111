@@ -31,8 +31,7 @@
 - `knowledge/project/embedded-c-cpp-engineering-rules.md`
 - `knowledge/project/embedded-framework-mentor-skill.md`
 - `knowledge/project/teaching-milestones.md`
-- `decisions/ADR-20260311-default-embedded-codegen-rules.md`
-- `decisions/README.md`
+- `knowledge/project/gui-guider-visual-editor-runtime-boundary.md`
 
 ## 程序化流程
 
@@ -91,6 +90,6 @@
 ## 扩展方式
 
 - 在 `knowledge/<domain>/` 下新增主题文件。
-- 在 `decisions/` 下新增 ADR 文件。
+- 在 `knowledge/project/` 下新增稳定项目知识、架构边界或长期取舍卡。
 - 在 `procedures/`、`runs/`、`plans/`、`handoffs/` 中按记忆类型补充内容。
 - 修改后重建索引：`uv run python scripts/context/build_index.py`

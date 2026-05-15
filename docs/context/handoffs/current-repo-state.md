@@ -15,8 +15,7 @@ evidence_level: observed
 ## 上下文系统骨架
 
 - 根入口是 `AGENTS.md`，负责规则优先级、上下文使用流程和专项触发边界。
-- `docs/context/knowledge/` 负责长期稳定知识。
-- `docs/context/decisions/` 负责 ADR。
+- `docs/context/knowledge/` 负责长期稳定知识、架构边界和项目取舍。
 - `docs/context/procedures/` 负责标准做法。
 - `docs/context/runs/` 负责单次验证和实验记录。
 - `docs/context/plans/` 负责复杂任务计划。

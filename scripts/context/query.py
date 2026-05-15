@@ -19,7 +19,6 @@ CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 SCOPE_MIXED = "mixed"
 SCOPE_KNOWLEDGE = "knowledge"
-SCOPE_DECISIONS = "decisions"
 SCOPE_PROCEDURES = "procedures"
 SCOPE_RUNS = "runs"
 SCOPE_PLANS = "plans"
@@ -32,7 +31,6 @@ META_PATHS = {
     "docs/context/README.md",
     "docs/context/knowledge-map.md",
     "docs/context/CHANGELOG.md",
-    "docs/context/decisions/README.md",
 }
 
 RETIRED_HINTS = (
@@ -163,8 +161,6 @@ def in_scope(rel_path: str, scope: str, include_meta: bool) -> bool:
         return True
     if scope == SCOPE_KNOWLEDGE:
         return normalized.startswith("docs/context/knowledge/")
-    if scope == SCOPE_DECISIONS:
-        return normalized.startswith("docs/context/decisions/")
     if scope == SCOPE_PROCEDURES:
         return normalized.startswith("docs/context/procedures/")
     if scope == SCOPE_RUNS:
@@ -178,7 +174,6 @@ def in_scope(rel_path: str, scope: str, include_meta: bool) -> bool:
 
     return (
         normalized.startswith("docs/context/knowledge/")
-        or normalized.startswith("docs/context/decisions/")
         or normalized.startswith("docs/context/procedures/")
         or normalized.startswith("docs/context/runs/")
     )
@@ -188,8 +183,6 @@ def path_bonus(rel_path: str) -> int:
     normalized = rel_path.replace("\\", "/")
     if normalized.startswith("docs/context/knowledge/"):
         return 8
-    if normalized.startswith("docs/context/decisions/") and not normalized.endswith("/README.md"):
-        return 6
     if normalized.startswith("docs/context/procedures/"):
         return 7
     if normalized.startswith("docs/context/runs/"):
@@ -502,7 +495,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[
             SCOPE_MIXED,
             SCOPE_KNOWLEDGE,
-            SCOPE_DECISIONS,
             SCOPE_PROCEDURES,
             SCOPE_RUNS,
             SCOPE_PLANS,
@@ -511,7 +503,7 @@ def build_parser() -> argparse.ArgumentParser:
             SCOPE_ALL,
         ],
         default=SCOPE_MIXED,
-        help="检索范围。默认 mixed（knowledge + decisions + procedures + runs）。",
+        help="检索范围。默认 mixed（knowledge + procedures + runs）。",
     )
     parser.add_argument(
         "--include-meta",

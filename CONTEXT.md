@@ -7,8 +7,8 @@ Start with:
 - `docs/context/INDEX.agent.md`
 - `docs/context/knowledge/project/project-profile.md`
 
-Architecture decisions live in:
+Stable architecture boundaries and project decisions live in:
 
-- `docs/context/decisions/`
+- `docs/context/knowledge/project/`
 
 This file is a bridge for engineering skills that expect a root `CONTEXT.md`.

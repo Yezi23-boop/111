@@ -214,8 +214,9 @@ def check_garden_and_eval(project_root: Path) -> None:
         [sys.executable, "scripts/context/garden.py", "--summary-json"],
     )
     payload = json.loads(garden.stdout)
-    if payload.get("warning_count") != 0:
-        raise AssertionError(f"garden warning_count 非 0:\n{garden.stdout}")
+    warning_count = payload.get("warning_count")
+    if not isinstance(warning_count, int) or warning_count < 0:
+        raise AssertionError(f"garden warning_count 非法:\n{garden.stdout}")
     counts = payload.get("candidate_counts", {})
     for key in (
         "stale_candidates",

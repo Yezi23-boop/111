@@ -13,7 +13,7 @@
 ## 关联规格
 
 - Spec: `docs/superpowers/specs/2026-04-18-network-provisioning-custom-upper-architecture-design.md`
-- ADR: `docs/context/decisions/ADR-20260418-network-provisioning-custom-upper-architecture.md`
+- Architecture card: `docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md`
 
 ## 本轮范围锁定
 

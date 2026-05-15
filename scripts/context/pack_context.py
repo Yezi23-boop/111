@@ -12,7 +12,6 @@ from _stdio import configure_utf8_stdio
 from query import (
     SCOPE_ALL,
     SCOPE_ARCHIVE,
-    SCOPE_DECISIONS,
     SCOPE_HANDOFFS,
     SCOPE_KNOWLEDGE,
     SCOPE_MIXED,
@@ -138,7 +137,6 @@ def main() -> int:
         choices=[
             SCOPE_MIXED,
             SCOPE_KNOWLEDGE,
-            SCOPE_DECISIONS,
             SCOPE_PROCEDURES,
             SCOPE_RUNS,
             SCOPE_PLANS,
@@ -147,7 +145,7 @@ def main() -> int:
             SCOPE_ALL,
         ],
         default=SCOPE_MIXED,
-        help="检索范围。默认 mixed（knowledge + decisions + procedures + runs）。",
+        help="检索范围。默认 mixed（knowledge + procedures + runs）。",
     )
     parser.add_argument(
         "--include-meta",

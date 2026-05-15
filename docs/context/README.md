@@ -5,7 +5,6 @@
 ## 目录结构
 
 - `knowledge/`：项目知识、项目框架、稳定约束、偏好和可复用技术事实。
-- `decisions/`：架构决策记录（ADR）。
 - `procedures/`：稳定标准流程、排查手册和执行套路。
 - `runs/`：单次实验、bring-up、联调和验证闭环记录。
 - `plans/active/`：进行中的复杂任务执行计划。
@@ -32,7 +31,7 @@ last_reviewed: YYYY-MM-DD
 推荐补充以下扩展字段，用于后续检索、筛选与园艺脚本：
 
 ```yaml
-memory_type: project_plan | decision_log | trial_error | project_knowledge | framework | constraints | stable_preferences
+memory_type: project_plan | trial_error | project_knowledge | framework | constraints | stable_preferences
 scope: repo | component | board | task
 owners: main/services/network_service.c, components/network_manager
 triggers: wifi, provisioning, softap
@@ -158,7 +157,7 @@ uv run python scripts/context/test_memory_flow.py
 ## 记忆晋升规则
 
 - 跨任务稳定成立的事实、模块边界、经验规则，进入 `knowledge/`。
-- 不可逆或需要长期追溯的设计取舍，进入 `decisions/`。
+- 不可逆或需要长期追溯的设计取舍，进入 `knowledge/project/` 的稳定边界卡，并在正文记录取舍原因和替代方案。
 - 可复用的操作套路、排查顺序和标准流程，进入 `procedures/`。
 - 有复用价值的一次性实验、日志、板测、联调与验证闭环，进入 `runs/`。
 - 为了避免后续 agent 重复同一动作而记录的“改过什么、试过什么、哪里失败、下一步怎么接”，也进入 `runs/`，但必须满足 `record_reasons` 门槛，并在开工前用 `--scope runs` 先检索。
@@ -170,7 +169,7 @@ uv run python scripts/context/test_memory_flow.py
 - 详细流程见 `docs/context/procedures/context-garden-policy.md`。
 - 清理旧知识按“标记 -> 降权 -> 替换引用 -> 归档 -> 删除”推进，不直接删除仍有复盘价值的历史卡。
 - `garden.py` 只输出候选队列：`stale_candidates`、`promotion_candidates`、`archive_candidates`、`broken_owner_refs`。
-- `runs/` 中成功且有证据的记录，只有能提炼为项目知识、试错总结、流程、决策、约束或稳定偏好时，才应晋升到 `knowledge/`、`procedures/` 或 `decisions/`；普通成功小事不自动晋升。
+- `runs/` 中成功且有证据的记录，只有能提炼为项目知识、试错总结、流程、决策、约束或稳定偏好时，才应晋升到 `knowledge/` 或 `procedures/`；普通成功小事不自动晋升。
 - `query.py` 默认压低 `stale/superseded/retired/deprecated`，并排除 `archived`；用户查询历史、退场、迁移、归档或考古时才把旧卡放回候选。
 
 ## 验证分级

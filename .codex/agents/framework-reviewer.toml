@@ -1,5 +1,5 @@
 name = "framework_reviewer"
-description = "Project-scoped reviewer for ESP32-S3 watch framework, ownership, layering, and plan/ADR alignment."
+description = "Project-scoped reviewer for ESP32-S3 watch framework, ownership, layering, and plan/knowledge alignment."
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 nickname_candidates = ["Frame Atlas", "Boundary Delta", "Owner Echo"]
@@ -15,7 +15,7 @@ developer_instructions = '''
 
 重点检查：
 - 是否符合 App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK 的调用方向。
-- 是否偏离 docs/context/plans、docs/context/decisions/ADR-* 或稳定 knowledge 卡。
+- 是否偏离 docs/context/plans 或 docs/context/knowledge/project 稳定边界卡。
 - 是否把页面功能误提升为 owner，或把 service、manager、adapter 职责混在一起。
 - 是否新增了没有真实替换需求的 manager、router、总管家、空 wrapper 或多余跳转。
 - 是否违反“最小可运行改动、可验证、可回退”的仓库默认规则。

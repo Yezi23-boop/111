@@ -17,7 +17,7 @@ evidence_level: observed
 - 当前仓库的长期网络主线，已经从历史 `wifi_provision + network_service` 单体式结构，切换到：
   - 官方 `espressif/network_provisioning` 负责底层 provisioning 内核
   - 自定义上层组件负责项目语义与 UI 门面
-- 这条路线已经被当前轮设计和 ADR 固化，不再继续把旧自定义 BLE JSON GATT 协议作为长期主线。
+- 这条路线已经被当前轮设计和本稳定知识卡固化，不再继续把旧自定义 BLE JSON GATT 协议作为长期主线。
 
 ## 目标分层
 
@@ -190,4 +190,4 @@ evidence_level: observed
 
 - 旧 `ble-provisioning-ui-toggle-behavior.md`、`wifi-management-ui-behavior.md` 仍可作为“当前 UI 语义演进历史”的参考。
 - 旧 `wifi_provision` 相关 spec / plan / 知识卡，在当前代码基线下都应按“历史方案”理解。
-- 但凡涉及“长期网络底座如何分层”的问题，应优先以本卡和对应 ADR 为准，而不是继续把旧 `wifi_provision` 视为长期正式架构。
+- 但凡涉及“长期网络底座如何分层”的问题，应优先以本卡为准，而不是继续把旧 `wifi_provision` 视为长期正式架构。
