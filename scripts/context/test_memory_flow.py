@@ -186,7 +186,6 @@ def check_runs_retrieval(project_root: Path) -> None:
     )
     assert_contains(completed.stdout, "docs/context/runs/README.md", "runs retrieval")
     assert_contains(completed.stdout, "docs/context/runs/attempt-template.md", "runs retrieval")
-    assert_contains(completed.stdout, "attempt-context-attempt-log-anti-repeat", "runs retrieval")
 
 
 def check_light_trigger_flow(project_root: Path) -> None:

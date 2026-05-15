@@ -3,6 +3,8 @@ id: attempt-gui-guider-lvgl-preview-skill-trial
 tags: context, run, attempt-log, ui, lvgl, gui-guider, preview, host-runner, skill
 summary: 记录 gui-guider-lvgl-preview skill 的 Apple Watch S5 风格试跑：当前仓库无 pc_sim 时创建隔离 host runner，成功构建并截图，验证 skill 闭环可用。
 last_reviewed: 2026-05-08
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 owners: main/ui/agent_preview, C:/Users/ye/.codex/skills/gui-guider-lvgl-preview

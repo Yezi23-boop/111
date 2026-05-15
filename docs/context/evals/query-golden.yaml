@@ -60,22 +60,12 @@ queries:
     expected_top1: docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
     expected_top3:
       - docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
-    forbidden_top3:
-      - docs/context/knowledge/project/official-chat-feasibility-and-gap-assessment.md
-      - docs/context/knowledge/project/official-chat-local-wifi-experiment.md
 
   - id: official-chat-current-migration-time
     query: "official_chat 迁移 时间"
     expected_top1: docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
-    forbidden_top3:
-      - docs/context/knowledge/project/official-chat-feasibility-and-gap-assessment.md
-      - docs/context/knowledge/project/official-chat-local-wifi-experiment.md
-
-  - id: official-chat-history-query
-    query: "official_chat 历史 wifi_provision 实验"
-    expected_top1: docs/context/knowledge/project/official-chat-local-wifi-experiment.md
     expected_top3:
-      - docs/context/knowledge/project/official-chat-local-wifi-experiment.md
+      - docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
 
   - id: co5300-brightness-path
     query: "CO5300 亮度路径"

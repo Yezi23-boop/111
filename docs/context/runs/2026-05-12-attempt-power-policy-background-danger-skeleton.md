@@ -3,6 +3,8 @@ id: attempt-2026-05-12-power-policy-background-danger-skeleton
 tags: watch, power_policy, background_service_manager, danger-detection
 summary: power-policy-background-danger-skeleton；结果：success。
 last_reviewed: 2026-05-13
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 status: active

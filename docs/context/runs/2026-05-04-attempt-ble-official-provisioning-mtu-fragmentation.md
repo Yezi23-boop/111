@@ -3,6 +3,8 @@ id: attempt-2026-05-04-ble-official-provisioning-mtu-fragmentation
 tags: ble, provisioning, miniapp, attempt-log
 summary: ble-official-provisioning-mtu-fragmentation；结果：success。
 last_reviewed: 2026-05-04
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 owners: C:/Users/ye/Desktop/eps32_ble, docs/context/knowledge/project/wechat-miniapp-official-ble-provisioning.md, docs/context/knowledge/project/ble-provisioning-miniapp-write-fragmentation.md

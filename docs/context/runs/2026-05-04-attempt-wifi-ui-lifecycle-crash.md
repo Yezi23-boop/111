@@ -3,6 +3,8 @@ id: attempt-2026-05-04-wifi-ui-lifecycle-crash
 tags: wifi, lvgl, crash, attempt-log
 summary: wifi-ui-lifecycle-crash；结果：success。
 last_reviewed: 2026-05-04
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 owners: main/ui/custom/wifi_management_controller.c, docs/context/knowledge/project/wifi-management-ui-behavior.md

@@ -50,7 +50,6 @@
 
 ## AI 与 official_chat
 
-- `knowledge/project/official-chat-feasibility-and-gap-assessment.md`
 - `knowledge/project/official-chat-config-completeness-audit.md`
 - `knowledge/project/official-chat-ota-tls-time-bootstrap.md`
 - `knowledge/project/ai-ui-entry-network-guidance.md`

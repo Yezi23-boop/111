@@ -50,6 +50,8 @@ status: active
 ```yaml
 status: active | stale | superseded | retired | deprecated | archived
 superseded_by: docs/context/knowledge/project/current-card.md
+garden_status: archived | covered | keep-evidence | keep-history | no-action
+garden_reviewed: YYYY-MM-DD
 ```
 
 - `active`：默认状态，代表当前仍可指导 agent。
@@ -57,6 +59,7 @@ superseded_by: docs/context/knowledge/project/current-card.md
 - `superseded`：已有替代卡；query 默认强降权。
 - `retired/deprecated`：路线已退场；默认只作历史背景。
 - `archived`：已归档；普通检索默认排除，查历史时才返回。
+- `garden_status/garden_reviewed`：表示人工已经审查过某个 garden 候选；在 `garden_reviewed` 未超过 freshness 阈值时，`garden.py` 不再把它反复列入 stale/archive/promotion/low-value 候选，但仍会继续检查 frontmatter、owner 路径和推荐章节等硬性质量问题。
 
 ## 清理梯子
 

@@ -3,9 +3,11 @@ id: attempt-2026-05-08-agents-lightweight-entry-and-ui-font-triggers
 tags: context, run, attempt-log
 summary: agents lightweight entry and ui font triggers；结果：success。
 last_reviewed: 2026-05-08
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
-owners: AGENTS.md, scripts/context/validate_context.py, scripts/context/pack_context.py, docs/context/INDEX.agent.md, components/official_chat/AGENTS.md, components/traffic_inference/AGENTS.md, docs/context/README.md, docs/context/handoffs/current-repo-state.md, docs/context/CHANGELOG.md, docs/context/knowledge/project/project-profile.md, docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md, docs/context/knowledge/project/ble-provisioning-terminal-notify-flush-window.md, docs/context/knowledge/project/nimble-host-task-start-diagnostics.md, docs/context/evals/query-golden.yaml
+owners: AGENTS.md, scripts/context/validate_context.py, scripts/context/pack_context.py, docs/context/INDEX.agent.md, components/official_chat/AGENTS.md, components/traffic_inference/AGENTS.md, docs/context/README.md, docs/context/handoffs/current-repo-state.md, docs/context/CHANGELOG.md, docs/context/knowledge/project/project-profile.md, docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md, docs/context/evals/query-golden.yaml
 triggers: agents lightweight entry and ui font triggers
 evidence_level: observed
 record_reasons: framework-constraint, evidence
@@ -40,8 +42,6 @@ record_reasons: framework-constraint, evidence
 - docs/context/CHANGELOG.md
 - docs/context/knowledge/project/project-profile.md
 - docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md
-- docs/context/knowledge/project/ble-provisioning-terminal-notify-flush-window.md
-- docs/context/knowledge/project/nimble-host-task-start-diagnostics.md
 - docs/context/evals/query-golden.yaml
 - 执行的命令或动作：
 - AGENTS 当前仓库规则收敛为 validate_context.py --level light --brief 单入口，移除 query.py/pack_context.py 双入口暴露

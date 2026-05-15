@@ -3,6 +3,8 @@ id: attempt-2026-05-04-softap-captive-portal-official-provisioning
 tags: softap, captive-portal, provisioning, attempt-log
 summary: softap-captive-portal-official-provisioning；结果：success。
 last_reviewed: 2026-05-04
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 owners: components/ap_portal_adapter/src/ap_portal_adapter.c, components/ap_portal_adapter/src/ap_portal_routes.c, components/captive_portal_dns/src/captive_portal_dns.c, components/network_manager/src/network_manager.c, docs/context/knowledge/project/softap-captive-portal-auto-popup.md

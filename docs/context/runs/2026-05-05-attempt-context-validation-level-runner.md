@@ -3,6 +3,8 @@ id: attempt-2026-05-05-context-validation-level-runner
 tags: context, run, attempt-log
 summary: context validation level runner；结果：success。
 last_reviewed: 2026-05-05
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 owners: scripts/context/validate_context.py, AGENTS.md, docs/context/README.md, docs/context/procedures/context-garden-policy.md, docs/context/evals/query-golden.yaml

@@ -42,6 +42,14 @@ LIFECYCLE_STATUSES = (
     "archived",
 )
 
+GARDEN_REVIEW_STATUSES = (
+    "archived",
+    "covered",
+    "keep-evidence",
+    "keep-history",
+    "no-action",
+)
+
 RETIRED_HINTS = (
     "历史可行性卡",
     "历史知识卡",
@@ -231,6 +239,36 @@ def split_csv_like(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def garden_review_is_current(
+    meta: dict[str, Any],
+    rel_path: str,
+    max_age_days: int,
+    warnings: list[str],
+) -> bool:
+    garden_status = str(meta.get("garden_status", "")).strip().lower()
+    if not garden_status:
+        return False
+
+    if garden_status not in GARDEN_REVIEW_STATUSES:
+        warnings.append(
+            f"{rel_path}: `garden_status` 建议使用 {', '.join(GARDEN_REVIEW_STATUSES)}"
+        )
+        return False
+
+    garden_reviewed = str(meta.get("garden_reviewed", "")).strip()
+    if not garden_reviewed:
+        warnings.append(f"{rel_path}: 设置了 `garden_status` 但缺少 `garden_reviewed`")
+        return False
+
+    try:
+        reviewed_at = datetime.strptime(garden_reviewed, "%Y-%m-%d")
+    except ValueError:
+        warnings.append(f"{rel_path}: `garden_reviewed` 日期格式应为 YYYY-MM-DD")
+        return False
+
+    return (datetime.utcnow() - reviewed_at).days <= max_age_days
+
+
 def check_required_sections(rel_path: str, body: str) -> list[str]:
     warnings: list[str] = []
     required: tuple[str, ...] = ()
@@ -318,13 +356,18 @@ def check_file(
     superseded_by = str(meta.get("superseded_by", "")).strip()
     summary_text = str(meta.get("summary", "")).lower()
     looks_retired = any(hint.lower() in summary_text for hint in RETIRED_HINTS)
+    garden_review_current = garden_review_is_current(meta, rel_path, max_age_days, warnings)
 
     if status not in LIFECYCLE_STATUSES:
         warnings.append(
             f"{rel_path}: `status` 建议使用 {', '.join(LIFECYCLE_STATUSES)}"
         )
 
-    if age_days > max_age_days or status in {"stale", "superseded", "retired", "deprecated"} or looks_retired:
+    if not garden_review_current and (
+        age_days > max_age_days
+        or status in {"stale", "superseded", "retired", "deprecated"}
+        or looks_retired
+    ):
         reason_parts: list[str] = []
         if age_days > max_age_days:
             reason_parts.append(f"last_reviewed={age_days}d")
@@ -341,7 +384,7 @@ def check_file(
             }
         )
 
-    if status in {"stale", "superseded", "retired", "deprecated"} and superseded_by:
+    if not garden_review_current and status in {"stale", "superseded", "retired", "deprecated"} and superseded_by:
         candidates["archive_candidates"].append(
             {
                 "path": rel_path,
@@ -353,7 +396,7 @@ def check_file(
     is_template = "template" in Path(rel_path).stem
     memory_type = str(meta.get("memory_type", "")).strip().lower()
     evidence_level = str(meta.get("evidence_level", "")).strip().lower()
-    if is_run_record and not is_template:
+    if is_run_record and not is_template and not garden_review_current:
         run_text = f"{meta.get('summary', '')}\n{body}".lower()
         looks_successful = any(hint.lower() in run_text for hint in SUCCESS_HINTS)
         record_reasons = {

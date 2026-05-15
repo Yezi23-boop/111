@@ -3,6 +3,8 @@ id: attempt-2026-05-13-safety-monitor-readiness-gate
 tags: watch, startup, readiness, safety-monitor, danger-detection
 summary: safety-monitor-readiness-gate；结果：success。
 last_reviewed: 2026-05-13
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 status: active

@@ -3,6 +3,8 @@ id: attempt-2026-05-05-context-memory-policy-write-gate
 tags: context, run, attempt-log
 summary: context memory policy write gate；结果：success。
 last_reviewed: 2026-05-05
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 owners: docs/context/knowledge/project/context-memory-policy.md, scripts/context/log_attempt.py, scripts/context/garden.py, docs/context/README.md, docs/context/procedures/context-garden-policy.md

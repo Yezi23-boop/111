@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-05-16：继续 context garden 清理：删除已被稳定知识卡或当前路线替代的旧 BLE/official_chat 历史卡、Agent UI/UI management 过期计划，以及低价值 attempt log；保留仍可作为验收证据的 run，并用 `garden_status/garden_reviewed` 标记为人工已审查，避免反复出现在 stale/promotion/low-value 队列；同步修正 `knowledge-map`、黄金查询和 `test_memory_flow.py`，避免删除后的文档继续作为检索锚点。
 - 2026-05-16：执行一轮 context garden 清理：修正资源框架、Safety Monitor、official_chat 与 UI activity 相关 runs/plans 的 `owners` 真实路径，补齐新近 attempt 的推荐字段与 `背景/环境/操作/观测/结论/未验证风险` 章节；`garden.py --summary-json` 的 `warning_count` 从 57 降为 0，保留 `stale/promotion/archive/low_value` 作为后续人工审查队列。
 - 2026-05-16：删除独立决策目录并完成迁移：将 GUI Guider 视觉编辑/runtime 边界迁入 `knowledge/project/gui-guider-visual-editor-runtime-boundary.md`，同步更新 `CONTEXT.md`、`docs/agents/domain.md`、`INDEX.agent.md`、`README.md`、`knowledge-map.md`、context garden policy、handoff 和 ui-management superseded 指针；`query.py / pack_context.py / check.py / garden.py` 移除旧 `decisions` scope，避免后续 agent 继续走已退场入口；`test_memory_flow.py` 将 `garden` warning 保留为整理队列计数，不再把非零 warning 当机制失败。
 - 2026-05-16：新增 `plans/active/2026-05-16-mini-games-porting-plan.md`，将手表小游戏移植顺序收敛为 `2048 -> 贪吃蛇 -> 小恐龙/Flappy Bird 评估`；固定一个物理按键 + 触摸屏的统一输入契约、LVGL 页面生命周期、资源非目标和板端验收口径，第一阶段只做前台轻量 UI，不新增后台 service、不改 `sdkconfig`、不上音效/联网/大图资源。

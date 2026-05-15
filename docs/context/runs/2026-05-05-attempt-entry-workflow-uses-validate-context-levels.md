@@ -3,6 +3,8 @@ id: attempt-2026-05-05-entry-workflow-uses-validate-context-levels
 tags: context, run, attempt-log
 summary: entry workflow uses validate_context levels；结果：success。
 last_reviewed: 2026-05-05
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 owners: docs/context/INDEX.agent.md, docs/context/knowledge/project/project-profile.md, docs/context/CHANGELOG.md

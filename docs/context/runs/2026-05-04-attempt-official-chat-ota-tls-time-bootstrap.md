@@ -3,6 +3,8 @@ id: attempt-2026-05-04-official-chat-ota-tls-time-bootstrap
 tags: official-chat, tls, sntp, attempt-log
 summary: official-chat-ota-tls-time-bootstrap；结果：success。
 last_reviewed: 2026-05-04
+garden_status: keep-evidence
+garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
 owners: components/official_chat/ota.cc, main/services/official_chat_service.c, main/services/network_service.c, docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md
