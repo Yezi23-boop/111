@@ -62,6 +62,8 @@ constexpr TickType_t kStopPollIntervalTicks = pdMS_TO_TICKS(10);
 constexpr uint32_t kStrideMs = 300U;
 /** 滑窗步长（样本数）。 */
 constexpr size_t kStrideSamples = (ESPDL_SAMPLE_RATE_HZ * kStrideMs) / 1000U;
+/** non-danger 心跳日志间隔；danger 窗口仍逐窗打印，避免漏看确认过程。 */
+constexpr int64_t kNonDangerLogIntervalUs = 3000LL * 1000LL;
 
 /** 重采样状态。 */
 struct ResampleState {
@@ -206,6 +208,7 @@ void runtime_task(void *arg)
 
     esp_err_t ret = ESP_OK;
     size_t total_inferences = 0U;
+    int64_t last_non_danger_log_us = -kNonDangerLogIntervalUs;
 
     ESP_LOGI(TAG,
              "启动 ESPDL 实时推理: hw=%dHz/%dch, target=%dHz, "
@@ -294,15 +297,25 @@ void runtime_task(void *arg)
                 /* 不 break，继续下一个窗口 */
             } else {
                 total_inferences++;
-                ESP_LOGI(TAG,
-                         "INFERENCE #%u: label=%s, confidence=%.4f, "
-                         "danger=%.4f, fbank_ms=%.1f, infer_ms=%.1f",
-                         static_cast<unsigned>(total_inferences),
-                         espdl_model_runner_label_name(result.label_index),
-                         result.confidence,
-                         result.probabilities[1],
-                         static_cast<double>(feature_us) / 1000.0,
-                         static_cast<double>(infer_us) / 1000.0);
+                const bool is_danger = result.label_index == 1;
+                const int64_t now_us = esp_timer_get_time();
+                const bool should_log =
+                    is_danger ||
+                    (now_us - last_non_danger_log_us) >= kNonDangerLogIntervalUs;
+                if (should_log) {
+                    ESP_LOGI(TAG,
+                             "INFERENCE #%u: label=%s, confidence=%.4f, "
+                             "danger=%.4f, fbank_ms=%.1f, infer_ms=%.1f",
+                             static_cast<unsigned>(total_inferences),
+                             espdl_model_runner_label_name(result.label_index),
+                             result.confidence,
+                             result.probabilities[1],
+                             static_cast<double>(feature_us) / 1000.0,
+                             static_cast<double>(infer_us) / 1000.0);
+                    if (!is_danger) {
+                        last_non_danger_log_us = now_us;
+                    }
+                }
 
                 /* 通知回调 */
                 if (s_runtime.result_callback != nullptr) {

@@ -18,7 +18,7 @@
  * 3. 当 `network_manager` 进入 BLE provisioning 时，会叠加专门的受限刷新节流模式，
  *    优先降低显示 flush 与 BLE / Wi-Fi scan 对片内 DMA 的竞争，但不会破坏原有
  *    `5s` 无触摸后进入 dim 的交互语义。
- * 4. 对上层暴露的接口尽量简单，只提供“触摸通知 / 强制常亮 / 用户亮度 / 延时调整”四类能力，
+ * 4. 对上层暴露的接口尽量简单，只提供“触摸通知 / 强制常亮 / 用户亮度 / 延时调整 / 只读快照”五类能力，
  *    这样 UI 控制器、输入设备和屏幕驱动可以解耦。
  */
 
@@ -28,6 +28,49 @@ extern "C"
 {
 
 #endif
+
+    /**
+     * @brief UI 刷新策略当前交互活跃状态。
+     */
+    typedef enum
+    {
+        UI_REFRESH_POLICY_ACTIVITY_ACTIVE = 0,      /**< 最近有交互，保持全亮和高刷新。 */
+        UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM,        /**< 已空闲，允许 dim 和刷新降频。 */
+        UI_REFRESH_POLICY_ACTIVITY_FORCE_ACTIVE,    /**< 上层场景要求禁止自动 dim。 */
+        UI_REFRESH_POLICY_ACTIVITY_UNINITIALIZED,   /**< 策略尚未初始化。 */
+    } ui_refresh_policy_activity_state_t;
+
+    /**
+     * @brief UI 刷新策略当前系统级节流模式。
+     */
+    typedef enum
+    {
+        UI_REFRESH_POLICY_THROTTLE_NORMAL = 0,       /**< 普通刷新策略。 */
+        UI_REFRESH_POLICY_THROTTLE_PROVISIONING,     /**< BLE 配网期间主动降低刷新压力。 */
+    } ui_refresh_policy_throttle_mode_t;
+
+    /**
+     * @brief UI 活跃度只读快照。
+     *
+     * 该结构只表达 `ui_refresh_policy` 已经持有的事实，供后续 `power_policy`
+     * 或诊断代码读取；读取快照不推进状态机、不写面板亮度、不触发 LVGL 操作。
+     */
+    typedef struct
+    {
+        bool initialized;                                      /**< true 表示策略已初始化。 */
+        bool active;                                           /**< true 表示当前按活跃态处理。 */
+        bool idle_dim;                                         /**< true 表示当前已进入空闲 dim。 */
+        bool force_active;                                     /**< true 表示上层禁止自动 dim。 */
+        bool provisioning_throttled;                           /**< true 表示 BLE 配网刷新节流生效。 */
+        ui_refresh_policy_activity_state_t activity_state;     /**< 当前交互活跃状态。 */
+        ui_refresh_policy_throttle_mode_t throttle_mode;       /**< 当前系统级节流模式。 */
+        uint8_t user_brightness_percent;                       /**< 用户配置的原始亮度百分比。 */
+        uint8_t target_brightness_percent;                     /**< 当前状态下希望下发的目标亮度百分比。 */
+        bool brightness_applied;                               /**< true 表示已有成功下发过的亮度值。 */
+        uint8_t applied_brightness_percent;                    /**< 最近一次成功下发的亮度百分比，未下发时为 0。 */
+        int64_t last_touch_time_us;                            /**< 最近一次用户活跃时间戳，单位微秒。 */
+        int64_t idle_time_ms;                                  /**< 当前距离最近一次用户活跃的时间，单位毫秒。 */
+    } ui_refresh_policy_activity_snapshot_t;
 
     /* 初始化内部状态并立刻把面板亮度同步到策略默认值。 */
     void ui_refresh_policy_init(void);
@@ -46,6 +89,17 @@ extern "C"
 
     /* 获取用户配置的原始亮度百分比，而不是当前实际输出到屏幕的亮度。 */
     uint8_t ui_refresh_policy_get_user_brightness_percent(void);
+
+    /**
+     * @brief 读取 UI 活跃度只读快照。
+     *
+     * 该接口不调用 `ui_refresh_policy_poll()`，不修改内部状态，也不会写屏幕亮度。
+     *
+     * @param[out] snapshot 输出快照，不能为空。
+     * @return true 表示读取成功；false 表示参数为空。
+     */
+    bool ui_refresh_policy_get_activity_snapshot(
+        ui_refresh_policy_activity_snapshot_t *snapshot);
 
     /*
      * 根据当前策略修正 LVGL 主循环的下一次唤醒时间：

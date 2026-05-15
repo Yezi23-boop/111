@@ -4,9 +4,11 @@
 #include <string.h>
 
 #include "audio_alert_player.h"
+#include "audio_codec.h"
 #include "display_alert_adapter.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "mp3_player.h"
 
 #define TAG "app_alert_manager"
 
@@ -54,6 +56,46 @@ static const char *app_alert_label_to_zh(app_alert_label_t label)
     case APP_ALERT_LABEL_NONE:
     default:
         return "无";
+    }
+}
+
+/**
+ * @brief P0 危险提醒播放前让普通播放输出让路。
+ *
+ * `app_alert_manager` 是告警编排 owner，负责判断 P0 是否需要抢占普通播放；
+ * `audio_alert_player` 只负责拿到 output session 后播放提示音。
+ */
+static void app_alert_manager_preempt_normal_audio_output(
+    const app_alert_request_t *request)
+{
+    if (request == NULL || request->severity != APP_ALERT_SEVERITY_DANGER)
+    {
+        return;
+    }
+
+    audio_codec_session_snapshot_t snapshot = {0};
+    esp_err_t ret = audio_codec_get_session_snapshot(&snapshot);
+    if (ret != ESP_OK || !snapshot.output_active)
+    {
+        return;
+    }
+
+    if (snapshot.output_owner != AUDIO_CODEC_OWNER_AUDIO_PLAYER)
+    {
+        ESP_LOGI(TAG,
+                 "resource_preempt_skip: resource=audio_output requester=alert_player owner=%s",
+                 audio_codec_owner_to_text(snapshot.output_owner));
+        return;
+    }
+
+    ESP_LOGW(TAG,
+             "resource_preempt: resource=audio_output requester=alert_player owner=audio_player reason=p0_alert");
+    ret = mp3_player_stop();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG,
+                 "resource_preempt failed: resource=audio_output owner=audio_player ret=%s",
+                 esp_err_to_name(ret));
     }
 }
 
@@ -137,6 +179,7 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
     }
 
     s_alert_manager_state.active = true;
+    app_alert_manager_preempt_normal_audio_output(request);
     ret = audio_alert_player_play_warning_once();
     if (ret != ESP_OK)
     {
@@ -200,6 +243,12 @@ esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled)
             APP_ALERT_SOURCE_TRAFFIC_AUDIO)
     {
         (void)display_alert_adapter_hide_danger_overlay();
+    }
+    else if (enabled && s_alert_manager_state.active &&
+             s_alert_manager_state.active_request.source ==
+                 APP_ALERT_SOURCE_TRAFFIC_AUDIO)
+    {
+        (void)display_alert_adapter_show_danger_overlay();
     }
     return ESP_OK;
 }

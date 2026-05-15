@@ -9,17 +9,34 @@ DANGER_DETECTION_CONTROLLER_SOURCE = (
 
 
 class DangerDetectionControllerSourceTests(unittest.TestCase):
-    def test_ui_starts_espdl_backend_and_displays_danger_label(self) -> None:
+    def test_ui_uses_background_manager_switch_and_displays_danger_label(self) -> None:
         source = DANGER_DETECTION_CONTROLLER_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "danger_detection_service_start_with_backend(\n"
-            "        DANGER_DETECTION_BACKEND_ESPDL)",
+            "background_service_manager_set_danger_detection_enabled(enabled)",
             source,
         )
+        self.assertNotIn("danger_detection_service_start_with_backend(", source)
+        self.assertNotIn("(void)danger_detection_service_start();", source)
         self.assertIn("case DANGER_DETECTION_LABEL_DANGER:", source)
         self.assertIn('return "DANGER";', source)
-        self.assertNotIn("(void)danger_detection_service_start();", source)
+        self.assertIn("安全监听", (UI_CUSTOM_DIR / "danger_detection_view.c").read_text(encoding="utf-8"))
+
+    def test_status_text_uses_manager_runtime_snapshot_for_transition(self) -> None:
+        source = DANGER_DETECTION_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("manager_snapshot->danger_runtime_running", source)
+        self.assertIn(
+            "manager_snapshot->danger_blocked_by_foreground_audio",
+            source,
+        )
+        self.assertIn('return "资源占用，暂时等待";', source)
+        self.assertIn('return "正在启动";', source)
+        self.assertIn('return "正在停止";', source)
+        self.assertLess(
+            source.index("state == DANGER_DETECTION_STATE_STOPPING"),
+            source.index("!manager_snapshot->danger_enabled_by_user"),
+        )
 
 
 if __name__ == "__main__":

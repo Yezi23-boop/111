@@ -12,6 +12,9 @@ OFFICIAL_CHAT_MQTT = OFFICIAL_CHAT_DIR / "protocols" / "mqtt_protocol.cc"
 OFFICIAL_CHAT_HEADER = OFFICIAL_CHAT_DIR / "include" / "official_chat.h"
 OFFICIAL_CHAT_C_API = OFFICIAL_CHAT_DIR / "official_chat_c_api.cc"
 OFFICIAL_CHAT_OTA = OFFICIAL_CHAT_DIR / "ota.cc"
+OFFICIAL_CHAT_AFE_WAKE_WORD = (
+    OFFICIAL_CHAT_DIR / "audio" / "wake_words" / "afe_wake_word.cc"
+)
 MAIN_MANIFEST = REPO_ROOT / "main" / "idf_component.yml"
 MAIN_KCONFIG = REPO_ROOT / "main" / "Kconfig.projbuild"
 
@@ -117,6 +120,17 @@ class OfficialChatSourceTests(unittest.TestCase):
         self.assertIn("StopListening 是 shutdown 收敛路径的一部分", app)
         self.assertIn("xEventGroupSetBits(event_group_, kMainEventStopListening);",
                       app)
+
+    def test_official_chat_wake_word_fetch_uses_bounded_shutdown_wait(self) -> None:
+        source = OFFICIAL_CHAT_AFE_WAKE_WORD.read_text(encoding="utf-8")
+
+        self.assertIn("kDetectionFetchTimeoutTicks", source)
+        self.assertIn("pdMS_TO_TICKS(50)", source)
+        self.assertIn(
+            "fetch_with_delay(afe_data_, kDetectionFetchTimeoutTicks)",
+            source,
+        )
+        self.assertNotIn("fetch_with_delay(afe_data_, portMAX_DELAY)", source)
 
     def test_official_chat_audio_encode_queue_aligns_with_official_stl_queue(self) -> None:
         header = (OFFICIAL_CHAT_DIR / "audio" / "audio_service.h").read_text(

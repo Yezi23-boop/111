@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "services/background_service_manager.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -28,6 +29,17 @@ static const char *TAG = "audio_app";
 static TaskHandle_t s_record_task_handle = NULL; /* 录音任务句柄；任务退出前会自行清空。 */
 static volatile bool s_is_recording = false;    /* 录音运行标志，UI/API 写入，录音任务轮询读取。 */
 static char s_record_filename[128] = {0};       /* 当前录音输出路径缓存，供后台任务打开文件。 */
+
+static void audio_app_release_recording_resources(bool input_acquired,
+                                                  const char *reason)
+{
+    if (input_acquired)
+    {
+        (void)audio_codec_release_input(AUDIO_CODEC_OWNER_AUDIO_RECORDER);
+    }
+    (void)background_service_manager_set_foreground_audio_active(
+        false, reason != NULL ? reason : "recording_done");
+}
 
 /* PCM WAV 头布局；字段含义需与播放器常见 RIFF/WAVE 约定保持一致。 */
 typedef struct
@@ -87,11 +99,38 @@ static void generate_wav_header(wav_header_t *header, uint32_t data_len, uint32_
  */
 static void record_task(void *arg)
 {
+    bool input_acquired = false;
+    esp_err_t ret = background_service_manager_set_foreground_audio_active(
+        true, "recording");
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "无法暂停后台安全监听: %s", esp_err_to_name(ret));
+        s_is_recording = false;
+        audio_app_release_recording_resources(false, "recording_failed");
+        s_record_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ret = audio_codec_acquire_input(AUDIO_CODEC_OWNER_AUDIO_RECORDER, 500U);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "录音输入资源被占用: %s", esp_err_to_name(ret));
+        s_is_recording = false;
+        audio_app_release_recording_resources(false, "recording_failed");
+        s_record_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+    input_acquired = true;
+
     FILE *f = fopen(s_record_filename, "wb");
     if (f == NULL)
     {
         ESP_LOGE(TAG, "无法创建录音文件: %s", s_record_filename);
         s_is_recording = false;
+        audio_app_release_recording_resources(input_acquired, "recording_failed");
+        s_record_task_handle = NULL;
         vTaskDelete(NULL);
         return;
     }
@@ -111,6 +150,8 @@ static void record_task(void *arg)
         ESP_LOGE(TAG, "内存不足");
         fclose(f);
         s_is_recording = false;
+        audio_app_release_recording_resources(input_acquired, "recording_failed");
+        s_record_task_handle = NULL;
         vTaskDelete(NULL);
         return;
     }
@@ -146,6 +187,7 @@ static void record_task(void *arg)
 
     fclose(f);
     free(buffer);
+    audio_app_release_recording_resources(input_acquired, "recording_done");
 
     s_record_task_handle = NULL;
     ESP_LOGI(TAG, "录音文件已保存");

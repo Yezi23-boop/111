@@ -3,12 +3,16 @@
 #include <stdlib.h>
 
 #include "gui_guider.h"
+#include "ui_chinese_fonts.h"
 
 struct danger_detection_view {
     lv_obj_t *screen;
     lv_obj_t *back_btn;
     lv_obj_t *back_label;
     lv_obj_t *content_layer;
+    lv_obj_t *safety_monitor_row;
+    lv_obj_t *safety_monitor_label;
+    lv_obj_t *safety_monitor_switch;
     lv_obj_t *status_label;
     lv_obj_t *category_label;
     lv_obj_t *primary_result_label;
@@ -21,8 +25,15 @@ struct danger_detection_view {
     lv_obj_t *alert_badge;
     lv_obj_t *alert_icon_label;
     danger_detection_view_action_cb_t back_action_cb;
+    danger_detection_view_switch_cb_t safety_monitor_cb;
     void *user_data;
+    bool updating_switch;
 };
+
+static const lv_coord_t kDangerBackButtonX = 28;
+static const lv_coord_t kDangerBackButtonY = 18;
+static const lv_coord_t kDangerBackButtonWidth = 96;
+static const lv_coord_t kDangerBackButtonHeight = 56;
 
 static void danger_detection_view_back_event(lv_event_t *e)
 {
@@ -33,6 +44,20 @@ static void danger_detection_view_back_event(lv_event_t *e)
     }
 
     view->back_action_cb(view->user_data);
+}
+
+static void danger_detection_view_switch_event(lv_event_t *e)
+{
+    danger_detection_view_t *view =
+        (danger_detection_view_t *)lv_event_get_user_data(e);
+    if (view == NULL || view->safety_monitor_cb == NULL ||
+        view->updating_switch) {
+        return;
+    }
+
+    lv_obj_t *target = lv_event_get_target(e);
+    const bool enabled = lv_obj_has_state(target, LV_STATE_CHECKED);
+    view->safety_monitor_cb(enabled, view->user_data);
 }
 
 static void danger_detection_view_set_text(lv_obj_t *label, const char *text)
@@ -54,6 +79,8 @@ danger_detection_view_t *danger_detection_view_create(
     }
 
     view->back_action_cb = config != NULL ? config->back_action_cb : NULL;
+    view->safety_monitor_cb =
+        config != NULL ? config->safety_monitor_cb : NULL;
     view->user_data = config != NULL ? config->user_data : NULL;
 
     view->screen = lv_obj_create(NULL);
@@ -63,8 +90,10 @@ danger_detection_view_t *danger_detection_view_create(
 
     view->back_btn = lv_btn_create(view->screen);
     lv_obj_remove_style_all(view->back_btn);
-    lv_obj_set_size(view->back_btn, 116, 52);
-    lv_obj_align(view->back_btn, LV_ALIGN_TOP_LEFT, 10, 4);
+    lv_obj_set_size(view->back_btn, kDangerBackButtonWidth,
+                    kDangerBackButtonHeight);
+    lv_obj_align(view->back_btn, LV_ALIGN_TOP_LEFT, kDangerBackButtonX,
+                 kDangerBackButtonY);
     lv_obj_set_style_bg_opa(view->back_btn, LV_OPA_TRANSP, 0);
     lv_obj_add_event_cb(view->back_btn, danger_detection_view_back_event,
                         LV_EVENT_CLICKED, view);
@@ -78,13 +107,37 @@ danger_detection_view_t *danger_detection_view_create(
     view->content_layer = lv_obj_create(view->screen);
     lv_obj_remove_style_all(view->content_layer);
     lv_obj_set_size(view->content_layer, LV_PCT(100), LV_PCT(100));
+    lv_obj_clear_flag(view->content_layer, LV_OBJ_FLAG_CLICKABLE);
+
+    view->safety_monitor_row = lv_obj_create(view->content_layer);
+    lv_obj_remove_style_all(view->safety_monitor_row);
+    lv_obj_set_size(view->safety_monitor_row, 176, 40);
+    lv_obj_align(view->safety_monitor_row, LV_ALIGN_TOP_RIGHT, -18, 12);
+    lv_obj_set_flex_flow(view->safety_monitor_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(view->safety_monitor_row, LV_FLEX_ALIGN_END,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(view->safety_monitor_row, 10, 0);
+
+    view->safety_monitor_label = lv_label_create(view->safety_monitor_row);
+    lv_label_set_text(view->safety_monitor_label, "安全监听");
+    lv_obj_set_style_text_font(view->safety_monitor_label,
+                               &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+                               0);
+    lv_obj_set_style_text_color(view->safety_monitor_label,
+                                lv_color_hex(0x111827), 0);
+
+    view->safety_monitor_switch = lv_switch_create(view->safety_monitor_row);
+    lv_obj_set_size(view->safety_monitor_switch, 48, 26);
+    lv_obj_add_event_cb(view->safety_monitor_switch,
+                        danger_detection_view_switch_event,
+                        LV_EVENT_VALUE_CHANGED, view);
 
     view->status_label = lv_label_create(view->content_layer);
-    lv_label_set_text(view->status_label, "LISTENING");
-    lv_obj_set_style_text_font(view->status_label, &lv_font_montserratMedium_16,
+    lv_label_set_text(view->status_label, "未开启");
+    lv_obj_set_style_text_font(view->status_label,
+                               &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
                                0);
-    lv_obj_set_style_text_letter_space(view->status_label, 3, 0);
-    lv_obj_align(view->status_label, LV_ALIGN_TOP_MID, 0, 46);
+    lv_obj_align(view->status_label, LV_ALIGN_TOP_MID, 0, 52);
 
     view->category_label = lv_label_create(view->content_layer);
     lv_label_set_text(view->category_label, "CURRENT: NONE");
@@ -141,6 +194,7 @@ danger_detection_view_t *danger_detection_view_create(
     view->alert_layer = lv_obj_create(view->screen);
     lv_obj_remove_style_all(view->alert_layer);
     lv_obj_set_size(view->alert_layer, LV_PCT(100), LV_PCT(100));
+    lv_obj_clear_flag(view->alert_layer, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(view->alert_layer, LV_OBJ_FLAG_HIDDEN);
 
     view->alert_badge = lv_obj_create(view->alert_layer);
@@ -159,12 +213,15 @@ danger_detection_view_t *danger_detection_view_create(
     lv_obj_set_style_text_color(view->alert_icon_label, lv_color_white(), 0);
     lv_obj_center(view->alert_icon_label);
 
+    lv_obj_move_foreground(view->back_btn);
+
     const danger_detection_view_model_t initial_model = {
-        .status_text = "LISTENING",
+        .status_text = "未开启",
         .category_text = "CURRENT: NONE",
         .primary_result_text = "NONE",
         .horn_confidence_text = "--",
         .siren_confidence_text = "--",
+        .safety_monitor_enabled = false,
         .alert_visible = false,
     };
     danger_detection_view_apply_model(view, &initial_model);
@@ -208,6 +265,14 @@ void danger_detection_view_apply_model(
                                    model->horn_confidence_text);
     danger_detection_view_set_text(view->siren_confidence_label,
                                    model->siren_confidence_text);
+
+    view->updating_switch = true;
+    if (model->safety_monitor_enabled) {
+        lv_obj_add_state(view->safety_monitor_switch, LV_STATE_CHECKED);
+    } else {
+        lv_obj_clear_state(view->safety_monitor_switch, LV_STATE_CHECKED);
+    }
+    view->updating_switch = false;
 
     if (model->alert_visible) {
         lv_obj_set_style_bg_color(view->screen, lv_palette_main(LV_PALETTE_RED),

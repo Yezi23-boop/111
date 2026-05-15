@@ -2,7 +2,7 @@
 id: hearing-assist-danger-alert-firmware-mapping
 tags: project, hearing-assist, danger-detection, firmware, mapping, esp-dl, alerts
 summary: 将听障危险提醒设计参数映射到当前固件实现，明确各参数的归属模块、当前代码行为、实现状态与和目标架构的差距。
-last_reviewed: 2026-05-05
+last_reviewed: 2026-05-13
 memory_type: semantic
 scope: repo
 owners: main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, components/espdl_inference, main/ui/custom/danger_detection_controller.c
@@ -69,6 +69,7 @@ evidence_level: observed
 - 当前能力仍是：
   - 一次性 warning 音频播放
   - 红色危险覆盖层
+- 2026-05-13 当前决策：AI 对话页前台期间由 `official_chat_service -> background_service_manager` 暂停 Safety Monitor，退出 AI 对话后按安全监听开关恢复；不在 `app_alert_manager` 增加 official_chat speaking 特判。
 - 还不是“震动优先、持续提醒、分级提醒”的 hearing-assist 产品提醒层。
 
 ### `danger_detection_controller`

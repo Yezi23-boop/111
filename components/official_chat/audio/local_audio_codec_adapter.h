@@ -33,8 +33,8 @@ class LocalAudioCodecAdapter : public AudioCodecIface {
   bool output_enabled() const override;
 
  private:
-  bool input_enabled_ = false;
-  bool output_enabled_ = false;
+  bool input_session_acquired_ = false;
+  bool output_session_acquired_ = false;
   int output_volume_ = 0;
   float input_gain_db_ = 0.0f;
 };

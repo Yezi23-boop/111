@@ -1,17 +1,23 @@
 ---
 id: agent-ui-poc-execution-plan
 tags: context, plan, ui, lvgl, pc-sim, agent-ui, poc
-summary: Agent 直接生成 LVGL C、支持 PC 预览与最小板端验证的 UI 并行路线 PoC 执行计划。
-last_reviewed: 2026-05-05
+summary: 已被 agent_preview host-preview 路线替代的 Agent UI PoC 历史计划；保留为旧 pc_sim/agent_ui 路线背景，不再作为 active plan 执行。
+last_reviewed: 2026-05-15
 memory_type: task
 scope: task
 owners: docs/context/plans/active, main/ui/lvgl_task.c
 triggers: agent-ui, pc-sim, lvgl-preview, ui-poc, execution-plan
 evidence_level: design
-status: active
+status: superseded
+superseded_by: docs/context/knowledge/project/gui-guider-lvgl-host-preview-workflow.md
 ---
 
 # Agent UI PoC 执行计划
+
+> 当前文档已不再作为 active execution plan。旧 `main/ui/agent_ui/` 与根部
+> `pc_sim/` 路线已被清理；当前默认 UI host 预览入口见
+> `docs/context/knowledge/project/gui-guider-lvgl-host-preview-workflow.md`
+> 和 `main/ui/agent_preview/`。
 
 ## Purpose / Big Picture
 

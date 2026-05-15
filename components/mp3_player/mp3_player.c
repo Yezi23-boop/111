@@ -1,4 +1,5 @@
 #include "mp3_player.h"
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
@@ -8,6 +9,48 @@
 #include "audio_platform_config.h"
 
 static const char *TAG = "mp3_player";
+static bool s_output_session_acquired = false;
+
+static esp_err_t mp3_player_acquire_output_session(const char *reason)
+{
+    if (s_output_session_acquired)
+    {
+        return ESP_OK;
+    }
+
+    esp_err_t ret = audio_codec_acquire_output(AUDIO_CODEC_OWNER_AUDIO_PLAYER, 0U);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG,
+                 "resource_acquire_denied: resource=audio_output owner=audio_player reason=%s ret=%s",
+                 reason != NULL ? reason : "unknown", esp_err_to_name(ret));
+        return ret;
+    }
+
+    s_output_session_acquired = true;
+    return ESP_OK;
+}
+
+static void mp3_player_release_output_session(const char *reason)
+{
+    if (!s_output_session_acquired)
+    {
+        return;
+    }
+
+    esp_err_t ret = audio_codec_release_output(AUDIO_CODEC_OWNER_AUDIO_PLAYER);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG,
+                 "resource_release failed: resource=audio_output owner=audio_player reason=%s ret=%s",
+                 reason != NULL ? reason : "unknown", esp_err_to_name(ret));
+        return;
+    }
+
+    s_output_session_acquired = false;
+    ESP_LOGI(TAG, "resource_release: resource=audio_output owner=audio_player reason=%s",
+             reason != NULL ? reason : "unknown");
+}
 
 /**
  * @brief 音频播放器事件回调。
@@ -20,6 +63,7 @@ static void audio_player_callback(audio_player_cb_ctx_t *ctx)
     {
     case AUDIO_PLAYER_CALLBACK_EVENT_IDLE:
         ESP_LOGI(TAG, "播放器状态: 空闲");
+        mp3_player_release_output_session("idle");
         break;
     case AUDIO_PLAYER_CALLBACK_EVENT_PLAYING:
         ESP_LOGI(TAG, "播放器状态: 正在播放");
@@ -29,12 +73,15 @@ static void audio_player_callback(audio_player_cb_ctx_t *ctx)
         break;
     case AUDIO_PLAYER_CALLBACK_EVENT_PAUSE:
         ESP_LOGI(TAG, "播放器状态: 暂停");
+        mp3_player_release_output_session("pause");
         break;
     case AUDIO_PLAYER_CALLBACK_EVENT_SHUTDOWN:
         ESP_LOGI(TAG, "播放器状态: 关闭");
+        mp3_player_release_output_session("shutdown");
         break;
     case AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN_FILE_TYPE:
         ESP_LOGE(TAG, "错误: 未知文件类型");
+        mp3_player_release_output_session("unknown_file_type");
         break;
     default:
         ESP_LOGW(TAG, "未知事件: %d", ctx->audio_event);
@@ -163,10 +210,17 @@ esp_err_t mp3_player_play_file(const char *file_path)
 
     ESP_LOGI(TAG, "准备播放文件: %s (格式: %s)", file_path, format_name);
 
+    esp_err_t ret = mp3_player_acquire_output_session("play_file");
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
     FILE *fp = fopen(file_path, "rb");
     if (fp == NULL)
     {
         ESP_LOGE(TAG, "无法打开文件: %s", file_path);
+        mp3_player_release_output_session("open_failed");
         return ESP_FAIL;
     }
 
@@ -177,11 +231,12 @@ esp_err_t mp3_player_play_file(const char *file_path)
 
     /* `audio_player_play()` 会接管文件句柄生命周期；
      * 只有启动失败时，调用方才需要自己关闭 `fp`。 */
-    esp_err_t ret = audio_player_play(fp);
+    ret = audio_player_play(fp);
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "播放失败: %s", esp_err_to_name(ret));
         fclose(fp);
+        mp3_player_release_output_session("play_failed");
         return ret;
     }
 
@@ -196,7 +251,12 @@ esp_err_t mp3_player_play_file(const char *file_path)
 esp_err_t mp3_player_pause(void)
 {
     ESP_LOGI(TAG, "暂停播放");
-    return audio_player_pause();
+    esp_err_t ret = audio_player_pause();
+    if (ret == ESP_OK)
+    {
+        mp3_player_release_output_session("pause");
+    }
+    return ret;
 }
 
 /**
@@ -206,7 +266,18 @@ esp_err_t mp3_player_pause(void)
 esp_err_t mp3_player_resume(void)
 {
     ESP_LOGI(TAG, "恢复播放");
-    return audio_player_resume();
+    esp_err_t ret = mp3_player_acquire_output_session("resume");
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    ret = audio_player_resume();
+    if (ret != ESP_OK)
+    {
+        mp3_player_release_output_session("resume_failed");
+    }
+    return ret;
 }
 
 /**
@@ -216,7 +287,12 @@ esp_err_t mp3_player_resume(void)
 esp_err_t mp3_player_stop(void)
 {
     ESP_LOGI(TAG, "停止播放");
-    return audio_player_stop();
+    esp_err_t ret = audio_player_stop();
+    if (ret == ESP_OK)
+    {
+        mp3_player_release_output_session("stop");
+    }
+    return ret;
 }
 
 /**
@@ -226,7 +302,9 @@ esp_err_t mp3_player_stop(void)
 esp_err_t mp3_player_deinit(void)
 {
     ESP_LOGI(TAG, "反初始化MP3播放器");
-    return audio_player_delete();
+    esp_err_t ret = audio_player_delete();
+    mp3_player_release_output_session("deinit");
+    return ret;
 }
 
 /**

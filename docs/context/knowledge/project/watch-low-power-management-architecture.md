@@ -23,7 +23,7 @@ evidence_level: design
 
 如果问题不是单纯低功耗，而是“手表整体资源框架、后台功能冲突、危险识别后台化、音频/屏幕/网络/AI 推理资源预算”，优先打开：
 
-- `docs/context/plans/active/2026-05-12-watch-resource-framework-plan.md`
+- `docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md`
 
 ## 为什么不能一上来就深睡
 

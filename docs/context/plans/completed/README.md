@@ -12,7 +12,7 @@ evidence_level: design
 
 # Completed Plans 目录说明
 
-该目录用于归档已完成的复杂任务计划。
+该目录用于归档已完成或已被替代、但仍有复盘价值的复杂任务计划。
 
 保留这些计划的目的是：
 
@@ -27,3 +27,6 @@ evidence_level: design
 - `Validation and Acceptance`
 - `Outcomes & Retrospective`
 - 关键验证命令和结果摘要
+
+若计划是被替代而非完成，应在 frontmatter 使用 `status: superseded`
+和 `superseded_by` 指向当前有效文档，避免未来 agent 误当作待执行任务。

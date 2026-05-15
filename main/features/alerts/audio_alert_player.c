@@ -46,16 +46,28 @@ static void audio_alert_player_task(void *arg)
 
     // 写入长度以字节为单位；样本点数量需乘以单样本位宽。
     const size_t pcm_bytes = kTishiyinpinPcmSampleCount * sizeof(int16_t);
+    bool output_acquired = false; // P0 提醒播放期间独占 TX 输出链路。
 
     ESP_LOGI(TAG, "warning playback started bytes=%u rate=%u",
              (unsigned int)pcm_bytes,
              (unsigned int)kTishiyinpinPcmSampleRate);
 
+    esp_err_t ret =
+        audio_codec_acquire_output(AUDIO_CODEC_OWNER_ALERT_PLAYER, 500U);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG,
+                 "resource_acquire_denied: resource=audio_output owner=alert_player reason=p0_alert ret=%s",
+                 esp_err_to_name(ret));
+        goto done;
+    }
+    output_acquired = true;
+
     (void)audio_codec_set_pa_enable(true);                     // 打开功放
     (void)audio_codec_set_mute(false);                         // 取消静音
     (void)audio_codec_set_volume(ALERT_PLAYER_VOLUME_PERCENT); // 设置告警播报音量
 
-    esp_err_t ret = audio_codec_write(kTishiyinpinPcmData, pcm_bytes);
+    ret = audio_codec_write(kTishiyinpinPcmData, pcm_bytes);
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "warning playback failed: %s", esp_err_to_name(ret));
@@ -71,6 +83,17 @@ static void audio_alert_player_task(void *arg)
     }
 
     ESP_LOGI(TAG, "warning playback finished");
+done:
+    if (output_acquired)
+    {
+        ret = audio_codec_release_output(AUDIO_CODEC_OWNER_ALERT_PLAYER);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG,
+                     "resource_release failed: resource=audio_output owner=alert_player ret=%s",
+                     esp_err_to_name(ret));
+        }
+    }
     s_player_state.playing = false;
     s_player_state.task_handle = NULL;
     vTaskDelete(NULL);

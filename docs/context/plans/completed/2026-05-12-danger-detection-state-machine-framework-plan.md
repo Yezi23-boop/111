@@ -1,13 +1,14 @@
 ---
 id: danger-detection-state-machine-framework-plan-20260512
 tags: context, plans, danger-detection, hearing-assist, esp-dl, state-machine, execplan
-summary: 将当前危险识别从隐式连续窗口逻辑整理为显式服务层状态机，固定 ESP-DL、service、alert manager、UI 的 owner 边界。
-last_reviewed: 2026-05-12
+summary: 危险识别状态机 Phase 1 完成归档，将隐式连续窗口逻辑整理为显式服务层状态机，并固定 ESP-DL、service、alert manager、UI 的 owner 边界。
+last_reviewed: 2026-05-15
 memory_type: task
 scope: task
 owners: main/features/danger_detection/danger_detection_service.c, main/features/danger_detection/danger_detection_service.h
 triggers: danger-detection, hearing-assist, state-machine, espdl, alerting, cooldown
 evidence_level: design
+status: active
 ---
 
 # 危险识别状态机框架完善计划
@@ -183,6 +184,23 @@ evidence_level: design
 - 2026-05-12：复查发现专页红色危险态仍由本地 2 秒 timer 和 `alert_sequence` 驱动，已改为直接跟随 `risk_state == ALERTING`。
   - 原因：屏幕危险态持久策略必须由服务层状态机统一驱动，UI 只读 snapshot，避免页面和全局提醒各自维护生命周期。
 
-## Next Step
+## Completion Status
 
-- 上板验证状态转移日志，并继续评估是否把专页启动模式推进为后台系统能力。
+2026-05-15：本框架书按 Phase 1 范围完成。完成口径是“服务层风险状态机已落地并成为 UI/提醒层只读事实源”，不是“所有模型、震动和后台验收都已完成”。
+
+验收范围：
+
+- `danger_detection_service` 已发布 `risk_state`，区分运行时生命周期和产品危险状态。
+- ESP-DL 后处理已收敛到 `MONITORING / SUSPICIOUS / ALERTING / COOLDOWN` 语义。
+- UI 页面红色危险态跟随 `risk_state == ALERTING`，不再维护本地危险生命周期。
+- `app_alert_manager` 只负责提醒编排，不判断模型阈值或连续窗口。
+- active danger 产品边界继续限定 `siren / horn / alarm`，不把 `glass_break / crash / impact` 并入主线。
+- 专页生命周期后台化已由手表资源框架 Phase 1 接管，不再作为本计划阻塞项。
+
+## Post-Completion Follow-up Gates
+
+- 上板验证 `MONITORING -> SUSPICIOUS -> ALERTING -> COOLDOWN -> MONITORING` 状态转移日志。
+- 用普通人声和常见环境声确认不会误进 `ALERTING`。
+- 用 horn/siren/alarm 确认连续 danger 窗口后能进入 `ALERTING`。
+- 告警清除后确认能进入 `COOLDOWN` 并稳定返回 `MONITORING`。
+- 后续模型替换、震动优先策略和更复杂后台运行策略应作为独立 gate 推进。

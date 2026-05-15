@@ -30,6 +30,10 @@ class WifiManagementControllerSourceTests(unittest.TestCase):
         self.assertIn("network_manager_start_softap_provisioning()", source)
         self.assertIn("network_manager_get_status(", source)
         self.assertIn("Turn on Bluetooth from the main switch first", source)
+        self.assertIn("kWifiBackButtonX = 286", source)
+        self.assertIn("kWifiBackButtonY = 26", source)
+        self.assertIn("kWifiBackButtonWidth = 96", source)
+        self.assertIn("kWifiBackButtonHeight = 48", source)
         self.assertNotIn("network_manager_set_default_transport(", source)
         self.assertNotIn("NETWORK_SERVICE_PROVISION_TRANSPORT_AUTO", source)
 

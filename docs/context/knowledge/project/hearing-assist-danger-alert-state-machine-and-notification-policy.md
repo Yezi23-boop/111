@@ -2,7 +2,7 @@
 id: hearing-assist-danger-alert-state-machine-and-notification-policy
 tags: project, product, architecture, hearing-assist, danger-detection, state-machine, notification
 summary: 面向听障用户的手表端危险提醒功能状态机与提醒策略草案，固定状态定义、触发条件、清除规则、震动与屏幕提醒分级，以及与模型输出的边界。
-last_reviewed: 2026-05-05
+last_reviewed: 2026-05-13
 memory_type: semantic
 scope: repo
 owners: main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, main/ui/custom/danger_detection_controller.c
@@ -181,6 +181,7 @@ evidence_level: design
   - 立即触发强震动
   - 屏幕进入明确危险提示态
   - 如果当前 UI 已在危险识别页，可直接进入高对比度警示显示
+- 2026-05-13 当前产品决策：AI 对话页前台期间暂停 Safety Monitor，退出 AI 对话后如果安全监听开关仍开启再自动恢复；因此不在提醒层额外判断 `official_chat` 的 `SPEAKING` 状态。
 
 ### `Cooldown` 提醒
 

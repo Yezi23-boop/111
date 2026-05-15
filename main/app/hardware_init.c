@@ -199,8 +199,8 @@ esp_err_t hardware_init(void)
     }
 
     /* 网络主链路已迁到后台 `network_service`，这里不再同步初始化旧 `wifi_provision`。 */
-    ESP_LOGI(TAG, "Initializing WiFi...");
+    ESP_LOGI(TAG, "Initializing Button...");
     button_init();
-    ESP_LOGI(TAG, "Hardware init complete: background network startup required");
+    ESP_LOGI(TAG, "Hardware init complete: network startup deferred to background service");
     return ESP_OK;
 }

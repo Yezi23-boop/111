@@ -100,7 +100,7 @@ evidence_level: design
 
 - Owners: `components/axp2101`, `main/app/board_power.c`, `main/services/power_service.c`.
 - For whole-watch resource framework / state budget / background feature arbitration:
-  `docs/context/plans/active/2026-05-12-watch-resource-framework-plan.md`
+  `docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md`
 - Start with:
   `docs/context/knowledge/project/axp2101-power-component-implementation.md`
 - Attempt record:

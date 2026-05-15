@@ -1,6 +1,8 @@
 import unittest
 
 from tests.main_paths import AUDIO_APP_SOURCE
+from tests.main_paths import APP_ALERT_MANAGER_SOURCE
+from tests.main_paths import AUDIO_ALERT_PLAYER_SOURCE
 from tests.main_paths import REPO_ROOT
 
 AUDIO_CODEC_HEADER = REPO_ROOT / "components" / "audio_codec" / "include" / "audio_codec.h"
@@ -12,6 +14,12 @@ ESPDL_AUDIO_RUNTIME_SOURCE = REPO_ROOT / "components" / "espdl_inference" / "esp
 TRAFFIC_REALTIME_SOURCE = REPO_ROOT / "components" / "traffic_inference" / "traffic_inference_realtime.cc"
 MP3_PLAYER_SOURCE = REPO_ROOT / "components" / "mp3_player" / "mp3_player.c"
 I2C_MANAGER_HEADER = REPO_ROOT / "components" / "i2c_manager" / "include" / "i2c_manager.h"
+OFFICIAL_CHAT_CODEC_ADAPTER_SOURCE = (
+    REPO_ROOT / "components" / "official_chat" / "audio" / "local_audio_codec_adapter.cc"
+)
+OFFICIAL_CHAT_CODEC_ADAPTER_HEADER = (
+    REPO_ROOT / "components" / "official_chat" / "audio" / "local_audio_codec_adapter.h"
+)
 
 
 class AudioCodecPortSourceTests(unittest.TestCase):
@@ -33,6 +41,25 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         source = AUDIO_APP_SOURCE.read_text(encoding="utf-8")
         self.assertIn('#include "audio_platform_config.h"', source)
         self.assertIn("audio_codec_read(", source)
+        self.assertIn('#include "services/background_service_manager.h"', source)
+        self.assertIn(
+            "background_service_manager_set_foreground_audio_active(\n"
+            "        true, \"recording\")",
+            source,
+        )
+        self.assertIn(
+            "audio_codec_acquire_input(AUDIO_CODEC_OWNER_AUDIO_RECORDER, 500U)",
+            source,
+        )
+        self.assertIn(
+            "audio_codec_release_input(AUDIO_CODEC_OWNER_AUDIO_RECORDER)",
+            source,
+        )
+        self.assertIn(
+            "background_service_manager_set_foreground_audio_active(\n"
+            "        false",
+            source,
+        )
         self.assertNotIn("audio_codec_get_record_dev()", source)
         self.assertNotIn("esp_codec_dev_read(", source)
         self.assertIn("AUDIO_PLATFORM_HW_SAMPLE_RATE", source)
@@ -59,13 +86,27 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         self.assertIn("audio_codec_release_input", header)
         self.assertIn("audio_codec_acquire_output", header)
         self.assertIn("audio_codec_release_output", header)
+        self.assertIn("audio_codec_session_snapshot_t", header)
+        self.assertIn("audio_codec_get_session_snapshot", header)
+        self.assertIn("audio_codec_owner_to_text", header)
+        self.assertIn("AUDIO_CODEC_OWNER_ALERT_PLAYER", header)
+        self.assertIn("AUDIO_CODEC_OWNER_AUDIO_RECORDER", header)
         self.assertIn("s_lifecycle_ref_count", source)
         self.assertIn("s_input_session_owner", source)
+        self.assertIn('return "audio_recorder";', source)
+        self.assertIn('return "alert_player";', source)
+        self.assertIn("audio_codec_get_session_snapshot", source)
         self.assertIn("xSemaphoreCreateMutex", source)
 
     def test_realtime_audio_clients_use_input_session_contract(self) -> None:
         espdl_runtime = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
         traffic_runtime = TRAFFIC_REALTIME_SOURCE.read_text(encoding="utf-8")
+        official_chat_adapter = OFFICIAL_CHAT_CODEC_ADAPTER_SOURCE.read_text(
+            encoding="utf-8"
+        )
+        official_chat_adapter_header = OFFICIAL_CHAT_CODEC_ADAPTER_HEADER.read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn(
             "audio_codec_acquire_input(AUDIO_CODEC_OWNER_ESPDL_INFERENCE", espdl_runtime
@@ -79,6 +120,75 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         self.assertIn(
             "audio_codec_release_input(AUDIO_CODEC_OWNER_TRAFFIC_INFERENCE", traffic_runtime
         )
+        self.assertIn(
+            "audio_codec_acquire_input(\n"
+            "        AUDIO_CODEC_OWNER_OFFICIAL_CHAT, kInputSessionTimeoutMs)",
+            official_chat_adapter,
+        )
+        self.assertIn(
+            "audio_codec_release_input(AUDIO_CODEC_OWNER_OFFICIAL_CHAT)",
+            official_chat_adapter,
+        )
+        self.assertIn(
+            "audio_codec_acquire_output(\n"
+            "        AUDIO_CODEC_OWNER_OFFICIAL_CHAT, kOutputSessionTimeoutMs)",
+            official_chat_adapter,
+        )
+        self.assertIn(
+            "audio_codec_release_output(AUDIO_CODEC_OWNER_OFFICIAL_CHAT)",
+            official_chat_adapter,
+        )
+        self.assertIn("input_session_acquired_", official_chat_adapter)
+        self.assertNotIn("input_enabled_", official_chat_adapter_header)
+        self.assertIn("output_session_acquired_", official_chat_adapter_header)
+        self.assertNotIn("output_enabled_", official_chat_adapter_header)
+        self.assertIn(
+            "if (!input_session_acquired_)",
+            official_chat_adapter,
+        )
+        self.assertIn(
+            "data.empty() || !output_session_acquired_",
+            official_chat_adapter,
+        )
+        self.assertIn("return input_session_acquired_;", official_chat_adapter)
+        self.assertNotIn("!input_enabled_", official_chat_adapter)
+        self.assertIn("return output_session_acquired_;", official_chat_adapter)
+        self.assertNotIn("!output_enabled_", official_chat_adapter)
+        self.assertIn(
+            "if (!output_session_acquired_) {\n"
+            "    return;\n"
+            "  }\n\n"
+            "  (void)audio_codec_set_pa_enable(false);",
+            official_chat_adapter,
+        )
+        self.assertIn("EnableOutput(false);", official_chat_adapter)
+
+    def test_p0_alert_and_mp3_player_use_output_session_contract(self) -> None:
+        audio_alert_player = AUDIO_ALERT_PLAYER_SOURCE.read_text(encoding="utf-8")
+        app_alert_manager = APP_ALERT_MANAGER_SOURCE.read_text(encoding="utf-8")
+        mp3_player = MP3_PLAYER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "audio_codec_acquire_output(AUDIO_CODEC_OWNER_ALERT_PLAYER, 500U)",
+            audio_alert_player,
+        )
+        self.assertIn(
+            "audio_codec_release_output(AUDIO_CODEC_OWNER_ALERT_PLAYER)",
+            audio_alert_player,
+        )
+        self.assertIn(
+            "audio_codec_acquire_output(AUDIO_CODEC_OWNER_AUDIO_PLAYER, 0U)",
+            mp3_player,
+        )
+        self.assertIn(
+            "audio_codec_release_output(AUDIO_CODEC_OWNER_AUDIO_PLAYER)",
+            mp3_player,
+        )
+        self.assertIn("app_alert_manager_preempt_normal_audio_output", app_alert_manager)
+        self.assertIn("audio_codec_get_session_snapshot", app_alert_manager)
+        self.assertIn("snapshot.output_owner != AUDIO_CODEC_OWNER_AUDIO_PLAYER", app_alert_manager)
+        self.assertIn("mp3_player_stop()", app_alert_manager)
+        self.assertIn("resource_preempt: resource=audio_output", app_alert_manager)
 
 
 if __name__ == "__main__":

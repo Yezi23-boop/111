@@ -75,11 +75,20 @@ static const char *audio_codec_owner_name(audio_codec_owner_t owner)
         return "espdl_inference";
     case AUDIO_CODEC_OWNER_AUDIO_PLAYER:
         return "audio_player";
+    case AUDIO_CODEC_OWNER_ALERT_PLAYER:
+        return "alert_player";
+    case AUDIO_CODEC_OWNER_AUDIO_RECORDER:
+        return "audio_recorder";
     case AUDIO_CODEC_OWNER_OFFICIAL_CHAT:
         return "official_chat";
     default:
         return "unknown";
     }
+}
+
+const char *audio_codec_owner_to_text(audio_codec_owner_t owner)
+{
+    return audio_codec_owner_name(owner);
 }
 
 /**
@@ -942,6 +951,29 @@ esp_err_t audio_codec_release_output(audio_codec_owner_t owner)
     return audio_codec_release_session(&s_output_session_active,
                                        &s_output_session_owner,
                                        owner, "output");
+}
+
+esp_err_t audio_codec_get_session_snapshot(
+    audio_codec_session_snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret = audio_codec_lock_resources(UINT32_MAX);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    snapshot->input_active = s_input_session_active;
+    snapshot->input_owner = s_input_session_owner;
+    snapshot->output_active = s_output_session_active;
+    snapshot->output_owner = s_output_session_owner;
+
+    audio_codec_unlock_resources();
+    return ESP_OK;
 }
 
 /**

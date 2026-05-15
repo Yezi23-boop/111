@@ -19,6 +19,7 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "official_chat.h"', source)
+        self.assertIn('#include "background_service_manager.h"', source)
         self.assertIn("official_chat_create(", source)
         self.assertIn("official_chat_destroy(", source)
         self.assertIn("official_chat_set_event_callback(", source)
@@ -41,6 +42,19 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("official_chat_service_get_message(", source)
         self.assertIn("official_chat_service_get_last_user_text(", source)
         self.assertIn("official_chat_service_get_last_assistant_text(", source)
+        self.assertIn(
+            "background_service_manager_set_foreground_audio_active(\n"
+            "        active, reason)",
+            source,
+        )
+        self.assertIn(
+            'official_chat_service_set_foreground_audio_active(true, "official_chat")',
+            source,
+        )
+        self.assertIn(
+            'official_chat_service_set_foreground_audio_active(false, "official_chat")',
+            source,
+        )
 
     def test_service_exposes_small_chat_message_queue(self) -> None:
         header = OFFICIAL_CHAT_SERVICE_HEADER.read_text(encoding="utf-8")

@@ -2,7 +2,7 @@
 id: ui-refresh-policy-idle-dim
 tags: project, lvgl, ui, power, brightness, touch
 summary: 记录当前仓库 UI 空闲降频、亮度 dim 与强制高刷开关的最小实现策略。
-last_reviewed: 2026-04-13
+last_reviewed: 2026-05-15
 memory_type: semantic
 scope: repo
 owners: main/ui/ui_refresh_policy.c, components/co5300_panel, main/ui/lvgl_task.c
@@ -30,6 +30,7 @@ evidence_level: observed
 
 - `main/ui/ui_refresh_policy.[ch]`
   - 维护最近触摸时间、强制高刷状态、用户亮度
+  - 2026-05-15 起发布 `ui_refresh_policy_get_activity_snapshot()` 只读快照，供后续资源策略读取 UI 活跃度事实
 - `main/ui/lvgl_task.c`
   - 每轮 `lv_timer_handler()` 后调用 `ui_refresh_policy_poll()`
   - 再通过 `ui_refresh_policy_adjust_delay()` 决定 `vTaskDelay`
@@ -52,6 +53,8 @@ evidence_level: observed
 - 当前策略不修改 `lv_tick_inc()` 周期，避免直接改变 LVGL timer 语义
 - 当前策略只控制“调度频率 + 亮度”，不进入 `light sleep/deep sleep`
 - 触摸仍是轮询读，不是 `GPIO38` 中断唤醒，所以该策略优先降低 CPU/刷新活动，不代表最终极限功耗
+- `activity_snapshot` 只读：不调用 `ui_refresh_policy_poll()`，不写面板亮度，不触发 LVGL 操作，也不依赖 `power_policy`
+- `power_policy` 后续只能先读取该快照做整机状态判断，不应反向接管 `ui_refresh_policy` 的主循环延时和亮度写入
 
 ## 后续扩展建议
 

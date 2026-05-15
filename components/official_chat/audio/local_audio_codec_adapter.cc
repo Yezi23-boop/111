@@ -4,8 +4,15 @@
 
 #include "audio_codec.h"
 #include "audio_platform_config.h"
+#include "esp_log.h"
 
 namespace official_chat {
+
+namespace {
+constexpr const char *kTag = "official_chat_codec";
+constexpr uint32_t kInputSessionTimeoutMs = 500U;
+constexpr uint32_t kOutputSessionTimeoutMs = 500U;
+}  // namespace
 
 bool LocalAudioCodecAdapter::Initialize() {
   int volume = 0;
@@ -16,7 +23,10 @@ bool LocalAudioCodecAdapter::Initialize() {
   return true;
 }
 
-void LocalAudioCodecAdapter::Shutdown() {}
+void LocalAudioCodecAdapter::Shutdown() {
+  EnableInput(false);
+  EnableOutput(false);
+}
 
 void LocalAudioCodecAdapter::Start() {}
 
@@ -33,22 +43,84 @@ void LocalAudioCodecAdapter::SetInputGain(float gain_db) {
 }
 
 void LocalAudioCodecAdapter::EnableInput(bool enable) {
-  input_enabled_ = enable;
+  if (enable) {
+    if (input_session_acquired_) {
+      return;
+    }
+
+    const esp_err_t ret = audio_codec_acquire_input(
+        AUDIO_CODEC_OWNER_OFFICIAL_CHAT, kInputSessionTimeoutMs);
+    if (ret != ESP_OK) {
+      ESP_LOGW(kTag, "official_chat input session acquire failed: %s",
+               esp_err_to_name(ret));
+      return;
+    }
+
+    input_session_acquired_ = true;
+    return;
+  }
+
+  if (!input_session_acquired_) {
+    return;
+  }
+
+  const esp_err_t ret =
+      audio_codec_release_input(AUDIO_CODEC_OWNER_OFFICIAL_CHAT);
+  if (ret != ESP_OK) {
+    ESP_LOGW(kTag, "official_chat input session release failed: %s",
+             esp_err_to_name(ret));
+    return;
+  }
+  input_session_acquired_ = false;
 }
 
 void LocalAudioCodecAdapter::EnableOutput(bool enable) {
-  output_enabled_ = enable;
-  (void)audio_codec_set_pa_enable(enable);
+  if (enable) {
+    if (output_session_acquired_) {
+      (void)audio_codec_set_pa_enable(true);
+      return;
+    }
+
+    const esp_err_t ret = audio_codec_acquire_output(
+        AUDIO_CODEC_OWNER_OFFICIAL_CHAT, kOutputSessionTimeoutMs);
+    if (ret != ESP_OK) {
+      ESP_LOGW(kTag, "official_chat output session acquire failed: %s",
+               esp_err_to_name(ret));
+      return;
+    }
+
+    output_session_acquired_ = true;
+    (void)audio_codec_set_pa_enable(true);
+    return;
+  }
+
+  if (!output_session_acquired_) {
+    return;
+  }
+
+  (void)audio_codec_set_pa_enable(false);
+  const esp_err_t ret =
+      audio_codec_release_output(AUDIO_CODEC_OWNER_OFFICIAL_CHAT);
+  if (ret != ESP_OK) {
+    ESP_LOGW(kTag, "official_chat output session release failed: %s",
+             esp_err_to_name(ret));
+    return;
+  }
+  output_session_acquired_ = false;
 }
 
 void LocalAudioCodecAdapter::OutputData(std::vector<int16_t> &data) {
-  if (data.empty()) {
+  if (data.empty() || !output_session_acquired_) {
     return;
   }
   (void)audio_codec_write(data.data(), data.size() * sizeof(int16_t));
 }
 
 bool LocalAudioCodecAdapter::InputData(std::vector<int16_t> &data) {
+  if (!input_session_acquired_) {
+    return false;
+  }
+
   size_t bytes_read = 0;
   const size_t bytes = data.size() * sizeof(int16_t);
   return audio_codec_read(data.data(), bytes, &bytes_read, portMAX_DELAY) ==
@@ -99,11 +171,11 @@ float LocalAudioCodecAdapter::input_gain() const {
 }
 
 bool LocalAudioCodecAdapter::input_enabled() const {
-  return input_enabled_;
+  return input_session_acquired_;
 }
 
 bool LocalAudioCodecAdapter::output_enabled() const {
-  return output_enabled_;
+  return output_session_acquired_;
 }
 
 }  // namespace official_chat

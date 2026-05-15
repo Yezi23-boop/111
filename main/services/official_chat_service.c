@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "background_service_manager.h"
 #include "network_service.h"
 #include "official_chat.h"
 #include "sdkconfig.h"
@@ -72,6 +73,29 @@ static void official_chat_service_unlock(void)
     if (s_text_mutex != NULL)
     {
         xSemaphoreGive(s_text_mutex);
+    }
+}
+
+/**
+ * @brief 向后台资源管理器声明官方聊天的前台麦克风意图。
+ *
+ * official_chat 的真实麦克风 owner 仍由 `LocalAudioCodecAdapter` 申请；
+ * 这里提前通知后台 Safety Monitor 让出麦克风，避免双方在 codec session
+ * acquire 阶段互相等待。
+ *
+ * @param[in] active true 表示官方聊天前台链路即将使用麦克风。
+ * @param[in] reason 日志原因。
+ */
+static void official_chat_service_set_foreground_audio_active(bool active,
+                                                              const char *reason)
+{
+    esp_err_t ret = background_service_manager_set_foreground_audio_active(
+        active, reason);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "foreground audio signal failed: active=%d reason=%s err=%s",
+                 active, reason != NULL ? reason : "unknown",
+                 esp_err_to_name(ret));
     }
 }
 
@@ -244,6 +268,7 @@ static bool official_chat_service_requires_shutdown_quiet_period(
  */
 static void official_chat_service_request_shutdown_internal(void)
 {
+    official_chat_service_set_foreground_audio_active(false, "official_chat");
     s_foreground_requested = false;
     s_shutdown_requested = true;
     s_shutdown_stop_requested = false;
@@ -611,6 +636,7 @@ void official_chat_service_enter_foreground(void)
     s_shutdown_stop_requested = false;
     s_shutdown_destroy_deadline_ticks = 0;
     s_foreground_requested = true;
+    official_chat_service_set_foreground_audio_active(true, "official_chat");
 }
 
 /**
@@ -621,6 +647,7 @@ void official_chat_service_enter_foreground(void)
 void official_chat_service_leave_foreground(void)
 {
     s_foreground_requested = false;
+    official_chat_service_set_foreground_audio_active(false, "official_chat");
 }
 
 /**

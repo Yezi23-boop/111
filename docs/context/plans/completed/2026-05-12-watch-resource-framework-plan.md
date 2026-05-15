@@ -1,10 +1,10 @@
 ---
 id: watch-resource-framework-plan-20260512
 tags: plan, watch, resource-management, power-policy, background, audio, display, network, sensor, haptic, maintenance
-summary: 规划 ESP32-S3 手表整体资源框架，固定 power_policy 总状态机、资源 owner、状态预算表、优先级、后台功能预算和第一阶段最小落地路径。
+summary: ESP32-S3 手表资源框架 Phase 1 完成归档，固定稳定契约、复杂度护栏、资源 owner 和状态预算表。
 status: active
-last_reviewed: 2026-05-12
-owners: main/services/power_policy, main/services/background_service_manager, components/audio_codec, components/network_manager, components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/features/danger_detection
+last_reviewed: 2026-05-15
+owners: main/services/power_policy, main/services/background_service_manager, main/services/safety_monitor_session, components/audio_codec, components/network_manager, components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/features/danger_detection
 triggers: watch, resource, framework, background, power_policy, audio_resource, danger_detection, low_power
 evidence_level: design
 ---
@@ -13,15 +13,17 @@ evidence_level: design
 
 ## 目标
 
-把当前手表固件里的屏幕、触摸、音频、网络、传感器、AI 推理和后台任务统一纳入一个可解释、可验证、可回退的资源框架。
+把当前手表固件里的屏幕、触摸、音频、网络、传感器、AI 推理和后台任务纳入一个可解释、可验证、可回退的资源框架。
 
-本计划不是马上实现大而全 `ResourceManager`，而是先固定：
+本文件是稳定契约，不是运行日志。具体实验、烧录和失败证据放在 `docs/context/runs/`；本文件只固定：
 
 - 谁是整机状态 owner。
 - 哪些资源必须独占。
 - 哪些后台功能可以长期运行。
 - 哪些场景必须降频、暂停或让路。
 - 后续代码应该落在哪一层。
+
+本计划不实现大而全 `ResourceManager`。当前框架已经接近可读性上限，后续优先补证据和小 gate，不再无条件加层。
 
 ## 当前依据
 
@@ -35,51 +37,86 @@ evidence_level: design
 
 ```text
 UI / Feature
-  -> background_service_manager / power_policy
-  -> resource policy / domain owner
+  -> service / policy
+  -> domain owner
   -> driver adapter
   -> ESP-IDF / LVGL / ESP-DL / device driver
 ```
 
-### `power_policy`：整机资源状态机 owner
+当前不新增 `resource_policy`、`ResourceManager` 或 `session_router` 层。资源策略只通过现有 owner 协作：`power_policy` 发布预算，`background_service_manager` 计算 Safety Monitor 是否应运行，domain owner 只发布或消费自己的事实。
+
+### `power_policy`：整机资源预算 owner
 
 建议新增或补全 `main/services/power_policy.[ch]`。
 
 负责：
 
 - 维护整机资源状态：`ACTIVE / IDLE_DIM / STANDBY / LOW_BATTERY_WARN / CHARGING / MAINTENANCE`。
-- 根据电源、屏幕、用户交互、后台任务和高优先级活动下发资源预算。
-- 决定哪些后台任务可以运行、降频、暂停或恢复。
-- 统一调用 UI 亮度/刷新、Wi-Fi 省电、音频 session、传感器采样节流等策略接口。
+- 根据电源、用户交互、维护窗口和高优先级活动发布资源预算。
+- 决定预算语义：哪些后台任务允许运行、应降频、应暂停或应恢复。
+- 提供 `MAINTENANCE` 薄请求入口，让高压任务先进入互斥预算窗口。
 
 不负责：
 
 - 直接读 PMIC 寄存器。
 - 直接操作 LVGL 对象。
 - 直接跑模型推理。
+- 直接启动或停止危险识别 runtime。
+- 直接调用 UI 亮度、Wi-Fi、省电、音频 session 或传感器接口。
 - 直接处理某个页面按钮逻辑。
 
 ### `background_service_manager`：后台功能开关 owner
 
 建议新增 `main/services/background_service_manager.[ch]`，第一阶段可以很薄。
 
+第一阶段只管理 Safety Monitor。新的后台功能必须先有第二个真实调用方、明确预算字段和验证场景，才允许接入。
+
 负责：
 
-- 保存后台功能开关，例如危险识别、网络同步、语音助手待机、传感器采样。
+- 保存后台功能开关；当前只保存危险识别 `安全监听` 开关。
 - 把“用户允许后台运行”和“当前资源允许运行”分开。
-- 向 `power_policy` 暴露后台功能需求。
+- 读取 `power_policy` 预算与资源 owner 快照，计算 Safety Monitor 的 `should_run`。
 
 不负责：
 
 - 不直接抢麦克风。
 - 不直接改模型阈值。
 - 不直接播放提醒。
+- 不直接理解危险识别 runtime 的错误恢复、运行确认或后端选择；这些由 `safety_monitor_session` 收敛。
+- 不做通用后台任务调度器。
+
+### `safety_monitor_session`：Safety Monitor 会话生命周期 owner
+
+建议新增 `main/services/safety_monitor_session.[ch]`，作为 `background_service_manager` 和 `danger_detection_service` 之间的薄生命周期适配层。
+
+负责：
+
+- 将“当前是否应运行 Safety Monitor session”翻译成危险识别 runtime 的 start/stop。
+- 收敛错误态恢复、运行确认、失败退避和资源获取失败日志。
+- 使用 `danger_detection_service_start()` 的默认 active 后端，不让 manager 持有模型后端细节。
+
+不负责：
+
+- 不解释用户开关。
+- 不解释 `power_policy` 预算。
+- 不持有麦克风优先级策略。
+- 不做 UI 文案和页面状态展示。
+
+### Complexity Guardrails
+
+- 不新增 `ResourceManager`、`resource_policy`、`session_router` 或等价中间层。
+- Safety Monitor 主链路最多保持：`UI -> background_service_manager -> safety_monitor_session -> danger_detection_service`；除 driver/vendor runtime 外，不再插入新 owner。
+- `background_service_manager` 只计算 `should_run`，不得接收模型后端、风险状态机、告警策略或阈值逻辑。
+- `safety_monitor_session` 只处理 `should_run -> runtime lifecycle`，包括 start/stop、FAILED 恢复、退避和运行确认。
+- `audio_codec` 只发布音频 session owner 事实，不判断 P0/P1/P2 策略。
+- `foreground_audio_active` 只作为“前台音频即将申请麦克风”的预暂停信号；长期事实以 `audio_codec` input owner snapshot 为准。
+- 进度细节不继续膨胀成长日志；详细证据追加到 `docs/context/runs/`。
 
 ### 资源 owner
 
 | 资源 | 当前或建议 owner | 资源类型 | 策略 |
 | --- | --- | --- | --- |
-| 屏幕亮度/刷新节奏 | `ui_refresh_policy` + `co5300_panel` | 可降级 | 由 `power_policy` 下发 active/idle/standby 预算 |
+| 屏幕亮度/刷新节奏 | `ui_refresh_policy` + `co5300_panel` | 可降级 | `power_policy` 只发布预算，`ui_refresh_policy` 消费并落到面板 |
 | LVGL 对象生命周期 | `main/ui/* controller` + `lvgl_task` | UI 内部资源 | 后台服务不得直接改 LVGL 对象 |
 | 触摸输入 | `touch_ft5x06` + `lvgl_port` | 唤醒/交互资源 | 第一阶段继续轮询，后续再评估中断唤醒 |
 | 麦克风/I2S 输入 | `audio_codec` | 独占资源 | 通过 input session 申请，语音助手优先于后台危险监听 |
@@ -89,8 +126,8 @@ UI / Feature
 | Wi-Fi/BLE | `network_manager` / `wifi_control` / BLE owner | 可降级资源 | active 场景正常，idle/standby 降低活跃度 |
 | 共享 I2C | `i2c_manager` + 各 driver | 共享总线 | 新增 PMIC/RTC/IMU 轮询前必须评估触摸和 codec 控制面影响 |
 | SD / 文件系统 | storage owner | 突发资源 | 避免和高频 LCD flush、音频播放、模型加载同时做大 IO |
-| CPU 推理预算 | `power_policy` + feature owner | 可调度资源 | 后台推理低优先级，前台交互/提醒优先 |
-| 内部 DMA RAM | 各 driver + `power_policy` 观测 | 稀缺资源 | 高压路径要避免屏幕大 flush、音频、Wi-Fi、SD 同时峰值 |
+| CPU 推理预算 | `power_policy` + feature owner | 可调度资源 | `power_policy` 发布许可，推理 owner 决定具体运行方式 |
+| 内部 DMA RAM | 各 driver + 运行日志观测 | 稀缺资源 | 高压路径要避免屏幕大 flush、音频、Wi-Fi、SD 同时峰值 |
 
 ## 整机状态预算表
 
@@ -249,7 +286,7 @@ OTA、模型替换、模型验证、日志导出、数据整理等维护场景�
 
 - 后台服务不得直接持有 `lv_obj_t *`。
 - 后台服务只发布状态；UI controller 读取快照并渲染。
-- `power_policy` 只控制亮度、刷新预算和屏幕开关语义，不直接改页面控件。
+- `power_policy` 只发布屏幕相关预算，不直接改页面控件、亮度寄存器或 LVGL 对象。
 
 ### Wi-Fi/BLE
 
@@ -269,9 +306,11 @@ OTA、模型替换、模型验证、日志导出、数据整理等维护场景�
 - 避免同时触发大屏幕 flush、音频采集/播放、Wi-Fi 高吞吐、SD 大 IO、模型加载。
 - 后续应增加轻量资源日志，至少记录进入高压组合时的可用 internal heap。
 
-## 第一阶段最小落地
+## First Stage Scope
 
-第一阶段只做框架闭环，不碰 deep sleep。
+本节保留第一阶段验收口径，当前主要能力已落地；后续不要在这里继续堆运行日志。第一阶段只做框架闭环，不碰 deep sleep。
+
+补充启动流程口径：后续启动编排以 [Apple Watch 风格开机启动流程计划](2026-05-12-apple-watch-like-boot-flow-plan.md) 为准。核心原则是先拆清 `Board Foundation` 与 `Display Foundation`，再保证 UI 首帧优先、后台 manager 先 ready、重任务按用户会话或策略预算延后启动；危险识别采用 `Foreground-authorized session` 语义，即前台页面启动 Safety Monitor session，后台 manager 接管生命周期，页面退出不直接 stop。
 
 1. 新增 `power_policy` 计划接口和状态枚举。
    - 输入：`power_service` 快照、UI 交互时间、后台功能需求。
@@ -280,7 +319,10 @@ OTA、模型替换、模型验证、日志导出、数据整理等维护场景�
    - 先只管理危险识别后台开关。
    - 区分 `enabled_by_user` 与 `allowed_by_policy`。
 3. 改造危险识别页面语义。
-   - 页面只显示状态和开关。
+   - 页面新增 `安全监听` UI 开关。
+   - 进入页面只显示状态和当前开关，不自动启动麦克风/模型。
+   - 打开开关才请求 `background_service_manager` 启动 Safety Monitor session。
+   - 关闭开关请求停止 session 并释放资源。
    - 页面退出不再拥有 stop 生命周期。
 4. 接入 `audio_codec` input session 的资源阻塞状态。
    - 麦克风被前台占用时，危险识别进入 `resource_blocked` 或暂停。
@@ -295,19 +337,53 @@ OTA、模型替换、模型验证、日志导出、数据整理等维护场景�
    - `resource_release`
    - `maintenance_window_enter/exit`
 
-## 第二阶段
+## Current Contract
 
-1. 把 UI `Active / Idle-Dim` 纳入 `power_policy` 统一输出。
-2. 网络省电从 `official_chat` 局部策略扩展为整机策略输入。
-3. 补 `STANDBY`：灭屏、停动画、降网络活跃、停普通音频。
-4. 为危险识别增加 standby 安全监听模式和低频策略。
-5. 增加震动硬件后，把震动预算从文档占位推进到 haptic driver owner 与 `app_alert_manager`。
+已实现并可作为后续代码生成边界的稳定契约：
 
-## 第三阶段
+- `power_policy` 已发布 `ACTIVE / IDLE_DIM / LOW_BATTERY_WARN / CHARGING / MAINTENANCE` 预算；`IDLE_DIM` 只读消费 `ui_refresh_policy` activity snapshot，`STANDBY` 仍只保留枚举，不猜触发源。
+- `background_service_manager` 当前只管理 Safety Monitor 用户开关、策略许可和麦克风阻塞，输出 `should_run`。
+- `safety_monitor_session` 只负责 Safety Monitor runtime 的 start/stop、FAILED 恢复、退避和运行确认。
+- 危险识别页面只展示状态和发送 `安全监听` 开关意图；页面退出不再拥有 stop 生命周期。
+- `audio_codec` 作为麦克风 input session 与播放 output session owner，并提供只读 session snapshot；前台录音/语音优先于 Safety Monitor。
+- 普通音频播放、official_chat 输出和 P0 危险提醒已接入 output session；P0 危险提醒由 `app_alert_manager` 编排抢占普通播放，不在 `audio_alert_player` 单点硬抢。
+- `ui_refresh_policy` 已发布只读 activity snapshot；该接口只公开 UI 活跃度事实，不推进状态机、不写面板亮度、不让 `power_policy` 接管 UI 刷新链路。
+- 启动阶段以 `ui_first_frame_ready` gate 保护后台重任务；不得回到固定延迟猜测 UI 首帧。
+- `MAINTENANCE` 是 `power_policy` 的薄请求入口，不是维护任务调度器。
 
-1. 接入 RTC/PMIC 事件证据后，再讨论 light sleep/deep sleep。
-2. 做 sensor manager 或 sensing policy。
-3. 将 IMU/RTC/PMIC/触摸中断纳入唤醒策略。
+## Evidence Links
+
+详细实验过程、日志和构建证据见：
+
+- `docs/context/runs/2026-05-12-attempt-power-policy-background-danger-skeleton.md`
+- `docs/context/runs/2026-05-13-attempt-safety-monitor-readiness-gate.md`
+- `docs/context/runs/2026-05-13-attempt-safety-monitor-microphone-arbitration.md`
+- `docs/context/runs/2026-05-13-attempt-resource-policy-maintenance-window.md`
+- `docs/context/runs/2026-05-13-attempt-audio-output-p0-preemption.md`
+- `docs/context/runs/2026-05-13-attempt-official-chat-microphone-arbitration.md`
+- `docs/context/runs/2026-05-15-attempt-ui-refresh-policy-activity-snapshot.md`
+- `docs/context/runs/2026-05-15-attempt-power-policy-ui-activity-budget.md`
+- `docs/context/runs/2026-05-15-attempt-official-chat-output-session.md`
+- `board_logs/2026-05-13-resource-framework-coldboot-2026-05-13-134359.log`
+
+## Completion Status
+
+2026-05-15：本框架书按 Phase 1 范围完成。完成口径是“稳定契约已落地并可指导后续代码生成”，不是“所有未来低功耗能力都已实现”。
+
+验收范围：
+
+- Safety Monitor 已从页面生命周期提升为后台系统能力。
+- `power_policy / background_service_manager / safety_monitor_session / audio_codec / ui_refresh_policy` 的 owner 边界已固定。
+- 麦克风 input session、播放 output session、official_chat 前台音频、P0 危险提醒抢占和 UI activity 只读预算已接入。
+- 复杂度护栏成立：不新增 `ResourceManager`、`resource_policy`、`session_router` 或等价中间层。
+
+后续工作按独立小 gate 推进，不再阻塞本框架书完成。
+
+## Post-Completion Follow-up Gates
+
+1. 补齐低电量预警和 UI activity 并发场景的板端日志：确认低电量预算不会导致 Safety Monitor 反复启停。
+2. 为 `STANDBY` 准备触摸/RTC/PMIC 唤醒证据；证据不足前只保留枚举和预算口径，不进入 light sleep/deep sleep。
+3. 危险提醒触发时继续记录 `haptic_unavailable`；只有增加真实 haptic driver 后再实现震动优先策略。
 
 ## 不做什么
 

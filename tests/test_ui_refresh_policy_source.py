@@ -1,4 +1,5 @@
 import unittest
+import re
 
 from tests.main_paths import LVGL_TASK_SOURCE
 from tests.main_paths import REPO_ROOT
@@ -23,6 +24,11 @@ class UiRefreshPolicySourceTests(unittest.TestCase):
         )
         self.assertIn(
             "uint32_t ui_refresh_policy_adjust_delay(uint32_t next_call_ms);",
+            header,
+        )
+        self.assertIn("ui_refresh_policy_activity_snapshot_t", header)
+        self.assertIn(
+            "bool ui_refresh_policy_get_activity_snapshot(",
             header,
         )
 
@@ -54,6 +60,36 @@ class UiRefreshPolicySourceTests(unittest.TestCase):
         self.assertIn("ui_refresh_policy_compute_throttle_mode", source)
         self.assertNotIn("UI_REFRESH_POLICY_STATE_PROVISIONING_THROTTLED", source)
         self.assertNotIn("s_ble_provisioning_throttle_active", source)
+
+    def test_policy_snapshot_is_read_only_and_does_not_drive_refresh(self) -> None:
+        header = UI_REFRESH_POLICY_HEADER.read_text(encoding="utf-8")
+        source = UI_REFRESH_POLICY_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("UI_REFRESH_POLICY_ACTIVITY_ACTIVE", header)
+        self.assertIn("UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM", header)
+        self.assertIn("UI_REFRESH_POLICY_ACTIVITY_FORCE_ACTIVE", header)
+        self.assertIn("UI_REFRESH_POLICY_THROTTLE_NORMAL", header)
+        self.assertIn("UI_REFRESH_POLICY_THROTTLE_PROVISIONING", header)
+        self.assertIn("target_brightness_percent", header)
+        self.assertIn("idle_time_ms", header)
+
+        match = re.search(
+            r"bool ui_refresh_policy_get_activity_snapshot\([^)]*\)\s*\{(?P<body>.*?)\n\}",
+            source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("esp_timer_get_time()", body)
+        self.assertIn("ui_refresh_policy_get_effective_brightness_percent()", body)
+        self.assertNotIn("ui_refresh_policy_poll()", body)
+        self.assertNotIn("ui_refresh_policy_set_state", body)
+        self.assertNotIn("ui_refresh_policy_set_throttle_mode", body)
+        self.assertNotIn("ui_refresh_policy_apply_brightness_if_needed", body)
+        self.assertNotIn("co5300_panel_set_brightness", body)
+        self.assertNotIn('#include "services/power_policy.h"', source)
+        self.assertNotIn("power_policy_get_budget", source)
+        self.assertNotIn("power_policy_", body)
 
     def test_lvgl_task_uses_policy_to_bound_lv_timer_handler_delay(self) -> None:
         source = LVGL_TASK_SOURCE.read_text(encoding="utf-8")

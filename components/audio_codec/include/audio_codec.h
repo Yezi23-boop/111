@@ -40,8 +40,42 @@ extern "C"
         AUDIO_CODEC_OWNER_TRAFFIC_INFERENCE,    /**< 旧 Edge Impulse 交通声推理运行时。 */
         AUDIO_CODEC_OWNER_ESPDL_INFERENCE,      /**< ESP-DL 危险声音推理运行时。 */
         AUDIO_CODEC_OWNER_AUDIO_PLAYER,         /**< 本地提示音或 MP3 播放链路。 */
+        AUDIO_CODEC_OWNER_ALERT_PLAYER,         /**< P0 危险提醒播放链路。 */
+        AUDIO_CODEC_OWNER_AUDIO_RECORDER,       /**< 前台本地录音链路。 */
         AUDIO_CODEC_OWNER_OFFICIAL_CHAT,        /**< 官方聊天/语音链路。 */
     } audio_codec_owner_t;
+
+    /** 音频独占会话只读快照。 */
+    typedef struct
+    {
+        bool input_active;               /**< true 表示录音输入链路当前被占用。 */
+        audio_codec_owner_t input_owner; /**< 当前录音输入 owner。 */
+        bool output_active;              /**< true 表示播放输出链路当前被占用。 */
+        audio_codec_owner_t output_owner; /**< 当前播放输出 owner。 */
+    } audio_codec_session_snapshot_t;
+
+    /**
+     * @brief 返回音频 owner 的稳定日志名称。
+     *
+     * 该接口只用于日志和诊断展示，不表达资源策略。策略 owner 应读取
+     * `audio_codec_get_session_snapshot()` 后自行判断优先级。
+     *
+     * @param[in] owner 音频资源申请者。
+     * @return 静态字符串。
+     */
+    const char *audio_codec_owner_to_text(audio_codec_owner_t owner);
+
+    /**
+     * @brief 获取当前音频独占会话快照。
+     *
+     * 该接口不初始化或释放 codec 硬件，只读取 `audio_codec` 持有的 owner 状态。
+     * 后台策略层可用它解释“麦克风被谁占用”，但仍不能直接抢占硬件。
+     *
+     * @param[out] snapshot 输出快照。
+     * @return `ESP_OK` 表示读取成功；`ESP_ERR_INVALID_ARG` 表示输出参数为空。
+     */
+    esp_err_t audio_codec_get_session_snapshot(
+        audio_codec_session_snapshot_t *snapshot);
 
     /**
      * @brief 初始化音频 codec 子系统。

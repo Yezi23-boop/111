@@ -20,6 +20,14 @@ set(service_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/services/power_service.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/services/power_policy.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/startup_readiness.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/safety_monitor_session.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/background_service_manager.c
+
 )
 
 

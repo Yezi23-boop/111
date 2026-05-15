@@ -41,9 +41,10 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
     def test_espdl_backend_uses_consecutive_window_postprocess(self) -> None:
         service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("ESPDL_DANGER_CONFIRM_WINDOWS", service_source)
-        self.assertIn("ESPDL_CLEAR_CONFIRM_WINDOWS", service_source)
-        self.assertIn("ESPDL_ALERT_HOLD_MS", service_source)
+        self.assertIn(".confirm_windows = 2U", service_source)
+        self.assertIn(".clear_windows = 3U", service_source)
+        self.assertIn(".alert_hold_ms = 2000U", service_source)
+        self.assertIn("danger_detection_service_get_policy_profile", service_source)
         self.assertIn("s_espdl_danger_window_count", service_source)
         self.assertIn("s_espdl_clear_window_count", service_source)
         self.assertIn("s_espdl_hold_until_tick", service_source)

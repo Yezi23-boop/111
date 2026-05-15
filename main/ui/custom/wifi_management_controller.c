@@ -8,6 +8,10 @@
 
 static const char *TAG = "wifi_mgmt_ui";
 static const uint32_t kStatusRefreshMs = 300U;
+static const lv_coord_t kWifiBackButtonX = 286;
+static const lv_coord_t kWifiBackButtonY = 26;
+static const lv_coord_t kWifiBackButtonWidth = 96;
+static const lv_coord_t kWifiBackButtonHeight = 48;
 
 static lv_ui *s_ui = NULL;
 static lv_obj_t *s_screen = NULL;
@@ -473,8 +477,8 @@ static void wifi_management_controller_ensure_screen_created(void)
     lv_obj_set_pos(title, 24, 20);
 
     lv_obj_t *back_btn = lv_btn_create(s_screen);
-    lv_obj_set_size(back_btn, 88, 40);
-    lv_obj_set_pos(back_btn, 298, 20);
+    lv_obj_set_size(back_btn, kWifiBackButtonWidth, kWifiBackButtonHeight);
+    lv_obj_set_pos(back_btn, kWifiBackButtonX, kWifiBackButtonY);
     lv_obj_set_style_radius(back_btn, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_add_event_cb(back_btn, wifi_management_back_event_cb,
                         LV_EVENT_CLICKED, NULL);

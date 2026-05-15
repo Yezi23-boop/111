@@ -19,6 +19,7 @@ namespace {
 
 constexpr char kTag[] = "official_afe_ww";
 constexpr TickType_t kDetectionStopTimeoutTicks = pdMS_TO_TICKS(1000);
+constexpr TickType_t kDetectionFetchTimeoutTicks = pdMS_TO_TICKS(50);
 constexpr TickType_t kEncodeStopTimeoutTicks = pdMS_TO_TICKS(1000);
 constexpr int kWakeWordCacheMs = 2000;
 constexpr int kWakeWordDetectFrameMs = 30;
@@ -369,7 +370,9 @@ void AfeWakeWord::AudioDetectionTask() {
       continue;
     }
 
-    auto *res = afe_iface_->fetch_with_delay(afe_data_, portMAX_DELAY);
+    // 退出 AI 页时析构会等待检测任务收敛，不能让 AFE fetch 永久阻塞。
+    auto *res =
+        afe_iface_->fetch_with_delay(afe_data_, kDetectionFetchTimeoutTicks);
     if (detection_stop_requested_) {
       break;
     }

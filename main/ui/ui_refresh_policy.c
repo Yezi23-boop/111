@@ -6,6 +6,7 @@
 #include "network_manager.h"
 
 #include <limits.h>
+#include <stddef.h>
 
 /*
  * 刷新策略实现说明：
@@ -25,7 +26,7 @@ typedef enum
 {
     UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL = 0,
     UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING,
-} ui_refresh_policy_throttle_mode_t;
+} ui_refresh_policy_throttle_mode_internal_t;
 
 static const char *TAG = "ui_refresh_policy";
 static const uint32_t k_active_delay_ms = 16U;                 /* 活跃态最大循环延时，单位为毫秒。 */
@@ -42,7 +43,7 @@ static uint8_t s_user_brightness_percent = 100U;                           /* �
 static uint8_t s_applied_brightness_percent = UCHAR_MAX;                   /* 最近一次成功下发给面板的亮度；`UCHAR_MAX` 表示尚未下发。 */
 static int64_t s_last_touch_time_us = 0;                                   /* 最近一次用户活跃时间戳，单位为微秒。 */
 static ui_refresh_policy_state_t s_state = UI_REFRESH_POLICY_STATE_ACTIVE;  /* 当前交互活跃状态。 */
-static ui_refresh_policy_throttle_mode_t s_throttle_mode =
+static ui_refresh_policy_throttle_mode_internal_t s_throttle_mode =
     UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL; /* 当前系统级刷新节流模式。 */
 
 /**
@@ -126,12 +127,33 @@ static const char *ui_refresh_policy_state_name(ui_refresh_policy_state_t state)
 }
 
 /**
+ * @brief 将内部活跃状态转换成公开快照枚举。
+ * @param[in] state 内部状态机状态。
+ * @return 对外稳定的活跃状态。
+ */
+static ui_refresh_policy_activity_state_t ui_refresh_policy_public_activity_state(
+    ui_refresh_policy_state_t state)
+{
+    switch (state)
+    {
+    case UI_REFRESH_POLICY_STATE_ACTIVE:
+        return UI_REFRESH_POLICY_ACTIVITY_ACTIVE;
+    case UI_REFRESH_POLICY_STATE_IDLE_DIM:
+        return UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM;
+    case UI_REFRESH_POLICY_STATE_FORCE_ACTIVE:
+        return UI_REFRESH_POLICY_ACTIVITY_FORCE_ACTIVE;
+    default:
+        return UI_REFRESH_POLICY_ACTIVITY_UNINITIALIZED;
+    }
+}
+
+/**
  * @brief 将系统级节流模式转换成日志可读字符串。
  * @param[in] mode 当前节流模式。
  * @return 模式对应的短字符串。
  */
 static const char *ui_refresh_policy_throttle_mode_name(
-    ui_refresh_policy_throttle_mode_t mode)
+    ui_refresh_policy_throttle_mode_internal_t mode)
 {
     switch (mode)
     {
@@ -141,6 +163,24 @@ static const char *ui_refresh_policy_throttle_mode_name(
         return "provisioning_throttled";
     default:
         return "unknown";
+    }
+}
+
+/**
+ * @brief 将内部节流模式转换成公开快照枚举。
+ * @param[in] mode 内部节流模式。
+ * @return 对外稳定的节流模式。
+ */
+static ui_refresh_policy_throttle_mode_t ui_refresh_policy_public_throttle_mode(
+    ui_refresh_policy_throttle_mode_internal_t mode)
+{
+    switch (mode)
+    {
+    case UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING:
+        return UI_REFRESH_POLICY_THROTTLE_PROVISIONING;
+    case UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL:
+    default:
+        return UI_REFRESH_POLICY_THROTTLE_NORMAL;
     }
 }
 
@@ -198,7 +238,7 @@ static void ui_refresh_policy_set_state(ui_refresh_policy_state_t next_state)
  * @return 无返回值。
  */
 static void ui_refresh_policy_set_throttle_mode(
-    ui_refresh_policy_throttle_mode_t next_mode)
+    ui_refresh_policy_throttle_mode_internal_t next_mode)
 {
     if (s_throttle_mode == next_mode)
     {
@@ -268,7 +308,8 @@ static ui_refresh_policy_state_t ui_refresh_policy_compute_state(void)
  *
  * @return 当前系统级节流模式。
  */
-static ui_refresh_policy_throttle_mode_t ui_refresh_policy_compute_throttle_mode(void)
+static ui_refresh_policy_throttle_mode_internal_t
+ui_refresh_policy_compute_throttle_mode(void)
 {
     return ui_refresh_policy_is_ble_provisioning_active()
                ? UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING
@@ -365,6 +406,53 @@ void ui_refresh_policy_set_user_brightness_percent(uint8_t percent)
 uint8_t ui_refresh_policy_get_user_brightness_percent(void)
 {
     return s_user_brightness_percent;
+}
+
+/**
+ * @brief 读取 UI 活跃度只读快照。
+ *
+ * 该接口只复制 `ui_refresh_policy` 已缓存的事实，不调用 `poll()`，
+ * 不改变状态机，也不写面板亮度；后续 `power_policy` 接入前可先用它做低风险观测。
+ *
+ * @param[out] snapshot 输出快照。
+ * @return true 表示读取成功；false 表示参数为空。
+ */
+bool ui_refresh_policy_get_activity_snapshot(
+    ui_refresh_policy_activity_snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return false;
+    }
+
+    const int64_t now_us = esp_timer_get_time();
+    int64_t idle_time_us = now_us - s_last_touch_time_us;
+    if (!s_initialized || idle_time_us < 0)
+    {
+        idle_time_us = 0;
+    }
+
+    snapshot->initialized = s_initialized;
+    snapshot->active = s_state == UI_REFRESH_POLICY_STATE_ACTIVE ||
+                       s_state == UI_REFRESH_POLICY_STATE_FORCE_ACTIVE;
+    snapshot->idle_dim = s_state == UI_REFRESH_POLICY_STATE_IDLE_DIM;
+    snapshot->force_active = s_force_active;
+    snapshot->provisioning_throttled =
+        s_throttle_mode == UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING;
+    snapshot->activity_state = s_initialized
+                                   ? ui_refresh_policy_public_activity_state(s_state)
+                                   : UI_REFRESH_POLICY_ACTIVITY_UNINITIALIZED;
+    snapshot->throttle_mode =
+        ui_refresh_policy_public_throttle_mode(s_throttle_mode);
+    snapshot->user_brightness_percent = s_user_brightness_percent;
+    snapshot->target_brightness_percent =
+        ui_refresh_policy_get_effective_brightness_percent();
+    snapshot->brightness_applied = s_applied_brightness_percent != UCHAR_MAX;
+    snapshot->applied_brightness_percent =
+        snapshot->brightness_applied ? s_applied_brightness_percent : 0U;
+    snapshot->last_touch_time_us = s_last_touch_time_us;
+    snapshot->idle_time_ms = idle_time_us / 1000LL;
+    return true;
 }
 
 /**

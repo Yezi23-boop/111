@@ -5,7 +5,9 @@
 
 #include "features/alerts/app_alert_manager.h"
 #include "features/danger_detection/danger_detection_service.h"
+#include "services/background_service_manager.h"
 #include "danger_detection_view.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "lvgl.h"
 
@@ -17,7 +19,8 @@ static danger_detection_view_t *s_view = NULL;
 typedef struct {
     bool valid;
     bool alert_visible;
-    char status_text[16];
+    bool safety_monitor_enabled;
+    char status_text[32];
     char category_text[32];
     char primary_result_text[16];
     char horn_confidence_text[16];
@@ -29,38 +32,78 @@ static danger_detection_render_cache_t s_render_cache = {0};
 static void danger_detection_refresh_status(void);
 
 static const char *danger_detection_status_text(
-    const danger_detection_snapshot_t *snapshot)
+    const danger_detection_snapshot_t *snapshot,
+    const background_service_manager_snapshot_t *manager_snapshot)
 {
-    if (snapshot == NULL) {
-        return "IDLE";
+    const danger_detection_state_t state =
+        snapshot != NULL ? snapshot->state : DANGER_DETECTION_STATE_IDLE;
+
+    if (state == DANGER_DETECTION_STATE_STOPPING) {
+        return "正在停止";
     }
 
-    const danger_detection_state_t state = snapshot->state;
-    if (state == DANGER_DETECTION_STATE_ERROR) {
-        return "ERROR";
+    if (manager_snapshot != NULL && !manager_snapshot->started) {
+        return "后台未就绪";
     }
-    if (state == DANGER_DETECTION_STATE_STOPPING) {
-        return "STOPPING";
+
+    if (manager_snapshot != NULL &&
+        !manager_snapshot->danger_enabled_by_user) {
+        return "未开启";
+    }
+
+    if (manager_snapshot != NULL &&
+        manager_snapshot->danger_blocked_by_foreground_audio) {
+        return "资源占用，暂时等待";
+    }
+
+    if (manager_snapshot != NULL &&
+        !manager_snapshot->danger_allowed_by_policy) {
+        switch (manager_snapshot->policy_state) {
+            case POWER_POLICY_STATE_LOW_BATTERY_WARN:
+                return "低电量降级";
+            case POWER_POLICY_STATE_MAINTENANCE:
+                return "维护中暂停";
+            default:
+                return "资源占用，暂时等待";
+        }
+    }
+
+    if (manager_snapshot != NULL && manager_snapshot->last_error != ESP_OK) {
+        return "监听异常";
+    }
+
+    if (snapshot == NULL) {
+        return "未开启";
+    }
+
+    if (state == DANGER_DETECTION_STATE_ERROR) {
+        return "启动失败";
     }
     if (state == DANGER_DETECTION_STATE_STARTING) {
-        return "STARTING";
+        return "正在启动";
+    }
+    if (manager_snapshot != NULL &&
+        manager_snapshot->danger_enabled_by_user &&
+        manager_snapshot->danger_allowed_by_policy &&
+        !manager_snapshot->danger_runtime_running) {
+        return "正在启动";
     }
     if (state == DANGER_DETECTION_STATE_RUNNING) {
         switch (snapshot->risk_state) {
             case DANGER_DETECTION_RISK_ALERTING:
-                return "ALERTING";
+                return "危险提醒中";
             case DANGER_DETECTION_RISK_SUSPICIOUS:
-                return "CHECKING";
+                return "正在确认";
             case DANGER_DETECTION_RISK_COOLDOWN:
-                return "COOLDOWN";
+                return "冷却中";
             case DANGER_DETECTION_RISK_MONITORING:
             case DANGER_DETECTION_RISK_OFF:
             default:
                 break;
         }
-        return "LISTENING";
+        return "正在监听";
     }
-    return "IDLE";
+    return "未开启";
 }
 
 /**
@@ -144,6 +187,7 @@ static bool danger_detection_render_cache_matches(
     }
 
     return cache->alert_visible == model->alert_visible &&
+           cache->safety_monitor_enabled == model->safety_monitor_enabled &&
            strcmp(cache->status_text, model->status_text) == 0 &&
            strcmp(cache->category_text, model->category_text) == 0 &&
            strcmp(cache->primary_result_text, model->primary_result_text) == 0 &&
@@ -161,6 +205,7 @@ static void danger_detection_render_cache_store(
 
     cache->valid = true;
     cache->alert_visible = model->alert_visible;
+    cache->safety_monitor_enabled = model->safety_monitor_enabled;
     danger_detection_copy_text(cache->status_text, sizeof(cache->status_text),
                                model->status_text);
     danger_detection_copy_text(cache->category_text, sizeof(cache->category_text),
@@ -185,11 +230,26 @@ static void danger_detection_back_event(void *user_data)
         return;
     }
 
-    (void)danger_detection_service_stop(2000U);
     (void)app_alert_manager_set_traffic_audio_overlay_enabled(true);
     s_render_cache.valid = false;
     lv_screen_load_anim(s_ui->screen_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0,
                         false);
+}
+
+static void danger_detection_safety_monitor_event(bool enabled,
+                                                  void *user_data)
+{
+    (void)user_data;
+
+    esp_err_t ret =
+        background_service_manager_set_danger_detection_enabled(enabled);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "safety monitor switch failed: enabled=%d err=%s",
+                 enabled, esp_err_to_name(ret));
+    }
+
+    s_render_cache.valid = false;
+    danger_detection_refresh_status();
 }
 
 static void danger_detection_ensure_screen_created(void)
@@ -200,6 +260,7 @@ static void danger_detection_ensure_screen_created(void)
 
     static const danger_detection_view_config_t kConfig = {
         .back_action_cb = danger_detection_back_event,
+        .safety_monitor_cb = danger_detection_safety_monitor_event,
         .user_data = NULL,
     };
 
@@ -218,6 +279,8 @@ static void danger_detection_refresh_status(void)
 
     const danger_detection_snapshot_t snapshot =
         danger_detection_service_get_snapshot();
+    const background_service_manager_snapshot_t manager_snapshot =
+        background_service_manager_get_snapshot();
     const char *last_result_text =
         danger_detection_label_text(snapshot.last_detected_label);
 
@@ -235,12 +298,16 @@ static void danger_detection_refresh_status(void)
                                        sizeof(siren_confidence_text));
 
     const danger_detection_view_model_t model = {
-        .status_text = danger_detection_status_text(&snapshot),
+        .status_text = danger_detection_status_text(&snapshot,
+                                                    &manager_snapshot),
         .category_text = category_text,
         .primary_result_text = last_result_text,
         .horn_confidence_text = horn_confidence_text,
         .siren_confidence_text = siren_confidence_text,
-        .alert_visible = danger_detection_page_alert_visible(&snapshot),
+        .safety_monitor_enabled =
+            manager_snapshot.danger_enabled_by_user,
+        .alert_visible = manager_snapshot.danger_enabled_by_user &&
+                         danger_detection_page_alert_visible(&snapshot),
     };
 
     if (danger_detection_render_cache_matches(&s_render_cache, &model)) {
@@ -254,15 +321,15 @@ static void danger_detection_refresh_status(void)
 void danger_detection_controller_init(lv_ui *ui)
 {
     s_ui = ui;
-    (void)danger_detection_service_init();
+    (void)background_service_manager_init();
 }
 
 /**
- * @brief 打开危险识别页面并启动 ESP-DL 单模型后端。
+ * @brief 打开危险识别页面并刷新后台 Safety Monitor 会话状态。
  *
- * 页面入口属于 UI 语义层，只表达“用户要开始危险识别”；实际音频资源、模型
- * 和告警状态由 danger_detection_service 统一编排。这里显式选择 ESP-DL 后端，
- * 避免误走旧 Edge Impulse 调试链路。
+ * 页面入口属于 UI 语义层，只表达“用户要查看危险识别状态”。实际音频资源、
+ * 模型和告警状态由 background_service_manager 与 danger_detection_service
+ * 统一编排。进入页面不会自动开启监听，页面退出也不再拥有 stop 生命周期。
  */
 void danger_detection_ui_open(void)
 {
@@ -273,8 +340,6 @@ void danger_detection_ui_open(void)
 
     (void)app_alert_manager_set_traffic_audio_overlay_enabled(false);
     s_render_cache.valid = false;
-    (void)danger_detection_service_start_with_backend(
-        DANGER_DETECTION_BACKEND_ESPDL);
     danger_detection_refresh_status();
     lv_screen_load_anim(danger_detection_view_get_screen(s_view),
                         LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, false);

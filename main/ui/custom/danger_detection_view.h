@@ -12,6 +12,8 @@ extern "C" {
 typedef struct danger_detection_view danger_detection_view_t;
 
 typedef void (*danger_detection_view_action_cb_t)(void *user_data);
+typedef void (*danger_detection_view_switch_cb_t)(bool enabled,
+                                                  void *user_data);
 
 typedef struct {
     const char *status_text;
@@ -19,11 +21,13 @@ typedef struct {
     const char *primary_result_text;
     const char *horn_confidence_text;
     const char *siren_confidence_text;
+    bool safety_monitor_enabled;
     bool alert_visible;
 } danger_detection_view_model_t;
 
 typedef struct {
     danger_detection_view_action_cb_t back_action_cb;
+    danger_detection_view_switch_cb_t safety_monitor_cb;
     void *user_data;
 } danger_detection_view_config_t;
 
