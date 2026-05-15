@@ -4,7 +4,9 @@ tags: plan, watch, startup, boot-flow, apple-watch-like, power-policy, backgroun
 summary: Apple Watch 风格开机启动流程 Phase 1 完成归档，固定 UI-first、会话授权、后台预算和 ui_first_frame_ready gate 的阶段化启动模型。
 status: active
 last_reviewed: 2026-05-15
-owners: main/app/app_main.c, main/app/hardware_init.c, main/services/power_service.c, main/services/power_policy.[ch], main/services/background_service_manager.[ch], main/services/safety_monitor_session.[ch], main/services/network_service.c, main/ui/lvgl_task.c
+memory_type: project_plan
+scope: repo
+owners: main/app/app_main.c, main/app/hardware_init.c, main/services/power_service.c, main/services/power_policy.c, main/services/power_policy.h, main/services/background_service_manager.c, main/services/background_service_manager.h, main/services/safety_monitor_session.c, main/services/safety_monitor_session.h, main/services/network_service.c, main/ui/lvgl_task.c
 triggers: Apple Watch, boot flow, startup, 开机, 启动流程, power_policy, background_service_manager
 evidence_level: design
 ---

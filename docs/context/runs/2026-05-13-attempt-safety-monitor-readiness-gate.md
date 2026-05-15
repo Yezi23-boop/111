@@ -7,7 +7,7 @@ memory_type: episodic
 scope: task
 status: active
 result: success
-owners: main/services/startup_readiness.[ch], main/services/background_service_manager.c, main/ui/lvgl_task.c, main/app/app_main.c, docs/context/plans/completed/2026-05-12-apple-watch-like-boot-flow-plan.md
+owners: main/services/startup_readiness.c, main/services/startup_readiness.h, main/services/background_service_manager.c, main/ui/lvgl_task.c, main/app/app_main.c, docs/context/plans/completed/2026-05-12-apple-watch-like-boot-flow-plan.md
 triggers: ui_first_frame_ready readiness gate background_service_manager Safety Monitor 安全监听
 evidence_level: observed
 record_reasons: owner-architecture, framework-constraint, evidence
@@ -22,6 +22,12 @@ force_reason:
 - 对应任务或计划：apple-watch-like-boot-flow-plan-20260512
 - 结果状态：success
 - 长期记录理由：owner-architecture, framework-constraint, evidence
+
+## 环境
+
+- 分支/工作区状态：未记录
+- 设备/串口/板型：COM3，ESP32-S3 手表板
+- 关键前置条件：危险识别页安全监听开关交互已由用户确认可用
 
 ## 操作
 

@@ -5,7 +5,7 @@ summary: 将当前手表固件可移植的经典小游戏收敛为分阶段计�
 last_reviewed: 2026-05-16
 memory_type: task
 scope: repo
-owners: main/ui/custom, main/features/mini_games, main/ui/lvgl_task.c, main/ui/ui_refresh_policy.c
+owners: main/ui/custom, main/features, main/ui/lvgl_task.c, main/ui/ui_refresh_policy.c
 triggers: 小游戏, 2048, 贪吃蛇, 小恐龙, Flappy Bird, mini_games, games, game_page
 evidence_level: design
 status: active

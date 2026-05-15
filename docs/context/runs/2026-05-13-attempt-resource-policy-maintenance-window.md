@@ -7,7 +7,7 @@ memory_type: episodic
 scope: task
 status: active
 result: partial
-owners: main/services/power_policy.[ch], tests/test_power_integration_source.py, docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md
+owners: main/services/power_policy.c, main/services/power_policy.h, tests/test_power_integration_source.py, docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md
 triggers: MAINTENANCE maintenance_window power_policy Safety Monitor
 evidence_level: verified
 record_reasons: owner-architecture, framework-constraint, evidence
@@ -22,6 +22,12 @@ force_reason:
 - 对应任务或计划：watch-resource-framework-plan-20260512
 - 结果状态：partial
 - 长期记录理由：owner-architecture, framework-constraint, evidence
+
+## 环境
+
+- 分支/工作区状态：未记录
+- 设备/串口/板型：COM3，ESP32-S3 手表板
+- 关键前置条件：`export.ps1` 可用，资源框架 Phase 1 已落地
 
 ## 操作
 

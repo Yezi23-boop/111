@@ -7,18 +7,27 @@ status: active
 last_reviewed: 2026-05-15
 memory_type: episodic
 scope: repo
-owners: main/services/power_policy.*, tests/test_power_integration_source.py
+owners: main/services/power_policy.c, main/services/power_policy.h, tests/test_power_integration_source.py
 triggers: power_policy, ui_refresh_policy, activity_snapshot, idle_dim, watch_resource_framework
 evidence_level: verified
 ---
 
 # Attempt Log: power-policy-ui-activity-budget
 
-## Goal
+## 背景
 
-执行手表资源框架下一步：让 `power_policy` 只读消费 `ui_refresh_policy` activity snapshot，在普通运行态发布更准确的 `ACTIVE / IDLE_DIM` 预算；本轮不改变 UI 刷新链路、不控制亮度、不进入 `STANDBY / sleep`。
+- 本次要验证什么：让 `power_policy` 只读消费 `ui_refresh_policy` activity snapshot，在普通运行态发布更准确的 `ACTIVE / IDLE_DIM` 预算。
+- 对应任务或计划：watch-resource-framework-plan-20260512
+- 结果状态：success
+- 长期记录理由：owner-architecture, framework-constraint, evidence
 
-## Changes
+## 环境
+
+- 分支/工作区状态：未记录
+- 设备/串口/板型：本轮以 source tests 和 build 为主
+- 关键前置条件：`ui_refresh_policy` 已发布只读 activity snapshot
+
+## 操作
 
 - `main/services/power_policy.c` 引入 `ui_refresh_policy_get_activity_snapshot(...)`：
   - snapshot 未初始化或读取失败时，维持普通 `ACTIVE` fallback。
@@ -30,14 +39,17 @@ evidence_level: verified
 - `policy_state_change` 日志补充 `ui_high_refresh` 字段。
 - `tests/test_power_integration_source.py` 增加 source test，锁定 `power_policy` 不反向调用 UI poll、亮度、LVGL 或面板接口。
 
-## Evidence
+## 观测
 
 - `uv run python -m pytest tests/test_power_integration_source.py tests/test_ui_refresh_policy_source.py tests/test_safety_monitor_session_source.py`：通过。
 - `uv run python scripts/context/validate_context.py --level standard --q "power_policy ui_refresh_policy activity snapshot ACTIVE IDLE_DIM" --brief`：通过。
 - `. D:\esp-idf\v5.5.3\esp-idf\export.ps1; idf.py build`：通过。
 
-## Notes
+## 结论
 
 - 这是资源框架的小 gate，不是低功耗 sleep 接入。
 - `ui_refresh_policy` 仍是亮度、dim 和 LVGL 延时策略 owner；`power_policy` 只读它发布的 UI 活跃度事实。
+
+## 未验证风险
+
 - 下一步应补低电量预警与 UI activity 并发场景日志，确认 Safety Monitor 不因预算变化反复启停。

@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-05-16：执行一轮 context garden 清理：修正资源框架、Safety Monitor、official_chat 与 UI activity 相关 runs/plans 的 `owners` 真实路径，补齐新近 attempt 的推荐字段与 `背景/环境/操作/观测/结论/未验证风险` 章节；`garden.py --summary-json` 的 `warning_count` 从 57 降为 0，保留 `stale/promotion/archive/low_value` 作为后续人工审查队列。
 - 2026-05-16：删除独立决策目录并完成迁移：将 GUI Guider 视觉编辑/runtime 边界迁入 `knowledge/project/gui-guider-visual-editor-runtime-boundary.md`，同步更新 `CONTEXT.md`、`docs/agents/domain.md`、`INDEX.agent.md`、`README.md`、`knowledge-map.md`、context garden policy、handoff 和 ui-management superseded 指针；`query.py / pack_context.py / check.py / garden.py` 移除旧 `decisions` scope，避免后续 agent 继续走已退场入口；`test_memory_flow.py` 将 `garden` warning 保留为整理队列计数，不再把非零 warning 当机制失败。
 - 2026-05-16：新增 `plans/active/2026-05-16-mini-games-porting-plan.md`，将手表小游戏移植顺序收敛为 `2048 -> 贪吃蛇 -> 小恐龙/Flappy Bird 评估`；固定一个物理按键 + 触摸屏的统一输入契约、LVGL 页面生命周期、资源非目标和板端验收口径，第一阶段只做前台轻量 UI，不新增后台 service、不改 `sdkconfig`、不上音效/联网/大图资源。
 - 2026-05-15：清理 `plans/active/` 中的历史计划噪声：将已被 GUI Guider 边界结论替代的 `2026-05-12-ui-management-prd.md` 和已被 `agent_preview` host-preview 路线替代的 `2026-05-05-agent-ui-poc-execution-plan.md` 移到 `plans/completed/`，保留 `status: superseded` / `superseded_by` 追溯；`plans/completed/README.md` 同步说明可归档被替代但仍有复盘价值的计划。

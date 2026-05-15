@@ -4,7 +4,9 @@ tags: plan, watch, resource-management, power-policy, background, audio, display
 summary: ESP32-S3 手表资源框架 Phase 1 完成归档，固定稳定契约、复杂度护栏、资源 owner 和状态预算表。
 status: active
 last_reviewed: 2026-05-15
-owners: main/services/power_policy, main/services/background_service_manager, main/services/safety_monitor_session, components/audio_codec, components/network_manager, components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/features/danger_detection
+memory_type: project_plan
+scope: repo
+owners: main/services/power_policy.c, main/services/power_policy.h, main/services/background_service_manager.c, main/services/background_service_manager.h, main/services/safety_monitor_session.c, main/services/safety_monitor_session.h, components/audio_codec, components/network_manager, components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/features/danger_detection
 triggers: watch, resource, framework, background, power_policy, audio_resource, danger_detection, low_power
 evidence_level: design
 ---

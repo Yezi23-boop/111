@@ -7,7 +7,7 @@ memory_type: episodic
 scope: task
 status: active
 result: partial
-owners: main/services/background_service_manager.[ch], main/features/audio/audio_app.c, components/audio_codec, main/ui/custom/danger_detection_controller.c, tests/test_audio_codec_port_source.py, tests/test_safety_monitor_session_source.py, tests/test_danger_detection_controller_source.py, docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md
+owners: main/services/background_service_manager.c, main/services/background_service_manager.h, main/features/audio/audio_app.c, components/audio_codec, main/ui/custom/danger_detection_controller.c, tests/test_audio_codec_port_source.py, tests/test_safety_monitor_session_source.py, tests/test_danger_detection_controller_source.py, docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md
 triggers: foreground_audio_active audio_recorder Safety Monitor resource_blocked 麦克风 仲裁
 evidence_level: verified
 record_reasons: owner-architecture, framework-constraint, evidence
@@ -22,6 +22,12 @@ force_reason:
 - 对应任务或计划：watch-resource-framework-plan-20260512
 - 结果状态：partial
 - 长期记录理由：owner-architecture, framework-constraint, evidence
+
+## 环境
+
+- 分支/工作区状态：未记录
+- 设备/串口/板型：本轮以 source tests 和 build 为主，前台录音板端完整顺序未验证
+- 关键前置条件：Safety Monitor 已后台化，`audio_codec` 已具备 input session owner
 
 ## 操作
 
