@@ -114,6 +114,17 @@ extern "C"
         POWER_POLICY_FLAG_MAINTENANCE = 1u << 3,      /**< 维护窗口活跃。 */
     } power_policy_flag_t;
 
+    /** 触发 power_policy task 重新聚合预算的原因位。 */
+    typedef enum
+    {
+        POWER_POLICY_NOTIFY_NONE = 0,
+        POWER_POLICY_NOTIFY_UI_ACTIVITY = 1u << 0, /**< UI 活跃度或 STANDBY 快照变化。 */
+        POWER_POLICY_NOTIFY_POWER_STATE = 1u << 1, /**< 电源、电池或外部供电事实变化。 */
+        POWER_POLICY_NOTIFY_MAINTENANCE = 1u << 2, /**< 维护窗口进入或退出。 */
+        POWER_POLICY_NOTIFY_MANUAL = 1u << 3,      /**< 调试或启动阶段主动请求重算。 */
+        POWER_POLICY_NOTIFY_PERIODIC = 1u << 4,    /**< task 周期兜底重算。 */
+    } power_policy_notify_reason_t;
+
     /** power_policy 输出给后台服务和资源 owner 的只读预算。 */
     typedef struct
     {
@@ -139,6 +150,8 @@ extern "C"
         bool battery_data_valid;          /**< 电池电量和电压字段是否可信。 */
         uint8_t battery_percent;          /**< 电量百分比；仅在 battery_data_valid=true 时有效。 */
         uint16_t battery_mv;              /**< 电池电压，单位为毫伏。 */
+        uint32_t budget_version;          /**< 预算快照版本；每次有效变化递增。 */
+        uint32_t last_notify_reasons;     /**< 最近一次触发预算重算的原因位。 */
     } power_policy_budget_t;
 
     /**
@@ -173,8 +186,19 @@ extern "C"
                                                   const char *reason);
 
     /**
+     * @brief 通知 power_policy task 需要尽快重算资源预算。
+     *
+     * notify 只是 FreeRTOS 唤醒信号，不携带最终事实；task 被唤醒后仍通过各
+     * owner 的 snapshot API 读取真实状态，避免把状态写权集中到 power_policy。
+     *
+     * @param[in] reason power_policy_notify_reason_t 位图。
+     * @return ESP_OK 表示通知已发送或 task 尚未启动但同步兜底已执行。
+     */
+    esp_err_t power_policy_notify(uint32_t reason);
+
+    /**
      * @brief 获取当前资源预算。
-     * @return 当前根据 power_service 快照和 UI 活跃度快照计算出的资源预算。
+     * @return 最近一次由 power_policy task 发布的资源预算；task 未启动时会同步兜底计算。
      */
     power_policy_budget_t power_policy_get_budget(void);
 

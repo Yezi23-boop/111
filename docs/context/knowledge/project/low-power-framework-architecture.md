@@ -117,7 +117,7 @@ STANDBY 多档只写设计，不改变执行行为。
 
 V1 选择显式 snapshot API，不做通用 fact registry。
 
-每个 owner 保留自己的状态写权限，并通过只读 snapshot API 暴露当前状态副本。`power_policy` 周期性读取这些 snapshot，形成内部输入快照。
+每个 owner 保留自己的状态写权限，并通过只读 snapshot API 暴露当前状态副本。`power_policy` 由独立 FreeRTOS task 维护最新预算快照：关键事件通过 notify 唤醒 task，周期 timeout 负责兜底一致性，最终事实仍通过 snapshot API 读取。
 
 示例：
 
@@ -146,6 +146,8 @@ background_service_manager_get_snapshot()
 - 聚合内部 `power_fact_snapshot_t`。
 - 计算 `power_budget_t`。
 - 发布只读 `power_budget snapshot`。
+- 维护 `budget_version`，只在有效预算变化时递增。
+- 记录最近触发重算的 notify reason，帮助判断预算变化来源。
 - 记录决策变化日志。
 
 它不负责：
@@ -177,6 +179,8 @@ sleep_permission
 sleep_blockers
 flags
 sleep_interval_hint_ms
+budget_version
+last_notify_reasons
 ```
 
 示例语义：
@@ -225,17 +229,20 @@ PARTIAL
 
 ## notify 与更新机制
 
-V1 使用低频定时 + 关键事件 notify 混合模式。
+V1 使用 FreeRTOS task + 低频定时 + 关键事件 notify 混合模式。
 
-- 低频定时负责兜底一致性，例如 1s 或 2s 聚合一次 facts。
-- notify 只请求尽快重算，不携带最终事实。
+- `power_policy` 拥有独立 task，负责维护最新 `power_budget snapshot`。
+- 低频定时负责兜底一致性，例如 1s 聚合一次 facts。
+- `power_policy_notify(reason)` 只请求尽快重算，不携带最终事实。
 - 最终事实仍从 snapshot API 读取。
+- `power_policy_get_budget()` 只返回最近已发布的预算快照；task 未启动时允许同步兜底计算。
 
 规则：
 
 ```text
 notify 是触发器，不是事实源。
 snapshot API 才是事实源。
+budget_version 是消费者判断是否应用到最新预算的轻量序号。
 ```
 
 关键 notify 来源：

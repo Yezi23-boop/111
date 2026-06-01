@@ -21,6 +21,7 @@
 #include "services/startup_readiness.h"
 #include "ui/custom/ai_ui_controller.h"
 #include "ui/custom/danger_detection_controller.h"
+#include "ui/custom/mini_games_controller.h"
 #include "ui/custom/wifi_management_controller.h"
 #include "ui_refresh_policy.h"
 
@@ -81,6 +82,7 @@ void lvgl_task(void *pvParameter)
     setup_ui(&guider_ui);
     ai_ui_controller_init(&guider_ui);
     danger_detection_controller_init(&guider_ui);
+    mini_games_controller_init(&guider_ui);
     wifi_management_controller_init(&guider_ui);
     events_init(&guider_ui);
     ui_refresh_policy_init();
@@ -100,6 +102,7 @@ void lvgl_task(void *pvParameter)
     {
         display_alert_adapter_process_ui();
         danger_detection_controller_poll_ui();
+        mini_games_controller_poll_ui();
 
         next_call = lv_timer_handler();
         ui_refresh_policy_poll();

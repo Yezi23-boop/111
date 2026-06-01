@@ -407,6 +407,38 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         self.assertNotIn("esp_light_sleep_start", source)
         self.assertNotIn("esp_deep_sleep_start", source)
 
+    def test_power_policy_uses_freertos_task_notify_and_budget_version(self) -> None:
+        header = POWER_POLICY_HEADER.read_text(encoding="utf-8")
+        source = POWER_POLICY_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("power_policy_notify_reason_t", header)
+        self.assertIn("POWER_POLICY_NOTIFY_UI_ACTIVITY", header)
+        self.assertIn("POWER_POLICY_NOTIFY_POWER_STATE", header)
+        self.assertIn("POWER_POLICY_NOTIFY_MAINTENANCE", header)
+        self.assertIn("esp_err_t power_policy_notify(uint32_t reason);", header)
+        self.assertIn("budget_version", header)
+        self.assertIn("last_notify_reasons", header)
+
+        self.assertIn('#include "freertos/task.h"', source)
+        self.assertIn("static void power_policy_task(void *arg)", source)
+        self.assertIn("xTaskCreate(power_policy_task", source)
+        self.assertIn("xTaskNotifyWait", source)
+        self.assertIn("xTaskNotify(task_handle, reason, eSetBits)", source)
+        self.assertIn("k_policy_task_period_ticks = pdMS_TO_TICKS(1000)", source)
+        self.assertIn("s_budget_version++", source)
+        self.assertIn("power_budget_change: version=%u reasons=0x%08", source)
+        self.assertIn("policy task started", source)
+
+        get_budget_match = re.search(
+            r"power_policy_budget_t power_policy_get_budget\(void\)\s*\{(?P<body>.*?)\n\}",
+            source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(get_budget_match)
+        get_budget_body = get_budget_match.group("body")
+        self.assertIn("power_policy_load_budget()", get_budget_body)
+        self.assertNotIn("power_policy_build_budget(power_service_get_state())", get_budget_body)
+
     def test_sleep_coordinator_is_dry_run_only(self) -> None:
         self.assertTrue(SLEEP_COORDINATOR_HEADER.exists())
         self.assertTrue(SLEEP_COORDINATOR_SOURCE.exists())
@@ -417,6 +449,7 @@ class PowerIntegrationSourceTests(unittest.TestCase):
 
         self.assertIn("SLEEP_COORDINATOR_MODE_DRY_RUN", header)
         self.assertIn("sleep_coordinator_start", header)
+        self.assertIn("budget_version", header)
         self.assertNotIn("SLEEP_COORDINATOR_MODE_LIGHT_TEST", header)
         self.assertNotIn("SLEEP_COORDINATOR_MODE_DEEP_TEST", header)
         self.assertNotIn("sleep_coordinator_sleep_test_result_t", header)
@@ -427,6 +460,8 @@ class PowerIntegrationSourceTests(unittest.TestCase):
             source.index("power_policy_get_budget()"),
         )
         self.assertIn("dry_run:", raw_source)
+        self.assertIn("budget_version=%u", raw_source)
+        self.assertIn("s_sleep_coordinator.budget_version = budget.budget_version", raw_source)
         self.assertNotIn("SLEEP_COORDINATOR_LIGHT_TEST_ENABLED", raw_source)
         self.assertNotIn("SLEEP_COORDINATOR_LIGHT_TEST_OWNER_BLOCKERS_READY", raw_source)
         self.assertNotIn("light_test", raw_source)

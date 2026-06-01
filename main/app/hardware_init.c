@@ -4,12 +4,10 @@
 #include "features/audio/audio_app.h"
 #include "sd_manager.h"
 #include "audio_codec.h"
+#include "board_button.h"
 #include "board_power.h"
 #include "resource_fs.h"
 #include "i2c_manager.h"
-#include "button_gpio.h"
-#include "driver/gpio.h"
-#include "iot_button.h"
 
 /*
  * 硬件初始化实现说明：
@@ -19,8 +17,6 @@
  */
 
 static const char *TAG = "HARDWARE_INIT";
-/* 当前板型上 BOOT 键接在 GPIO10；该值决定配网入口监听的物理按键。 */
-#define BUTTON_GPIO_NUM GPIO_NUM_10
 
 /**
  * @brief 打印开机时采集到的第一份板级电源快照。
@@ -56,50 +52,6 @@ static void board_power_log_boot_snapshot(const board_power_state_t *state)
              state->system_mv);
 }
 
-/**
- * @brief 长按开始回调。
- * @param[in] arg 未使用。
- * @param[in] data 未使用。
- * @return 无返回值。
- *
- * 当前仅保留日志，用于后续扩展长按配网或恢复出厂等动作。
- */
-static void button_long_press_start_cb(void *arg, void *data)
-{
-    ESP_LOGI(TAG, "BUTTON_LONG_PRESS_START");
-}
-
-/**
- * @brief 初始化板载 BOOT 按键。
- * @return 无返回值。
- *
- * 当前版本不再把 BOOT 键作为配网入口，避免和 UI 蓝牙开关形成双入口竞争。
- * 暂时仅保留驱动初始化和长按日志挂点，后续若要加恢复出厂等动作可继续复用。
- */
-static void button_init(void)
-{
-    /* 这些阈值由 button 组件按毫秒解释，直接决定单击/长按判定灵敏度。 */
-    button_config_t gpio_btn_cfg = {
-        .long_press_time = 1500,
-        .short_press_time = 180,
-    };
-
-    button_gpio_config_t gpio_cfg = {
-        .gpio_num = BUTTON_GPIO_NUM, /* 物理按键 GPIO。 */
-        .active_level = 1,           /* 当前硬件接法下，高电平表示按下。 */
-        .enable_power_save = true,   /* 允许按钮驱动进入低功耗策略。 */
-        .disable_pull = false,       /* 保留内部上下拉配置能力。 */
-    };
-
-    button_handle_t gpio_btn_handle = NULL;
-    esp_err_t err = iot_button_new_gpio_device(&gpio_btn_cfg, &gpio_cfg, &gpio_btn_handle);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Button create failed");
-        return;
-    }
-    iot_button_register_cb(gpio_btn_handle, BUTTON_LONG_PRESS_START, NULL, button_long_press_start_cb, NULL);
-}
 /**
  * @brief 初始化 NVS。
  * @return `ESP_OK` 表示初始化成功；其他错误表示 NVS 不可用。
@@ -200,7 +152,11 @@ esp_err_t hardware_init(void)
 
     /* 网络主链路已迁到后台 `network_service`，这里不再同步初始化旧 `wifi_provision`。 */
     ESP_LOGI(TAG, "Initializing Button...");
-    button_init();
+    ret = board_button_init();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Button init failed: %s", esp_err_to_name(ret));
+    }
     ESP_LOGI(TAG, "Hardware init complete: network startup deferred to background service");
     return ESP_OK;
 }

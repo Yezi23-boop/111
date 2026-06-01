@@ -16,6 +16,7 @@ typedef struct
     power_policy_sleep_permission_t sleep_permission;
     uint32_t sleep_blockers;
     uint32_t sleep_interval_hint_ms;
+    uint32_t budget_version;
     uint32_t dry_run_count;
     TaskHandle_t task_handle;
     portMUX_TYPE lock;
@@ -28,6 +29,7 @@ static sleep_coordinator_state_t s_sleep_coordinator = {
     .sleep_permission = POWER_POLICY_SLEEP_NONE,
     .sleep_blockers = POWER_POLICY_SLEEP_BLOCKER_NONE,
     .sleep_interval_hint_ms = 0,
+    .budget_version = 0,
     .dry_run_count = 0,
     .task_handle = NULL,
     .lock = portMUX_INITIALIZER_UNLOCKED,
@@ -71,6 +73,7 @@ static void sleep_coordinator_record_dry_run(void)
     s_sleep_coordinator.sleep_permission = budget.sleep_permission;
     s_sleep_coordinator.sleep_blockers = budget.sleep_blockers;
     s_sleep_coordinator.sleep_interval_hint_ms = budget.sleep_interval_hint_ms;
+    s_sleep_coordinator.budget_version = budget.budget_version;
     s_sleep_coordinator.dry_run_count++;
     dry_run_count = s_sleep_coordinator.dry_run_count;
     taskEXIT_CRITICAL(&s_sleep_coordinator.lock);
@@ -79,8 +82,9 @@ static void sleep_coordinator_record_dry_run(void)
     power_policy_format_sleep_blockers(budget.sleep_blockers, blocker_text,
                                        sizeof(blocker_text));
     ESP_LOGI(TAG,
-             "dry_run: count=%u permission=%s blockers=%s interval_ms=%u",
+             "dry_run: count=%u budget_version=%u permission=%s blockers=%s interval_ms=%u",
              (unsigned)dry_run_count,
+             (unsigned)budget.budget_version,
              power_policy_sleep_permission_text(budget.sleep_permission),
              blocker_text,
              (unsigned)budget.sleep_interval_hint_ms);
@@ -186,6 +190,7 @@ sleep_coordinator_snapshot_t sleep_coordinator_get_snapshot(void)
     snapshot.sleep_blockers = s_sleep_coordinator.sleep_blockers;
     snapshot.sleep_interval_hint_ms =
         s_sleep_coordinator.sleep_interval_hint_ms;
+    snapshot.budget_version = s_sleep_coordinator.budget_version;
     snapshot.dry_run_count = s_sleep_coordinator.dry_run_count;
     taskEXIT_CRITICAL(&s_sleep_coordinator.lock);
 

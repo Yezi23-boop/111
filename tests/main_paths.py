@@ -3,6 +3,7 @@ import pathlib
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAIN_DIR = REPO_ROOT / "main"
+MAIN_CMAKE = MAIN_DIR / "CMakeLists.txt"
 
 APP_DIR = MAIN_DIR / "app"
 SERVICES_DIR = MAIN_DIR / "services"
@@ -15,6 +16,7 @@ ALERTS_DIR = FEATURES_DIR / "alerts"
 DANGER_DETECTION_DIR = FEATURES_DIR / "danger_detection"
 AUDIO_DIR = FEATURES_DIR / "audio"
 WEATHER_DIR = FEATURES_DIR / "weather"
+MINI_GAMES_DIR = FEATURES_DIR / "mini_games"
 
 APP_MAIN_SOURCE = APP_DIR / "app_main.c"
 HARDWARE_INIT_SOURCE = APP_DIR / "hardware_init.c"
@@ -129,11 +131,17 @@ UI_WIFI_MANAGEMENT_CONTROLLER_SOURCE = (
 UI_WIFI_MANAGEMENT_CONTROLLER_HEADER = (
     UI_CUSTOM_DIR / "wifi_management_controller.h"
 )
+UI_MINI_GAMES_CONTROLLER_SOURCE = UI_CUSTOM_DIR / "mini_games_controller.c"
+UI_MINI_GAMES_CONTROLLER_HEADER = UI_CUSTOM_DIR / "mini_games_controller.h"
 UI_EVENTS_INIT_SOURCE = UI_GENERATED_DIR / "events_init.c"
 UI_EVENTS_INIT_HEADER = UI_GENERATED_DIR / "events_init.h"
 
 BOARD_POWER_SOURCE = APP_DIR / "board_power.c"
 BOARD_POWER_HEADER = APP_DIR / "board_power.h"
+BOARD_BUTTON_SOURCE = APP_DIR / "board_button.c"
+BOARD_BUTTON_HEADER = APP_DIR / "board_button.h"
+MINI_GAME_2048_SOURCE = MINI_GAMES_DIR / "mini_game_2048.c"
+MINI_GAME_2048_HEADER = MINI_GAMES_DIR / "mini_game_2048.h"
 
 POWER_SERVICE_SOURCE = SERVICES_DIR / "power_service.c"
 POWER_SERVICE_HEADER = SERVICES_DIR / "power_service.h"

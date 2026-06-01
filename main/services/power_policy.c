@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "freertos/task.h"
 #include "services/power_service.h"
 #include "ui_refresh_policy.h"
 
@@ -15,10 +16,13 @@ static const char *TAG = "power_policy";
 static const uint8_t k_low_battery_warn_percent = 20U; /* 低电量预警起点，单位为百分比。 */
 static const uint32_t k_standby_sleep_interval_hint_ms = 8000U; /* dry-run 建议 Light Sleep 间隔。 */
 static const int64_t k_light_allowed_idle_time_ms = 5LL * 60LL * 1000LL; /* 屏幕无交互满 5 分钟后才允许发布 LIGHT_ALLOWED。 */
+static const TickType_t k_policy_task_period_ticks = pdMS_TO_TICKS(1000); /* 周期兜底重算，避免 notify 丢失后预算长时间陈旧。 */
 
 static bool s_initialized = false;
 static bool s_started = false;
 static bool s_maintenance_window_active = false;
+static TaskHandle_t s_task_handle = NULL;
+static uint32_t s_budget_version = 0;
 static power_policy_budget_t s_last_budget = {
     .state = POWER_POLICY_STATE_ACTIVE,
     .standby_reason = POWER_POLICY_STANDBY_REASON_NONE,
@@ -42,6 +46,8 @@ static power_policy_budget_t s_last_budget = {
     .battery_data_valid = false,
     .battery_percent = UINT8_MAX,
     .battery_mv = 0,
+    .budget_version = 0,
+    .last_notify_reasons = POWER_POLICY_NOTIFY_NONE,
 };
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -206,7 +212,7 @@ static void power_policy_apply_ui_activity_budget(power_policy_budget_t *budget)
  * `power_policy` 只发布预算，不直接操作屏幕、Wi-Fi 或后台任务。
  */
 static power_policy_budget_t power_policy_build_budget(
-    const board_power_state_t *power_state)
+    const board_power_state_t *power_state, uint32_t notify_reasons)
 {
     power_policy_budget_t budget = {
         .state = POWER_POLICY_STATE_ACTIVE,
@@ -231,6 +237,8 @@ static power_policy_budget_t power_policy_build_budget(
         .battery_data_valid = false,
         .battery_percent = UINT8_MAX,
         .battery_mv = 0,
+        .budget_version = 0,
+        .last_notify_reasons = notify_reasons,
     };
 
     taskENTER_CRITICAL(&s_lock);
@@ -333,6 +341,16 @@ static bool power_policy_budget_equal(const power_policy_budget_t *lhs,
            lhs->battery_mv == rhs->battery_mv;
 }
 
+static power_policy_budget_t power_policy_load_budget(void)
+{
+    power_policy_budget_t budget;
+
+    taskENTER_CRITICAL(&s_lock);
+    budget = s_last_budget;
+    taskEXIT_CRITICAL(&s_lock);
+    return budget;
+}
+
 /**
  * @brief 发布预算变化日志。
  *
@@ -341,12 +359,16 @@ static bool power_policy_budget_equal(const power_policy_budget_t *lhs,
 static void power_policy_store_budget(const power_policy_budget_t *budget)
 {
     bool changed = false;
+    power_policy_budget_t stored_budget = *budget;
 
     taskENTER_CRITICAL(&s_lock);
-    changed = !power_policy_budget_equal(&s_last_budget, budget);
+    stored_budget.budget_version = s_budget_version;
+    changed = !power_policy_budget_equal(&s_last_budget, &stored_budget);
     if (changed)
     {
-        s_last_budget = *budget;
+        s_budget_version++;
+        stored_budget.budget_version = s_budget_version;
+        s_last_budget = stored_budget;
     }
     taskEXIT_CRITICAL(&s_lock);
 
@@ -357,28 +379,57 @@ static void power_policy_store_budget(const power_policy_budget_t *budget)
                                            blocker_text,
                                            sizeof(blocker_text));
         ESP_LOGI(TAG,
-                 "power_budget_change: state=%s standby_reason=%d display=%d ui=%d network=%d background=%d cpu=%d poll=%d sleep=%s blockers=%s interval_ms=%u flags=0x%08" PRIx32 " danger=%d net_sync=%d maintenance=%d ui_high_refresh=%d low_battery=%d external_power=%d bat_valid=%d soc=%u vbat=%umV",
-                 power_policy_state_text(budget->state),
-                 budget->standby_reason,
-                 budget->display_budget,
-                 budget->ui_budget,
-                 budget->network_budget,
-                 budget->background_budget,
-                 budget->cpu_budget,
-                 budget->power_poll_budget,
-                 power_policy_sleep_permission_text(budget->sleep_permission),
+                 "power_budget_change: version=%u reasons=0x%08" PRIx32 " state=%s standby_reason=%d display=%d ui=%d network=%d background=%d cpu=%d poll=%d sleep=%s blockers=%s interval_ms=%u flags=0x%08" PRIx32 " danger=%d net_sync=%d maintenance=%d ui_high_refresh=%d low_battery=%d external_power=%d bat_valid=%d soc=%u vbat=%umV",
+                 (unsigned)stored_budget.budget_version,
+                 stored_budget.last_notify_reasons,
+                 power_policy_state_text(stored_budget.state),
+                 stored_budget.standby_reason,
+                 stored_budget.display_budget,
+                 stored_budget.ui_budget,
+                 stored_budget.network_budget,
+                 stored_budget.background_budget,
+                 stored_budget.cpu_budget,
+                 stored_budget.power_poll_budget,
+                 power_policy_sleep_permission_text(stored_budget.sleep_permission),
                  blocker_text,
-                 (unsigned)budget->sleep_interval_hint_ms,
-                 budget->flags,
-                 budget->danger_detection_allowed,
-                 budget->network_sync_allowed,
-                 budget->maintenance_allowed,
-                 budget->ui_high_refresh_allowed,
-                 budget->low_battery_warn,
-                 budget->external_power_present,
-                 budget->battery_data_valid,
-                 budget->battery_data_valid ? budget->battery_percent : 0U,
-                 budget->battery_mv);
+                 (unsigned)stored_budget.sleep_interval_hint_ms,
+                 stored_budget.flags,
+                 stored_budget.danger_detection_allowed,
+                 stored_budget.network_sync_allowed,
+                 stored_budget.maintenance_allowed,
+                 stored_budget.ui_high_refresh_allowed,
+                 stored_budget.low_battery_warn,
+                 stored_budget.external_power_present,
+                 stored_budget.battery_data_valid,
+                 stored_budget.battery_data_valid ? stored_budget.battery_percent : 0U,
+                 stored_budget.battery_mv);
+    }
+}
+
+static void power_policy_recalculate(uint32_t notify_reasons)
+{
+    power_policy_budget_t budget =
+        power_policy_build_budget(power_service_get_state(), notify_reasons);
+    power_policy_store_budget(&budget);
+}
+
+static void power_policy_task(void *arg)
+{
+    (void)arg;
+
+    power_policy_recalculate(POWER_POLICY_NOTIFY_MANUAL);
+
+    while (1)
+    {
+        uint32_t notify_reasons = POWER_POLICY_NOTIFY_NONE;
+        const BaseType_t notified =
+            xTaskNotifyWait(0, UINT32_MAX, &notify_reasons,
+                            k_policy_task_period_ticks);
+        if (notified != pdTRUE || notify_reasons == POWER_POLICY_NOTIFY_NONE)
+        {
+            notify_reasons = POWER_POLICY_NOTIFY_PERIODIC;
+        }
+        power_policy_recalculate(notify_reasons);
     }
 }
 
@@ -406,9 +457,20 @@ esp_err_t power_policy_start(void)
         return ESP_OK;
     }
 
+    const BaseType_t ok =
+        xTaskCreate(power_policy_task, "power_policy", 4096, NULL, 4,
+                    &s_task_handle);
+    if (ok != pdPASS)
+    {
+        s_task_handle = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
     s_started = true;
     power_policy_budget_t budget = power_policy_get_budget();
-    ESP_LOGI(TAG, "policy started: state=%s", power_policy_state_text(budget.state));
+    ESP_LOGI(TAG, "policy task started: state=%s version=%u",
+             power_policy_state_text(budget.state),
+             (unsigned)budget.budget_version);
     return ESP_OK;
 }
 
@@ -433,14 +495,46 @@ esp_err_t power_policy_set_maintenance_window(bool active, const char *reason)
                  reason != NULL ? reason : "unknown");
     }
 
-    (void)power_policy_get_budget();
+    (void)power_policy_notify(POWER_POLICY_NOTIFY_MAINTENANCE);
+    return ESP_OK;
+}
+
+esp_err_t power_policy_notify(uint32_t reason)
+{
+    if (reason == POWER_POLICY_NOTIFY_NONE)
+    {
+        reason = POWER_POLICY_NOTIFY_MANUAL;
+    }
+
+    TaskHandle_t task_handle = NULL;
+    bool started = false;
+
+    taskENTER_CRITICAL(&s_lock);
+    task_handle = s_task_handle;
+    started = s_started;
+    taskEXIT_CRITICAL(&s_lock);
+
+    if (started && task_handle != NULL)
+    {
+        xTaskNotify(task_handle, reason, eSetBits);
+        return ESP_OK;
+    }
+
+    power_policy_recalculate(reason);
     return ESP_OK;
 }
 
 power_policy_budget_t power_policy_get_budget(void)
 {
-    power_policy_budget_t budget =
-        power_policy_build_budget(power_service_get_state());
-    power_policy_store_budget(&budget);
-    return budget;
+    bool started = false;
+
+    taskENTER_CRITICAL(&s_lock);
+    started = s_started;
+    taskEXIT_CRITICAL(&s_lock);
+
+    if (!started)
+    {
+        power_policy_recalculate(POWER_POLICY_NOTIFY_MANUAL);
+    }
+    return power_policy_load_budget();
 }

@@ -1,5 +1,9 @@
 # 上下文库变更记录
 
+- 2026-06-02：按 FreeRTOS runtime 骨架推进资源管理第一阶段：`power_policy` 从调用时重算升级为独立 `power_policy` task，支持 `power_policy_notify(reason)` 通过 `xTaskNotify` 请求重算，预算快照新增 `budget_version/last_notify_reasons` 并只在有效预算变化时递增版本；`sleep_coordinator` dry-run 记录观测到的 budget version，便于后续网络/后台/sleep owner 判断是否消费到最新资源预算。当前仍不进入真实 ESP sleep。
+- 2026-06-02：按用户学习 FreeRTOS 的偏好重构 2048 物理按键桥接：`board_button` 从 `volatile` pending bitmask 改为 FreeRTOS queue，按键回调用 `xQueueSendToBack(..., 0)` 投递短按/长按，LVGL 线程用 `xQueueReceive(..., 0)` 非阻塞消费；新增 `board_button_clear_events()` 清空非小游戏页旧事件，防止进入 2048 后误暂停或误退出。相关 pytest 15 项与 `idf.py build` 通过。
+- 2026-06-02：开始执行 2048 小游戏计划并完成源码/构建/板端启动闭环：新增 `main/features/mini_games/mini_game_2048.[ch]` 纯规则模块、`main/ui/custom/mini_games_controller.[ch]` 2048 LVGL 前台页、`main/app/board_button.[ch]` 物理按键 pending 事件桥接；主屏 `Game` 入口已绑定，触摸滑动控制移动，物理短按暂停/继续、长按退出。`pytest` 指定 15 项、context 校验、`idf.py build` 与 COM3 `app-flash-monitor` 60s 启动日志通过；触摸/短按/长按手动交互验收仍待执行。
+- 2026-06-02：新增 `plans/active/2026-06-02-mini-games-2048-execution-plan.md`，将小游戏第一阶段收敛为 2048 vertical slice：复用主屏 `Game` 图标入口，新增纯规则模块、hand-written LVGL controller 和物理按键 pending 事件桥接；明确不做小游戏列表、音效、联网、持久化或底层显示/触摸/sdkconfig 改动。
 - 2026-06-02：收紧 `LIGHT_ALLOWED` 发布门槛：`STANDBY` 仍保持 30 秒无交互进入运行态待机，但 `power_policy` 只有在 `ui_refresh_policy` 只读快照显示屏幕/触摸无交互满 5 分钟后，才设置 `sleep_interval_hint_ms` 并发布 `sleep_permission=LIGHT_ALLOWED`；当前仍只是 `sleep_coordinator` dry-run 证据，不进入真实 ESP sleep。
 - 2026-06-01：修复主屏 UI 时间显示仍使用 GUI Guider 固定初值自增的问题：`screen_main_digital_clock_1_timer` 改为消费 `system_time_get_local_time()` 的本地时间快照，系统时间未可信时显示 `--:--`，首帧创建后立即刷新一次；新增 source test 锁定主屏时钟不再用本地计数器替代系统时间。
 - 2026-06-01：修复 `official_chat` 的 `server_time` 覆盖系统时间时误加 `timezone_offset` 的问题：OTA 返回的 `server_time.timestamp` 按 Unix epoch 毫秒原样交给 `system_time` owner，`timezone_offset` 仅用于显示本地时间，不参与系统时间/RTC 写回，避免东八区把系统时间和 RTC 写快 8 小时；相关 source tests 通过。

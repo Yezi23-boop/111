@@ -82,6 +82,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## ESP-IDF / 构建 / 硬件红线
 
 - 默认使用 `FreeRTOS` 思路组织任务、同步和资源访问；详细 IDF 环境、build/flash/monitor 流程见 `docs/context/knowledge/project/agent-operational-rules.md`。
+- 新功能或整体系统骨架设计时，优先用 `FreeRTOS` 搭出清晰的运行时结构：用 task 表达长期执行单元，用 queue / task notification 表达事件流，用 event group 表达 readiness 或组合状态，用 software timer 表达周期性调度，用 mutex / semaphore / critical section 表达共享资源保护；这样便于观察、调度和解释整个系统的运行。
+- 用户正在学习 `FreeRTOS`：涉及任务通信、跨上下文事件、超时等待、互斥保护、状态通知或资源仲裁时，默认把合适的 `FreeRTOS` 原语作为第一选择（如 queue、event group、task notification、mutex、semaphore、critical section），避免用裸 `volatile`、临时轮询或自造 flag 协议替代同步语义。
+- 如果某处没有使用 `FreeRTOS` 原语，必须能说清楚原因，例如同一线程内纯局部状态、已有 owner 提供更高层同步 API、或第三方组件已有固定同步模型；不能只是为了少写代码而绕开 `FreeRTOS`。
+- 新增或重构相关代码时，默认用简短说明解释选择该 `FreeRTOS` 原语的原因、它解决的并发问题，以及对应的操作系统概念，帮助用户把代码和 `FreeRTOS` 学习对应起来。
 - 只有确认 `export.ps1` 可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作；修改过 `sdkconfig` 时必须先 `idf.py fullclean` 再 `idf.py build`。
 - 常规 C/C++ 代码、UI 逻辑或业务 service 改动在 `idf.py build` 通过后，默认使用 `idf.py -p <PORT> app-flash`；不得把 `idf.py flash` 作为默认烧录命令，因为它会按 `build/flasher_args.json` 写入多个分区。
 - 如需串口验证，优先 `app-flash` 后再限时采集 `monitor` / 串口日志，避免默认 `idf.py flash monitor`。

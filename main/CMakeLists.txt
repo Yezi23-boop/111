@@ -4,6 +4,8 @@ set(app_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/app/hardware_init.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/app/board_button.c
+
     ${CMAKE_CURRENT_LIST_DIR}/app/board_power.c
 
     ${CMAKE_CURRENT_LIST_DIR}/app/resource_fs.c
@@ -50,6 +52,8 @@ set(feature_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/features/danger_detection/danger_detection_service.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_2048.c
+
     ${CMAKE_CURRENT_LIST_DIR}/features/weather/hptts.c
 
     ${CMAKE_CURRENT_LIST_DIR}/features/weather/time_weather.c
@@ -79,6 +83,8 @@ set(ui_runtime_srcs
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_view.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/main_dropdown_controller.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/mini_games_controller.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/wifi_management_controller.c
 

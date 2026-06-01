@@ -34,6 +34,7 @@ extern "C"
         power_policy_sleep_permission_t sleep_permission; /**< 最近预算许可。 */
         uint32_t sleep_blockers;       /**< 最近 blocker 位图。 */
         uint32_t sleep_interval_hint_ms; /**< 最近 interval hint。 */
+        uint32_t budget_version;       /**< 最近观测到的 power_budget 版本。 */
         uint32_t dry_run_count;        /**< 已记录 dry-run 次数。 */
     } sleep_coordinator_snapshot_t;
 
