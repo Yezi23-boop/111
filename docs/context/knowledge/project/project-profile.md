@@ -22,8 +22,12 @@ evidence_level: observed
 
 - `app_main()` 先执行 `main/app/hardware_init.c:hardware_init()`。
 - 硬件 ready 后启动 `main/ui/lvgl_task.c` 的 UI 任务。
-- UI 起来后再由后台服务继续推进：
+- 当前启动骨架按 `docs/context/knowledge/project/runtime-owner-contract.md` 固定为：`Board Foundation -> Display Foundation -> UI First Frame -> Core Policy -> Service Managers -> Deferred Services`。
+- UI 起来后再由后台服务继续推进，典型 owner 包括：
   - `main/services/power_service.c`
+  - `main/services/power_policy.c`
+  - `main/services/background_service_manager.c`
+  - `main/services/safety_monitor_session.c`
   - `main/services/network_service.c`
   - `main/services/official_chat_service.c`
 - 当前正式模型已经切到“先起 UI，联网后台继续”；不要再按“联网成功后再进 UI”的旧路径理解仓库。
@@ -35,6 +39,7 @@ evidence_level: observed
 - 联网/配网：`components/network_manager`、`components/network_provisioning_adapter`、`components/ap_portal_adapter`、`components/wifi_control`、`main/services/network_service.c`
 - 电源：`components/axp2101`、`main/app/board_power.c`、`main/services/power_service.c`
 - 危险识别：`components/espdl_inference`、`main/features/danger_detection`
+- 运行时骨架：`docs/context/knowledge/project/runtime-owner-contract.md` 是后续新增功能、跨模块改动、低功耗、OTA、后台能力和资源仲裁的 owner 合同；默认不新增大而全 `ResourceManager`、`resource_policy`、`session_router` 或默认 `ui_manager`。
 
 ## 当前已退场或不要再当正式主线的旧链路
 
@@ -44,7 +49,9 @@ evidence_level: observed
 
 ## 遇到问题时先读哪里
 
+- 整体项目框架总图：`docs/context/knowledge/project/project-framework.md`
 - 全局骨架按需读：仅当 query/brief pack 命中，或确实需要完整仓库骨架时，再打开 `docs/context/knowledge/project/repo-overview.md`
+- 运行时 owner 合同先读：`docs/context/knowledge/project/runtime-owner-contract.md`
 - 当前目录和 owner 映射先读：`docs/context/knowledge/project/main-directory-map.md`
 - 联网/配网主线先读：`docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md`
 - UI/状态读取边界先读：`docs/context/knowledge/project/agent-operational-rules.md`
@@ -58,3 +65,4 @@ evidence_level: observed
 - 只改 context 文档时用 `--level standard`；改入口/检索基准时用 `--level routing`；改 `scripts/context` 或记忆机制时才用 `--level full`。
 - 复杂任务先在 `docs/context/plans/active/` 落计划
 - 有长期复用价值的联调、日志、板测证据，以及 agent 已经做过且不应重复的修改/尝试，按 `context-memory-policy.md` 写入 `docs/context/runs/`
+- 发生启动阶段、owner、调用方向、长期 service/session、产品状态、power budget、sleep 路线或上下文路由变化时，必须同步更新 `docs/context/knowledge/project/project-framework.md` 和 `docs/context/CHANGELOG.md`

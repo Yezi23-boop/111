@@ -28,10 +28,23 @@ evidence_level: design
 
 ## Flash 与 Monitor
 
+- 常规 C/C++ 代码、UI 逻辑或业务 service 改动，若只影响 app 镜像，`idf.py build` 通过后默认使用 `idf.py -p <PORT> app-flash`。
+- 不得把 `idf.py flash` 作为 agent 默认烧录命令；它会按 `build/flasher_args.json` 写入 bootloader、partition table、app 以及其他已配置分区。
+- 仅在修改 `partition table`、bootloader、`OTA` 布局、flash 参数、会影响分区 / bootloader / flash 模式的 `sdkconfig`，或需要刷新 `assets` / `model` / `nvs` / `phy_init` 等非 app 分区产物时，才使用 `idf.py flash`；用户明确要求全量刷新时也可使用，但必须说明原因。
+- 如需串口验证，优先执行 `app-flash` 后再限时采集 `monitor` / 串口日志；避免把 `idf.py flash monitor` 作为默认验证命令。
+- 优先使用 `scripts/board/agent_serial_monitor.ps1` 或 `scripts/board/agent_serial_monitor.py` 做 agent 可读串口采集；它会自动生成 `board_logs/*.log` 和 `board_logs/*.summary.json`，摘要内包含 `status/evidence/custom_evidence/fatal/important_events/tail/log_path`，后续 agent 应先读 summary，再按 `log_path` 打开完整日志。
+  - 常规只观察：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 60 -Action monitor -Tag <task>`
+  - 普通 app 改动后观察：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 90 -FlashTimeoutSeconds 180 -Action app-flash-monitor -Tag <task> -QuietConsole`
+  - `app-flash-monitor` 的 `DurationSeconds` 表示看到启动证据后的观察窗口，不包含 app 刷写时间；刷写与等待启动由 `FlashTimeoutSeconds` 控制，避免大 app 刷写到一半就被采集窗口杀掉并误报 `no_boot_seen`。
+  - 验证 STANDBY 30 秒观察：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 75 -FlashTimeoutSeconds 240 -Action app-flash-monitor -Tag standby-30s -Pattern @("standby=state=STANDBY","startup=boot_stage: startup_sequence_done") -LiteralPattern @("reason=") -QuietConsole`
+  - 长时间 `app-flash-monitor` 默认建议加 `-QuietConsole`，避免刷写日志淹没 agent 通道；完整原始记录仍写入 `board_logs/*.log`，summary 仍写入 `board_logs/*.summary.json`。
+  - 针对任务补证据关键词：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 60 -Action monitor -Tag <task> -Pattern @("rtc=rtc bootstrap ok","power=Board power boot snapshot") -TailLines 120`
+  - 纯文本关键词含 `=`、中文或不想按正则解析时，使用 `-LiteralPattern`，例如：`-LiteralPattern @("reason=")`；`-Pattern "name=regex"` 只用于明确要命名正则的场景。
+  - 观察已运行板子且不希望 monitor 复位：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 30 -Action monitor -Tag <task> -NoReset`
 - `idf.py monitor` 没有自然返回值；自动化验证时默认采集窗口为 `30` 秒，最长不超过 `1` 分钟。
 - Windows Codex 桌面环境下，如需让 agent 直接读取 `idf.py monitor`，可临时设置 `ESP_IDF_MONITOR_TEST=1` 绕过 `TTY` 检查；该变量只用于 host 侧采集，不属于固件配置。
 - 只要使用过 `ESP_IDF_MONITOR_TEST=1`，就必须清理残留的 `idf_monitor` / `idf.py monitor` 进程，并确认串口已释放，再进行下一轮 `flash`、`monitor` 或串口验证。
-- 如果 `monitor` 日志提示 built/flashed checksum mismatch，不得把板端日志直接当作当前本地 `build` 产物的验证结论；必须单独标注镜像漂移风险，必要时重做一致的 `build` / `flash` / `monitor` 闭环。
+- 如果 `monitor` 日志提示 built/flashed checksum mismatch，不得把板端日志直接当作当前本地 `build` 产物的验证结论；必须单独标注镜像漂移风险，必要时重做一致的 `build` / `app-flash` 或 `flash` / `monitor` 闭环，并说明本轮使用的烧录方式。
 
 ## 硬件与安全边界
 

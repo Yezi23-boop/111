@@ -22,6 +22,7 @@ dependencies.lock
 ehthumbs.db
 Thumbs.db
 # 临时文件
+tmp/
 *.tmp
 *.temp
 *.log

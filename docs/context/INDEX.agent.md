@@ -57,12 +57,16 @@ evidence_level: design
 
 ## Routing
 
+- Overall project framework:
+  `docs/context/knowledge/project/project-framework.md`
 - Repo state and owner map:
   `docs/context/knowledge/project/project-profile.md`
 - Current `main/` layout:
   `docs/context/knowledge/project/main-directory-map.md`
 - Layering boundary:
   `docs/context/knowledge/project/layering-boundary-map.md`
+- Runtime owner contract:
+  `docs/context/knowledge/project/runtime-owner-contract.md`
 - Detailed agent operations:
   `docs/context/knowledge/project/agent-operational-rules.md`
 - Embedded C/C++ rules:
@@ -122,6 +126,7 @@ evidence_level: design
 - Memory policy: `docs/context/knowledge/project/context-memory-policy.md`
 - Stable facts go to `docs/context/knowledge/`.
 - Long-lived architecture boundaries and project decisions go to stable `docs/context/knowledge/project/` cards.
+- If a framework change alters startup phases, owner boundaries, call direction, long-lived services, product states, power budget, sleep route, or context routing, update `docs/context/knowledge/project/project-framework.md` and `docs/context/CHANGELOG.md` in the same change.
 - Repeatable procedures go to `docs/context/procedures/`.
 - Attempts, failures, board logs, and verification go to `docs/context/runs/`.
 - Current task compression goes to `docs/context/handoffs/current-task.md`.

@@ -83,7 +83,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 默认使用 `FreeRTOS` 思路组织任务、同步和资源访问；详细 IDF 环境、build/flash/monitor 流程见 `docs/context/knowledge/project/agent-operational-rules.md`。
 - 只有确认 `export.ps1` 可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作；修改过 `sdkconfig` 时必须先 `idf.py fullclean` 再 `idf.py build`。
+- 常规 C/C++ 代码、UI 逻辑或业务 service 改动在 `idf.py build` 通过后，默认使用 `idf.py -p <PORT> app-flash`；不得把 `idf.py flash` 作为默认烧录命令，因为它会按 `build/flasher_args.json` 写入多个分区。
+- 如需串口验证，优先 `app-flash` 后再限时采集 `monitor` / 串口日志，避免默认 `idf.py flash monitor`。
 - 修改 `GPIO` / `I2C` / `SPI` / `UART` / `I2S` / `LCD` / `Touch` / `Wi-Fi` / `BLE` 前，必须先确认引脚定义、初始化顺序、时钟或带宽约束，以及错误恢复路径。
+- 测试 `Light Sleep` / `Deep Sleep` / 外部唤醒源前，必须先写清楚唤醒源、观测口、兜底唤醒和恢复步骤；测试代码默认关闭，禁止随开机自动进入 sleep。依赖 USB 串口/JTAG 观测时，不得把测试结果当作可靠闭环，应优先准备外部 UART 日志或手动 BOOT/RST 恢复路径。
 - 不要在没有证据的情况下删除已有 `reset`、`delay`、power-on sequence 或初始化命令序列。
 - 不要随意修改 `partition table`、boot 流程、`OTA` 逻辑、`NVS` 关键结构、`Wi-Fi/BLE` 初始化主流程；若必须修改，要显式说明原因、影响范围和验证方法。
 
@@ -93,6 +96,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 首读只看 `docs/context/INDEX.agent.md` 与 `docs/context/knowledge/project/project-profile.md`；不要默认全量打开 `README.md`、`knowledge-map.md`、`repo-overview.md` 或 `knowledge/**`。
 - 非简单任务默认用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`，避免重复尝试并只生成低 token brief。
+- 新增功能、跨模块改动、后台能力、低功耗、OTA、音频/网络/危险识别协作类任务，默认先按 `docs/context/knowledge/project/runtime-owner-contract.md` 判断启动阶段、资源 owner、调用方向和禁止加层边界。
 - 出现可复用知识、流程、决策、attempt 或交接状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
 - 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
 
@@ -116,6 +120,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 新增或修改代码应优先满足模块化、分层、单一职责、明确接口边界和可验证错误路径。
 - 后续新增功能、跨文件改动和重构默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；详细边界见 `docs/context/knowledge/project/layering-boundary-map.md`。
+- 运行时骨架默认按 `docs/context/knowledge/project/runtime-owner-contract.md` 执行：不新增大而全 `ResourceManager`、`resource_policy`、`session_router` 或默认 `ui_manager`；新能力优先落到现有 owner，必要时新增窄 service/session。
 - 新增或修改代码默认按 Google Code Style 靠拢，但不因引入新规则而大面积重排无关旧代码。
 - 资源受限路径优先使用静态分配或受控分配，避免在高频路径中频繁申请和释放内存。
 - 输入、状态、长度、返回值、超时和降级路径必须显式处理，不能静默失败。

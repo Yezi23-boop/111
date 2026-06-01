@@ -490,12 +490,12 @@ evidence_level: observed
   - `main/ui/ui_refresh_policy.c`
     - 新增对 `NETWORK_MANAGER_STATE_PROVISIONING_BLE` 的检测
     - 当前不再把“配网降载”做成顶层交互状态，而是拆成两层：
-      - 交互状态：`ACTIVE / IDLE_DIM / FORCE_ACTIVE`
+      - 交互状态：`ACTIVE / STANDBY / FORCE_ACTIVE`
       - 系统节流模式：`NORMAL / PROVISIONING`
     - BLE 配网活跃期：
       - 活跃态最小唤醒间隔抬到 `80ms`
-      - 空闲态最小唤醒间隔抬到 `250ms`
-    - 亮度仍只跟交互状态走，因此配网期间 `5s` 无触摸后仍会 dim
+      - STANDBY 态最小唤醒间隔抬到 `500ms`
+    - 亮度仍只跟交互状态走，因此配网期间 `30s` 无触摸后仍会进入 STANDBY 并渐暗
     - UI 轮询不再调用会抢 `network_manager` 互斥锁的 `network_manager_get_state()`，
       改为使用无锁快照接口 `network_manager_get_state_cached()`
 - 目的：
@@ -505,7 +505,7 @@ evidence_level: observed
   - 优先验证“显示总线降载后，内部 DMA 私有缓冲申请失败是否明显减少”
 - 当前判断：
   - 当前最稳的实现不是把 `PROVISIONING_THROTTLED` 当成顶层状态，而是把它做成独立节流模式
-  - 这样既保住了 dim / 常亮的用户语义，也避免 UI 主循环被网络互斥锁拖慢
+  - 这样既保住了 STANDBY / 常亮的用户语义，也避免 UI 主循环被网络互斥锁拖慢
   - 若真机仍持续报 `ESP_ERR_NO_MEM`，下一步应继续看：
     1. Wi-Fi 管理页上是否还有额外高频对象刷新
     2. 是否需要在 BLE provisioning 期间进一步暂停部分后台 UI 驱动源

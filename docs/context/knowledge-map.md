@@ -26,12 +26,14 @@
 - `knowledge/project/startup-init-and-blocking-chain.md`
 - `knowledge/project/power-wakeup-control-map.md`
 - `knowledge/project/low-power-management-baseline.md`
+- `knowledge/project/rtc-pmic-wakeup-evidence-loop.md`
 - `knowledge/project/hardware-capability-gap-map.md`
 - `knowledge/project/storage-and-provisioning-paths.md`
 - `knowledge/project/embedded-c-cpp-engineering-rules.md`
 - `knowledge/project/embedded-framework-mentor-skill.md`
 - `knowledge/project/teaching-milestones.md`
 - `knowledge/project/gui-guider-visual-editor-runtime-boundary.md`
+- `knowledge/project/runtime-owner-contract.md`
 
 ## 程序化流程
 

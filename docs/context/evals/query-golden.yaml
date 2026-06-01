@@ -40,8 +40,9 @@ queries:
 
   - id: future-code-layering-default
     query: "后续代码 默认 按 App UI Service Manager Domain Driver Adapter Vendor 分层 owner"
-    expected_top1: docs/context/knowledge/project/layering-boundary-map.md
+    expected_top1: docs/context/knowledge/project/runtime-owner-contract.md
     expected_top3:
+      - docs/context/knowledge/project/runtime-owner-contract.md
       - docs/context/knowledge/project/layering-boundary-map.md
 
   - id: wifi-ui-lifecycle-crash
