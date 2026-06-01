@@ -1,5 +1,9 @@
 #include "services/power_policy.h"
 
+#include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
+
 #include "app/board_power.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -9,12 +13,25 @@
 
 static const char *TAG = "power_policy";
 static const uint8_t k_low_battery_warn_percent = 20U; /* 低电量预警起点，单位为百分比。 */
+static const uint32_t k_standby_sleep_interval_hint_ms = 8000U; /* dry-run 建议 Light Sleep 间隔。 */
+static const int64_t k_light_allowed_idle_time_ms = 5LL * 60LL * 1000LL; /* 屏幕无交互满 5 分钟后才允许发布 LIGHT_ALLOWED。 */
 
 static bool s_initialized = false;
 static bool s_started = false;
 static bool s_maintenance_window_active = false;
 static power_policy_budget_t s_last_budget = {
     .state = POWER_POLICY_STATE_ACTIVE,
+    .standby_reason = POWER_POLICY_STANDBY_REASON_NONE,
+    .display_budget = POWER_POLICY_DISPLAY_FULL,
+    .ui_budget = POWER_POLICY_UI_HIGH_REFRESH,
+    .network_budget = POWER_POLICY_NETWORK_FULL,
+    .background_budget = POWER_POLICY_BACKGROUND_FULL,
+    .cpu_budget = POWER_POLICY_CPU_PERFORMANCE,
+    .power_poll_budget = POWER_POLICY_POWER_POLL_NORMAL,
+    .sleep_permission = POWER_POLICY_SLEEP_NONE,
+    .sleep_blockers = POWER_POLICY_SLEEP_BLOCKER_NONE,
+    .flags = POWER_POLICY_FLAG_NONE,
+    .sleep_interval_hint_ms = 0,
     .danger_detection_allowed = true,
     .network_sync_allowed = true,
     .maintenance_allowed = false,
@@ -22,6 +39,9 @@ static power_policy_budget_t s_last_budget = {
     .haptic_alert_allowed = true,
     .low_battery_warn = false,
     .external_power_present = false,
+    .battery_data_valid = false,
+    .battery_percent = UINT8_MAX,
+    .battery_mv = 0,
 };
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -29,19 +49,101 @@ const char *power_policy_state_text(power_policy_state_t state)
 {
     switch (state)
     {
-    case POWER_POLICY_STATE_IDLE_DIM:
-        return "IDLE_DIM";
     case POWER_POLICY_STATE_STANDBY:
         return "STANDBY";
-    case POWER_POLICY_STATE_LOW_BATTERY_WARN:
-        return "LOW_BATTERY_WARN";
-    case POWER_POLICY_STATE_CHARGING:
-        return "CHARGING";
-    case POWER_POLICY_STATE_MAINTENANCE:
-        return "MAINTENANCE";
     case POWER_POLICY_STATE_ACTIVE:
     default:
         return "ACTIVE";
+    }
+}
+
+const char *power_policy_sleep_permission_text(
+    power_policy_sleep_permission_t permission)
+{
+    switch (permission)
+    {
+    case POWER_POLICY_SLEEP_LIGHT_ALLOWED:
+        return "LIGHT_ALLOWED";
+    case POWER_POLICY_SLEEP_DEEP_ALLOWED:
+        return "DEEP_ALLOWED";
+    case POWER_POLICY_SLEEP_NONE:
+    default:
+        return "NONE";
+    }
+}
+
+static void power_policy_append_blocker(char *buffer, size_t buffer_size,
+                                        const char *name)
+{
+    if (buffer == NULL || buffer_size == 0U || name == NULL)
+    {
+        return;
+    }
+
+    size_t used = strlen(buffer);
+    if (used >= buffer_size - 1U)
+    {
+        return;
+    }
+
+    if (buffer[0] != '\0')
+    {
+        strncat(buffer, "|", buffer_size - used - 1U);
+        used = strlen(buffer);
+        if (used >= buffer_size - 1U)
+        {
+            return;
+        }
+    }
+    strncat(buffer, name, buffer_size - used - 1U);
+}
+
+void power_policy_format_sleep_blockers(uint32_t blockers, char *buffer,
+                                        size_t buffer_size)
+{
+    if (buffer == NULL || buffer_size == 0U)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (blockers == POWER_POLICY_SLEEP_BLOCKER_NONE)
+    {
+        snprintf(buffer, buffer_size, "none");
+        return;
+    }
+
+    if ((blockers & POWER_POLICY_SLEEP_BLOCKER_UI_FORCE_ACTIVE) != 0U)
+    {
+        power_policy_append_blocker(buffer, buffer_size, "UI_FORCE_ACTIVE");
+    }
+    if ((blockers & POWER_POLICY_SLEEP_BLOCKER_AUDIO_ACTIVE) != 0U)
+    {
+        power_policy_append_blocker(buffer, buffer_size, "AUDIO_ACTIVE");
+    }
+    if ((blockers & POWER_POLICY_SLEEP_BLOCKER_NETWORK_CRITICAL) != 0U)
+    {
+        power_policy_append_blocker(buffer, buffer_size, "NETWORK_CRITICAL");
+    }
+    if ((blockers & POWER_POLICY_SLEEP_BLOCKER_BACKGROUND_CRITICAL) != 0U)
+    {
+        power_policy_append_blocker(buffer, buffer_size, "BACKGROUND_CRITICAL");
+    }
+    if ((blockers & POWER_POLICY_SLEEP_BLOCKER_OTA_ACTIVE) != 0U)
+    {
+        power_policy_append_blocker(buffer, buffer_size, "OTA_ACTIVE");
+    }
+    if ((blockers & POWER_POLICY_SLEEP_BLOCKER_PROVISIONING_ACTIVE) != 0U)
+    {
+        power_policy_append_blocker(buffer, buffer_size, "PROVISIONING_ACTIVE");
+    }
+    if ((blockers & POWER_POLICY_SLEEP_BLOCKER_ALERT_ACTIVE) != 0U)
+    {
+        power_policy_append_blocker(buffer, buffer_size, "ALERT_ACTIVE");
+    }
+    if ((blockers & POWER_POLICY_SLEEP_BLOCKER_DEBUG_LOCK) != 0U)
+    {
+        power_policy_append_blocker(buffer, buffer_size, "DEBUG_LOCK");
     }
 }
 
@@ -49,7 +151,7 @@ const char *power_policy_state_text(power_policy_state_t state)
  * @brief 按 UI 活跃度快照收窄普通运行态预算。
  *
  * `ui_refresh_policy` 仍然是亮度和 LVGL 延时 owner；这里仅消费它已经
- * 缓存的只读事实，用于把普通 `ACTIVE` 预算细分为 `IDLE_DIM`。
+ * 缓存的只读事实，用于把普通 `ACTIVE` 预算收窄为运行态 `STANDBY`。
  *
  * @param[in,out] budget 当前待发布的资源预算。
  */
@@ -68,27 +170,57 @@ static void power_policy_apply_ui_activity_budget(power_policy_budget_t *budget)
     }
 
     if (activity_snapshot.activity_state ==
-        UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM)
+        UI_REFRESH_POLICY_ACTIVITY_STANDBY)
     {
         if (budget->state == POWER_POLICY_STATE_ACTIVE)
         {
-            budget->state = POWER_POLICY_STATE_IDLE_DIM;
+            budget->state = POWER_POLICY_STATE_STANDBY;
+            budget->standby_reason = POWER_POLICY_STANDBY_REASON_AUTO_IDLE;
         }
+        budget->display_budget = POWER_POLICY_DISPLAY_OFF;
+        budget->ui_budget = POWER_POLICY_UI_LOW_REFRESH;
+        budget->network_budget = POWER_POLICY_NETWORK_SYNC_PAUSED;
+        budget->background_budget = POWER_POLICY_BACKGROUND_PAUSE_OPTIONAL;
+        budget->cpu_budget = POWER_POLICY_CPU_LOW;
+        budget->power_poll_budget = POWER_POLICY_POWER_POLL_SLOW;
+        if (activity_snapshot.idle_time_ms >= k_light_allowed_idle_time_ms)
+        {
+            budget->sleep_interval_hint_ms = k_standby_sleep_interval_hint_ms;
+        }
+        budget->network_sync_allowed = false;
+        budget->maintenance_allowed = false;
         budget->ui_high_refresh_allowed = false;
+        return;
+    }
+
+    if (activity_snapshot.force_active)
+    {
+        budget->sleep_blockers |= POWER_POLICY_SLEEP_BLOCKER_UI_FORCE_ACTIVE;
     }
 }
 
 /**
  * @brief 根据电源快照和只读 UI 活跃度事实计算第一阶段资源预算。
  *
- * 第一阶段只把已可观测的充电、低电量、维护窗口和 UI idle-dim 信号纳入预算；
- * standby 还没有统一触发源，因此保留枚举和接口，不在这里猜测状态。
+ * 第一阶段只把已可观测的充电、低电量、维护窗口和 UI STANDBY 信号纳入预算。
+ * `power_policy` 只发布预算，不直接操作屏幕、Wi-Fi 或后台任务。
  */
 static power_policy_budget_t power_policy_build_budget(
     const board_power_state_t *power_state)
 {
     power_policy_budget_t budget = {
         .state = POWER_POLICY_STATE_ACTIVE,
+        .standby_reason = POWER_POLICY_STANDBY_REASON_NONE,
+        .display_budget = POWER_POLICY_DISPLAY_FULL,
+        .ui_budget = POWER_POLICY_UI_HIGH_REFRESH,
+        .network_budget = POWER_POLICY_NETWORK_FULL,
+        .background_budget = POWER_POLICY_BACKGROUND_FULL,
+        .cpu_budget = POWER_POLICY_CPU_PERFORMANCE,
+        .power_poll_budget = POWER_POLICY_POWER_POLL_NORMAL,
+        .sleep_permission = POWER_POLICY_SLEEP_NONE,
+        .sleep_blockers = POWER_POLICY_SLEEP_BLOCKER_NONE,
+        .flags = POWER_POLICY_FLAG_NONE,
+        .sleep_interval_hint_ms = 0,
         .danger_detection_allowed = true,
         .network_sync_allowed = true,
         .maintenance_allowed = false,
@@ -96,6 +228,9 @@ static power_policy_budget_t power_policy_build_budget(
         .haptic_alert_allowed = true,
         .low_battery_warn = false,
         .external_power_present = false,
+        .battery_data_valid = false,
+        .battery_percent = UINT8_MAX,
+        .battery_mv = 0,
     };
 
     taskENTER_CRITICAL(&s_lock);
@@ -106,59 +241,66 @@ static power_policy_budget_t power_policy_build_budget(
     {
         if (maintenance_window_active)
         {
-            budget.state = POWER_POLICY_STATE_MAINTENANCE;
+            budget.flags |= POWER_POLICY_FLAG_MAINTENANCE;
             budget.danger_detection_allowed = false;
             budget.network_sync_allowed = false;
             budget.maintenance_allowed = true;
             budget.ui_high_refresh_allowed = false;
+            budget.network_budget = POWER_POLICY_NETWORK_SYNC_PAUSED;
+            budget.background_budget = POWER_POLICY_BACKGROUND_PAUSE_OPTIONAL;
+            budget.sleep_blockers |= POWER_POLICY_SLEEP_BLOCKER_BACKGROUND_CRITICAL;
         }
         return budget;
     }
 
-    power_policy_apply_ui_activity_budget(&budget);
-
     budget.external_power_present =
         power_state->external_power_present || power_state->charging;
+    if (budget.external_power_present)
+    {
+        budget.flags |= POWER_POLICY_FLAG_EXTERNAL_POWER;
+    }
+    if (power_state->charging)
+    {
+        budget.flags |= POWER_POLICY_FLAG_CHARGING;
+    }
+    budget.battery_data_valid = power_state->battery_data_valid;
+    budget.battery_percent = power_state->battery_data_valid
+                                 ? power_state->battery_percent
+                                 : UINT8_MAX;
+    budget.battery_mv = power_state->battery_mv;
     budget.low_battery_warn =
         power_state->battery_data_valid &&
         !budget.external_power_present &&
         power_state->battery_percent <= k_low_battery_warn_percent;
-
-    if (budget.external_power_present)
-    {
-        budget.state = POWER_POLICY_STATE_CHARGING;
-        budget.maintenance_allowed = true;
-        if (maintenance_window_active)
-        {
-            budget.state = POWER_POLICY_STATE_MAINTENANCE;
-            budget.danger_detection_allowed = false;
-            budget.network_sync_allowed = false;
-            budget.ui_high_refresh_allowed = false;
-        }
-        return budget;
-    }
-
     if (budget.low_battery_warn)
     {
-        budget.state = POWER_POLICY_STATE_LOW_BATTERY_WARN;
-        budget.network_sync_allowed = false;
-        budget.maintenance_allowed = false;
-        budget.ui_high_refresh_allowed = false;
-        /*
-         * 低电量预警下仍保留危险识别，但后续可以在同一预算字段上
-         * 继续细化为保守降频，而不是让各模块自行解释电量策略。
-         */
-        budget.danger_detection_allowed = true;
+        budget.flags |= POWER_POLICY_FLAG_LOW_BATTERY_WARN;
     }
 
-    if (maintenance_window_active && !budget.low_battery_warn)
+    if (maintenance_window_active)
     {
-        budget.state = POWER_POLICY_STATE_MAINTENANCE;
+        budget.flags |= POWER_POLICY_FLAG_MAINTENANCE;
         budget.danger_detection_allowed = false;
         budget.network_sync_allowed = false;
         budget.maintenance_allowed = true;
         budget.ui_high_refresh_allowed = false;
-        return budget;
+        budget.network_budget = POWER_POLICY_NETWORK_SYNC_PAUSED;
+        budget.background_budget = POWER_POLICY_BACKGROUND_PAUSE_OPTIONAL;
+        budget.sleep_blockers |= POWER_POLICY_SLEEP_BLOCKER_BACKGROUND_CRITICAL;
+    }
+
+    power_policy_apply_ui_activity_budget(&budget);
+
+    if (budget.external_power_present && budget.state == POWER_POLICY_STATE_ACTIVE)
+    {
+        budget.maintenance_allowed = true;
+    }
+
+    if (budget.state == POWER_POLICY_STATE_STANDBY &&
+        budget.sleep_blockers == POWER_POLICY_SLEEP_BLOCKER_NONE &&
+        budget.sleep_interval_hint_ms > 0U)
+    {
+        budget.sleep_permission = POWER_POLICY_SLEEP_LIGHT_ALLOWED;
     }
 
     return budget;
@@ -168,13 +310,27 @@ static bool power_policy_budget_equal(const power_policy_budget_t *lhs,
                                       const power_policy_budget_t *rhs)
 {
     return lhs->state == rhs->state &&
+           lhs->standby_reason == rhs->standby_reason &&
+           lhs->display_budget == rhs->display_budget &&
+           lhs->ui_budget == rhs->ui_budget &&
+           lhs->network_budget == rhs->network_budget &&
+           lhs->background_budget == rhs->background_budget &&
+           lhs->cpu_budget == rhs->cpu_budget &&
+           lhs->power_poll_budget == rhs->power_poll_budget &&
+           lhs->sleep_permission == rhs->sleep_permission &&
+           lhs->sleep_blockers == rhs->sleep_blockers &&
+           lhs->flags == rhs->flags &&
+           lhs->sleep_interval_hint_ms == rhs->sleep_interval_hint_ms &&
            lhs->danger_detection_allowed == rhs->danger_detection_allowed &&
            lhs->network_sync_allowed == rhs->network_sync_allowed &&
            lhs->maintenance_allowed == rhs->maintenance_allowed &&
            lhs->ui_high_refresh_allowed == rhs->ui_high_refresh_allowed &&
            lhs->haptic_alert_allowed == rhs->haptic_alert_allowed &&
            lhs->low_battery_warn == rhs->low_battery_warn &&
-           lhs->external_power_present == rhs->external_power_present;
+           lhs->external_power_present == rhs->external_power_present &&
+           lhs->battery_data_valid == rhs->battery_data_valid &&
+           lhs->battery_percent == rhs->battery_percent &&
+           lhs->battery_mv == rhs->battery_mv;
 }
 
 /**
@@ -196,15 +352,33 @@ static void power_policy_store_budget(const power_policy_budget_t *budget)
 
     if (changed)
     {
+        char blocker_text[160];
+        power_policy_format_sleep_blockers(budget->sleep_blockers,
+                                           blocker_text,
+                                           sizeof(blocker_text));
         ESP_LOGI(TAG,
-                 "policy_state_change: state=%s danger=%d net_sync=%d maintenance=%d ui_high_refresh=%d low_battery=%d external_power=%d",
+                 "power_budget_change: state=%s standby_reason=%d display=%d ui=%d network=%d background=%d cpu=%d poll=%d sleep=%s blockers=%s interval_ms=%u flags=0x%08" PRIx32 " danger=%d net_sync=%d maintenance=%d ui_high_refresh=%d low_battery=%d external_power=%d bat_valid=%d soc=%u vbat=%umV",
                  power_policy_state_text(budget->state),
+                 budget->standby_reason,
+                 budget->display_budget,
+                 budget->ui_budget,
+                 budget->network_budget,
+                 budget->background_budget,
+                 budget->cpu_budget,
+                 budget->power_poll_budget,
+                 power_policy_sleep_permission_text(budget->sleep_permission),
+                 blocker_text,
+                 (unsigned)budget->sleep_interval_hint_ms,
+                 budget->flags,
                  budget->danger_detection_allowed,
                  budget->network_sync_allowed,
                  budget->maintenance_allowed,
                  budget->ui_high_refresh_allowed,
                  budget->low_battery_warn,
-                 budget->external_power_present);
+                 budget->external_power_present,
+                 budget->battery_data_valid,
+                 budget->battery_data_valid ? budget->battery_percent : 0U,
+                 budget->battery_mv);
     }
 }
 

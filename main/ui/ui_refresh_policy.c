@@ -11,14 +11,14 @@
 /*
  * 刷新策略实现说明：
  * 1. 该模块只维护“界面是否活跃”的事实，不直接管理触摸采样或 LVGL tick；
- * 2. 延时策略和亮度策略复用同一状态机，保证刷新降频和 dim 同步发生；
+ * 2. 延时策略和亮度策略复用同一状态机，保证 STANDBY 降频和渐暗同步发生；
  * 3. 所有对外接口都允许被高层多次调用，初始化和状态切换需保持幂等。
  */
 
 typedef enum
 {
     UI_REFRESH_POLICY_STATE_ACTIVE = 0,
-    UI_REFRESH_POLICY_STATE_IDLE_DIM,
+    UI_REFRESH_POLICY_STATE_STANDBY,
     UI_REFRESH_POLICY_STATE_FORCE_ACTIVE,
 } ui_refresh_policy_state_t;
 
@@ -30,11 +30,11 @@ typedef enum
 
 static const char *TAG = "ui_refresh_policy";
 static const uint32_t k_active_delay_ms = 16U;                 /* 活跃态最大循环延时，单位为毫秒。 */
-static const uint32_t k_idle_delay_ms = 100U;                  /* 空闲态最小循环延时，单位为毫秒。 */
+static const uint32_t k_standby_delay_ms = 500U;               /* STANDBY 最小循环延时，单位为毫秒。 */
 static const uint32_t k_provisioning_active_delay_ms = 80U;    /* BLE 配网活跃态最小循环延时，单位为毫秒。 */
-static const uint32_t k_provisioning_idle_delay_ms = 250U;     /* BLE 配网空闲态最小循环延时，单位为毫秒。 */
-static const int64_t k_active_timeout_us = 5000LL * 1000LL;    /* 最近一次触摸后保持活跃的窗口，单位为微秒。 */
-static const uint8_t k_idle_brightness_percent = 40U;          /* 空闲态目标亮度占用户亮度的百分比。 */
+static const uint32_t k_provisioning_standby_delay_ms = 500U;  /* BLE 配网待机态最小循环延时，单位为毫秒。 */
+static const int64_t k_standby_timeout_us = 30000LL * 1000LL;  /* 无交互进入 STANDBY 的阈值，单位为微秒。 */
+static const int64_t k_standby_fade_us = 5000LL * 1000LL;      /* STANDBY 渐暗时长，单位为微秒。 */
 static const uint8_t k_default_user_brightness_percent = 100U; /* 默认用户亮度，单位为百分比。 */
 
 static bool s_initialized = false;
@@ -42,6 +42,7 @@ static bool s_force_active = false;                                        /* �
 static uint8_t s_user_brightness_percent = 100U;                           /* 用户配置的原始亮度百分比。 */
 static uint8_t s_applied_brightness_percent = UCHAR_MAX;                   /* 最近一次成功下发给面板的亮度；`UCHAR_MAX` 表示尚未下发。 */
 static int64_t s_last_touch_time_us = 0;                                   /* 最近一次用户活跃时间戳，单位为微秒。 */
+static int64_t s_standby_enter_time_us = 0;                                /* 最近一次进入 STANDBY 的时间戳，单位为微秒。 */
 static ui_refresh_policy_state_t s_state = UI_REFRESH_POLICY_STATE_ACTIVE;  /* 当前交互活跃状态。 */
 static ui_refresh_policy_throttle_mode_internal_t s_throttle_mode =
     UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL; /* 当前系统级刷新节流模式。 */
@@ -61,29 +62,41 @@ static uint8_t ui_refresh_policy_clamp_percent(uint8_t percent)
 }
 
 /**
- * @brief 根据 idle dim 策略计算空闲态目标亮度。
+ * @brief 根据 STANDBY 渐暗策略计算目标亮度。
  *
- * 这里额外保证非零用户亮度在 dim 后不会直接变成 0，
- * 以避免用户仍期望“可见但更暗”时被错误解释成完全熄屏。
+ * STANDBY 第一版不让面板进入硬件 sleep，只通过多次亮度写入把屏幕
+ * 从用户亮度逐步降到 0，降低恢复路径风险。
  *
  * @param[in] percent 用户配置的原始亮度百分比。
- * @return 空闲态下实际应使用的亮度百分比。
+ * @return STANDBY 当前阶段应使用的亮度百分比。
  */
-static uint8_t ui_refresh_policy_compute_dim_brightness(uint8_t percent)
+static uint8_t ui_refresh_policy_compute_standby_brightness(uint8_t percent)
 {
-    uint32_t scaled = ((uint32_t)percent * k_idle_brightness_percent) / 100U;
-    if (percent > 0U && scaled == 0U)
+    if (percent == 0U)
     {
-        return 1U;
+        return 0U;
     }
-    return (uint8_t)scaled;
+
+    int64_t standby_elapsed_us = esp_timer_get_time() - s_standby_enter_time_us;
+    if (standby_elapsed_us < 0)
+    {
+        standby_elapsed_us = 0;
+    }
+    if (standby_elapsed_us >= k_standby_fade_us)
+    {
+        return 0U;
+    }
+
+    const int64_t remaining_us = k_standby_fade_us - standby_elapsed_us;
+    return (uint8_t)(((uint32_t)percent * (uint32_t)remaining_us) /
+                     (uint32_t)k_standby_fade_us);
 }
 
 /**
  * @brief 判断某个刷新策略状态是否应保持用户配置的原始亮度。
  *
  * @param[in] state 当前最终刷新策略状态。
- * @return true 表示应保持用户亮度；false 表示应进入 dim 亮度。
+ * @return true 表示应保持用户亮度；false 表示应进入 STANDBY 渐暗亮度。
  */
 static bool ui_refresh_policy_state_uses_full_brightness(
     ui_refresh_policy_state_t state)
@@ -103,7 +116,7 @@ static uint8_t ui_refresh_policy_get_effective_brightness_percent(void)
         return s_user_brightness_percent;
     }
 
-    return ui_refresh_policy_compute_dim_brightness(s_user_brightness_percent);
+    return ui_refresh_policy_compute_standby_brightness(s_user_brightness_percent);
 }
 
 /**
@@ -117,8 +130,8 @@ static const char *ui_refresh_policy_state_name(ui_refresh_policy_state_t state)
     {
     case UI_REFRESH_POLICY_STATE_ACTIVE:
         return "active";
-    case UI_REFRESH_POLICY_STATE_IDLE_DIM:
-        return "idle_dim";
+    case UI_REFRESH_POLICY_STATE_STANDBY:
+        return "standby";
     case UI_REFRESH_POLICY_STATE_FORCE_ACTIVE:
         return "force_active";
     default:
@@ -138,8 +151,8 @@ static ui_refresh_policy_activity_state_t ui_refresh_policy_public_activity_stat
     {
     case UI_REFRESH_POLICY_STATE_ACTIVE:
         return UI_REFRESH_POLICY_ACTIVITY_ACTIVE;
-    case UI_REFRESH_POLICY_STATE_IDLE_DIM:
-        return UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM;
+    case UI_REFRESH_POLICY_STATE_STANDBY:
+        return UI_REFRESH_POLICY_ACTIVITY_STANDBY;
     case UI_REFRESH_POLICY_STATE_FORCE_ACTIVE:
         return UI_REFRESH_POLICY_ACTIVITY_FORCE_ACTIVE;
     default:
@@ -230,6 +243,14 @@ static void ui_refresh_policy_set_state(ui_refresh_policy_state_t next_state)
              ui_refresh_policy_state_name(s_state),
              ui_refresh_policy_state_name(next_state));
     s_state = next_state;
+    if (next_state == UI_REFRESH_POLICY_STATE_STANDBY)
+    {
+        s_standby_enter_time_us = esp_timer_get_time();
+    }
+    else
+    {
+        s_standby_enter_time_us = 0;
+    }
 }
 
 /**
@@ -268,13 +289,13 @@ static bool ui_refresh_policy_is_ble_provisioning_active(void)
 /**
  * @brief 根据当前交互输入条件计算活跃状态。
  *
- * 这里专门只处理“用户是否活跃/是否允许 dim”这个维度：
- * - `FORCE_ACTIVE` 表示上层场景禁止自动 dim；
- * - `ACTIVE` 表示最近 5 秒内仍有交互；
- * - `IDLE_DIM` 表示已进入可调暗、可降低刷新频率的空闲态。
+ * 这里专门只处理“用户是否活跃/是否允许 STANDBY”这个维度：
+ * - `FORCE_ACTIVE` 表示上层场景禁止自动待机；
+ * - `ACTIVE` 表示最近 30 秒内仍有交互；
+ * - `STANDBY` 表示已进入渐暗、低刷新运行态待机。
  *
  * BLE provisioning 的资源保护不在这里混算，而是单独走 `s_throttle_mode`。
- * 这样可以保留“配网期间仍然允许 5 秒后 dim”的节电语义，避免一个状态同时承担
+ * 这样可以保留“配网期间仍然允许 30 秒后 STANDBY”的节电语义，避免一个状态同时承担
  * “是否活跃”和“是否要限流”两种职责。
  *
  * @return 当前交互活跃状态。
@@ -292,19 +313,19 @@ static ui_refresh_policy_state_t ui_refresh_policy_compute_state(void)
         idle_time_us = 0;
     }
 
-    if (idle_time_us <= k_active_timeout_us)
+    if (idle_time_us <= k_standby_timeout_us)
     {
         return UI_REFRESH_POLICY_STATE_ACTIVE;
     }
 
-    return UI_REFRESH_POLICY_STATE_IDLE_DIM;
+    return UI_REFRESH_POLICY_STATE_STANDBY;
 }
 
 /**
  * @brief 根据当前系统条件计算刷新节流模式。
  *
  * 节流模式只表达“当前系统是否需要为了资源稳定性而主动降载”。
- * 它不决定是否 dim，也不覆盖 `ACTIVE / IDLE_DIM / FORCE_ACTIVE` 的交互语义。
+ * 它不决定是否进入 STANDBY，也不覆盖 `ACTIVE / STANDBY / FORCE_ACTIVE` 的交互语义。
  *
  * @return 当前系统级节流模式。
  */
@@ -320,11 +341,12 @@ ui_refresh_policy_compute_throttle_mode(void)
  * @brief 初始化刷新策略状态机。
  *
  * 初始化后默认进入活跃态，并立即把亮度同步到默认用户亮度，
- * 保证开机后不会沿用上一次缓存的 dim 状态。
+ * 保证开机后不会沿用上一次缓存的 STANDBY 状态。
  */
 void ui_refresh_policy_init(void)
 {
     s_last_touch_time_us = esp_timer_get_time();
+    s_standby_enter_time_us = 0;
     s_state = UI_REFRESH_POLICY_STATE_ACTIVE;
     s_throttle_mode = UI_REFRESH_POLICY_THROTTLE_MODE_NORMAL;
     s_force_active = false;
@@ -341,7 +363,7 @@ void ui_refresh_policy_init(void)
  * 典型调用点是触摸驱动、按键输入或编码器旋转。
  * 该接口只刷新时间戳；真正的空闲态判断仍由 `ui_refresh_policy_poll()` 统一执行。
  */
-void ui_refresh_policy_notify_touch(void)
+void ui_refresh_policy_notify_activity(void)
 {
     if (!s_initialized)
     {
@@ -353,9 +375,14 @@ void ui_refresh_policy_notify_touch(void)
     ui_refresh_policy_apply_brightness_if_needed();
 }
 
+void ui_refresh_policy_notify_touch(void)
+{
+    ui_refresh_policy_notify_activity();
+}
+
 /**
  * @brief 打开或关闭强制活跃模式。
- * @param enabled true 表示禁止自动 dim 和自动降频；false 表示恢复普通策略。
+ * @param enabled true 表示禁止自动 STANDBY 和自动降频；false 表示恢复普通策略。
  */
 void ui_refresh_policy_set_force_active(bool enabled)
 {
@@ -386,7 +413,7 @@ bool ui_refresh_policy_is_force_active(void)
  * @brief 设置用户期望亮度百分比。
  * @param percent 用户设置的原始亮度值，超过 100 会被钳制。
  *
- * 该值不是最终输出亮度。若策略当前处于空闲 dim 态，最终下发值会进一步按比例缩小。
+ * 该值不是最终输出亮度。若策略当前处于 STANDBY，最终下发值会按渐暗进度缩小。
  */
 void ui_refresh_policy_set_user_brightness_percent(uint8_t percent)
 {
@@ -435,7 +462,7 @@ bool ui_refresh_policy_get_activity_snapshot(
     snapshot->initialized = s_initialized;
     snapshot->active = s_state == UI_REFRESH_POLICY_STATE_ACTIVE ||
                        s_state == UI_REFRESH_POLICY_STATE_FORCE_ACTIVE;
-    snapshot->idle_dim = s_state == UI_REFRESH_POLICY_STATE_IDLE_DIM;
+    snapshot->standby = s_state == UI_REFRESH_POLICY_STATE_STANDBY;
     snapshot->force_active = s_force_active;
     snapshot->provisioning_throttled =
         s_throttle_mode == UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING;
@@ -461,7 +488,7 @@ bool ui_refresh_policy_get_activity_snapshot(
  * @return 应实际传给 `vTaskDelay()` 的毫秒值。
  *
  * 活跃态优先保证流畅度，因此把最大延时压到 16ms；
- * 空闲态优先省电，因此把最小延时抬高到 100ms。
+ * STANDBY 优先省电，因此把最小延时抬高到 500ms。
  * 若当前正跑 BLE provisioning，则进一步把最小唤醒间隔抬高，
  * 优先降低显示 flush 与 NimBLE / Wi-Fi scan 对片内 DMA 内存的竞争。
  */
@@ -474,10 +501,10 @@ uint32_t ui_refresh_policy_adjust_delay(uint32_t next_call_ms)
 
     if (s_throttle_mode == UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING)
     {
-        if (s_state == UI_REFRESH_POLICY_STATE_IDLE_DIM)
+        if (s_state == UI_REFRESH_POLICY_STATE_STANDBY)
         {
-            return next_call_ms < k_provisioning_idle_delay_ms
-                       ? k_provisioning_idle_delay_ms
+            return next_call_ms < k_provisioning_standby_delay_ms
+                       ? k_provisioning_standby_delay_ms
                        : next_call_ms;
         }
 
@@ -492,7 +519,7 @@ uint32_t ui_refresh_policy_adjust_delay(uint32_t next_call_ms)
         return next_call_ms > k_active_delay_ms ? k_active_delay_ms : next_call_ms;
     }
 
-    return next_call_ms < k_idle_delay_ms ? k_idle_delay_ms : next_call_ms;
+    return next_call_ms < k_standby_delay_ms ? k_standby_delay_ms : next_call_ms;
 }
 
 /**

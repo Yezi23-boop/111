@@ -17,6 +17,7 @@ class UiRefreshPolicySourceTests(unittest.TestCase):
 
         self.assertIn("void ui_refresh_policy_init(void);", header)
         self.assertIn("void ui_refresh_policy_notify_touch(void);", header)
+        self.assertIn("void ui_refresh_policy_notify_activity(void);", header)
         self.assertIn("void ui_refresh_policy_set_force_active(bool enabled);", header)
         self.assertIn(
             "void ui_refresh_policy_set_user_brightness_percent(uint8_t percent);",
@@ -32,18 +33,21 @@ class UiRefreshPolicySourceTests(unittest.TestCase):
             header,
         )
 
-    def test_policy_source_uses_5s_timeout_16ms_active_100ms_idle_and_40_percent_dim(self) -> None:
+    def test_policy_source_uses_30s_standby_timeout_gradual_dim_and_500ms_standby_delay(self) -> None:
         self.assertTrue(
             UI_REFRESH_POLICY_SOURCE.exists(),
             "main/ui/ui_refresh_policy.c should exist",
         )
         source = UI_REFRESH_POLICY_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("5000", source)
-        self.assertIn("16", source)
-        self.assertIn("100", source)
-        self.assertIn("40", source)
+        self.assertIn("k_standby_timeout_us = 30000LL * 1000LL", source)
+        self.assertIn("k_standby_fade_us = 5000LL * 1000LL", source)
+        self.assertIn("k_active_delay_ms = 16U", source)
+        self.assertIn("k_standby_delay_ms = 500U", source)
+        self.assertIn("ui_refresh_policy_compute_standby_brightness", source)
+        self.assertIn("return 0U;", source)
         self.assertIn("ui_refresh_policy_notify_touch", source)
+        self.assertIn("ui_refresh_policy_notify_activity", source)
         self.assertIn("ui_refresh_policy_set_force_active", source)
         self.assertIn("co5300_panel_set_brightness", source)
 
@@ -55,7 +59,7 @@ class UiRefreshPolicySourceTests(unittest.TestCase):
         self.assertIn("NETWORK_MANAGER_STATE_PROVISIONING_BLE", source)
         self.assertIn("UI_REFRESH_POLICY_THROTTLE_MODE_PROVISIONING", source)
         self.assertIn("k_provisioning_active_delay_ms = 80U", source)
-        self.assertIn("k_provisioning_idle_delay_ms = 250U", source)
+        self.assertIn("k_provisioning_standby_delay_ms = 500U", source)
         self.assertIn("ui_refresh_policy_compute_state", source)
         self.assertIn("ui_refresh_policy_compute_throttle_mode", source)
         self.assertNotIn("UI_REFRESH_POLICY_STATE_PROVISIONING_THROTTLED", source)
@@ -66,12 +70,14 @@ class UiRefreshPolicySourceTests(unittest.TestCase):
         source = UI_REFRESH_POLICY_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("UI_REFRESH_POLICY_ACTIVITY_ACTIVE", header)
-        self.assertIn("UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM", header)
+        self.assertIn("UI_REFRESH_POLICY_ACTIVITY_STANDBY", header)
         self.assertIn("UI_REFRESH_POLICY_ACTIVITY_FORCE_ACTIVE", header)
         self.assertIn("UI_REFRESH_POLICY_THROTTLE_NORMAL", header)
         self.assertIn("UI_REFRESH_POLICY_THROTTLE_PROVISIONING", header)
         self.assertIn("target_brightness_percent", header)
         self.assertIn("idle_time_ms", header)
+        self.assertIn("bool standby;", header)
+        self.assertNotIn("UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM", header)
 
         match = re.search(
             r"bool ui_refresh_policy_get_activity_snapshot\([^)]*\)\s*\{(?P<body>.*?)\n\}",

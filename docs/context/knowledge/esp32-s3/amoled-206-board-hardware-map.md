@@ -2,7 +2,7 @@
 id: esp32-s3-amoled-206-board-hardware-map
 tags: esp32-s3, schematic, hardware, display, touch, audio, power
 summary: 基于原理图和现有代码整理的 ESP32-S3-Touch-AMOLED-2.06 板级器件与关键网络映射。
-last_reviewed: 2026-04-09
+last_reviewed: 2026-06-01
 memory_type: semantic
 scope: board
 owners: components/co5300_panel, components/touch_ft5x06, components/audio_codec, components/axp2101
@@ -15,7 +15,8 @@ evidence_level: observed
 ## 原理图文件位置
 
 - 仓库路径：`D:\esp32S3\111\ESP32-S3-Touch-AMOLED-2.06.pdf`
-- 当前上下文默认以仓库内这份 PDF 为准。
+- 本次复核文件：`C:\Users\ye\Desktop\esp32s3手表项目手册\ESP32-S3-Touch-AMOLED-2.06.pdf`
+- 两份文件名一致时，当前上下文默认以视觉复核过的原理图 PDF 为准。
 
 ## 核心器件
 
@@ -54,6 +55,13 @@ evidence_level: observed
 - `U0TXD -> GPIO43`、`U0RXD -> GPIO44`
 - `GPIO10 <- SYS_OUT`
   - 该信号来自 `PWRON` 按键链路经 `BSS138` 与上拉网络变换后的镜像，不是 `PWRON` 原始网络本身
+- `AXP2101 IRQ -> AXP_IRQ / EXIO5`
+  - 该信号通过 `RP5 10k` 上拉到 `VCC_RTC`，应按 active-low/open-drain 输入建模
+  - 当前 PDF 的 ESP32 GPIO 汇总表没有列出 `AXP_IRQ` 或 `EXIO5`，因此不能从这份原理图推断它已接到某个 ESP32-S3 GPIO
+- `AXP2101 PWROK -> CHIP_PU`
+  - `PWROK` 属于硬件级 enable/reset 链路，不应在应用层当普通 GPIO 状态脚读写
+- `AXP2101 RTCLDO -> VCC_RTC`，`VBACKUP -> VBAT2`
+  - RTC 保活与低功耗设计需要把 `VCC_RTC/VBAT2` 一起纳入电源域模型
 
 ## 共享资源提示
 
@@ -61,8 +69,10 @@ evidence_level: observed
 - 显示使用独立 `QSPI` 和 `TE` 信号，不与触摸/音频复用总线，但会与 UI 刷新时序强相关。
 - 电源由 `AXP2101` 集中管理，后续若做低功耗、背光、唤醒或 RTC 保活，需要优先从 PMIC 视角建模。
 - `GPIO10` 虽然当前软件作为配网键使用，但从原理图看它实际接的是 `SYS_OUT`，与 `PWRON` 物理按键链路相关联，后续做电源键语义时不能把它当完全独立的普通按键。
+- `AXP_IRQ/EXIO5` 不是当前已确认的 MCU GPIO；在没有 PCB 网表、更多板级资料或实测导通证据前，禁止把它配置为 `gpio_isr_handler_add()` 或 ESP sleep wakeup source。
 
 ## 适用边界
 
-- 本文基于仓库内该原理图 PDF 的文本提取结果与当前代码交叉整理。
-- 原理图在当前环境无法做 Poppler 渲染校验，因此若后续涉及丝印、页号定位或封装方向，请再做一次视觉复核。
+- 本文基于原理图 PDF 的 Poppler 渲染截图、文本提取结果与当前代码交叉整理。
+- 第 1 页是电路原理图，可用于网络连接判断；第 2/3 页更接近 PCB 丝印/布局参考，只能辅助定位器件，不应用来单独推断网络连接。
+- 若后续要确认 `EXIO5` 最终是否接入 MCU，需要 PCB 网表、更多板级资料，或用万用表/逻辑分析仪从 `AXP_IRQ/RP5` 到 ESP32-S3 引脚做实测闭环。

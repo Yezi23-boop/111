@@ -9,12 +9,16 @@
 #include "esp_timer.h"
 #include "esp_freertos_hooks.h"
 #include "features/weather/time_weather.h"
+#include "features/alerts/app_alert_manager.h"
 #include "ui/lvgl_task.h"
 #include "hardware_init.h"
 #include "services/network_service.h"
 #include "services/official_chat_service.h"
 #include "services/power_service.h"
 #include "services/power_policy.h"
+#include "services/sleep_coordinator.h"
+#include "services/wakeup_evidence_service.h"
+#include "services/system_time_service.h"
 #include "services/background_service_manager.h"
 #include "services/startup_readiness.h"
 
@@ -101,6 +105,21 @@ static void start_core_policy(void)
         return;
     }
 
+    if (sleep_coordinator_start() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Sleep coordinator start failed");
+    }
+
+    if (wakeup_evidence_service_start() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Wakeup evidence service start failed");
+    }
+
+    if (system_time_service_start() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "System time service start failed");
+    }
+
     ESP_LOGI(TAG, "boot_stage: policy_ready");
 }
 
@@ -109,6 +128,11 @@ static void start_core_policy(void)
  */
 static void start_service_managers(void)
 {
+    if (app_alert_manager_init() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "App alert manager init failed");
+    }
+
     /*
      * 后台服务管理器是系统级功能开关层。第一阶段先托管危险识别，
      * 让它脱离“进入专页才运行、离开专页就停止”的页面生命周期。

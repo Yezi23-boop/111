@@ -9,7 +9,7 @@
 /*
  * 文件作用：
  * - 封装 UI 刷新频率与背光亮度之间的联动策略；
- * - 对外隐藏活跃态 / 空闲态 / 强制活跃态切换细节；
+ * - 对外隐藏活跃态 / STANDBY / 强制活跃态切换细节；
  * - 提供给 LVGL 主循环、输入驱动和亮度设置控件一个稳定接口。
  *
  * UI 刷新策略模块：
@@ -17,7 +17,7 @@
  * 2. 降频时同时配合 `co5300_panel` 调低背光，降低整机空闲功耗。
  * 3. 当 `network_manager` 进入 BLE provisioning 时，会叠加专门的受限刷新节流模式，
  *    优先降低显示 flush 与 BLE / Wi-Fi scan 对片内 DMA 的竞争，但不会破坏原有
- *    `5s` 无触摸后进入 dim 的交互语义。
+ *    `30s` 无活跃后进入 STANDBY 的交互语义。
  * 4. 对上层暴露的接口尽量简单，只提供“触摸通知 / 强制常亮 / 用户亮度 / 延时调整 / 只读快照”五类能力，
  *    这样 UI 控制器、输入设备和屏幕驱动可以解耦。
  */
@@ -35,8 +35,8 @@ extern "C"
     typedef enum
     {
         UI_REFRESH_POLICY_ACTIVITY_ACTIVE = 0,      /**< 最近有交互，保持全亮和高刷新。 */
-        UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM,        /**< 已空闲，允许 dim 和刷新降频。 */
-        UI_REFRESH_POLICY_ACTIVITY_FORCE_ACTIVE,    /**< 上层场景要求禁止自动 dim。 */
+        UI_REFRESH_POLICY_ACTIVITY_STANDBY,         /**< 已进入运行态待机，允许渐进变暗和刷新降频。 */
+        UI_REFRESH_POLICY_ACTIVITY_FORCE_ACTIVE,    /**< 上层场景要求禁止自动待机。 */
         UI_REFRESH_POLICY_ACTIVITY_UNINITIALIZED,   /**< 策略尚未初始化。 */
     } ui_refresh_policy_activity_state_t;
 
@@ -59,8 +59,8 @@ extern "C"
     {
         bool initialized;                                      /**< true 表示策略已初始化。 */
         bool active;                                           /**< true 表示当前按活跃态处理。 */
-        bool idle_dim;                                         /**< true 表示当前已进入空闲 dim。 */
-        bool force_active;                                     /**< true 表示上层禁止自动 dim。 */
+        bool standby;                                          /**< true 表示当前已进入运行态待机。 */
+        bool force_active;                                     /**< true 表示上层禁止自动待机。 */
         bool provisioning_throttled;                           /**< true 表示 BLE 配网刷新节流生效。 */
         ui_refresh_policy_activity_state_t activity_state;     /**< 当前交互活跃状态。 */
         ui_refresh_policy_throttle_mode_t throttle_mode;       /**< 当前系统级节流模式。 */
@@ -78,13 +78,16 @@ extern "C"
     /* 在触摸、编码器、按键等任意“用户活跃”事件后调用，用来刷新活跃超时计时器。 */
     void ui_refresh_policy_notify_touch(void);
 
+    /* 在高优先级提示等非触摸场景需要唤醒 UI 时调用。 */
+    void ui_refresh_policy_notify_activity(void);
+
     /* 强制保持活跃模式，通常用于播放动画、重要提示页或不希望被自动调暗的场景。 */
     void ui_refresh_policy_set_force_active(bool enabled);
 
     /* 查询当前是否处于强制活跃模式。 */
     bool ui_refresh_policy_is_force_active(void);
 
-    /* 设置用户期望亮度百分比，策略层会在活跃/空闲状态下换算出最终背光值。 */
+    /* 设置用户期望亮度百分比，策略层会在活跃/STANDBY 状态下换算出最终背光值。 */
     void ui_refresh_policy_set_user_brightness_percent(uint8_t percent);
 
     /* 获取用户配置的原始亮度百分比，而不是当前实际输出到屏幕的亮度。 */
@@ -104,7 +107,7 @@ extern "C"
     /*
      * 根据当前策略修正 LVGL 主循环的下一次唤醒时间：
      * - 活跃态：限制最大延时，保证交互和动画流畅。
-     * - 空闲态：拉长最小延时，减少无意义刷新。
+     * - STANDBY：拉长最小延时，减少无意义刷新。
      */
     uint32_t ui_refresh_policy_adjust_delay(uint32_t next_call_ms);
 

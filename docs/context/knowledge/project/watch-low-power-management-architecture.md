@@ -1,20 +1,23 @@
 ---
 id: watch-low-power-management-architecture
-tags: project, power, low-power, axp2101, rtc, lvgl, wifi
-summary: 当前手表项目低功耗管理的推荐状态机、模块分层、实施顺序与硬件边界。
+tags: project, power, low-power, axp2101, rtc, lvgl, wifi, superseded
+summary: 历史低功耗路线记录，已被 low-power-framework-architecture.md 取代；仅保留早期分阶段思路，不再作为当前实现依据。
 last_reviewed: 2026-05-12
 memory_type: semantic
 scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power_service.c, main/ui/ui_refresh_policy.c
 triggers: watch, low, power, management, architecture
 evidence_level: design
+status: superseded
 ---
 
 # 手表项目低功耗管理架构
 
+> Superseded: 本文是 2026-05-12 的历史路线记录，当前低功耗总框架以 `docs/context/knowledge/project/low-power-framework-architecture.md` 为准。后续实现不要继续沿用本文中的独立 `Idle-Dim` 产品状态、`power_policy` 跨模块硬件编排、`Standby` 直接停音频、或“先闭环 RTC/PMIC 外部唤醒再做 timer-based 显式 sleep 实验”的旧前置条件。
+
 ## 推荐路线
 
-当前项目不适合直接上“深睡一把梭”，更适合按 Apple Watch 风格做分层降级：
+历史判断：当前项目不适合直接上“深睡一把梭”，曾推荐按 Apple Watch 风格做分层降级：
 
 1. `Active`
 2. `Idle-Dim`
@@ -38,7 +41,9 @@ evidence_level: design
 - `docs/context/knowledge/esp32-s3/axp2101-deep-dive.md`
 - `docs/context/knowledge/esp32-s3/pcf85063atl-minimal-probe.md`
 
-## 推荐分层
+## 历史推荐分层
+
+当前实现依据已更新：`power_policy` 是预算发布者，不是硬件执行者；sleep 执行权后续归窄职责 `sleep_coordinator`。下面分层仅作为历史上下文，不再作为新增代码落点依据。
 
 ```text
 components/axp2101
@@ -51,7 +56,7 @@ main/services/power_service.[ch]
   -> 状态采样与发布
 
 main/services/power_policy.[ch]
-  -> 低功耗状态机与跨模块编排
+  -> 历史写法：低功耗状态机与跨模块编排
 ```
 
 ## 各阶段目标
@@ -67,7 +72,7 @@ main/services/power_policy.[ch]
 
 - 灭屏
 - 降网络活跃
-- 停音频
+- 历史写法：停音频。当前 V1 不直接关 codec/I2S，音频活跃应阻止或退出 STANDBY。
 - 保留快速唤醒
 
 ### 阶段 3：RTC 准备

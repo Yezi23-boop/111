@@ -2,16 +2,39 @@ import unittest
 import re
 
 from tests.main_paths import APP_MAIN_SOURCE
+from tests.main_paths import APP_ALERT_MANAGER_SOURCE
+from tests.main_paths import BACKGROUND_SERVICE_MANAGER_SOURCE
+from tests.main_paths import DISPLAY_ALERT_ADAPTER_SOURCE
 from tests.main_paths import HARDWARE_INIT_SOURCE
 from tests.main_paths import LVGL_TASK_SOURCE
+from tests.main_paths import NETWORK_SERVICE_SOURCE
 from tests.main_paths import POWER_POLICY_HEADER
 from tests.main_paths import POWER_POLICY_SOURCE
 from tests.main_paths import REPO_ROOT
+from tests.main_paths import SLEEP_COORDINATOR_HEADER
+from tests.main_paths import SLEEP_COORDINATOR_SOURCE
 from tests.main_paths import STARTUP_READINESS_HEADER
 from tests.main_paths import STARTUP_READINESS_SOURCE
 
 
 MAIN_CMAKE = REPO_ROOT / "main" / "CMakeLists.txt"
+FORBIDDEN_SLEEP_APIS = (
+    "esp_light_sleep_start",
+    "esp_deep_sleep_start",
+    "esp_sleep_enable_timer_wakeup",
+    "esp_sleep_enable_gpio_wakeup",
+    "esp_sleep_enable_ext0_wakeup",
+    "esp_sleep_enable_ext1_wakeup",
+    "esp_sleep_get_wakeup_cause",
+)
+
+
+def _iter_project_source_files():
+    for base in (REPO_ROOT / "main", REPO_ROOT / "components"):
+        for path in base.rglob("*"):
+            if path.suffix.lower() not in {".c", ".cc", ".cpp"}:
+                continue
+            yield path
 
 
 def _strip_c_comments_and_strings(source: str) -> str:
@@ -179,6 +202,13 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         self.assertGreaterEqual(policy_stage_pos, 0)
         self.assertLess(ui_stage_pos, policy_stage_pos)
 
+    def test_app_main_does_not_auto_enable_sleep_test(self) -> None:
+        raw_source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
+        self.assertIn("sleep_coordinator_start()", raw_source)
+        self.assertNotIn("SLEEP_COORDINATOR_LIGHT_TEST_ENABLED", raw_source)
+        self.assertNotIn("SLEEP_COORDINATOR_MODE_LIGHT_TEST", raw_source)
+        self.assertNotIn("sleep_coordinator_set_mode(", raw_source)
+
     def test_main_cmake_registers_new_sources_and_axp2101_dependency(self) -> None:
         self.assertTrue(MAIN_CMAKE.exists(), "main/CMakeLists.txt should exist")
         source = MAIN_CMAKE.read_text(encoding="utf-8")
@@ -190,6 +220,10 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         self.assertIn("${CMAKE_CURRENT_LIST_DIR}/app/board_power.c", app_srcs)
         self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/power_service.c", service_srcs)
         self.assertIn(
+            "${CMAKE_CURRENT_LIST_DIR}/services/sleep_coordinator.c",
+            service_srcs,
+        )
+        self.assertIn(
             "${CMAKE_CURRENT_LIST_DIR}/services/startup_readiness.c",
             service_srcs,
         )
@@ -200,6 +234,10 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         self.assertRegex(
             register_block,
             r"\bREQUIRES\b[\s\S]*?\baxp2101\b",
+        )
+        self.assertRegex(
+            register_block,
+            r"\bREQUIRES\b[\s\S]*?\bwifi_control\b",
         )
 
     def test_startup_readiness_waits_on_ui_first_frame_signal(self) -> None:
@@ -227,13 +265,11 @@ class PowerIntegrationSourceTests(unittest.TestCase):
 
         self.assertIn("power_policy_set_maintenance_window", header)
         self.assertIn("s_maintenance_window_active", source)
-        self.assertIn("POWER_POLICY_STATE_MAINTENANCE", source)
+        self.assertIn("POWER_POLICY_STATE_STANDBY", source)
         self.assertIn("budget.danger_detection_allowed = false", source)
+        self.assertIn("POWER_POLICY_FLAG_MAINTENANCE", source)
         self.assertIn("maintenance_window_%s", source)
-        self.assertLess(
-            source.index("if (budget.low_battery_warn)"),
-            source.index("maintenance_window_active && !budget.low_battery_warn"),
-        )
+        self.assertIn("if (maintenance_window_active)", source)
         self.assertNotIn("danger_detection_service_", source)
         self.assertNotIn("safety_monitor_session_", source)
 
@@ -241,9 +277,14 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         source = POWER_POLICY_SOURCE.read_text(encoding="utf-8")
         self.assertIn('#include "ui_refresh_policy.h"', source)
         self.assertIn("ui_refresh_policy_get_activity_snapshot", source)
-        self.assertIn("UI_REFRESH_POLICY_ACTIVITY_IDLE_DIM", source)
-        self.assertIn("budget->state = POWER_POLICY_STATE_IDLE_DIM", source)
+        self.assertIn("UI_REFRESH_POLICY_ACTIVITY_STANDBY", source)
+        self.assertIn("budget->state = POWER_POLICY_STATE_STANDBY", source)
+        self.assertIn("budget->network_sync_allowed = false", source)
+        self.assertIn("budget->maintenance_allowed = false", source)
         self.assertIn("budget->ui_high_refresh_allowed = false", source)
+        self.assertIn("k_light_allowed_idle_time_ms = 5LL * 60LL * 1000LL", source)
+        self.assertIn("activity_snapshot.idle_time_ms >= k_light_allowed_idle_time_ms", source)
+        self.assertIn("budget->sleep_interval_hint_ms = k_standby_sleep_interval_hint_ms", source)
         self.assertIn("ui_high_refresh=%d", source)
 
         helper_match = re.search(
@@ -255,17 +296,84 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         self.assertNotIn("danger_detection_allowed", helper_body)
 
         self.assertLess(
+            source.index("if (maintenance_window_active)"),
             source.index("power_policy_apply_ui_activity_budget(&budget);"),
-            source.index("if (budget.external_power_present)"),
         )
         self.assertLess(
             source.index("power_policy_apply_ui_activity_budget(&budget);"),
-            source.index("if (budget.low_battery_warn)"),
+            source.index("if (budget.external_power_present &&"),
         )
-        self.assertLess(
-            source.index("if (budget.external_power_present)"),
-            source.index("budget.state = POWER_POLICY_STATE_CHARGING;"),
+
+    def test_low_battery_warn_is_flag_only_not_ui_prompt_or_shutdown(self) -> None:
+        power_source = POWER_POLICY_SOURCE.read_text(encoding="utf-8")
+        background_source = BACKGROUND_SERVICE_MANAGER_SOURCE.read_text(encoding="utf-8")
+        app_alert_source = APP_ALERT_MANAGER_SOURCE.read_text(encoding="utf-8")
+        display_source = DISPLAY_ALERT_ADAPTER_SOURCE.read_text(encoding="utf-8")
+        app_main_source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("POWER_POLICY_FLAG_LOW_BATTERY_WARN", power_source)
+        self.assertIn("battery_data_valid", power_source)
+        self.assertIn("battery_percent", power_source)
+        self.assertIn("battery_mv", power_source)
+        self.assertNotIn("background_service_manager_sync_low_battery_prompt", background_source)
+        self.assertNotIn("app_alert_manager_set_low_battery_warning", background_source)
+        self.assertIn("app_alert_manager_set_low_battery_warning", app_alert_source)
+        self.assertIn("ui_refresh_policy_notify_activity", app_alert_source)
+        self.assertIn("display_alert_adapter_show_low_battery_warning", app_alert_source)
+        self.assertIn("display_alert_adapter_hide_low_battery_warning", app_alert_source)
+        self.assertIn("display_alert_adapter_show_low_battery_warning", display_source)
+        self.assertIn("display_alert_adapter_hide_low_battery_warning", display_source)
+        self.assertIn("电量较低", display_source)
+        self.assertIn("app_alert_manager_init()", app_main_source)
+        self.assertIn("budget.low_battery_warn", power_source)
+        self.assertNotIn("budget.state = POWER_POLICY_STATE_LOW_BATTERY_WARN", power_source)
+        self.assertNotIn("POWER_POLICY_STATE_LOW_BATTERY_WARN", POWER_POLICY_HEADER.read_text(encoding="utf-8"))
+        self.assertNotIn("esp_deep_sleep_start", power_source)
+        self.assertNotIn("esp_deep_sleep_start", background_source)
+
+        low_battery_branch = power_source.split("if (budget.low_battery_warn)", 1)[1].split(
+            "if (maintenance_window_active)", 1
+        )[0]
+        self.assertNotIn("budget.state", low_battery_branch)
+        self.assertNotIn("sleep_permission", low_battery_branch)
+        self.assertNotIn("sleep_interval_hint_ms", low_battery_branch)
+        self.assertNotIn("display_budget", low_battery_branch)
+        self.assertNotIn("background_budget", low_battery_branch)
+        self.assertNotIn("network_sync_allowed = false", low_battery_branch)
+        self.assertNotIn("ui_high_refresh_allowed = false", low_battery_branch)
+        self.assertNotIn("esp_light_sleep_start", power_source)
+
+    def test_p0_alert_wakes_ui_on_first_raise_and_repeat(self) -> None:
+        source = APP_ALERT_MANAGER_SOURCE.read_text(encoding="utf-8")
+
+        first_check = source.index("ESP_RETURN_ON_FALSE(initialized")
+        wake_pos = source.index("ui_refresh_policy_notify_activity();")
+        repeat_pos = source.index("if (same_source_active)")
+        show_pos = source.index("display_alert_adapter_show_danger_overlay")
+
+        self.assertLess(first_check, wake_pos)
+        self.assertLess(wake_pos, repeat_pos)
+        self.assertLess(wake_pos, show_pos)
+
+    def test_standby_network_budget_enables_wifi_ps_without_disconnect(self) -> None:
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include "services/power_policy.h"', source)
+        self.assertIn('#include "wifi_control.h"', source)
+        self.assertIn("network_service_apply_power_budget", source)
+        self.assertIn("POWER_POLICY_STATE_STANDBY", source)
+        self.assertIn("wifi_control_set_power_save(power_save)", source)
+        self.assertIn("network sync paused by power budget", source)
+
+        helper_match = re.search(
+            r"static void network_service_apply_power_budget\(void\)\s*\{(?P<body>.*?)\n\}",
+            source,
+            re.DOTALL,
         )
+        self.assertIsNotNone(helper_match)
+        helper_body = helper_match.group("body")
+        self.assertNotIn("network_manager_disconnect", helper_body)
+        self.assertNotIn("esp_wifi_stop", helper_body)
 
     def test_power_policy_does_not_control_ui_refresh_or_display(self) -> None:
         source = _strip_c_comments_and_strings(
@@ -277,6 +385,79 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         self.assertNotIn("set_brightness", source)
         self.assertNotIn("lv_timer_handler", source)
         self.assertNotIn("lv_obj", source)
+
+    def test_power_policy_publishes_sleep_budget_without_sleep_api(self) -> None:
+        header = POWER_POLICY_HEADER.read_text(encoding="utf-8")
+        source = POWER_POLICY_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("power_policy_sleep_permission_t", header)
+        self.assertIn("POWER_POLICY_SLEEP_LIGHT_ALLOWED", header)
+        self.assertIn("POWER_POLICY_SLEEP_BLOCKER_UI_FORCE_ACTIVE", header)
+        self.assertIn("sleep_interval_hint_ms", header)
+        self.assertIn("sleep_permission", source)
+        self.assertIn("sleep_blockers", source)
+        self.assertIn("power_policy_format_sleep_blockers", source)
+        self.assertIn("power_budget_change:", source)
+        self.assertIn("POWER_POLICY_SLEEP_LIGHT_ALLOWED", source)
+        self.assertIn("k_light_allowed_idle_time_ms = 5LL * 60LL * 1000LL", source)
+        self.assertLess(
+            source.index("activity_snapshot.idle_time_ms >= k_light_allowed_idle_time_ms"),
+            source.index("budget.sleep_permission = POWER_POLICY_SLEEP_LIGHT_ALLOWED"),
+        )
+        self.assertNotIn("esp_light_sleep_start", source)
+        self.assertNotIn("esp_deep_sleep_start", source)
+
+    def test_sleep_coordinator_is_dry_run_only(self) -> None:
+        self.assertTrue(SLEEP_COORDINATOR_HEADER.exists())
+        self.assertTrue(SLEEP_COORDINATOR_SOURCE.exists())
+
+        header = SLEEP_COORDINATOR_HEADER.read_text(encoding="utf-8")
+        raw_source = SLEEP_COORDINATOR_SOURCE.read_text(encoding="utf-8")
+        source = _strip_c_comments_and_strings(raw_source)
+
+        self.assertIn("SLEEP_COORDINATOR_MODE_DRY_RUN", header)
+        self.assertIn("sleep_coordinator_start", header)
+        self.assertNotIn("SLEEP_COORDINATOR_MODE_LIGHT_TEST", header)
+        self.assertNotIn("SLEEP_COORDINATOR_MODE_DEEP_TEST", header)
+        self.assertNotIn("sleep_coordinator_sleep_test_result_t", header)
+        self.assertNotIn("sleep_coordinator_get_sleep_test_result", header)
+        self.assertIn("power_policy_get_budget()", source)
+        self.assertLess(
+            source.index("if (mode != SLEEP_COORDINATOR_MODE_DRY_RUN)"),
+            source.index("power_policy_get_budget()"),
+        )
+        self.assertIn("dry_run:", raw_source)
+        self.assertNotIn("SLEEP_COORDINATOR_LIGHT_TEST_ENABLED", raw_source)
+        self.assertNotIn("SLEEP_COORDINATOR_LIGHT_TEST_OWNER_BLOCKERS_READY", raw_source)
+        self.assertNotIn("light_test", raw_source)
+        self.assertNotIn("esp_sleep_enable_timer_wakeup", source)
+        self.assertNotIn("esp_light_sleep_start", source)
+        self.assertNotIn("esp_sleep_get_wakeup_cause", source)
+        self.assertIn("ESP_ERR_NOT_SUPPORTED", source)
+        self.assertNotIn("ui_refresh_policy", source)
+        self.assertNotIn("network_service", source)
+        self.assertNotIn("network_manager", source)
+        self.assertNotIn("wifi_control", source)
+        self.assertNotIn("esp_wifi", source)
+        self.assertNotIn("audio_codec", source)
+        self.assertNotIn("axp2101", source)
+        self.assertNotIn("pcf85063", source)
+        self.assertNotIn("esp_deep_sleep_start", source)
+
+    def test_manual_sleep_api_calls_are_absent_from_firmware_sources(self) -> None:
+        forbidden_hits = []
+
+        for path in _iter_project_source_files():
+            text = path.read_text(encoding="utf-8")
+            for api in FORBIDDEN_SLEEP_APIS:
+                if api in text:
+                    forbidden_hits.append(f"{path}:{api}")
+
+        self.assertEqual(
+            forbidden_hits,
+            [],
+            msg="manual sleep APIs still present: " + ", ".join(forbidden_hits),
+        )
 
 
 if __name__ == "__main__":

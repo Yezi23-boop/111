@@ -22,6 +22,12 @@ set(service_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/services/power_policy.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/services/sleep_coordinator.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/wakeup_evidence_service.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/system_time_service.c
+
     ${CMAKE_CURRENT_LIST_DIR}/services/startup_readiness.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/safety_monitor_session.c
@@ -164,7 +170,7 @@ idf_component_register(
 
         z_print_esp32
 
-        get_time
+        system_time
 
         sd_card
 
@@ -178,11 +184,15 @@ idf_component_register(
 
         network_manager
 
+        wifi_control
+
         ap_portal_adapter
 
         official_chat
 
         axp2101
+
+        pcf85063atl
 
         78__xiaozhi-fonts
 

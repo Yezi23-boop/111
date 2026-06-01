@@ -2,6 +2,8 @@
 #define POWER_POLICY_H
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -9,7 +11,7 @@
  * 整机资源策略层：
  * - 只把电源快照和运行场景翻译成资源预算；
  * - 不直接读 PMIC 寄存器，不直接操作 LVGL 对象，也不直接启动模型；
- * - 第一阶段接入电源、维护窗口和 UI 活跃度事实，后续再接入 standby 触发源。
+ * - 第一阶段接入电源、维护窗口和 UI 活跃度事实，发布运行态 STANDBY 预算。
  */
 
 #ifdef __cplusplus
@@ -17,28 +19,126 @@ extern "C"
 {
 #endif
 
-    /** 整机资源策略状态。 */
+    /** 整机产品活跃状态；V1 只允许 ACTIVE / STANDBY。 */
     typedef enum
     {
         POWER_POLICY_STATE_ACTIVE = 0,       /**< 正常交互或普通运行态。 */
-        POWER_POLICY_STATE_IDLE_DIM,         /**< UI 已短空闲降亮，但仍保持快速恢复。 */
-        POWER_POLICY_STATE_STANDBY,          /**< 长空闲待机态，第一阶段暂不自动进入。 */
-        POWER_POLICY_STATE_LOW_BATTERY_WARN, /**< 低电量预警预算。 */
-        POWER_POLICY_STATE_CHARGING,         /**< 外部供电或充电预算。 */
-        POWER_POLICY_STATE_MAINTENANCE,      /**< 高压维护窗口，第一阶段只保留枚举。 */
+        POWER_POLICY_STATE_STANDBY,          /**< 运行态待机，不进入 ESP sleep。 */
     } power_policy_state_t;
+
+    /** STANDBY 进入原因；V1 只用于日志和后续扩展，不改变待机档位。 */
+    typedef enum
+    {
+        POWER_POLICY_STANDBY_REASON_NONE = 0,      /**< 当前不处于 STANDBY。 */
+        POWER_POLICY_STANDBY_REASON_AUTO_IDLE,     /**< UI 空闲自动进入 STANDBY。 */
+        POWER_POLICY_STANDBY_REASON_USER_SCREEN_OFF, /**< 用户主动熄屏，预留。 */
+        POWER_POLICY_STANDBY_REASON_LOW_BATTERY_POLICY, /**< 低电量策略触发，预留。 */
+        POWER_POLICY_STANDBY_REASON_SYSTEM_REQUEST, /**< 系统主动请求，预留。 */
+    } power_policy_standby_reason_t;
+
+    /** 显示预算，只表达目标强度，不包含具体面板调用。 */
+    typedef enum
+    {
+        POWER_POLICY_DISPLAY_FULL = 0, /**< 全亮显示。 */
+        POWER_POLICY_DISPLAY_DIM,      /**< 降亮显示，预留。 */
+        POWER_POLICY_DISPLAY_OFF,      /**< 近似熄屏或亮度为 0。 */
+    } power_policy_display_budget_t;
+
+    /** UI 刷新预算。 */
+    typedef enum
+    {
+        POWER_POLICY_UI_HIGH_REFRESH = 0, /**< 允许高刷新。 */
+        POWER_POLICY_UI_LOW_REFRESH,      /**< 降低 LVGL 唤醒频率。 */
+    } power_policy_ui_budget_t;
+
+    /** 网络预算，只表达同步许可和省电强度。 */
+    typedef enum
+    {
+        POWER_POLICY_NETWORK_FULL = 0,    /**< 普通联网和同步。 */
+        POWER_POLICY_NETWORK_POWER_SAVE,  /**< Wi-Fi runtime 省电，预留。 */
+        POWER_POLICY_NETWORK_SYNC_PAUSED, /**< 暂停非关键同步，保留连接。 */
+    } power_policy_network_budget_t;
+
+    /** 后台任务预算。 */
+    typedef enum
+    {
+        POWER_POLICY_BACKGROUND_FULL = 0, /**< 后台任务按用户意图运行。 */
+        POWER_POLICY_BACKGROUND_THROTTLED, /**< 后台任务降频，预留。 */
+        POWER_POLICY_BACKGROUND_PAUSE_OPTIONAL, /**< 暂停可暂停后台任务。 */
+    } power_policy_background_budget_t;
+
+    /** CPU 预算；V1 只发布语义，不直接配置 DFS / pm lock。 */
+    typedef enum
+    {
+        POWER_POLICY_CPU_PERFORMANCE = 0, /**< 性能优先。 */
+        POWER_POLICY_CPU_BALANCED,        /**< 平衡模式，预留。 */
+        POWER_POLICY_CPU_LOW,             /**< 低功耗倾向。 */
+    } power_policy_cpu_budget_t;
+
+    /** 电源观测轮询预算。 */
+    typedef enum
+    {
+        POWER_POLICY_POWER_POLL_NORMAL = 0, /**< 正常轮询。 */
+        POWER_POLICY_POWER_POLL_SLOW,       /**< 降低轮询频率。 */
+    } power_policy_power_poll_budget_t;
+
+    /** 当前最多允许进入的 ESP sleep 深度。 */
+    typedef enum
+    {
+        POWER_POLICY_SLEEP_NONE = 0,   /**< 当前不允许 sleep。 */
+        POWER_POLICY_SLEEP_LIGHT_ALLOWED, /**< 条件允许显式 Light Sleep 测试。 */
+        POWER_POLICY_SLEEP_DEEP_ALLOWED,  /**< V1 普通路径不产生，仅预留。 */
+    } power_policy_sleep_permission_t;
+
+    /** sleep blocker 位图；具体语义由对应 owner 的事实快照提供。 */
+    typedef enum
+    {
+        POWER_POLICY_SLEEP_BLOCKER_NONE = 0,
+        POWER_POLICY_SLEEP_BLOCKER_UI_FORCE_ACTIVE = 1u << 0,   /**< UI 强制活跃。 */
+        POWER_POLICY_SLEEP_BLOCKER_AUDIO_ACTIVE = 1u << 1,      /**< 音频活跃，预留。 */
+        POWER_POLICY_SLEEP_BLOCKER_NETWORK_CRITICAL = 1u << 2,  /**< 网络关键任务，预留。 */
+        POWER_POLICY_SLEEP_BLOCKER_BACKGROUND_CRITICAL = 1u << 3, /**< 后台关键任务，预留。 */
+        POWER_POLICY_SLEEP_BLOCKER_OTA_ACTIVE = 1u << 4,        /**< OTA 活跃，预留。 */
+        POWER_POLICY_SLEEP_BLOCKER_PROVISIONING_ACTIVE = 1u << 5, /**< 配网活跃，预留。 */
+        POWER_POLICY_SLEEP_BLOCKER_ALERT_ACTIVE = 1u << 6,      /**< P0 提醒活跃，预留。 */
+        POWER_POLICY_SLEEP_BLOCKER_DEBUG_LOCK = 1u << 7,        /**< 调试锁定，预留。 */
+    } power_policy_sleep_blocker_t;
+
+    /** 预算修饰 flag；不是产品状态。 */
+    typedef enum
+    {
+        POWER_POLICY_FLAG_NONE = 0,
+        POWER_POLICY_FLAG_LOW_BATTERY_WARN = 1u << 0, /**< 低电量预警事实。 */
+        POWER_POLICY_FLAG_EXTERNAL_POWER = 1u << 1,   /**< 外部供电存在。 */
+        POWER_POLICY_FLAG_CHARGING = 1u << 2,         /**< 正在充电。 */
+        POWER_POLICY_FLAG_MAINTENANCE = 1u << 3,      /**< 维护窗口活跃。 */
+    } power_policy_flag_t;
 
     /** power_policy 输出给后台服务和资源 owner 的只读预算。 */
     typedef struct
     {
         power_policy_state_t state;       /**< 当前整机资源状态。 */
+        power_policy_standby_reason_t standby_reason; /**< STANDBY 原因。 */
+        power_policy_display_budget_t display_budget; /**< 显示预算。 */
+        power_policy_ui_budget_t ui_budget; /**< UI 刷新预算。 */
+        power_policy_network_budget_t network_budget; /**< 网络预算。 */
+        power_policy_background_budget_t background_budget; /**< 后台任务预算。 */
+        power_policy_cpu_budget_t cpu_budget; /**< CPU 预算语义。 */
+        power_policy_power_poll_budget_t power_poll_budget; /**< 电源观测预算。 */
+        power_policy_sleep_permission_t sleep_permission; /**< sleep 许可。 */
+        uint32_t sleep_blockers;          /**< power_policy_sleep_blocker_t 位图。 */
+        uint32_t flags;                   /**< power_policy_flag_t 位图。 */
+        uint32_t sleep_interval_hint_ms;  /**< sleep_coordinator dry-run 使用的建议间隔。 */
         bool danger_detection_allowed;    /**< 是否允许后台危险识别运行。 */
         bool network_sync_allowed;        /**< 是否允许普通后台网络同步。 */
         bool maintenance_allowed;         /**< 是否允许模型验证、OTA、日志导出等维护任务。 */
         bool ui_high_refresh_allowed;     /**< UI 是否允许保持 active 刷新预算。 */
         bool haptic_alert_allowed;        /**< 未来接入震动后，P0 提醒是否允许使用触觉通道。 */
-        bool low_battery_warn;            /**< 当前是否处于低电量保护预算。 */
+        bool low_battery_warn;            /**< 低电量预警事实；V1 不改变预算、不触发 sleep。 */
         bool external_power_present;      /**< 当前是否检测到外部供电。 */
+        bool battery_data_valid;          /**< 电池电量和电压字段是否可信。 */
+        uint8_t battery_percent;          /**< 电量百分比；仅在 battery_data_valid=true 时有效。 */
+        uint16_t battery_mv;              /**< 电池电压，单位为毫伏。 */
     } power_policy_budget_t;
 
     /**
@@ -84,6 +184,24 @@ extern "C"
      * @return 静态字符串。
      */
     const char *power_policy_state_text(power_policy_state_t state);
+
+    /**
+     * @brief 将 sleep 许可转换成日志友好的文本。
+     * @param[in] permission sleep 许可。
+     * @return 静态字符串。
+     */
+    const char *power_policy_sleep_permission_text(
+        power_policy_sleep_permission_t permission);
+
+    /**
+     * @brief 将 sleep blocker 位图格式化成日志文本。
+     *
+     * @param[in] blockers power_policy_sleep_blocker_t 位图。
+     * @param[out] buffer 输出缓冲区。
+     * @param[in] buffer_size 输出缓冲区大小，单位字节。
+     */
+    void power_policy_format_sleep_blockers(uint32_t blockers, char *buffer,
+                                            size_t buffer_size);
 
 #ifdef __cplusplus
 }

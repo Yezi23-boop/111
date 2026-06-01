@@ -7,6 +7,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "network_manager.h"
+#include "services/power_policy.h"
+#include "system_time_service.h"
+#include "wifi_control.h"
 
 /*
  * `network_service` 当前是旧接口兼容层：
@@ -24,6 +27,8 @@ static TaskHandle_t s_network_task_handle = NULL; // 网络服务后台任务句
 static volatile network_service_state_t s_network_state =
     NETWORK_SERVICE_STATE_OFFLINE;
 static char s_network_ip[16] = {0}; // 当前缓存的 IPv4 字符串，仅由服务层更新。
+static bool s_runtime_power_save_applied = false; // 最近一次按预算下发的 Wi-Fi 省电状态。
+static bool s_runtime_power_save_known = false;   // false 表示尚未下发过 Wi-Fi 省电配置。
 
 static const char *network_service_state_name(network_service_state_t state);
 static void network_service_set_state(network_service_state_t state,
@@ -42,6 +47,7 @@ network_service_map_transport_to_manager(
     network_service_provision_transport_t transport);
 static bool resolve_hostname_once(const char *hostname);
 static esp_err_t probe_network_services_ready(void);
+static void network_service_apply_power_budget(void);
 static void network_service_task(void *pv_parameter);
 
 /**
@@ -309,6 +315,40 @@ static esp_err_t probe_network_services_ready(void)
 }
 
 /**
+ * @brief 按整机预算同步 Wi-Fi runtime 省电配置。
+ *
+ * 第一版 STANDBY 不主动断开 AP，也不销毁 IP/MQTT/HTTP 状态；这里只切换
+ * `wifi_control` 的 `esp_wifi_set_ps()` 配置，并让本服务层暂停非关键探测。
+ *
+ * @return 无返回值。
+ */
+static void network_service_apply_power_budget(void)
+{
+    const power_policy_budget_t budget = power_policy_get_budget();
+    const bool power_save = !budget.network_sync_allowed ||
+                            budget.state == POWER_POLICY_STATE_STANDBY;
+
+    if (s_runtime_power_save_known &&
+        s_runtime_power_save_applied == power_save)
+    {
+        return;
+    }
+
+    esp_err_t ret = wifi_control_set_power_save(power_save);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Wi-Fi power save apply failed: standby=%d err=%s",
+                 power_save ? 1 : 0, esp_err_to_name(ret));
+        return;
+    }
+
+    s_runtime_power_save_applied = power_save;
+    s_runtime_power_save_known = true;
+    ESP_LOGI(TAG, "Wi-Fi power save %s by power budget",
+             power_save ? "enabled" : "disabled");
+}
+
+/**
  * @brief 网络服务后台任务。
  * @param[in] pv_parameter 未使用，保留任务签名。
  * @return 无返回值。
@@ -323,6 +363,8 @@ static void network_service_task(void *pv_parameter)
 
     while (1)
     {
+        network_service_apply_power_budget();
+
         network_manager_status_t status = {0};
         const esp_err_t ret = network_manager_get_status(&status);
 
@@ -336,8 +378,9 @@ static void network_service_task(void *pv_parameter)
         }
 
         network_service_sync_cached_ip(&status);
+        const power_policy_budget_t budget = power_policy_get_budget();
 
-        if (status.wifi_connected)
+        if (status.wifi_connected && budget.network_sync_allowed)
         {
             if (s_network_state != NETWORK_SERVICE_STATE_SERVICE_READY)
             {
@@ -349,6 +392,10 @@ static void network_service_task(void *pv_parameter)
                     network_service_set_state(
                         NETWORK_SERVICE_STATE_SERVICE_READY,
                         "critical hosts resolved");
+                    if (system_time_service_note_network_ready() != ESP_OK)
+                    {
+                        ESP_LOGW(TAG, "system time network-ready notify failed");
+                    }
                 }
                 else
                 {
@@ -357,6 +404,12 @@ static void network_service_task(void *pv_parameter)
                         "cloud probe still pending");
                 }
             }
+        }
+        else if (status.wifi_connected)
+        {
+            network_service_set_state(
+                NETWORK_SERVICE_STATE_WIFI_READY,
+                "network sync paused by power budget");
         }
         else
         {
