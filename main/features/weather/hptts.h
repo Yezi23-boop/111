@@ -26,7 +26,4 @@ typedef struct
 esp_err_t _http_event_handler(esp_http_client_event_t *evt);
 /* 发起天气 HTTP 请求。 */
 void http_rest_with_url(void);
-/* 阻塞等待 SNTP 完成初次授时。 */
-void esp_wait_sntp_sync(void);
-
 #endif // HPTTS_H

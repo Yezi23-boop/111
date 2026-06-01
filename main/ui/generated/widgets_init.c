@@ -8,6 +8,7 @@
 */
 
 #include "lvgl.h"
+#include "system_time.h"
 #include "gui_guider.h"
 #include "widgets_init.h"
 #include <stdlib.h>
@@ -100,10 +101,24 @@ extern int screen_main_digital_clock_1_sec_value;
 
 void screen_main_digital_clock_1_timer(lv_timer_t *timer)
 {
-    clock_count(&screen_main_digital_clock_1_hour_value, &screen_main_digital_clock_1_min_value, &screen_main_digital_clock_1_sec_value);
+    (void)timer;
     if (lv_obj_is_valid(guider_ui.screen_main_digital_clock_1))
     {
-        lv_label_set_text_fmt(guider_ui.screen_main_digital_clock_1, "%d:%02d", screen_main_digital_clock_1_hour_value, screen_main_digital_clock_1_min_value);
+        system_time_local_t now = {0};
+        if (system_time_get_local_time(&now) != ESP_OK)
+        {
+            lv_label_set_text(guider_ui.screen_main_digital_clock_1, "--:--");
+            return;
+        }
+
+        /*
+         * 主屏时间必须消费 system_time owner 的本地时间快照。
+         * GUI Guider 原始计数器只会从固定初值自增，联网校时或 RTC 写回后不会自动纠偏。
+         */
+        screen_main_digital_clock_1_hour_value = now.hour;
+        screen_main_digital_clock_1_min_value = now.min;
+        screen_main_digital_clock_1_sec_value = now.sec;
+        lv_label_set_text_fmt(guider_ui.screen_main_digital_clock_1, "%02d:%02d", now.hour, now.min);
     }
 }
 static lv_obj_t * screen_time_datetext_1_calendar;

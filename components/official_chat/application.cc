@@ -237,6 +237,9 @@ esp_err_t Application::Initialize(const official_chat_config_t &config) {
                       ? config.access_token
                       : kDefaultAccessToken;
   ota_url_ = config.ota_url != nullptr ? config.ota_url : "";
+  ensure_time_valid_ = config.ensure_time_valid;
+  apply_server_time_ = config.apply_server_time;
+  time_user_ctx_ = config.time_user_ctx;
   state_machine_.TransitionTo(DeviceState::kUnknown);
   return ESP_OK;
 }
@@ -937,7 +940,8 @@ void Application::StartActivationTask() {
 }
 
 void Application::ActivationTask() {
-  ota_ = std::make_unique<Ota>(ota_url_);
+  ota_ = std::make_unique<Ota>(ota_url_, ensure_time_valid_,
+                               apply_server_time_, time_user_ctx_);
   ota_->MarkCurrentVersionValid();
 
   const AssetsRuntime::Result assets_result =

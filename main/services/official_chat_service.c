@@ -1,6 +1,7 @@
 #include "official_chat_service.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -12,6 +13,7 @@
 #include "network_service.h"
 #include "official_chat.h"
 #include "sdkconfig.h"
+#include "system_time_service.h"
 
 /*
  * 官方聊天服务实现说明：
@@ -209,6 +211,20 @@ static esp_err_t official_chat_service_copy_text_locked(const char *source,
     return has_text ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
+static esp_err_t official_chat_service_ensure_time_valid(uint32_t timeout_ms,
+                                                         void *user_ctx)
+{
+    (void)user_ctx;
+    return system_time_service_ensure_valid_for_tls(timeout_ms);
+}
+
+static esp_err_t official_chat_service_apply_server_time(int64_t unix_seconds,
+                                                         void *user_ctx)
+{
+    (void)user_ctx;
+    return system_time_service_apply_server_time(unix_seconds);
+}
+
 /**
  * @brief 把底层 `official_chat` 状态映射成服务层状态。
  *
@@ -395,6 +411,9 @@ static esp_err_t official_chat_service_start_internal(void)
         .websocket_url = NULL,
         .access_token = NULL,
         .ota_url = CONFIG_OFFICIAL_CHAT_OTA_URL,
+        .ensure_time_valid = official_chat_service_ensure_time_valid,
+        .apply_server_time = official_chat_service_apply_server_time,
+        .time_user_ctx = NULL,
     };
 
     s_service_state = OFFICIAL_CHAT_SERVICE_STATE_STARTING;

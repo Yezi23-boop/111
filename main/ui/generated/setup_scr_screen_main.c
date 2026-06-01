@@ -96,11 +96,12 @@ void setup_scr_screen_main(lv_ui *ui)
     ui->screen_main_digital_clock_1 = lv_label_create(ui->screen_main_cont_1);
     lv_obj_set_pos(ui->screen_main_digital_clock_1, 95, 96);
     lv_obj_set_size(ui->screen_main_digital_clock_1, 251, 60);
-    lv_label_set_text(ui->screen_main_digital_clock_1, "11:25");
+    lv_label_set_text(ui->screen_main_digital_clock_1, "--:--");
     if (!screen_main_digital_clock_1_timer_enabled) {
         lv_timer_create(screen_main_digital_clock_1_timer, 1000, NULL);
         screen_main_digital_clock_1_timer_enabled = true;
     }
+    screen_main_digital_clock_1_timer(NULL);
 
     //Write style for screen_main_digital_clock_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
     lv_obj_set_style_radius(ui->screen_main_digital_clock_1, 42, LV_PART_MAIN|LV_STATE_DEFAULT);

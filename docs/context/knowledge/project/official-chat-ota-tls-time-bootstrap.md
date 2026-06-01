@@ -2,7 +2,7 @@
 id: official-chat-ota-tls-time-bootstrap
 tags: [project, official-chat, ota, tls, sntp, time]
 summary: official_chat 的 OTA/激活 HTTPS 请求会先于正式时间同步链路发生；若系统仍停留在冷启动时间，TLS 证书有效期校验会失败，因此需要在首次 OTA HTTPS 前先确认系统时间有效并输出 TLS 诊断日志。
-last_reviewed: 2026-04-23
+last_reviewed: 2026-06-01
 memory_type: semantic
 scope: repo
 owners: main/services/official_chat_service.c, main/services/network_service.c, components/official_chat
@@ -55,6 +55,10 @@ evidence_level: observed
   - `mbedtls` 原始错误码
   - `TLS flags`
   - 当前 UTC 时间快照
+- `server_time.timestamp` 是 Unix epoch 毫秒，属于 UTC 绝对时间：
+  - `official_chat` 只负责解析并转交给 `system_time` owner。
+  - `timezone_offset` 只能用于显示本地时间，不能加到 epoch 后再写回系统时间或 RTC。
+  - 若东八区把 `timezone_offset` 再加进 epoch，会导致系统时间和 RTC 被写快 8 小时。
 
 ## 日志判读
 
@@ -84,5 +88,6 @@ evidence_level: observed
 - `D:\esp32S3\111\components\official_chat\ota.cc`
 - `D:\esp32S3\111\main\app\app_main.c`
 - `D:\esp32S3\111\main\features\weather\time_weather.c`
-- `D:\esp32S3\111\components\get_time\get_time.c`
+- `D:\esp32S3\111\components\system_time\system_time.c`
+- `D:\esp32S3\111\main\services\system_time_service.c`
 - `D:\esp32S3\111\docs\context\knowledge\project\startup-init-and-blocking-chain.md`

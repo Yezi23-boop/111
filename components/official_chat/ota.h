@@ -7,6 +7,8 @@
 
 #include <esp_err.h>
 
+#include "official_chat.h"
+
 struct cJSON;
 
 namespace official_chat {
@@ -24,7 +26,10 @@ class Ota {
    *
    * @param[in] ota_url 配网及获取新版本的统一网关（如 https://api.xxx...）。
    */
-  explicit Ota(std::string ota_url);
+  explicit Ota(std::string ota_url,
+               official_chat_ensure_time_cb_t ensure_time_valid,
+               official_chat_apply_server_time_cb_t apply_server_time,
+               void *time_user_ctx);
   ~Ota() = default;
 
   /**
@@ -83,6 +88,9 @@ class Ota {
   void PersistServerTime(const cJSON *root);
 
   std::string ota_url_;
+  official_chat_ensure_time_cb_t ensure_time_valid_ = nullptr;
+  official_chat_apply_server_time_cb_t apply_server_time_ = nullptr;
+  void *time_user_ctx_ = nullptr;
   std::string activation_message_;
   std::string activation_code_;
   std::string current_version_;

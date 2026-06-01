@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -68,6 +69,31 @@ typedef void (*official_chat_event_callback_t)(const official_chat_event_t *even
                                                void *user_data);
 
 /**
+ * @brief official_chat 在 HTTPS/TLS 请求前向外层索要可信系统时间的回调。
+ *
+ * 组件自身不直接启动 SNTP，也不访问 RTC；外层可把该回调接到统一
+ * system_time owner。
+ *
+ * @param[in] timeout_ms 最大等待时间，单位为毫秒。
+ * @param[in] user_ctx 调用方透传上下文。
+ * @return ESP_OK 表示系统时间已可信。
+ */
+typedef esp_err_t (*official_chat_ensure_time_cb_t)(uint32_t timeout_ms,
+                                                    void *user_ctx);
+
+/**
+ * @brief official_chat 将服务端可信时间交给外层 owner 的回调。
+ *
+ * 组件自身不直接调用 `settimeofday()`，避免形成第二个系统时间 owner。
+ *
+ * @param[in] unix_seconds Unix 时间戳，单位为秒。
+ * @param[in] user_ctx 调用方透传上下文。
+ * @return ESP_OK 表示外层已接受该时间。
+ */
+typedef esp_err_t (*official_chat_apply_server_time_cb_t)(int64_t unix_seconds,
+                                                          void *user_ctx);
+
+/**
  * @brief 官方聊天组件启动的基础配置结构体。
  */
 typedef struct {
@@ -76,6 +102,9 @@ typedef struct {
     const char *websocket_url;    /**< 建立长链接端点的可选 WebSocket 地址（由协议动态管理时可为 NULL）。 */
     const char *access_token;     /**< 初始设备授权 Token（可选）。 */
     const char *ota_url;          /**< 对应的 OTA 升级服务器地址池。 */
+    official_chat_ensure_time_cb_t ensure_time_valid;       /**< HTTPS/TLS 前确保系统时间可信的外部回调。 */
+    official_chat_apply_server_time_cb_t apply_server_time; /**< 接收服务端可信时间的外部回调。 */
+    void *time_user_ctx;                                     /**< 时间回调透传上下文。 */
 } official_chat_config_t;
 
 /**

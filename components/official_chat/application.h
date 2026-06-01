@@ -209,6 +209,9 @@ class Application {
   std::string websocket_url_;
   std::string access_token_;
   std::string ota_url_;
+  official_chat_ensure_time_cb_t ensure_time_valid_ = nullptr;
+  official_chat_apply_server_time_cb_t apply_server_time_ = nullptr;
+  void *time_user_ctx_ = nullptr;
   bool has_public_websocket_config_ = false;
   std::mutex mutex_;
   std::deque<std::function<void()>> main_tasks_;

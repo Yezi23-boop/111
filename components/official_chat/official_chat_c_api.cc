@@ -70,6 +70,9 @@ official_chat_handle_t official_chat_create(const official_chat_config_t *config
       .websocket_url = nullptr,
       .access_token = nullptr,
       .ota_url = nullptr,
+      .ensure_time_valid = nullptr,
+      .apply_server_time = nullptr,
+      .time_user_ctx = nullptr,
   };
   const official_chat_config_t *effective_config =
       config != nullptr ? config : &default_config;

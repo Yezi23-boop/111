@@ -156,13 +156,20 @@ class OfficialChatSourceTests(unittest.TestCase):
 
     def test_official_chat_ota_waits_for_valid_system_time_before_https(self) -> None:
         source = OFFICIAL_CHAT_OTA.read_text(encoding="utf-8")
+        header = OFFICIAL_CHAT_HEADER.read_text(encoding="utf-8")
+        service = (REPO_ROOT / "main" / "services" / "official_chat_service.c").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn("#include <esp_sntp.h>", source)
         self.assertIn("EnsureSystemTimeValidForTls", source)
-        self.assertIn("esp_sntp_enabled()", source)
-        self.assertIn("esp_sntp_get_sync_status()", source)
-        self.assertIn("kTlsValidEpochThreshold", source)
+        self.assertIn("official_chat_ensure_time_cb_t", header)
+        self.assertIn("ensure_time_valid_", source)
+        self.assertIn("ensure_time_valid(kSntpSyncTimeoutMs, user_ctx)", source)
         self.assertIn("skip https request due to invalid system time", source)
+        self.assertIn("system_time_service_ensure_valid_for_tls(timeout_ms)", service)
+        self.assertNotIn("#include <esp_sntp.h>", source)
+        self.assertNotIn("esp_sntp_init", source)
+        self.assertNotIn("esp_sntp_restart", source)
 
     def test_official_chat_ota_logs_tls_diagnostics_for_certificate_failures(self) -> None:
         source = OFFICIAL_CHAT_OTA.read_text(encoding="utf-8")

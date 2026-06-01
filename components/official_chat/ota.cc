@@ -1,9 +1,6 @@
 #include "ota.h"
 
-#include <sys/time.h>
-
 #include <algorithm>
-#include <array>
 #include <ctime>
 #include <cstdlib>
 #include <cstdio>
@@ -20,10 +17,7 @@
 #include <esp_log.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
-#include <esp_sntp.h>
 #include <esp_timer.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include <sdkconfig.h>
 
 #include "board_metadata.h"
@@ -43,12 +37,6 @@ constexpr int kHttpBufferSize = 1024;                /**< HTTP 的接收和发�
 constexpr char kDefaultLanguageCode[] = "zh-CN";     /**< 设备在出厂或者未设置语言时的默认识别配置使用。 */
 constexpr time_t kTlsValidEpochThreshold = 1704067200; /**< 2024-01-01 00:00:00 UTC；小于该时间通常说明系统仍停留在冷启动默认时钟，HTTPS 证书有效期校验不可信。 */
 constexpr uint32_t kSntpSyncTimeoutMs = 15000;         /**< OTA 激活阶段最多等待 15 秒授时；既为 TLS 证书校验争取有效时间，又避免前台无限卡死。 */
-constexpr TickType_t kSntpPollIntervalTicks = pdMS_TO_TICKS(250); /**< 250ms 轮询一次系统时间，兼顾首次授时响应速度和后台 CPU 占用。 */
-constexpr std::array<const char *, 3> kDefaultSntpServers = {
-    "ntp1.aliyun.com",
-    "cn.pool.ntp.org",
-    "ntp2.aliyun.com",
-}; /**< 与仓库现有 get_time 组件保持一致的 NTP 服务器集合，避免不同模块授时策略分叉。 */
 
 /**
  * @brief 判断当前系统时钟是否已经进入可用于 TLS 证书校验的有效区间。
@@ -96,38 +84,18 @@ void LogSystemTimeSnapshot(const char *stage) {
 }
 
 /**
- * @brief 确保 SNTP 服务已经启动，并在首次 OTA TLS 建连前触发一次授时尝试。
- *
- * 若系统其他模块已经启动过 SNTP，这里优先复用原有实例并通过 restart
- * 触发一次新的同步；若尚未启动，则按仓库现有默认服务器补齐初始化。
- */
-void EnsureSntpServiceStarted() {
-  if (esp_sntp_enabled()) {
-    ESP_LOGI(kTag, "SNTP already enabled, restart for OTA TLS bootstrap");
-    esp_sntp_restart();
-    return;
-  }
-
-  esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-  esp_sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
-  for (size_t index = 0; index < kDefaultSntpServers.size(); ++index) {
-    esp_sntp_setservername(static_cast<u8_t>(index), kDefaultSntpServers[index]);
-  }
-  esp_sntp_init();
-  ESP_LOGI(kTag, "SNTP started for OTA TLS bootstrap server0=%s server1=%s server2=%s",
-           kDefaultSntpServers[0], kDefaultSntpServers[1], kDefaultSntpServers[2]);
-}
-
-/**
  * @brief 在发起 HTTPS 请求前等待系统时间进入 TLS 可用区间。
  *
- * 当前正式启动入口还没有恢复首轮授时任务，因此 OTA 首次 HTTPS 请求可能
- * 比时间同步更早发生。这里做一次有限时等待，根因上消除证书有效期校验失败。
+ * official_chat 不直接启动 SNTP，也不访问 RTC；时间 owner 由外层通过回调注入。
  *
  * @param[in] url 即将访问的请求 URL，仅用于诊断日志。
+ * @param[in] ensure_time_valid 外层注入的时间确认回调。
+ * @param[in] user_ctx 回调透传上下文。
  * @return `ESP_OK` 表示时间已有效；否则返回超时或状态错误码。
  */
-esp_err_t EnsureSystemTimeValidForTls(const std::string &url) {
+esp_err_t EnsureSystemTimeValidForTls(
+    const std::string &url, official_chat_ensure_time_cb_t ensure_time_valid,
+    void *user_ctx) {
   if (url.rfind("https://", 0) != 0) {
     return ESP_OK;
   }
@@ -141,28 +109,24 @@ esp_err_t EnsureSystemTimeValidForTls(const std::string &url) {
   }
 
   ESP_LOGW(kTag,
-           "system time invalid before HTTPS request, wait for SNTP bootstrap url=%s",
+           "system time invalid before HTTPS request, request external time owner url=%s",
            url.c_str());
-  EnsureSntpServiceStarted();
-
-  const TickType_t deadline_ticks =
-      xTaskGetTickCount() + pdMS_TO_TICKS(kSntpSyncTimeoutMs);
-  while (xTaskGetTickCount() < deadline_ticks) {
-    vTaskDelay(kSntpPollIntervalTicks);
-    time(&now);
-    if (IsSystemTimeValid(now)) {
-      LogSystemTimeSnapshot("after_sntp_sync");
-      return ESP_OK;
-    }
+  if (ensure_time_valid == nullptr) {
+    ESP_LOGE(kTag, "no external time owner callback configured for HTTPS");
+    return ESP_ERR_INVALID_STATE;
   }
 
-  LogSystemTimeSnapshot("after_sntp_timeout");
-  ESP_LOGE(kTag,
-           "system time still invalid after SNTP wait url=%s sync_status=%d reachability=%u/%u/%u",
-           url.c_str(), esp_sntp_get_sync_status(),
-           esp_sntp_getreachability(0), esp_sntp_getreachability(1),
-           esp_sntp_getreachability(2));
-  return ESP_ERR_TIMEOUT;
+  const esp_err_t ret = ensure_time_valid(kSntpSyncTimeoutMs, user_ctx);
+  if (ret == ESP_OK) {
+    LogSystemTimeSnapshot("after_external_time_ensure");
+    ESP_LOGI(kTag, "time ensure callback ok before HTTPS");
+    return ESP_OK;
+  }
+
+  LogSystemTimeSnapshot("after_external_time_ensure_failed");
+  ESP_LOGE(kTag, "external time owner failed before HTTPS url=%s err=%s",
+           url.c_str(), esp_err_to_name(ret));
+  return ret;
 }
 
 /**
@@ -321,7 +285,13 @@ void AddBoardMetadataJson(cJSON *root) {
 
 }  // namespace
 
-Ota::Ota(std::string ota_url) : ota_url_(std::move(ota_url)) {
+Ota::Ota(std::string ota_url, official_chat_ensure_time_cb_t ensure_time_valid,
+         official_chat_apply_server_time_cb_t apply_server_time,
+         void *time_user_ctx)
+    : ota_url_(std::move(ota_url)),
+      ensure_time_valid_(ensure_time_valid),
+      apply_server_time_(apply_server_time),
+      time_user_ctx_(time_user_ctx) {
   if (ota_url_.empty()) {
     Settings settings("wifi", false);
     ota_url_ = settings.GetString("ota_url");
@@ -403,7 +373,8 @@ esp_err_t Ota::PerformJsonRequest(const char *method, const std::string &url,
                                   const std::string &payload,
                                   int *status_code,
                                   std::string *response) const {
-  const esp_err_t time_err = EnsureSystemTimeValidForTls(url);
+  const esp_err_t time_err =
+      EnsureSystemTimeValidForTls(url, ensure_time_valid_, time_user_ctx_);
   if (time_err != ESP_OK) {
     ESP_LOGE(kTag, "skip https request due to invalid system time url=%s err=%s",
              url.c_str(), esp_err_to_name(time_err));
@@ -524,23 +495,29 @@ void Ota::PersistServerTime(const cJSON *root) {
   }
 
   const cJSON *timestamp = cJSON_GetObjectItem(server_time, "timestamp");
-  const cJSON *timezone_offset =
-      cJSON_GetObjectItem(server_time, "timezone_offset");
   if (!cJSON_IsNumber(timestamp)) {
     return;
   }
 
-  double milliseconds = timestamp->valuedouble;
-  if (cJSON_IsNumber(timezone_offset)) {
-    milliseconds += timezone_offset->valueint * 60 * 1000;
+  if (apply_server_time_ == nullptr) {
+    ESP_LOGW(kTag, "server_time ignored: no external time owner callback");
+    return;
   }
 
-  struct timeval tv = {};
-  tv.tv_sec = static_cast<time_t>(milliseconds / 1000);
-  tv.tv_usec =
-      static_cast<suseconds_t>(static_cast<long long>(milliseconds) % 1000) *
-      1000;
-  settimeofday(&tv, nullptr);
+  /*
+   * server_time.timestamp 是 Unix epoch 毫秒，语义上已经是 UTC 绝对时间。
+   * timezone_offset 只能用于显示本地时间，不能加到 epoch 后再写入系统时间，
+   * 否则东八区会把系统时间写快 8 小时，并进一步污染 RTC 写回。
+   */
+  const int64_t unix_seconds =
+      static_cast<int64_t>(timestamp->valuedouble / 1000);
+  const esp_err_t ret = apply_server_time_(unix_seconds, time_user_ctx_);
+  if (ret != ESP_OK) {
+    ESP_LOGW(kTag, "server_time apply callback failed: %s",
+             esp_err_to_name(ret));
+    return;
+  }
+
   has_server_time_ = true;
   LogSystemTimeSnapshot("server_time_applied");
 }
