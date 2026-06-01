@@ -2,6 +2,7 @@
 #define BACKGROUND_SERVICE_MANAGER_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 #include "services/power_policy.h"
@@ -18,15 +19,33 @@ extern "C"
 {
 #endif
 
+    /**
+     * @brief Safety Monitor 后台目标被阻塞的原因。
+     *
+     * 该枚举只解释后台管理器为什么没有把 Safety Monitor 目标态设为运行；
+     * 启动失败、停止失败等 runtime 异常仍通过 last_error 单独表达。
+     */
+    typedef enum
+    {
+        BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE = 0, /**< 没有阻塞，目标态应运行。 */
+        BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY, /**< 管理器任务尚未接管。 */
+        BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED, /**< 用户未开启安全监听。 */
+        BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY, /**< power_policy 当前不允许运行。 */
+        BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO, /**< 前台音频占用麦克风。 */
+    } background_service_manager_danger_block_reason_t;
+
     /** 后台服务管理器对外快照。 */
     typedef struct
     {
         bool started;                    /**< 管理器后台任务是否已启动。 */
         bool danger_enabled_by_user;     /**< 用户是否允许危险识别后台运行。 */
         bool danger_allowed_by_policy;   /**< 当前 power_policy 是否允许危险识别运行。 */
+        bool danger_should_run;          /**< 管理器合成后的 Safety Monitor 目标态。 */
         bool danger_runtime_running;     /**< Safety Monitor session 最近一次确认的运行状态。 */
+        background_service_manager_danger_block_reason_t danger_block_reason; /**< 目标态未运行的主原因。 */
         bool danger_blocked_by_foreground_audio; /**< 前台录音/语音是否正在占用麦克风。 */
         power_policy_state_t policy_state; /**< 最近一次使用的整机策略状态。 */
+        uint32_t policy_flags;          /**< 最近一次预算 flag，使用 power_policy_flag_t 位图。 */
         esp_err_t last_error;            /**< 最近一次 session 启动、停止或恢复错误码。 */
     } background_service_manager_snapshot_t;
 

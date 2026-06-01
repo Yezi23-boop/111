@@ -2,6 +2,7 @@
 #define APP_ALERT_MANAGER_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -69,6 +70,21 @@ extern "C"
      *         `ESP_ERR_INVALID_STATE` 表示管理器尚未初始化。
      */
     esp_err_t app_alert_manager_clear(app_alert_source_t source);
+
+    /**
+     * @brief 设置低电量可见提示。
+     *
+     * 该接口只消费上层已经判定好的低电量预算，不读取 PMIC，不判断阈值，
+     * 也不复用 P0 危险覆盖层。
+     *
+     * @param[in] visible true 表示显示低电量提示，false 表示隐藏。
+     * @param[in] battery_percent 电量百分比；仅在 power_policy 提供有效电量时可信。
+     * @param[in] battery_mv 电池电压，单位为毫伏。
+     * @return `ESP_OK` 表示提示请求已接受。
+     */
+    esp_err_t app_alert_manager_set_low_battery_warning(bool visible,
+                                                        uint8_t battery_percent,
+                                                        uint16_t battery_mv);
 
     /**
      * @brief 单独开关 `traffic_audio` 对应的屏幕覆盖层。

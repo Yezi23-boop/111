@@ -1,6 +1,7 @@
 #include "app_alert_manager.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "audio_alert_player.h"
@@ -8,7 +9,10 @@
 #include "display_alert_adapter.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "mp3_player.h"
+#include "ui_refresh_policy.h"
 
 #define TAG "app_alert_manager"
 
@@ -24,18 +28,24 @@ typedef struct
     bool initialized;                   /**< 管理器是否已初始化。 */
     bool active;                        /**< 当前是否存在活动告警。 */
     bool traffic_audio_overlay_enabled; /**< 是否允许危险音触发屏幕红色覆盖层。 */
+    bool low_battery_warning_visible;   /**< 当前低电量可见提示是否已请求显示。 */
     app_alert_request_t active_request; /**< 当前活动告警的来源与标签。 */
+    uint32_t generation;                /**< 告警状态事务序号，用于丢弃过期异步显示结果。 */
+    portMUX_TYPE lock;                  /**< 保护跨任务访问的告警状态。 */
 } app_alert_manager_state_t;
 
 static app_alert_manager_state_t s_alert_manager_state = {
     .initialized = false,
     .active = false,
     .traffic_audio_overlay_enabled = true,
+    .low_battery_warning_visible = false,
     .active_request = {
         .source = APP_ALERT_SOURCE_NONE,
         .severity = APP_ALERT_SEVERITY_NONE,
         .label = APP_ALERT_LABEL_NONE,
     },
+    .generation = 0U,
+    .lock = portMUX_INITIALIZER_UNLOCKED,
 };
 
 /**
@@ -107,7 +117,11 @@ esp_err_t app_alert_manager_init(void)
 {
     esp_err_t ret;
 
-    if (s_alert_manager_state.initialized)
+    taskENTER_CRITICAL(&s_alert_manager_state.lock);
+    const bool already_initialized = s_alert_manager_state.initialized;
+    taskEXIT_CRITICAL(&s_alert_manager_state.lock);
+
+    if (already_initialized)
     {
         return ESP_OK;
     }
@@ -124,10 +138,65 @@ esp_err_t app_alert_manager_init(void)
         return ret;
     }
 
+    taskENTER_CRITICAL(&s_alert_manager_state.lock);
+    s_alert_manager_state.traffic_audio_overlay_enabled = true;
+    s_alert_manager_state.low_battery_warning_visible = false;
+    s_alert_manager_state.active = false;
     memset(&s_alert_manager_state.active_request, 0,
            sizeof(s_alert_manager_state.active_request));
-    s_alert_manager_state.traffic_audio_overlay_enabled = true;
+    s_alert_manager_state.generation = 0U;
     s_alert_manager_state.initialized = true;
+    taskEXIT_CRITICAL(&s_alert_manager_state.lock);
+    return ESP_OK;
+}
+
+esp_err_t app_alert_manager_set_low_battery_warning(bool visible,
+                                                    uint8_t battery_percent,
+                                                    uint16_t battery_mv)
+{
+    bool initialized = false;
+    bool changed = false;
+
+    taskENTER_CRITICAL(&s_alert_manager_state.lock);
+    initialized = s_alert_manager_state.initialized;
+    if (initialized &&
+        s_alert_manager_state.low_battery_warning_visible != visible)
+    {
+        s_alert_manager_state.low_battery_warning_visible = visible;
+        changed = true;
+    }
+    taskEXIT_CRITICAL(&s_alert_manager_state.lock);
+
+    ESP_RETURN_ON_FALSE(initialized, ESP_ERR_INVALID_STATE, TAG,
+                        "app alert manager not initialized");
+
+    if (!changed)
+    {
+        return ESP_OK;
+    }
+
+    if (visible)
+    {
+        ui_refresh_policy_notify_activity();
+    }
+
+    esp_err_t ret = visible
+                        ? display_alert_adapter_show_low_battery_warning()
+                        : display_alert_adapter_hide_low_battery_warning();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    if (visible)
+    {
+        ESP_LOGW(TAG, "low_battery_visible_warn: soc=%u vbat=%umV",
+                 battery_percent, battery_mv);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "low_battery_visible_clear");
+    }
     return ESP_OK;
 }
 
@@ -147,19 +216,39 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
     ESP_RETURN_ON_FALSE(request->severity != APP_ALERT_SEVERITY_NONE,
                         ESP_ERR_INVALID_ARG, TAG,
                         "alert severity is required");
-    ESP_RETURN_ON_FALSE(s_alert_manager_state.initialized, ESP_ERR_INVALID_STATE,
-                        TAG, "app alert manager not initialized");
 
-    /* 同一来源重复上报时只更新标签，避免重复拉起 UI 动画和提示音。 */
-    const bool same_source_active =
-        s_alert_manager_state.active &&
-        s_alert_manager_state.active_request.source == request->source;
-    /* 允许单独屏蔽 traffic_audio 覆盖层，但仍保留告警状态机和提示音行为。 */
-    const bool overlay_enabled =
-        !(request->source == APP_ALERT_SOURCE_TRAFFIC_AUDIO &&
-          !s_alert_manager_state.traffic_audio_overlay_enabled);
+    bool initialized = false;
+    bool same_source_active = false;
+    bool overlay_enabled = true;
+    uint32_t request_generation = 0U;
 
-    s_alert_manager_state.active_request = *request;
+    taskENTER_CRITICAL(&s_alert_manager_state.lock);
+    initialized = s_alert_manager_state.initialized;
+    if (initialized)
+    {
+        same_source_active =
+            s_alert_manager_state.active &&
+            s_alert_manager_state.active_request.source == request->source;
+        overlay_enabled =
+            !(request->source == APP_ALERT_SOURCE_TRAFFIC_AUDIO &&
+              !s_alert_manager_state.traffic_audio_overlay_enabled);
+        s_alert_manager_state.active_request = *request;
+        if (!same_source_active)
+        {
+            s_alert_manager_state.generation++;
+            s_alert_manager_state.active = true;
+        }
+        request_generation = s_alert_manager_state.generation;
+    }
+    taskEXIT_CRITICAL(&s_alert_manager_state.lock);
+
+    ESP_RETURN_ON_FALSE(initialized, ESP_ERR_INVALID_STATE, TAG,
+                        "app alert manager not initialized");
+
+    if (request->severity == APP_ALERT_SEVERITY_DANGER)
+    {
+        ui_refresh_policy_notify_activity();
+    }
 
     if (same_source_active)
     {
@@ -174,11 +263,34 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
         ret = display_alert_adapter_show_danger_overlay();
         if (ret != ESP_OK)
         {
+            taskENTER_CRITICAL(&s_alert_manager_state.lock);
+            if (s_alert_manager_state.generation == request_generation &&
+                s_alert_manager_state.active_request.source == request->source)
+            {
+                s_alert_manager_state.active = false;
+                memset(&s_alert_manager_state.active_request, 0,
+                       sizeof(s_alert_manager_state.active_request));
+            }
+            taskEXIT_CRITICAL(&s_alert_manager_state.lock);
             return ret;
         }
     }
 
-    s_alert_manager_state.active = true;
+    taskENTER_CRITICAL(&s_alert_manager_state.lock);
+    const bool request_still_active =
+        s_alert_manager_state.generation == request_generation &&
+        s_alert_manager_state.active &&
+        s_alert_manager_state.active_request.source == request->source;
+    taskEXIT_CRITICAL(&s_alert_manager_state.lock);
+    if (!request_still_active)
+    {
+        if (overlay_enabled)
+        {
+            (void)display_alert_adapter_hide_danger_overlay();
+        }
+        return ESP_OK;
+    }
+
     app_alert_manager_preempt_normal_audio_output(request);
     ret = audio_alert_player_play_warning_once();
     if (ret != ESP_OK)
@@ -198,18 +310,33 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
  */
 esp_err_t app_alert_manager_clear(app_alert_source_t source)
 {
-    ESP_RETURN_ON_FALSE(s_alert_manager_state.initialized, ESP_ERR_INVALID_STATE,
-                        TAG, "app alert manager not initialized");
+    bool initialized = false;
+    bool active_for_source = false;
+    bool overlay_enabled = true;
+    uint32_t clear_generation = 0U;
 
-    if (!s_alert_manager_state.active ||
-        s_alert_manager_state.active_request.source != source)
+    taskENTER_CRITICAL(&s_alert_manager_state.lock);
+    initialized = s_alert_manager_state.initialized;
+    active_for_source =
+        s_alert_manager_state.active &&
+        s_alert_manager_state.active_request.source == source;
+    overlay_enabled =
+        !(source == APP_ALERT_SOURCE_TRAFFIC_AUDIO &&
+          !s_alert_manager_state.traffic_audio_overlay_enabled);
+    if (active_for_source)
+    {
+        clear_generation = ++s_alert_manager_state.generation;
+    }
+    taskEXIT_CRITICAL(&s_alert_manager_state.lock);
+
+    ESP_RETURN_ON_FALSE(initialized, ESP_ERR_INVALID_STATE, TAG,
+                        "app alert manager not initialized");
+
+    if (!active_for_source)
     {
         return ESP_OK;
     }
 
-    const bool overlay_enabled =
-        !(source == APP_ALERT_SOURCE_TRAFFIC_AUDIO &&
-          !s_alert_manager_state.traffic_audio_overlay_enabled);
     esp_err_t ret = ESP_OK;
     if (overlay_enabled)
     {
@@ -220,9 +347,17 @@ esp_err_t app_alert_manager_clear(app_alert_source_t source)
         }
     }
 
-    memset(&s_alert_manager_state.active_request, 0,
-           sizeof(s_alert_manager_state.active_request));
-    s_alert_manager_state.active = false;
+    taskENTER_CRITICAL(&s_alert_manager_state.lock);
+    if (s_alert_manager_state.generation == clear_generation &&
+        s_alert_manager_state.active &&
+        s_alert_manager_state.active_request.source == source)
+    {
+        memset(&s_alert_manager_state.active_request, 0,
+               sizeof(s_alert_manager_state.active_request));
+        s_alert_manager_state.active = false;
+    }
+    taskEXIT_CRITICAL(&s_alert_manager_state.lock);
+
     ESP_LOGI(TAG, "退出危险告警");
     return ESP_OK;
 }
@@ -234,19 +369,29 @@ esp_err_t app_alert_manager_clear(app_alert_source_t source)
  */
 esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled)
 {
-    ESP_RETURN_ON_FALSE(s_alert_manager_state.initialized, ESP_ERR_INVALID_STATE,
-                        TAG, "app alert manager not initialized");
+    bool initialized = false;
+    bool traffic_audio_active = false;
 
-    s_alert_manager_state.traffic_audio_overlay_enabled = enabled;
-    if (!enabled && s_alert_manager_state.active &&
-        s_alert_manager_state.active_request.source ==
-            APP_ALERT_SOURCE_TRAFFIC_AUDIO)
+    taskENTER_CRITICAL(&s_alert_manager_state.lock);
+    initialized = s_alert_manager_state.initialized;
+    if (initialized)
+    {
+        s_alert_manager_state.traffic_audio_overlay_enabled = enabled;
+        traffic_audio_active =
+            s_alert_manager_state.active &&
+            s_alert_manager_state.active_request.source ==
+                APP_ALERT_SOURCE_TRAFFIC_AUDIO;
+    }
+    taskEXIT_CRITICAL(&s_alert_manager_state.lock);
+
+    ESP_RETURN_ON_FALSE(initialized, ESP_ERR_INVALID_STATE, TAG,
+                        "app alert manager not initialized");
+
+    if (!enabled && traffic_audio_active)
     {
         (void)display_alert_adapter_hide_danger_overlay();
     }
-    else if (enabled && s_alert_manager_state.active &&
-             s_alert_manager_state.active_request.source ==
-                 APP_ALERT_SOURCE_TRAFFIC_AUDIO)
+    else if (enabled && traffic_audio_active)
     {
         (void)display_alert_adapter_show_danger_overlay();
     }

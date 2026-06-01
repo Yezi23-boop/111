@@ -18,10 +18,13 @@ typedef struct
     bool started;                      /**< 后台任务是否已启动。 */
     bool danger_enabled_by_user;       /**< 用户是否允许危险识别后台运行。 */
     bool danger_allowed_by_policy;     /**< 最近一次策略是否允许危险识别。 */
+    bool danger_should_run;            /**< 最近一次合成出的 Safety Monitor 目标态。 */
     bool danger_runtime_running;       /**< 最近一次命令确认的运行状态。 */
+    background_service_manager_danger_block_reason_t danger_block_reason; /**< 目标态未运行的主原因。 */
     bool foreground_audio_active;      /**< 前台录音/语音是否正在占用麦克风。 */
     bool danger_blocked_by_foreground_audio; /**< 当前麦克风 owner 是否阻塞危险识别。 */
     power_policy_state_t policy_state; /**< 最近一次策略状态。 */
+    uint32_t policy_flags;             /**< 最近一次预算 flag。 */
     esp_err_t last_error;              /**< 最近一次 session 启动、停止或恢复错误码。 */
     TaskHandle_t task_handle;          /**< 后台策略轮询任务。 */
     portMUX_TYPE lock;                 /**< 保护管理器快照。 */
@@ -32,14 +35,64 @@ static background_service_manager_state_t s_manager = {
     .started = false,
     .danger_enabled_by_user = false,
     .danger_allowed_by_policy = true,
+    .danger_should_run = false,
     .danger_runtime_running = false,
+    .danger_block_reason =
+        BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY,
     .foreground_audio_active = false,
     .danger_blocked_by_foreground_audio = false,
     .policy_state = POWER_POLICY_STATE_ACTIVE,
+    .policy_flags = POWER_POLICY_FLAG_NONE,
     .last_error = ESP_OK,
     .task_handle = NULL,
     .lock = portMUX_INITIALIZER_UNLOCKED,
 };
+
+static const char *background_service_manager_block_reason_text(
+    background_service_manager_danger_block_reason_t reason)
+{
+    switch (reason)
+    {
+    case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE:
+        return "none";
+    case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY:
+        return "manager_not_ready";
+    case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED:
+        return "user_disabled";
+    case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY:
+        return "policy";
+    case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO:
+        return "foreground_audio";
+    default:
+        return "unknown";
+    }
+}
+
+static background_service_manager_danger_block_reason_t
+background_service_manager_resolve_danger_block_reason(
+    bool manager_started,
+    bool user_enabled,
+    bool policy_allowed,
+    bool foreground_audio_blocked)
+{
+    if (!manager_started)
+    {
+        return BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY;
+    }
+    if (!user_enabled)
+    {
+        return BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED;
+    }
+    if (foreground_audio_blocked)
+    {
+        return BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO;
+    }
+    if (!policy_allowed)
+    {
+        return BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY;
+    }
+    return BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE;
+}
 
 static bool background_service_manager_input_owner_blocks_danger(
     audio_codec_owner_t owner)
@@ -110,6 +163,9 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
     bool user_enabled = true;
     bool explicit_foreground_audio = false;
     bool previous_allowed = true;
+    bool previous_should_run = false;
+    background_service_manager_danger_block_reason_t previous_block_reason =
+        BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY;
     bool previous_running = false;
     bool previous_audio_blocked = false;
 
@@ -117,9 +173,12 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
     user_enabled = s_manager.danger_enabled_by_user;
     explicit_foreground_audio = s_manager.foreground_audio_active;
     previous_allowed = s_manager.danger_allowed_by_policy;
+    previous_should_run = s_manager.danger_should_run;
+    previous_block_reason = s_manager.danger_block_reason;
     previous_running = s_manager.danger_runtime_running;
     previous_audio_blocked = s_manager.danger_blocked_by_foreground_audio;
     s_manager.policy_state = budget.state;
+    s_manager.policy_flags = budget.flags;
     s_manager.danger_allowed_by_policy = budget.danger_detection_allowed;
     s_manager.danger_runtime_running = before_session.runtime_running;
     s_manager.last_error = before_session.last_error;
@@ -129,9 +188,19 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
     const bool foreground_audio_blocked =
         background_service_manager_audio_blocks_danger(
             explicit_foreground_audio, &blocking_audio_owner);
+    const background_service_manager_danger_block_reason_t block_reason =
+        background_service_manager_resolve_danger_block_reason(
+            true,
+            user_enabled,
+            budget.danger_detection_allowed,
+            foreground_audio_blocked);
+    const bool should_run =
+        block_reason == BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE;
 
     taskENTER_CRITICAL(&s_manager.lock);
     s_manager.danger_blocked_by_foreground_audio = foreground_audio_blocked;
+    s_manager.danger_should_run = should_run;
+    s_manager.danger_block_reason = block_reason;
     taskEXIT_CRITICAL(&s_manager.lock);
 
     if (previous_allowed != budget.danger_detection_allowed)
@@ -152,8 +221,16 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
                  reason != NULL ? reason : "unknown");
     }
 
-    const bool should_run = user_enabled && budget.danger_detection_allowed &&
-                            !foreground_audio_blocked;
+    if (previous_should_run != should_run ||
+        previous_block_reason != block_reason)
+    {
+        ESP_LOGI(TAG,
+                 "background_target_change: danger_should_run=%d block_reason=%s reason=%s",
+                 should_run ? 1 : 0,
+                 background_service_manager_block_reason_text(block_reason),
+                 reason != NULL ? reason : "unknown");
+    }
+
     esp_err_t ret = safety_monitor_session_apply(should_run, reason);
     const safety_monitor_session_snapshot_t after_session =
         safety_monitor_session_get_snapshot();
@@ -261,6 +338,9 @@ esp_err_t background_service_manager_start(void)
          */
         (void)safety_monitor_session_apply(false, "manager_start_failed");
         taskENTER_CRITICAL(&s_manager.lock);
+        s_manager.danger_should_run = false;
+        s_manager.danger_block_reason =
+            BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY;
         s_manager.danger_runtime_running = false;
         taskEXIT_CRITICAL(&s_manager.lock);
         return ESP_FAIL;
@@ -301,6 +381,15 @@ esp_err_t background_service_manager_set_danger_detection_enabled(bool enabled)
          * 页面可以更新用户开关，但不能在管理器任务未启动时拉起无人托管的
          * 后台监听。app_main 会负责启动真正的周期 owner。
          */
+        taskENTER_CRITICAL(&s_manager.lock);
+        s_manager.danger_should_run = false;
+        s_manager.danger_block_reason =
+            background_service_manager_resolve_danger_block_reason(
+                false,
+                s_manager.danger_enabled_by_user,
+                s_manager.danger_allowed_by_policy,
+                s_manager.danger_blocked_by_foreground_audio);
+        taskEXIT_CRITICAL(&s_manager.lock);
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -346,10 +435,13 @@ background_service_manager_get_snapshot(void)
     snapshot.started = s_manager.started;
     snapshot.danger_enabled_by_user = s_manager.danger_enabled_by_user;
     snapshot.danger_allowed_by_policy = s_manager.danger_allowed_by_policy;
+    snapshot.danger_should_run = s_manager.danger_should_run;
     snapshot.danger_runtime_running = s_manager.danger_runtime_running;
+    snapshot.danger_block_reason = s_manager.danger_block_reason;
     snapshot.danger_blocked_by_foreground_audio =
         s_manager.danger_blocked_by_foreground_audio;
     snapshot.policy_state = s_manager.policy_state;
+    snapshot.policy_flags = s_manager.policy_flags;
     snapshot.last_error = s_manager.last_error;
     taskEXIT_CRITICAL(&s_manager.lock);
 

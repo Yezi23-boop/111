@@ -1,6 +1,7 @@
 import unittest
 
 from tests.main_paths import BACKGROUND_SERVICE_MANAGER_SOURCE
+from tests.main_paths import BACKGROUND_SERVICE_MANAGER_HEADER
 from tests.main_paths import REPO_ROOT
 from tests.main_paths import SAFETY_MONITOR_SESSION_HEADER
 from tests.main_paths import SAFETY_MONITOR_SESSION_SOURCE
@@ -21,13 +22,22 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("DANGER_DETECTION_STATE_ERROR", source)
         self.assertIn("safety_monitor_session_recover_error", source)
         self.assertIn("safety_monitor_session_snapshot_is_running", source)
+        self.assertIn("snapshot->state == DANGER_DETECTION_STATE_STOPPING", source)
+        self.assertIn("safety_monitor_session_store(ret, true)", source)
+        self.assertIn("previous_runtime_running", source)
         self.assertIn("k_start_retry_ticks", source)
 
     def test_background_manager_delegates_runtime_lifecycle_to_session(self) -> None:
-        header = (REPO_ROOT / "main" / "services" / "background_service_manager.h").read_text(encoding="utf-8")
+        header = BACKGROUND_SERVICE_MANAGER_HEADER.read_text(encoding="utf-8")
         source = BACKGROUND_SERVICE_MANAGER_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "audio_codec.h"', source)
+        self.assertIn("background_service_manager_danger_block_reason_t", header)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED", header)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY", header)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO", header)
+        self.assertIn("danger_should_run", header)
+        self.assertIn("danger_block_reason", header)
         self.assertIn("danger_blocked_by_foreground_audio", header)
         self.assertIn(
             "background_service_manager_set_foreground_audio_active",
@@ -37,7 +47,9 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("audio_codec_get_session_snapshot", source)
         self.assertIn("audio_codec_owner_to_text", source)
         self.assertIn("resource_blocked_change: resource=mic", source)
-        self.assertIn("!foreground_audio_blocked", source)
+        self.assertIn("background_target_change: danger_should_run=%d", source)
+        self.assertIn("background_service_manager_resolve_danger_block_reason", source)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE", source)
         self.assertIn("safety_monitor_session_apply(should_run, reason)", source)
         self.assertIn("safety_monitor_session_get_snapshot()", source)
         self.assertIn("startup_readiness_wait_ui_first_frame(portMAX_DELAY)", source)

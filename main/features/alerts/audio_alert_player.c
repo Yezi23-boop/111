@@ -8,6 +8,7 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "assets/tishiyinpin_pcm.h"
 
@@ -28,12 +29,14 @@ typedef struct
     TaskHandle_t task_handle; // 当前播放任务句柄
     bool initialized;         // 模块是否已完成初始化
     bool playing;             // 是否有播放任务正在运行
+    portMUX_TYPE lock;        // 保护播放状态，避免告警线程和播放任务并发写
 } audio_alert_player_state_t;
 
 static audio_alert_player_state_t s_player_state = {
     .task_handle = NULL,
     .initialized = false,
     .playing = false,
+    .lock = portMUX_INITIALIZER_UNLOCKED,
 };
 
 /**
@@ -94,8 +97,10 @@ done:
                      esp_err_to_name(ret));
         }
     }
+    taskENTER_CRITICAL(&s_player_state.lock);
     s_player_state.playing = false;
     s_player_state.task_handle = NULL;
+    taskEXIT_CRITICAL(&s_player_state.lock);
     vTaskDelete(NULL);
 }
 
@@ -105,7 +110,9 @@ done:
  */
 esp_err_t audio_alert_player_init(void)
 {
+    taskENTER_CRITICAL(&s_player_state.lock);
     s_player_state.initialized = true;
+    taskEXIT_CRITICAL(&s_player_state.lock);
     return ESP_OK;
 }
 
@@ -115,29 +122,47 @@ esp_err_t audio_alert_player_init(void)
  */
 esp_err_t audio_alert_player_play_warning_once(void)
 {
-    ESP_RETURN_ON_FALSE(s_player_state.initialized, ESP_ERR_INVALID_STATE, TAG,
+    taskENTER_CRITICAL(&s_player_state.lock);
+    const bool initialized = s_player_state.initialized;
+    const bool already_playing = s_player_state.playing;
+    if (initialized && !already_playing)
+    {
+        s_player_state.playing = true;
+    }
+    taskEXIT_CRITICAL(&s_player_state.lock);
+
+    ESP_RETURN_ON_FALSE(initialized, ESP_ERR_INVALID_STATE, TAG,
                         "audio alert player not initialized");
 
-    if (s_player_state.playing)
+    if (already_playing)
     {
         ESP_LOGI(TAG, "warning playback already active");
         return ESP_OK;
     }
 
-    s_player_state.playing = true;
+    TaskHandle_t created_handle = NULL;
     BaseType_t task_created = xTaskCreate(audio_alert_player_task,
                                           "audio_alert",
                                           ALERT_PLAYER_TASK_STACK_SIZE,
                                           NULL,
                                           ALERT_PLAYER_TASK_PRIORITY,
-                                          &s_player_state.task_handle);
+                                          &created_handle);
     if (task_created != pdPASS)
     {
+        taskENTER_CRITICAL(&s_player_state.lock);
         s_player_state.playing = false;
         s_player_state.task_handle = NULL;
+        taskEXIT_CRITICAL(&s_player_state.lock);
         ESP_LOGE(TAG, "failed to create warning playback task");
         return ESP_ERR_NO_MEM;
     }
+
+    taskENTER_CRITICAL(&s_player_state.lock);
+    if (s_player_state.playing)
+    {
+        s_player_state.task_handle = created_handle;
+    }
+    taskEXIT_CRITICAL(&s_player_state.lock);
 
     return ESP_OK;
 }

@@ -46,25 +46,23 @@ static const char *danger_detection_status_text(
         return "后台未就绪";
     }
 
-    if (manager_snapshot != NULL &&
-        !manager_snapshot->danger_enabled_by_user) {
-        return "未开启";
-    }
-
-    if (manager_snapshot != NULL &&
-        manager_snapshot->danger_blocked_by_foreground_audio) {
-        return "资源占用，暂时等待";
-    }
-
-    if (manager_snapshot != NULL &&
-        !manager_snapshot->danger_allowed_by_policy) {
-        switch (manager_snapshot->policy_state) {
-            case POWER_POLICY_STATE_LOW_BATTERY_WARN:
-                return "低电量降级";
-            case POWER_POLICY_STATE_MAINTENANCE:
-                return "维护中暂停";
-            default:
+    if (manager_snapshot != NULL) {
+        switch (manager_snapshot->danger_block_reason) {
+            case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED:
+                return "未开启";
+            case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO:
                 return "资源占用，暂时等待";
+            case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY:
+                if ((manager_snapshot->policy_flags &
+                     POWER_POLICY_FLAG_MAINTENANCE) != 0U) {
+                    return "维护中暂停";
+                }
+                return "资源占用，暂时等待";
+            case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY:
+                return "后台未就绪";
+            case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE:
+            default:
+                break;
         }
     }
 
@@ -83,8 +81,7 @@ static const char *danger_detection_status_text(
         return "正在启动";
     }
     if (manager_snapshot != NULL &&
-        manager_snapshot->danger_enabled_by_user &&
-        manager_snapshot->danger_allowed_by_policy &&
+        manager_snapshot->danger_should_run &&
         !manager_snapshot->danger_runtime_running) {
         return "正在启动";
     }

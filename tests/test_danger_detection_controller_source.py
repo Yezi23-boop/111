@@ -25,17 +25,21 @@ class DangerDetectionControllerSourceTests(unittest.TestCase):
     def test_status_text_uses_manager_runtime_snapshot_for_transition(self) -> None:
         source = DANGER_DETECTION_CONTROLLER_SOURCE.read_text(encoding="utf-8")
 
+        self.assertIn("manager_snapshot->danger_should_run", source)
         self.assertIn("manager_snapshot->danger_runtime_running", source)
         self.assertIn(
-            "manager_snapshot->danger_blocked_by_foreground_audio",
+            "manager_snapshot->danger_block_reason",
             source,
         )
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED", source)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY", source)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO", source)
         self.assertIn('return "资源占用，暂时等待";', source)
         self.assertIn('return "正在启动";', source)
         self.assertIn('return "正在停止";', source)
         self.assertLess(
             source.index("state == DANGER_DETECTION_STATE_STOPPING"),
-            source.index("!manager_snapshot->danger_enabled_by_user"),
+            source.index("manager_snapshot->danger_block_reason"),
         )
 
 

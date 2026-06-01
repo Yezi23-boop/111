@@ -189,6 +189,13 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         self.assertIn("snapshot.output_owner != AUDIO_CODEC_OWNER_AUDIO_PLAYER", app_alert_manager)
         self.assertIn("mp3_player_stop()", app_alert_manager)
         self.assertIn("resource_preempt: resource=audio_output", app_alert_manager)
+        self.assertIn("portMUX_TYPE lock", app_alert_manager)
+        self.assertIn("uint32_t generation", app_alert_manager)
+        self.assertIn("request_generation", app_alert_manager)
+        self.assertIn("clear_generation", app_alert_manager)
+        self.assertIn("taskENTER_CRITICAL(&s_alert_manager_state.lock)", app_alert_manager)
+        self.assertIn("portMUX_TYPE lock", audio_alert_player)
+        self.assertIn("taskENTER_CRITICAL(&s_player_state.lock)", audio_alert_player)
 
 
 if __name__ == "__main__":

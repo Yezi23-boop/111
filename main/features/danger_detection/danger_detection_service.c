@@ -84,6 +84,21 @@ static void danger_detection_reset_espdl_postprocess(void)
     s_espdl_cooldown_until_tick = 0;
 }
 
+static bool danger_detection_service_allows_alert_commit(void)
+{
+    bool runtime_started = false;
+    danger_detection_state_t state = DANGER_DETECTION_STATE_IDLE;
+
+    taskENTER_CRITICAL(&s_service_state.lock);
+    runtime_started = s_service_state.runtime_started;
+    state = s_service_state.snapshot.state;
+    taskEXIT_CRITICAL(&s_service_state.lock);
+
+    return runtime_started &&
+           state != DANGER_DETECTION_STATE_STOPPING &&
+           state != DANGER_DETECTION_STATE_ERROR;
+}
+
 const char *danger_detection_risk_state_text(
     danger_detection_risk_state_t risk_state)
 {
@@ -268,6 +283,19 @@ static void danger_detection_on_espdl_result(
         return;
     }
 
+    taskENTER_CRITICAL(&s_service_state.lock);
+    const bool runtime_started = s_service_state.runtime_started;
+    const danger_detection_state_t service_state =
+        s_service_state.snapshot.state;
+    taskEXIT_CRITICAL(&s_service_state.lock);
+
+    if (!runtime_started ||
+        service_state == DANGER_DETECTION_STATE_STOPPING ||
+        service_state == DANGER_DETECTION_STATE_ERROR)
+    {
+        return;
+    }
+
     const bool is_danger = result->label_index == 1;
     const float danger_prob = result->probabilities[1];
     const TickType_t now_tick = xTaskGetTickCount();
@@ -395,6 +423,11 @@ static void danger_detection_on_espdl_result(
 
     if (should_raise_alert)
     {
+        if (!danger_detection_service_allows_alert_commit())
+        {
+            return;
+        }
+
         /* 在锁外触发告警，避免回调内部长时间持锁 */
         app_alert_request_t request = {
             .source = APP_ALERT_SOURCE_TRAFFIC_AUDIO,
@@ -412,6 +445,11 @@ static void danger_detection_on_espdl_result(
     }
     else if (should_clear_alert)
     {
+        if (!danger_detection_service_allows_alert_commit())
+        {
+            return;
+        }
+
         (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
         ESP_LOGI(TAG,
                  "ESPDL danger 清除: clear_windows=%lu",
@@ -644,6 +682,12 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
         }
     }
 
+    if (ret != ESP_OK)
+    {
+        danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
+        return ret;
+    }
+
     if (callback_registered)
     {
         if (backend == DANGER_DETECTION_BACKEND_ESPDL)
@@ -661,6 +705,15 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
         }
     }
 
+    if (ret != ESP_OK)
+    {
+        taskENTER_CRITICAL(&s_service_state.lock);
+        s_service_state.runtime_started = false;
+        taskEXIT_CRITICAL(&s_service_state.lock);
+        danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
+        return ret;
+    }
+
     taskENTER_CRITICAL(&s_service_state.lock);
     s_service_state.callback_registered = false;
     s_service_state.runtime_started = false;
@@ -676,13 +729,8 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     danger_detection_reset_espdl_postprocess();
     taskEXIT_CRITICAL(&s_service_state.lock);
 
-    if (ret != ESP_OK)
-    {
-        danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
-        return ret;
-    }
-
     danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);
+    (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
     ESP_LOGI(TAG, "危险检测运行时已停止 (backend=%d)", backend);
     return ESP_OK;
 }

@@ -45,6 +45,23 @@ extern "C"
     esp_err_t display_alert_adapter_hide_danger_overlay(void);
 
     /**
+     * @brief 请求显示低电量提示。
+     *
+     * 该提示是普通可见提醒，不使用危险红色覆盖层，也不抢占 P0 告警。
+     *
+     * @return `ESP_OK` 表示请求已接受；
+     *         `ESP_ERR_INVALID_STATE` 表示模块尚未初始化。
+     */
+    esp_err_t display_alert_adapter_show_low_battery_warning(void);
+
+    /**
+     * @brief 请求隐藏低电量提示。
+     * @return `ESP_OK` 表示请求已接受；
+     *         `ESP_ERR_INVALID_STATE` 表示模块尚未初始化。
+     */
+    esp_err_t display_alert_adapter_hide_low_battery_warning(void);
+
+    /**
      * @brief 设置危险覆盖层显示抑制开关。
      * @param[in] suppressed true 表示后续即使收到 show 请求也不真正显示覆盖层。
      * @return `ESP_OK` 表示设置成功；

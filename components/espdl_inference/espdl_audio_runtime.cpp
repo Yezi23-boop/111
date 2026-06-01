@@ -86,6 +86,31 @@ struct RuntimeControl {
 RuntimeControl s_runtime = {};
 
 /**
+ * @brief 清理 stop 成功后才能释放的运行时资源。
+ *
+ * `espdl_audio_runtime_stop()` 可能先超时返回，此时后台任务仍负责释放 input
+ * session 并把 task_handle 置空。下一次 stop 或 start 前需要补做 codec
+ * deinit 和模型销毁，避免 service 层误以为资源已经完整释放。
+ */
+esp_err_t cleanup_stopped_runtime_resources()
+{
+    if (s_runtime.model_runner == nullptr) {
+        return ESP_OK;
+    }
+
+    esp_err_t ret = audio_codec_deinit();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "ESP-DL runtime cleanup deferred: %s",
+                 esp_err_to_name(ret));
+        return ret;
+    }
+
+    espdl_model_runner_destroy(s_runtime.model_runner);
+    s_runtime.model_runner = nullptr;
+    return ESP_OK;
+}
+
+/**
  * @brief 返回主麦克风通道在 TDM 帧中的索引。
  */
 int primary_mic_channel_index()
@@ -198,9 +223,17 @@ void runtime_task(void *arg)
     std::vector<int16_t> resampled_samples;
     ResampleState resample_state = {};
 
+    mono_samples.reserve(chunk_frames);
+    resampled_samples.reserve(
+        (chunk_frames * kResampleOutputGroup) / kResampleInputGroup +
+        kResampleOutputGroup);
+
     /* 滑窗缓冲：1 秒 + 步长余量 */
     std::vector<int16_t> pcm_buffer;
     pcm_buffer.reserve(ESPDL_WINDOW_SAMPLES + kStrideSamples);
+
+    /* 推理窗 PCM float 缓冲在任务启动时分配，避免每 300ms 窗口反复申请堆内存。 */
+    std::vector<float> pcm_float(ESPDL_WINDOW_SAMPLES);
 
     /* Fbank 特征缓冲（静态分配到 PSRAM） */
     std::vector<float> fbank_values(
@@ -264,7 +297,6 @@ void runtime_task(void *arg)
             }
 
             /* 转换为 float PCM */
-            std::vector<float> pcm_float(ESPDL_WINDOW_SAMPLES);
             constexpr float kScale = 1.0f / 32768.0f;
             for (size_t i = 0; i < ESPDL_WINDOW_SAMPLES; ++i) {
                 pcm_float[i] = static_cast<float>(pcm_buffer[i]) * kScale;
@@ -373,10 +405,15 @@ esp_err_t espdl_audio_runtime_start(const espdl_audio_runtime_config_t *config)
         return ESP_ERR_INVALID_STATE;
     }
 
+    esp_err_t ret = cleanup_stopped_runtime_resources();
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
     /* 初始化 active 单模型。当前只加载 V3.3，避免双模型常驻导致 RAM 峰值过高。 */
-    esp_err_t ret = espdl_model_runner_create(&s_runtime.model_runner,
-                                              dscnn_tiny_espdl,
-                                              "dscnn_v3.3");
+    ret = espdl_model_runner_create(&s_runtime.model_runner,
+                                    dscnn_tiny_espdl,
+                                    "dscnn_v3.3");
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ESP-DL active 模型初始化失败: %s", esp_err_to_name(ret));
         return ret;
@@ -456,8 +493,10 @@ esp_err_t espdl_audio_runtime_start(const espdl_audio_runtime_config_t *config)
 esp_err_t espdl_audio_runtime_stop(uint32_t timeout_ms)
 {
     if (s_runtime.task_handle == nullptr) {
-        if (s_runtime.state.load() == ESPDL_AUDIO_RUNTIME_STATE_IDLE) {
-            return ESP_OK;
+        const int state = s_runtime.state.load();
+        if (state == ESPDL_AUDIO_RUNTIME_STATE_IDLE ||
+            state == ESPDL_AUDIO_RUNTIME_STATE_FAILED) {
+            return cleanup_stopped_runtime_resources();
         }
         return ESP_ERR_INVALID_STATE;
     }
@@ -476,10 +515,9 @@ esp_err_t espdl_audio_runtime_stop(uint32_t timeout_ms)
     }
 
     /* 清理资源 */
-    audio_codec_deinit();
-    if (s_runtime.model_runner != nullptr) {
-        espdl_model_runner_destroy(s_runtime.model_runner);
-        s_runtime.model_runner = nullptr;
+    esp_err_t ret = cleanup_stopped_runtime_resources();
+    if (ret != ESP_OK) {
+        return ret;
     }
 
     ESP_LOGI(TAG, "ESPDL 实时运行时已停止");

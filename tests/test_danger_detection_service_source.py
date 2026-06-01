@@ -50,6 +50,37 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("s_espdl_hold_until_tick", service_source)
         self.assertIn("danger_detection_reset_espdl_postprocess", service_source)
 
+    def test_stop_failure_keeps_runtime_owned_until_cleanup_succeeds(self) -> None:
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("service_state == DANGER_DETECTION_STATE_STOPPING", service_source)
+        self.assertIn("service_state == DANGER_DETECTION_STATE_ERROR", service_source)
+        self.assertIn("if (ret != ESP_OK)\n    {\n        danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);\n        return ret;\n    }", service_source)
+        self.assertLess(
+            service_source.index("if (ret != ESP_OK)\n    {\n        danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);\n        return ret;\n    }"),
+            service_source.index("s_service_state.callback_registered = false;"),
+        )
+
+    def test_espdl_callback_rechecks_service_state_before_alert_commit(self) -> None:
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("danger_detection_service_allows_alert_commit", service_source)
+        self.assertIn("state != DANGER_DETECTION_STATE_STOPPING", service_source)
+        self.assertIn("state != DANGER_DETECTION_STATE_ERROR", service_source)
+        self.assertIn("if (!danger_detection_service_allows_alert_commit())", service_source)
+        espdl_callback = service_source[
+            service_source.index("static void danger_detection_on_espdl_result") :
+            service_source.index("/**\n * @brief 初始化危险检测服务。")
+        ]
+        self.assertLess(
+            espdl_callback.index("if (!danger_detection_service_allows_alert_commit())"),
+            espdl_callback.index("app_alert_request_t request"),
+        )
+        self.assertIn(
+            "danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);\n    (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);",
+            service_source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

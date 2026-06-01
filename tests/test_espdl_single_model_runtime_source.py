@@ -39,6 +39,31 @@ class EspdlSingleModelRuntimeSourceTests(unittest.TestCase):
 
         self.assertIn("ESPDL_DSCNN_DANGER_THRESHOLD  0.80f", runner_header)
 
+    def test_runtime_stop_timeout_can_cleanup_on_later_stop_or_start(self) -> None:
+        source = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("cleanup_stopped_runtime_resources", source)
+        self.assertIn("ESP-DL runtime cleanup deferred", source)
+        self.assertIn("return cleanup_stopped_runtime_resources();", source)
+        self.assertLess(
+            source.index("cleanup_stopped_runtime_resources();"),
+            source.index("espdl_model_runner_create(&s_runtime.model_runner"),
+        )
+
+    def test_runtime_does_not_allocate_pcm_float_inside_inference_window(self) -> None:
+        source = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("std::vector<float> pcm_float(ESPDL_WINDOW_SAMPLES);", source)
+        self.assertIn("避免每 300ms 窗口反复申请堆内存", source)
+        self.assertEqual(
+            source.count("std::vector<float> pcm_float(ESPDL_WINDOW_SAMPLES);"),
+            1,
+        )
+        self.assertLess(
+            source.index("std::vector<float> pcm_float(ESPDL_WINDOW_SAMPLES);"),
+            source.index("while (!s_runtime.stop_requested.load())"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

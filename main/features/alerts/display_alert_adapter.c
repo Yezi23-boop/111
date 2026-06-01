@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "gui_guider.h"
 #include "lvgl.h"
+#include "ui/custom/ui_chinese_fonts.h"
 
 #define TAG "display_alert"
 
@@ -22,14 +23,20 @@ typedef struct
     bool suppressed;            /**< 抑制标志；为 true 时即使收到 show 请求也不实际显示。 */
     volatile bool pending_show; /**< 跨线程 show 请求标记，业务线程写入，UI 线程清除。 */
     volatile bool pending_hide; /**< 跨线程 hide 请求标记，业务线程写入，UI 线程清除。 */
+    volatile bool pending_low_battery_show; /**< 跨线程低电量 show 请求标记。 */
+    volatile bool pending_low_battery_hide; /**< 跨线程低电量 hide 请求标记。 */
     lv_obj_t *danger_overlay;   /**< 顶层红色覆盖对象，仅 UI 线程负责创建和操作。 */
+    lv_obj_t *low_battery_overlay; /**< 低电量提示对象，仅 UI 线程负责创建和操作。 */
 } display_alert_state_t;
 
 static display_alert_state_t s_display_alert_state = {
     .initialized = false,
     .pending_show = false,
     .pending_hide = false,
+    .pending_low_battery_show = false,
+    .pending_low_battery_hide = false,
     .danger_overlay = NULL,
+    .low_battery_overlay = NULL,
 };
 
 /**
@@ -58,6 +65,55 @@ static void display_alert_ensure_overlay_created(void)
     lv_obj_set_style_bg_opa(s_display_alert_state.danger_overlay,
                             LV_OPA_COVER, 0);
     lv_obj_add_flag(s_display_alert_state.danger_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+/**
+ * @brief 确保低电量提示对象已创建。
+ *
+ * 低电量提示挂在 top layer，但使用较小的琥珀色卡片，不复用 P0 危险红屏，
+ * 避免把普通电量提醒误表达成安全告警。
+ *
+ * @return 无返回值。
+ *
+ * @note 仅允许在 UI 线程调用。
+ */
+static void display_alert_ensure_low_battery_overlay_created(void)
+{
+    if (s_display_alert_state.low_battery_overlay != NULL)
+    {
+        return;
+    }
+
+    lv_obj_t *parent = lv_layer_top();
+    s_display_alert_state.low_battery_overlay = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_display_alert_state.low_battery_overlay);
+    lv_obj_set_size(s_display_alert_state.low_battery_overlay, 260, 112);
+    lv_obj_align(s_display_alert_state.low_battery_overlay, LV_ALIGN_TOP_MID,
+                 0, 32);
+    lv_obj_set_style_bg_color(s_display_alert_state.low_battery_overlay,
+                              lv_color_hex(0x2b2100), 0);
+    lv_obj_set_style_bg_opa(s_display_alert_state.low_battery_overlay,
+                            LV_OPA_90, 0);
+    lv_obj_set_style_border_color(s_display_alert_state.low_battery_overlay,
+                                  lv_color_hex(0xffc247), 0);
+    lv_obj_set_style_border_width(s_display_alert_state.low_battery_overlay,
+                                  2, 0);
+    lv_obj_set_style_radius(s_display_alert_state.low_battery_overlay, 18, 0);
+    lv_obj_set_style_pad_all(s_display_alert_state.low_battery_overlay, 14, 0);
+
+    lv_obj_t *label = lv_label_create(s_display_alert_state.low_battery_overlay);
+    lv_label_set_text(label, "电量较低\n请及时充电");
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(label, 232);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xfff4c2), 0);
+    lv_obj_set_style_text_font(label,
+                               &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
+                               0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(label);
+
+    lv_obj_add_flag(s_display_alert_state.low_battery_overlay,
+                    LV_OBJ_FLAG_HIDDEN);
 }
 
 /**
@@ -97,6 +153,48 @@ static void display_alert_apply_hide(void)
 }
 
 /**
+ * @brief 在 UI 线程中真正显示低电量提示。
+ * @return 无返回值。
+ *
+ * @note 仅允许在 UI 线程调用。
+ */
+static void display_alert_apply_low_battery_show(void)
+{
+    display_alert_ensure_low_battery_overlay_created();
+    if (s_display_alert_state.low_battery_overlay == NULL)
+    {
+        return;
+    }
+
+    lv_obj_move_foreground(s_display_alert_state.low_battery_overlay);
+    if (s_display_alert_state.danger_overlay != NULL)
+    {
+        lv_obj_move_foreground(s_display_alert_state.danger_overlay);
+    }
+    lv_obj_clear_flag(s_display_alert_state.low_battery_overlay,
+                      LV_OBJ_FLAG_HIDDEN);
+    ESP_LOGW(TAG, "low battery overlay shown");
+}
+
+/**
+ * @brief 在 UI 线程中真正隐藏低电量提示。
+ * @return 无返回值。
+ *
+ * @note 仅允许在 UI 线程调用。
+ */
+static void display_alert_apply_low_battery_hide(void)
+{
+    if (s_display_alert_state.low_battery_overlay == NULL)
+    {
+        return;
+    }
+
+    lv_obj_add_flag(s_display_alert_state.low_battery_overlay,
+                    LV_OBJ_FLAG_HIDDEN);
+    ESP_LOGI(TAG, "low battery overlay hidden");
+}
+
+/**
  * @brief 初始化显示告警适配层。
  *
  * 初始化阶段不立刻创建覆盖层对象，是为了避免无告警场景下增加额外 LVGL 对象和样式开销。
@@ -108,6 +206,8 @@ esp_err_t display_alert_adapter_init(void)
     s_display_alert_state.suppressed = false;
     s_display_alert_state.pending_show = false;
     s_display_alert_state.pending_hide = false;
+    s_display_alert_state.pending_low_battery_show = false;
+    s_display_alert_state.pending_low_battery_hide = false;
     s_display_alert_state.initialized = true;
     return ESP_OK;
 }
@@ -139,6 +239,24 @@ esp_err_t display_alert_adapter_hide_danger_overlay(void)
                         TAG, "display alert adapter not initialized");
     s_display_alert_state.pending_hide = true;
     s_display_alert_state.pending_show = false;
+    return ESP_OK;
+}
+
+esp_err_t display_alert_adapter_show_low_battery_warning(void)
+{
+    ESP_RETURN_ON_FALSE(s_display_alert_state.initialized, ESP_ERR_INVALID_STATE,
+                        TAG, "display alert adapter not initialized");
+    s_display_alert_state.pending_low_battery_show = true;
+    s_display_alert_state.pending_low_battery_hide = false;
+    return ESP_OK;
+}
+
+esp_err_t display_alert_adapter_hide_low_battery_warning(void)
+{
+    ESP_RETURN_ON_FALSE(s_display_alert_state.initialized, ESP_ERR_INVALID_STATE,
+                        TAG, "display alert adapter not initialized");
+    s_display_alert_state.pending_low_battery_hide = true;
+    s_display_alert_state.pending_low_battery_show = false;
     return ESP_OK;
 }
 
@@ -187,6 +305,17 @@ void display_alert_adapter_process_ui(void)
             display_alert_apply_hide();
         }
         return;
+    }
+
+    if (s_display_alert_state.pending_low_battery_show)
+    {
+        s_display_alert_state.pending_low_battery_show = false;
+        display_alert_apply_low_battery_show();
+    }
+    else if (s_display_alert_state.pending_low_battery_hide)
+    {
+        s_display_alert_state.pending_low_battery_hide = false;
+        display_alert_apply_low_battery_hide();
     }
 
     if (s_display_alert_state.pending_show)

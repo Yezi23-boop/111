@@ -31,7 +31,8 @@ static bool safety_monitor_session_snapshot_is_running(
 {
     return snapshot != NULL &&
            (snapshot->state == DANGER_DETECTION_STATE_STARTING ||
-            snapshot->state == DANGER_DETECTION_STATE_RUNNING);
+            snapshot->state == DANGER_DETECTION_STATE_RUNNING ||
+            snapshot->state == DANGER_DETECTION_STATE_STOPPING);
 }
 
 static void safety_monitor_session_store(esp_err_t last_error,
@@ -54,7 +55,7 @@ static esp_err_t safety_monitor_session_recover_error(void)
 {
     ESP_LOGW(TAG, "danger detection runtime is in error state, restarting");
     esp_err_t ret = danger_detection_service_stop(0U);
-    safety_monitor_session_store(ret, false);
+    safety_monitor_session_store(ret, ret != ESP_OK);
 
     if (ret != ESP_OK)
     {
@@ -113,15 +114,16 @@ static esp_err_t safety_monitor_session_start(const char *reason)
 static esp_err_t safety_monitor_session_stop(void)
 {
     esp_err_t ret = danger_detection_service_stop(0U);
-    safety_monitor_session_store(ret, false);
 
     if (ret != ESP_OK)
     {
+        safety_monitor_session_store(ret, true);
         ESP_LOGW(TAG, "resource_release failed: danger_detection stop: %s",
                  esp_err_to_name(ret));
         return ret;
     }
 
+    safety_monitor_session_store(ESP_OK, false);
     ESP_LOGI(TAG, "background danger detection stopped");
     return ESP_OK;
 }
@@ -157,8 +159,13 @@ esp_err_t safety_monitor_session_apply(bool should_run, const char *reason)
 
     const danger_detection_snapshot_t snapshot =
         danger_detection_service_get_snapshot();
+    bool previous_runtime_running = false;
+    taskENTER_CRITICAL(&s_session.lock);
+    previous_runtime_running = s_session.runtime_running;
+    taskEXIT_CRITICAL(&s_session.lock);
     const bool service_running =
-        safety_monitor_session_snapshot_is_running(&snapshot);
+        safety_monitor_session_snapshot_is_running(&snapshot) ||
+        previous_runtime_running;
     taskENTER_CRITICAL(&s_session.lock);
     s_session.runtime_running = service_running;
     taskEXIT_CRITICAL(&s_session.lock);
