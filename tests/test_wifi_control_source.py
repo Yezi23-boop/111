@@ -75,6 +75,7 @@ class WifiControlSourceTests(unittest.TestCase):
         self.assertIn("WIFI_CONTROL_MAX_RETRY", source)
         self.assertIn("wifi_control_runtime_clear_reconnect_markers", source)
         self.assertIn("wifi_control_runtime_set_reconnect_markers", source)
+        self.assertIn("wifi_control_runtime_needs_disconnect_before_connect", source)
         self.assertNotIn(
             "wifi_control_runtime_set_auto_reconnect_enabled(true);",
             source,
@@ -94,6 +95,39 @@ class WifiControlSourceTests(unittest.TestCase):
             "wifi_control_runtime_clear_reconnect_markers();\n        wifi_control_runtime_set_state(WIFI_CONTROL_STATE_CONNECT_FAIL);",
             source,
         )
+
+    def test_cold_boot_connect_does_not_suppress_first_retry(self) -> None:
+        source = WIFI_CONTROL_SOURCE.read_text(encoding="utf-8")
+        connect_body = source.split(
+            "esp_err_t wifi_control_connect(const char *ssid, const char *password)",
+            1,
+        )[1].split("/**\n * @brief 主动断开当前 STA 连接。", 1)[0]
+        helper_body = source.split(
+            "static bool wifi_control_runtime_needs_disconnect_before_connect(void)",
+            1,
+        )[1].split("/**\n * @brief 判断当前是否处于", 1)[0]
+
+        self.assertIn("state == WIFI_CONTROL_STATE_CONNECTING", helper_body)
+        self.assertIn("state == WIFI_CONTROL_STATE_CONNECTED", helper_body)
+        self.assertIn("bool needs_disconnect_before_connect = false;", connect_body)
+        self.assertLess(
+            connect_body.index("ret = wifi_control_init();"),
+            connect_body.index(
+                "needs_disconnect_before_connect =\n        wifi_control_runtime_needs_disconnect_before_connect();"
+            ),
+        )
+        self.assertIn("pre_disconnect=%d", connect_body)
+        self.assertIn("if (needs_disconnect_before_connect)", connect_body)
+        self.assertIn("ret = wifi_control_request_disconnect(true);", connect_body)
+        self.assertIn("else\n    {", connect_body)
+        self.assertIn("wifi_control_runtime_clear_reconnect_markers();", connect_body)
+        self.assertIn("确保第一次认证失败能进入自动重连分支", connect_body)
+
+    def test_disconnect_log_exposes_reason_and_suppression_state(self) -> None:
+        source = WIFI_CONTROL_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("wifi_event_sta_disconnected_t", source)
+        self.assertIn("reason=%u suppress=%d auto_reconnect=%d retry=%u", source)
 
     def test_init_failure_uses_partial_cleanup(self) -> None:
         source = WIFI_CONTROL_SOURCE.read_text(encoding="utf-8")

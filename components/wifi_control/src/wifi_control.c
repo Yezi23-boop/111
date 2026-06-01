@@ -64,6 +64,7 @@ static void wifi_control_runtime_set_reconnect_markers(bool suppressed,
 static void wifi_control_runtime_clear_reconnect_markers(void);
 static bool wifi_control_runtime_get_auto_reconnect_enabled(void);
 static bool wifi_control_runtime_get_connected(void);
+static bool wifi_control_runtime_needs_disconnect_before_connect(void);
 static bool wifi_control_runtime_should_suppress_disconnect(
     bool *reconnect_after_disconnect);
 static wifi_control_state_t wifi_control_runtime_get_state(void);
@@ -274,6 +275,29 @@ static bool wifi_control_runtime_get_connected(void)
     connected = s_runtime.connected;
     portEXIT_CRITICAL(&s_runtime_lock);
     return connected;
+}
+
+/**
+ * @brief 判断新连接请求前是否需要先显式断开旧 STA 状态。
+ *
+ * 冷启动或上一次已经进入失败/断开态时，不应再下发一次“重连前断开”。
+ * 否则 ESP-IDF 后续上报的首次真实断连事件可能被 suppress 标记误判为
+ * 清理流程的一部分，导致开机 latest Wi-Fi 首次失败后没有进入自动重试。
+ *
+ * @return true 表示当前存在已连接或正在连接的旧 STA 状态，需要先断开。
+ */
+static bool wifi_control_runtime_needs_disconnect_before_connect(void)
+{
+    bool connected = false;
+    wifi_control_state_t state = WIFI_CONTROL_STATE_IDLE;
+
+    portENTER_CRITICAL(&s_runtime_lock);
+    connected = s_runtime.connected;
+    state = s_runtime.state;
+    portEXIT_CRITICAL(&s_runtime_lock);
+
+    return connected || state == WIFI_CONTROL_STATE_CONNECTED ||
+           state == WIFI_CONTROL_STATE_CONNECTING;
 }
 
 /**
@@ -528,6 +552,10 @@ static void wifi_control_event_handler(void *arg, esp_event_base_t event_base,
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
         {
+            const wifi_event_sta_disconnected_t *disconnected =
+                (const wifi_event_sta_disconnected_t *)event_data;
+            const uint8_t reason =
+                disconnected != NULL ? disconnected->reason : 0U;
             bool reconnecting = false;
             const bool suppress_disconnect =
                 wifi_control_runtime_should_suppress_disconnect(&reconnecting);
@@ -540,7 +568,10 @@ static void wifi_control_event_handler(void *arg, esp_event_base_t event_base,
             retry_count = s_runtime.retry_count;
             portEXIT_CRITICAL(&s_runtime_lock);
 
-            ESP_LOGW(TAG, "STA 断开连接");
+            ESP_LOGW(TAG,
+                     "STA 断开连接: reason=%u suppress=%d auto_reconnect=%d retry=%u",
+                     (unsigned)reason, suppress_disconnect ? 1 : 0,
+                     auto_reconnect_enabled ? 1 : 0, (unsigned)retry_count);
 
             if (suppress_disconnect)
             {
@@ -713,6 +744,7 @@ esp_err_t wifi_control_connect(const char *ssid, const char *password)
 {
     esp_err_t ret = ESP_OK;
     wifi_config_t wifi_config = {0};
+    bool needs_disconnect_before_connect = false;
 
     if (ssid == NULL || password == NULL || ssid[0] == '\0')
     {
@@ -725,14 +757,30 @@ esp_err_t wifi_control_connect(const char *ssid, const char *password)
         return ret;
     }
 
+    needs_disconnect_before_connect =
+        wifi_control_runtime_needs_disconnect_before_connect();
     wifi_control_runtime_set_state(WIFI_CONTROL_STATE_CONNECTING);
     wifi_control_runtime_set_retry_count(0);
+    ESP_LOGI(TAG, "connect request: ssid=%s pre_disconnect=%d", ssid,
+             needs_disconnect_before_connect ? 1 : 0);
 
-    ret = wifi_control_request_disconnect(true);
-    if (ret != ESP_OK)
+    if (needs_disconnect_before_connect)
     {
-        ESP_LOGW(TAG, "重连前断开当前 STA 失败: %s", esp_err_to_name(ret));
-        return ret;
+        ret = wifi_control_request_disconnect(true);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "重连前断开当前 STA 失败: %s", esp_err_to_name(ret));
+            return ret;
+        }
+    }
+    else
+    {
+        /*
+         * 冷启动 latest Wi-Fi 连接不需要清理旧连接；明确清空 suppress 标记，
+         * 确保第一次认证失败能进入自动重连分支。
+         */
+        wifi_control_runtime_clear_reconnect_markers();
+        wifi_control_runtime_set_connected(false);
     }
 
     wifi_control_copy_credentials((char *)wifi_config.sta.ssid,

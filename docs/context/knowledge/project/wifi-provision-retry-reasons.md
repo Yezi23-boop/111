@@ -1,8 +1,8 @@
 ---
 id: wifi-provision-retry-reasons
 tags: [project, wifi, provision, diagnostics, esp32-s3]
-summary: 记录当前仓库 Wi-Fi 自动连接失败后常见断连 reason 码的含义，以及哪些告警是正常探测噪声。
-last_reviewed: 2026-04-25
+summary: 记录当前仓库 Wi-Fi 自动连接失败后常见断连 reason 码、开机 latest 重试路径，以及哪些告警是正常探测噪声。
+last_reviewed: 2026-06-01
 memory_type: semantic
 scope: repo
 owners: components/network_manager, components/wifi_control, components/network_provisioning_adapter
@@ -17,6 +17,25 @@ evidence_level: observed
   - `network_manager_start()` 先尝试最近成功连接的 latest Wi-Fi
   - 若 latest 失败，停在空闲态，等待用户进入 Wi-Fi 管理页显式点击 `BLE Provision` 或 `AP Web Fallback`
 - Wi-Fi 断连原因日志当前由 `wifi_control` 侧的 STA 事件链路承接。
+- 2026-06-01 后，`wifi_control_connect()` 只在当前已经连接或正在连接时才会先下发“重连前断开”；冷启动 latest Wi-Fi 连接不会再创建 suppress 窗口，避免首次真实断连事件被误吞掉而不触发自动重试。
+- 本次修复的完整板端证据见 `docs/context/runs/2026-06-01-attempt-wifi-autoconnect-retry-fix.md`。
+
+# 当前关键日志字段
+
+`wifi_control` 的断连日志包含：
+
+```text
+connect request: ssid=<ssid> pre_disconnect=<0|1>
+STA 断开连接: reason=<reason> suppress=<0|1> auto_reconnect=<0|1> retry=<n>
+```
+
+判读：
+
+- `pre_disconnect=0`：本次连接请求没有先制造显式断开清理窗口；冷启动 latest Wi-Fi 应该是这个值。
+- `pre_disconnect=1`：本次连接前已有连接或连接尝试，允许先断开旧 STA 状态。
+- `suppress=1`：这次断连被视为显式断开或切换连接前的清理事件，不应触发自动重连。
+- `suppress=0 auto_reconnect=1 retry<n`：这次断连应进入 `esp_wifi_connect()` 自动重试。
+- 冷启动 latest Wi-Fi 首次认证失败如果仍看到 `suppress=1`，说明连接切换标记又误覆盖了真实失败事件，应优先复查 `wifi_control_connect()` 前置断开路径。
 
 # 当前已验证的 reason 码
 
