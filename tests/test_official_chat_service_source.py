@@ -27,12 +27,18 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("network_service_is_service_ready()", source)
         self.assertIn("official_chat_service_enter_foreground(", source)
         self.assertIn("official_chat_service_shutdown(", source)
-        self.assertIn("s_foreground_requested = false;", source)
         self.assertIn("s_shutdown_requested", source)
         self.assertIn("s_shutdown_stop_requested", source)
         self.assertIn("s_shutdown_destroy_deadline_ticks", source)
         self.assertIn("kShutdownTransportQuietPeriodMs", source)
         self.assertIn("xTaskAbortDelay(", source)
+        self.assertIn("xQueueCreateStatic(", source)
+        self.assertIn("xQueueSend(", source)
+        self.assertIn("xQueueReceive(", source)
+        self.assertIn("official_chat_service_handle_command(", source)
+        self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND", source)
+        self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP",
+                      source)
         self.assertIn("official_chat_get_state(", source)
         self.assertIn("official_chat_stop_listening(", source)
         self.assertIn("official_chat_prepare_shutdown(", source)
@@ -68,9 +74,16 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
                       header)
         self.assertIn("void official_chat_service_request_shutdown(void);",
                       header)
+        self.assertIn("void official_chat_service_leave_foreground(void);",
+                      header)
+        self.assertIn("等价于 `official_chat_service_leave_foreground()`",
+                      header)
         self.assertIn("bool official_chat_service_is_shutdown_pending(void);",
                       header)
         self.assertIn("esp_err_t official_chat_service_shutdown(void);", header)
+        self.assertIn("official_chat_service_snapshot_t", header)
+        self.assertIn("esp_err_t official_chat_service_get_snapshot(",
+                      header)
         self.assertIn("s_message_history", source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER", source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT", source)
@@ -80,7 +93,8 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("memset(s_message_history, 0, sizeof(s_message_history));",
                       source)
         self.assertIn("s_message_count = 0;", source)
-        self.assertIn("s_last_error = ESP_OK;", source)
+        self.assertIn("official_chat_service_set_last_error(ESP_OK);",
+                      source)
         self.assertIn("s_chat_handle = NULL;", source)
         self.assertIn("official_chat_set_event_callback(chat_handle, NULL, NULL);",
                       source)
@@ -90,8 +104,43 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("OFFICIAL_CHAT_STATE_CONNECTING", source)
         self.assertIn("xTaskGetTickCount()", source)
         self.assertIn("pdMS_TO_TICKS(kShutdownTransportQuietPeriodMs)", source)
-        self.assertIn("s_service_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED;",
+        self.assertIn("official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_STOPPED);",
                       source)
+
+    def test_service_releases_partial_session_when_start_fails(self) -> None:
+        source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "official_chat_destroy(s_chat_handle);\n"
+            "        s_chat_handle = NULL;\n"
+            "        official_chat_service_set_last_error(ret);",
+            source,
+        )
+        self.assertIn(
+            "official_chat_set_event_callback(s_chat_handle, NULL, NULL);\n"
+            "        official_chat_destroy(s_chat_handle);\n"
+            "        s_chat_handle = NULL;",
+            source,
+        )
+
+    def test_ui_exit_is_frontend_leave_not_blocking_shutdown(self) -> None:
+        ui_source = AI_UI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("official_chat_service_leave_foreground();", ui_source)
+        self.assertNotIn("official_chat_service_shutdown();", ui_source)
+
+    def test_service_uses_snapshot_and_queue_instead_of_volatile_flag_protocol(self) -> None:
+        header = OFFICIAL_CHAT_SERVICE_HEADER.read_text(encoding="utf-8")
+        source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("foreground_active", header)
+        self.assertIn("stop_pending", header)
+        self.assertIn("last_error", header)
+        self.assertIn("portMUX_TYPE s_snapshot_lock", source)
+        self.assertIn("official_chat_service_copy_snapshot(", source)
+        self.assertIn("official_chat_service_set_lifecycle_intent(",
+                      source)
+        self.assertNotIn("static volatile", source)
 
     def test_service_shutdown_waits_transport_quiet_period_for_idle_session(self) -> None:
         source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")

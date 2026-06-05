@@ -81,7 +81,7 @@ static void ai_ui_back_event(void *user_data) {
 
     s_exit_requested = true;
     s_foreground_requested = false;
-    official_chat_service_request_shutdown();
+    official_chat_service_leave_foreground();
     ESP_LOGI(TAG, "ai exit requested");
     ai_ui_refresh_status();
 }

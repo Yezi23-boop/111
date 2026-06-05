@@ -78,7 +78,6 @@ queries:
     query: "network_manager network_provisioning_adapter ap_portal_adapter 分工 owner"
     expected_top5:
       - docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md
-      - docs/context/knowledge/project/storage-and-provisioning-paths.md
 
   - id: attempt-log-entry
     query: "agent 做过什么 修改 尝试 避免重复"

@@ -30,7 +30,10 @@ extern "C"
     /* 注册状态变化回调；回调在服务任务上下文执行。 */
     void power_service_register_callback(power_state_changed_cb_t cb);
 
-    /* 返回服务层拥有的只读快照视图；如需长期持有请自行复制。 */
+    /* 复制当前电源状态快照；getter 不做 I/O、不阻塞、不推进采样状态机。 */
+    esp_err_t power_service_get_snapshot(board_power_state_t *out_state);
+
+    /* 返回服务层拥有的只读快照视图；兼容旧调用方，新增代码优先用 get_snapshot(out)。 */
     const board_power_state_t *power_service_get_state(void);
 
 #ifdef __cplusplus

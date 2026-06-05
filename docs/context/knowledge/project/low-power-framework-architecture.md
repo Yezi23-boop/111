@@ -2,7 +2,7 @@
 id: project-low-power-framework-architecture
 tags: project, power, low-power, architecture, standby, sleep, power_policy
 summary: 当前手表项目低功耗总框架设计，固定产品状态、事实快照、预算发布、owner 执行和 sleep dry-run 边界。
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-02
 memory_type: project_knowledge
 scope: repo
 owners: main/services/power_policy.c, main/services/background_service_manager.c, main/services/network_service.c, main/ui/ui_refresh_policy.c
@@ -26,10 +26,13 @@ status: active
   -> sleep_coordinator 只消费 sleep 预算并 dry-run 记录
 ```
 
+V1 采用 `FreeRTOS owner snapshot + power_budget` 基线，不做 `runtime lease`、不抢占资源、不新增中心化硬件管家。
+
 ## 设计目标
 
 - 对齐手表产品语义：用户看到的是 `ACTIVE / STANDBY`，后续可由 UI owner 接入低电量提示；用户不应看到 `Light Sleep / Deep Sleep` 这类底层阶段。
 - 保持嵌入式 owner 边界：策略层不直接操作屏幕、Wi-Fi、音频、PMIC、LVGL 或 ESP sleep API。
+- 保持 FreeRTOS owner 模型：长期服务用独立 task 或 owner 执行上下文，跨 owner 用 snapshot、notify、queue、event group 协作。
 - 让 V1 可验证、可回退：先把预算流、STANDBY 行为和 sleep dry-run 做清楚，不保留当前有问题的手动 sleep 测试代码。
 - 为后续更深低功耗预留扩展点：DFS、ESP-IDF Automatic Light-sleep、Deep Sleep、RTC/PMIC 外部唤醒都能在单独评审后挂入同一框架。
 
@@ -115,7 +118,7 @@ STANDBY 多档只写设计，不改变执行行为。
 
 ## 事实输入
 
-V1 选择显式 snapshot API，不做通用 fact registry。
+V1 选择显式 snapshot API，不做通用 fact registry，也不做 `runtime lease` 仲裁中心。
 
 每个 owner 保留自己的状态写权限，并通过只读 snapshot API 暴露当前状态副本。`power_policy` 由独立 FreeRTOS task 维护最新预算快照：关键事件通过 notify 唤醒 task，周期 timeout 负责兜底一致性，最终事实仍通过 snapshot API 读取。
 
@@ -134,6 +137,7 @@ background_service_manager_get_snapshot()
 - snapshot API 返回状态副本，不暴露内部可写对象。
 - `power_policy` 不偷看 owner 内部变量。
 - 不做动态通用 fact registry。
+- 不做动态 `runtime lease` 表或 TTL 租约账本。
 - 不允许多个模块写同一个 fact。
 
 ## power_policy 职责
@@ -226,6 +230,32 @@ PARTIAL
 ```
 
 执行状态只能作为下一轮 fact，不能反向修改 `power_budget`。
+
+## 资源释放与结束流程
+
+低功耗预算只能表达目标，不直接释放资源。资源结束必须由真实 owner 执行：
+
+```text
+power_policy 发布 budget / blocker 结论
+  -> owner 通过 task notification 或 queue 收到预算变化/结束意图
+  -> owner 停止新工作
+  -> owner 等当前关键动作短收尾
+  -> owner 释放 session / 关闭自己资源域内硬件
+  -> owner 发布 inactive / released snapshot
+  -> power_policy 下一轮聚合看到资源已释放
+```
+
+示例：
+
+- 音频活跃时，audio/official_chat owner 发布 `AUDIO_ACTIVE` fact；`power_policy` 只能据此阻止 sleep，不直接关 codec/I2S。
+- 网络进入 `STANDBY` 预算时，network owner 自己启用 Wi-Fi PS、暂停非关键同步；`power_policy` 不调用 Wi-Fi API。
+- 后台可暂停任务收到 `PAUSE_OPTIONAL` 后，由对应 session owner 自己 stop、退避或保持 blocker。
+
+V1 不做：
+
+- 中心 runtime 直接删除资源占用。
+- `power_policy` 抢占或强杀 owner。
+- 通过外部改 flag 假装资源已经释放。
 
 ## notify 与更新机制
 
@@ -411,6 +441,7 @@ V1 验收以框架边界、预算流、STANDBY 行为和 dry-run 可观测为主
 
 - `power_policy` 能读取各 owner snapshot。
 - `power_policy` 能发布 `power_budget snapshot`。
+- owner 能通过 snapshot 表达资源 active / inactive / released。
 - `STANDBY` 自动进入/退出稳定。
 - 用户主动熄屏也进入 `STANDBY`。
 - Wi-Fi PS / 同步节流按 budget 执行。
@@ -435,6 +466,7 @@ V1 不要求：
 ## 禁止路径
 
 - 不新增大而全 `power_manager`、`resource_manager` 或通用低功耗事件总线。
+- 不新增 `runtime lease` 仲裁中心、通用资源账本或 TTL 租约表。
 - 不让 `power_policy` 直接操作硬件。
 - 不让 `sleep_coordinator` 逐个理解各 owner 内部状态。
 - 不让 `sleep_coordinator` 断开、重连或配置 Wi-Fi；Wi-Fi 省电属于 network owner，Automatic Light-sleep 属于后续系统 PM owner。

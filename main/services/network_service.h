@@ -50,6 +50,18 @@ extern "C"
         char ip[16];
     } network_service_wifi_status_t;
 
+    typedef struct
+    {
+        network_service_state_t state;       /* 当前兼容层状态。 */
+        bool wifi_connected;                 /* 当前是否已获得 Wi-Fi STA 连接。 */
+        bool service_ready;                  /* 关键云端依赖是否已通过探测。 */
+        bool probe_active;                   /* 当前是否正在执行云端 ready 探测。 */
+        bool probe_paused_by_budget;         /* 探测是否被 power budget 暂停。 */
+        bool power_save_applied;             /* 最近一次下发的 Wi-Fi PS 目标值。 */
+        esp_err_t last_error;                /* 最近一次服务层错误。 */
+        esp_err_t last_probe_result;         /* 最近一次云端 ready 探测结果。 */
+    } network_service_snapshot_t;
+
     /* 状态迁移主路径（当前项目）:
      * OFFLINE -> CONNECTING/BLE_PROVISIONING -> WIFI_READY -> SERVICE_READY
      * 失败或兜底时可转到 PORTAL_REQUIRED。 */
@@ -103,6 +115,16 @@ extern "C"
      * @return `ESP_OK` 表示成功；`ESP_ERR_INVALID_ARG` 表示参数非法。
      */
     esp_err_t network_service_get_wifi_status(network_service_wifi_status_t *status);
+
+    /**
+     * @brief 获取网络服务生命周期快照。
+     *
+     * getter 只复制 owner 已发布的状态，不做 DNS/I/O、不阻塞、不推进状态机。
+     *
+     * @param[out] snapshot 输出快照。
+     * @return `ESP_OK` 表示成功；`ESP_ERR_INVALID_ARG` 表示参数非法。
+     */
+    esp_err_t network_service_get_snapshot(network_service_snapshot_t *snapshot);
 
     /**
      * @brief 再次使用已保存凭据发起联网。

@@ -428,6 +428,8 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         self.assertIn("s_budget_version++", source)
         self.assertIn("power_budget_change: version=%u reasons=0x%08", source)
         self.assertIn("policy task started", source)
+        self.assertIn("power_service_get_snapshot(&power_snapshot)", source)
+        self.assertNotIn("power_policy_build_budget(power_service_get_state()", source)
 
         get_budget_match = re.search(
             r"power_policy_budget_t power_policy_get_budget\(void\)\s*\{(?P<body>.*?)\n\}",

@@ -125,6 +125,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 新增或修改代码应优先满足模块化、分层、单一职责、明确接口边界和可验证错误路径。
 - 后续新增功能、跨文件改动和重构默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；详细边界见 `docs/context/knowledge/project/layering-boundary-map.md`。
 - 运行时骨架默认按 `docs/context/knowledge/project/runtime-owner-contract.md` 执行：不新增大而全 `ResourceManager`、`resource_policy`、`session_router` 或默认 `ui_manager`；新能力优先落到现有 owner，必要时新增窄 service/session。
+- 板级事实默认由 `main/app/board_*` 或现有 board owner 持有：GPIO/中断线、I2C 地址、片选、传感器安装轴向、板级阈值和硬件变体配置不得长期散落在 service 或 driver 流程中。
+- 临时 diagnostic/probe 可直接使用已确认板级常量；一旦能力接入长期 service/session 或主启动链路，必须把这些常量收敛到 board 配置接口，并用 source test 锁定 service 只消费 board 配置、driver 只消费芯片协议/寄存器。
 - 新增或修改代码默认按 Google Code Style 靠拢，但不因引入新规则而大面积重排无关旧代码。
 - 资源受限路径优先使用静态分配或受控分配，避免在高频路径中频繁申请和释放内存。
 - 输入、状态、长度、返回值、超时和降级路径必须显式处理，不能静默失败。

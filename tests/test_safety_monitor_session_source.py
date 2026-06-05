@@ -61,6 +61,39 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertNotIn("DANGER_DETECTION_BACKEND_ESPDL", source)
         self.assertNotIn("DANGER_DETECTION_STATE_ERROR", source)
 
+    def test_background_manager_uses_notify_plus_periodic_fallback(self) -> None:
+        header = BACKGROUND_SERVICE_MANAGER_HEADER.read_text(encoding="utf-8")
+        source = BACKGROUND_SERVICE_MANAGER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("background_service_manager_notify_policy_changed", header)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_NOTIFY_USER_SWITCH", source)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_AUDIO", source)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_NOTIFY_POWER_BUDGET", source)
+        self.assertIn("xTaskNotify(task_handle, reasons, eSetBits)", source)
+        self.assertIn("xTaskNotifyWait(0, UINT32_MAX, &notify_reasons", source)
+        self.assertIn("k_policy_poll_ticks = pdMS_TO_TICKS(1000)", source)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_NOTIFY_PERIODIC", source)
+        self.assertIn("background_service_manager_apply_policy(\"startup\")", source)
+        self.assertNotIn(
+            "return background_service_manager_apply_policy(\"user_switch\")",
+            source,
+        )
+        self.assertNotIn(
+            "return background_service_manager_apply_policy(\n"
+            "        reason != NULL ? reason : \"foreground_audio\")",
+            source,
+        )
+
+    def test_power_policy_only_notifies_background_manager_on_budget_change(self) -> None:
+        source = (REPO_ROOT / "main" / "services" / "power_policy.c").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('#include "services/background_service_manager.h"', source)
+        self.assertIn("background_service_manager_notify_policy_changed()", source)
+        self.assertNotIn("background_service_manager_set_danger_detection_enabled", source)
+        self.assertNotIn("safety_monitor_session_apply", source)
+
     def test_main_cmake_registers_safety_monitor_session_source(self) -> None:
         source = MAIN_CMAKE.read_text(encoding="utf-8")
 

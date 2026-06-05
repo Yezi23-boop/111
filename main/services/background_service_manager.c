@@ -12,6 +12,16 @@
 static const char *TAG = "background_mgr";
 static const TickType_t k_policy_poll_ticks = pdMS_TO_TICKS(1000);
 
+typedef enum
+{
+    BACKGROUND_SERVICE_MANAGER_NOTIFY_NONE = 0,
+    BACKGROUND_SERVICE_MANAGER_NOTIFY_USER_SWITCH = 1u << 0,
+    BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_AUDIO = 1u << 1,
+    BACKGROUND_SERVICE_MANAGER_NOTIFY_POWER_BUDGET = 1u << 2,
+    BACKGROUND_SERVICE_MANAGER_NOTIFY_STARTUP = 1u << 3,
+    BACKGROUND_SERVICE_MANAGER_NOTIFY_PERIODIC = 1u << 4,
+} background_service_manager_notify_reason_t;
+
 typedef struct
 {
     bool initialized;                  /**< 是否已初始化依赖模块。 */
@@ -47,6 +57,32 @@ static background_service_manager_state_t s_manager = {
     .task_handle = NULL,
     .lock = portMUX_INITIALIZER_UNLOCKED,
 };
+
+static const char *background_service_manager_notify_reason_text(
+    uint32_t reasons)
+{
+    if ((reasons & BACKGROUND_SERVICE_MANAGER_NOTIFY_USER_SWITCH) != 0U)
+    {
+        return "user_switch";
+    }
+    if ((reasons & BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_AUDIO) != 0U)
+    {
+        return "foreground_audio";
+    }
+    if ((reasons & BACKGROUND_SERVICE_MANAGER_NOTIFY_POWER_BUDGET) != 0U)
+    {
+        return "power_budget";
+    }
+    if ((reasons & BACKGROUND_SERVICE_MANAGER_NOTIFY_STARTUP) != 0U)
+    {
+        return "startup";
+    }
+    if ((reasons & BACKGROUND_SERVICE_MANAGER_NOTIFY_PERIODIC) != 0U)
+    {
+        return "periodic";
+    }
+    return "manual";
+}
 
 static const char *background_service_manager_block_reason_text(
     background_service_manager_danger_block_reason_t reason)
@@ -146,6 +182,36 @@ static bool background_service_manager_audio_blocks_danger(
         *owner_text = audio_codec_owner_to_text(audio_snapshot.input_owner);
     }
     return true;
+}
+
+/**
+ * @brief 唤醒后台管理器 task 重新合成 Safety Monitor 目标态。
+ *
+ * notify 只是轻量事件信号，最终事实仍由 manager task 读取自身 snapshot、
+ * `power_policy_get_budget()` 和 `audio_codec_get_session_snapshot()` 得到。
+ */
+static esp_err_t background_service_manager_notify(uint32_t reasons)
+{
+    if (reasons == BACKGROUND_SERVICE_MANAGER_NOTIFY_NONE)
+    {
+        reasons = BACKGROUND_SERVICE_MANAGER_NOTIFY_PERIODIC;
+    }
+
+    TaskHandle_t task_handle = NULL;
+    bool started = false;
+
+    taskENTER_CRITICAL(&s_manager.lock);
+    task_handle = s_manager.task_handle;
+    started = s_manager.started;
+    taskEXIT_CRITICAL(&s_manager.lock);
+
+    if (!started || task_handle == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xTaskNotify(task_handle, reasons, eSetBits);
+    return ESP_OK;
 }
 
 /**
@@ -262,10 +328,21 @@ static void background_service_manager_task(void *arg)
     (void)startup_readiness_wait_ui_first_frame(portMAX_DELAY);
     ESP_LOGI(TAG, "background_gate_ready: ui_first_frame_ready");
 
+    (void)background_service_manager_apply_policy("startup");
+
     while (1)
     {
-        (void)background_service_manager_apply_policy("periodic");
-        vTaskDelay(k_policy_poll_ticks);
+        uint32_t notify_reasons = BACKGROUND_SERVICE_MANAGER_NOTIFY_NONE;
+        const BaseType_t notified =
+            xTaskNotifyWait(0, UINT32_MAX, &notify_reasons,
+                            k_policy_poll_ticks);
+        if (notified != pdTRUE ||
+            notify_reasons == BACKGROUND_SERVICE_MANAGER_NOTIFY_NONE)
+        {
+            notify_reasons = BACKGROUND_SERVICE_MANAGER_NOTIFY_PERIODIC;
+        }
+        (void)background_service_manager_apply_policy(
+            background_service_manager_notify_reason_text(notify_reasons));
     }
 }
 
@@ -393,7 +470,8 @@ esp_err_t background_service_manager_set_danger_detection_enabled(bool enabled)
         return ESP_ERR_INVALID_STATE;
     }
 
-    return background_service_manager_apply_policy("user_switch");
+    return background_service_manager_notify(
+        BACKGROUND_SERVICE_MANAGER_NOTIFY_USER_SWITCH);
 }
 
 esp_err_t background_service_manager_set_foreground_audio_active(
@@ -422,8 +500,15 @@ esp_err_t background_service_manager_set_foreground_audio_active(
         return ESP_OK;
     }
 
-    return background_service_manager_apply_policy(
-        reason != NULL ? reason : "foreground_audio");
+    return background_service_manager_notify(
+        BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_AUDIO);
+}
+
+esp_err_t background_service_manager_notify_policy_changed(void)
+{
+    const esp_err_t ret = background_service_manager_notify(
+        BACKGROUND_SERVICE_MANAGER_NOTIFY_POWER_BUDGET);
+    return ret == ESP_ERR_INVALID_STATE ? ESP_OK : ret;
 }
 
 background_service_manager_snapshot_t

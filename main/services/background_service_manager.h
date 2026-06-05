@@ -87,6 +87,16 @@ extern "C"
         bool active, const char *reason);
 
     /**
+     * @brief 通知后台管理器 power_policy 预算可能已经变化。
+     *
+     * 该接口只唤醒后台管理器 task 重新读取 `power_policy_get_budget()`；
+     * 不携带最终预算，也不让 power_policy 直接启动或停止 Safety Monitor。
+     *
+     * @return ESP_OK 表示通知已发送或管理器尚未启动无需处理。
+     */
+    esp_err_t background_service_manager_notify_policy_changed(void);
+
+    /**
      * @brief 获取后台服务管理器快照。
      * @return 当前后台功能开关、策略许可和最近错误。
      */

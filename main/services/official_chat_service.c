@@ -7,6 +7,7 @@
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "background_service_manager.h"
@@ -28,16 +29,29 @@ static const size_t kLastAssistantTextMaxBytes = 256;         /* 最近一条助
 static const size_t kMessageHistoryCapacity = 8;              /* 固定消息历史容量；满后丢弃最旧条目。 */
 static const uint32_t kShutdownTransportQuietPeriodMs = 1500; /* 关闭前等待传输层静默的窗口，单位为毫秒。 */
 static const uint32_t kShutdownWaitTimeoutMs = 4000;          /* 同步关闭接口的最大等待时间，单位为毫秒。 */
+static const UBaseType_t kCommandQueueLength = 8;             /* 外部意图命令队列深度，避免 UI 直接写服务内部状态。 */
+
+typedef struct
+{
+    official_chat_service_cmd_type_t type;
+} official_chat_service_cmd_t;
 
 static TaskHandle_t s_service_task_handle = NULL;                 /* 服务任务句柄，只在初始化阶段写入，其他路径只读。 */
+static QueueHandle_t s_command_queue = NULL;                      /* UI/API 向 owner task 投递生命周期命令。 */
+static StaticQueue_t s_command_queue_buffer;                      /* 静态队列控制块，避免服务初始化时堆分配。 */
+static uint8_t s_command_queue_storage[8 * sizeof(official_chat_service_cmd_t)];
 static official_chat_handle_t s_chat_handle = NULL;               /* 底层会话句柄，仅服务任务负责创建和销毁。 */
-static volatile bool s_foreground_requested = false;              /* UI 线程写入前台意图，服务任务轮询读取。 */
-static volatile bool s_shutdown_requested = false;                /* 关闭请求标志，由 UI/API 写入，服务任务消费。 */
-static volatile bool s_shutdown_stop_requested = false;           /* 标记关闭流程中是否已发送 stop_listening。 */
-static volatile TickType_t s_shutdown_destroy_deadline_ticks = 0; /* quiet period 截止 tick，仅服务任务推进。 */
-static volatile official_chat_service_state_t s_service_state =
-    OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
-static volatile esp_err_t s_last_error = ESP_OK;                   /* 最近一次底层错误码，事件回调写入，查询接口只读。 */
+static bool s_foreground_requested = false;                       /* 服务任务私有的前台意图。 */
+static bool s_shutdown_requested = false;                         /* 服务任务私有的关闭流程状态。 */
+static bool s_shutdown_stop_requested = false;                    /* 标记关闭流程中是否已发送 stop_listening。 */
+static TickType_t s_shutdown_destroy_deadline_ticks = 0;          /* quiet period 截止 tick，仅服务任务推进。 */
+static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
+static official_chat_service_snapshot_t s_snapshot = {
+    .state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED,
+    .foreground_active = false,
+    .stop_pending = false,
+    .last_error = ESP_OK,
+};
 static StaticSemaphore_t s_text_mutex_buffer;                      /* 静态互斥锁存储，避免初始化时额外堆分配。 */
 static SemaphoreHandle_t s_text_mutex = NULL;                      /* 文本缓存保护锁，事件回调与 UI 查询共用。 */
 static char s_last_user_text[192] = {0};                           /* 最近用户文本快照，由事件回调更新。 */
@@ -76,6 +90,60 @@ static void official_chat_service_unlock(void)
     {
         xSemaphoreGive(s_text_mutex);
     }
+}
+
+/**
+ * @brief 复制服务生命周期快照。
+ *
+ * snapshot 是跨任务共享状态，因此用极短 critical section 保护复制过程；
+ * getter 不访问 I/O、不等待队列、不推进状态机。
+ */
+static official_chat_service_snapshot_t official_chat_service_copy_snapshot(void)
+{
+    official_chat_service_snapshot_t snapshot;
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    snapshot = s_snapshot;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    return snapshot;
+}
+
+/**
+ * @brief 原子更新服务快照的状态字段。
+ * @param state 新服务状态。
+ */
+static void official_chat_service_set_state(
+    official_chat_service_state_t state)
+{
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.state = state;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+/**
+ * @brief 原子更新最近错误字段。
+ * @param error 最近一次错误码。
+ */
+static void official_chat_service_set_last_error(esp_err_t error)
+{
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.last_error = error;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+/**
+ * @brief 原子更新前台与停机意图字段。
+ * @param foreground_active true 表示聊天处于前台意图。
+ * @param stop_pending true 表示已有停机请求待服务任务收敛。
+ */
+static void official_chat_service_set_lifecycle_intent(
+    bool foreground_active, bool stop_pending)
+{
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.foreground_active = foreground_active;
+    s_snapshot.stop_pending = stop_pending;
+    portEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 /**
@@ -275,25 +343,94 @@ static bool official_chat_service_requires_shutdown_quiet_period(
 }
 
 /**
- * @brief 统一发起异步关闭请求。
+ * @brief 在 owner task 上下文开始停机收敛。
  *
- * 该入口只设置共享标志并唤醒服务任务，真正的准备关闭、等待 quiet period 和销毁动作都放在服务任务里完成，
- * 以保证生命周期只由一个上下文推进。
- *
- * @return 无返回值。
+ * 真正的 prepare、stop、quiet period 和 destroy 都由服务任务推进；
+ * UI/API 只能投递命令，不能直接改这些生命周期字段。
  */
-static void official_chat_service_request_shutdown_internal(void)
+static void official_chat_service_begin_shutdown_from_task(void)
 {
     official_chat_service_set_foreground_audio_active(false, "official_chat");
     s_foreground_requested = false;
     s_shutdown_requested = true;
     s_shutdown_stop_requested = false;
     s_shutdown_destroy_deadline_ticks = 0;
+    official_chat_service_set_lifecycle_intent(false, true);
+}
+
+/**
+ * @brief 在 owner task 上下文处理外部命令。
+ * @param command 命令内容。
+ */
+static void official_chat_service_handle_command(
+    const official_chat_service_cmd_t *command)
+{
+    if (command == NULL)
+    {
+        return;
+    }
+
+    switch (command->type)
+    {
+    case OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND:
+        s_shutdown_requested = false;
+        s_shutdown_stop_requested = false;
+        s_shutdown_destroy_deadline_ticks = 0;
+        s_foreground_requested = true;
+        official_chat_service_set_lifecycle_intent(true, false);
+        official_chat_service_set_foreground_audio_active(true, "official_chat");
+        ESP_LOGI(TAG, "command: enter_foreground");
+        break;
+    case OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP:
+        official_chat_service_begin_shutdown_from_task();
+        ESP_LOGI(TAG, "command: leave_foreground_and_stop");
+        break;
+    case OFFICIAL_CHAT_SERVICE_CMD_NETWORK_READY:
+    case OFFICIAL_CHAT_SERVICE_CMD_BUDGET_CHANGED:
+    default:
+        ESP_LOGD(TAG, "command ignored: type=%d", (int)command->type);
+        break;
+    }
+}
+
+/**
+ * @brief 投递服务命令。
+ * @param type 命令类型。
+ * @param timeout_ticks 入队等待时间。
+ * @return `ESP_OK` 表示命令已入队。
+ */
+static esp_err_t official_chat_service_post_command(
+    official_chat_service_cmd_type_t type, TickType_t timeout_ticks)
+{
+    if (s_command_queue == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    official_chat_service_cmd_t command = {
+        .type = type,
+    };
+
+    if (xQueueSend(s_command_queue, &command, timeout_ticks) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if (type == OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND)
+    {
+        official_chat_service_set_lifecycle_intent(true, false);
+    }
+    else if (type == OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP)
+    {
+        official_chat_service_set_lifecycle_intent(false, true);
+    }
 
     if (s_service_task_handle != NULL)
     {
         xTaskAbortDelay(s_service_task_handle);
     }
+
+    return ESP_OK;
 }
 
 /**
@@ -347,7 +484,7 @@ static void official_chat_service_event_cb(const official_chat_event_t *event,
         return;
     }
 
-    if (s_shutdown_requested)
+    if (official_chat_service_copy_snapshot().stop_pending)
     {
         /* 关闭流程开始后丢弃后续事件，避免缓存重新被写入。 */
         return;
@@ -356,10 +493,14 @@ static void official_chat_service_event_cb(const official_chat_event_t *event,
     switch (event->type)
     {
     case OFFICIAL_CHAT_EVENT_STATE_CHANGED:
-        s_service_state = map_official_chat_state(event->state);
+    {
+        const official_chat_service_state_t state =
+            map_official_chat_state(event->state);
+        official_chat_service_set_state(state);
         ESP_LOGI(TAG, "state=%s",
-                 official_chat_service_state_to_string(s_service_state));
+                 official_chat_service_state_to_string(state));
         break;
+    }
     case OFFICIAL_CHAT_EVENT_USER_TEXT:
         official_chat_service_lock();
         official_chat_service_store_text_locked(s_last_user_text,
@@ -383,8 +524,8 @@ static void official_chat_service_event_cb(const official_chat_event_t *event,
                  event->message != NULL ? event->message : "");
         break;
     case OFFICIAL_CHAT_EVENT_ERROR:
-        s_last_error = event->error;
-        s_service_state = OFFICIAL_CHAT_SERVICE_STATE_ERROR;
+        official_chat_service_set_last_error(event->error);
+        official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
         ESP_LOGE(TAG, "error=%s message=%s", esp_err_to_name(event->error),
                  event->message != NULL ? event->message : "");
         break;
@@ -416,14 +557,14 @@ static esp_err_t official_chat_service_start_internal(void)
         .time_user_ctx = NULL,
     };
 
-    s_service_state = OFFICIAL_CHAT_SERVICE_STATE_STARTING;
-    s_last_error = ESP_OK;
+    official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_STARTING);
+    official_chat_service_set_last_error(ESP_OK);
 
     s_chat_handle = official_chat_create(&config);
     if (s_chat_handle == NULL)
     {
-        s_last_error = ESP_FAIL;
-        s_service_state = OFFICIAL_CHAT_SERVICE_STATE_ERROR;
+        official_chat_service_set_last_error(ESP_FAIL);
+        official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
         ESP_LOGE(TAG, "official_chat_create failed");
         return ESP_FAIL;
     }
@@ -432,8 +573,10 @@ static esp_err_t official_chat_service_start_internal(void)
         s_chat_handle, official_chat_service_event_cb, NULL);
     if (ret != ESP_OK)
     {
-        s_last_error = ret;
-        s_service_state = OFFICIAL_CHAT_SERVICE_STATE_ERROR;
+        official_chat_destroy(s_chat_handle);
+        s_chat_handle = NULL;
+        official_chat_service_set_last_error(ret);
+        official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
         ESP_LOGE(TAG, "official_chat_set_event_callback failed: %s",
                  esp_err_to_name(ret));
         return ret;
@@ -442,8 +585,11 @@ static esp_err_t official_chat_service_start_internal(void)
     ret = official_chat_start(s_chat_handle);
     if (ret != ESP_OK)
     {
-        s_last_error = ret;
-        s_service_state = OFFICIAL_CHAT_SERVICE_STATE_ERROR;
+        official_chat_set_event_callback(s_chat_handle, NULL, NULL);
+        official_chat_destroy(s_chat_handle);
+        s_chat_handle = NULL;
+        official_chat_service_set_last_error(ret);
+        official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
         ESP_LOGE(TAG, "official_chat_start failed: %s", esp_err_to_name(ret));
         return ret;
     }
@@ -467,6 +613,13 @@ static void official_chat_service_task(void *arg)
 
     while (1)
     {
+        official_chat_service_cmd_t command;
+        while (s_command_queue != NULL &&
+               xQueueReceive(s_command_queue, &command, 0) == pdTRUE)
+        {
+            official_chat_service_handle_command(&command);
+        }
+
         if (s_shutdown_requested)
         {
             /*
@@ -488,7 +641,8 @@ static void official_chat_service_task(void *arg)
                 }
                 official_chat_state_t chat_state =
                     official_chat_get_state(chat_handle);
-                s_service_state = map_official_chat_state(chat_state);
+                official_chat_service_set_state(
+                    map_official_chat_state(chat_state));
                 if (official_chat_service_requires_shutdown_quiet_period(
                         chat_state))
                 {
@@ -527,7 +681,8 @@ static void official_chat_service_task(void *arg)
                         continue;
                     }
 
-                    s_service_state = OFFICIAL_CHAT_SERVICE_STATE_IDLE;
+                    official_chat_service_set_state(
+                        OFFICIAL_CHAT_SERVICE_STATE_IDLE);
                     if (s_shutdown_destroy_deadline_ticks == 0)
                     {
                         s_shutdown_destroy_deadline_ticks =
@@ -569,8 +724,9 @@ static void official_chat_service_task(void *arg)
             official_chat_service_unlock();
 
             s_chat_handle = NULL;
-            s_last_error = ESP_OK;
-            s_service_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
+            official_chat_service_set_last_error(ESP_OK);
+            official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_STOPPED);
+            official_chat_service_set_lifecycle_intent(false, false);
             s_shutdown_requested = false;
             s_shutdown_stop_requested = false;
             s_shutdown_destroy_deadline_ticks = 0;
@@ -583,7 +739,8 @@ static void official_chat_service_task(void *arg)
             /* 未进入前台时保留任务本身，但不主动创建会话实例。 */
             if (s_chat_handle == NULL)
             {
-                s_service_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
+                official_chat_service_set_state(
+                    OFFICIAL_CHAT_SERVICE_STATE_STOPPED);
             }
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
@@ -598,7 +755,8 @@ static void official_chat_service_task(void *arg)
         if (!network_service_is_service_ready())
         {
             /* 会话严格依赖网络服务层，而不是自己重复做联网判断。 */
-            s_service_state = OFFICIAL_CHAT_SERVICE_STATE_WAITING_NETWORK;
+            official_chat_service_set_state(
+                OFFICIAL_CHAT_SERVICE_STATE_WAITING_NETWORK);
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
@@ -630,14 +788,30 @@ esp_err_t official_chat_service_init(void)
         s_text_mutex = xSemaphoreCreateMutexStatic(&s_text_mutex_buffer);
     }
 
+    if (s_command_queue == NULL)
+    {
+        s_command_queue = xQueueCreateStatic(
+            kCommandQueueLength,
+            sizeof(official_chat_service_cmd_t),
+            s_command_queue_storage,
+            &s_command_queue_buffer);
+    }
+
+    if (s_command_queue == NULL)
+    {
+        official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
+        official_chat_service_set_last_error(ESP_FAIL);
+        return ESP_FAIL;
+    }
+
     BaseType_t result = xTaskCreatePinnedToCore(
         official_chat_service_task, "official_chat_service", 1024 * 8, NULL, 5,
         &s_service_task_handle, 0);
     if (result != pdPASS)
     {
         s_service_task_handle = NULL;
-        s_service_state = OFFICIAL_CHAT_SERVICE_STATE_ERROR;
-        s_last_error = ESP_FAIL;
+        official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
+        official_chat_service_set_last_error(ESP_FAIL);
         return ESP_FAIL;
     }
 
@@ -651,22 +825,32 @@ esp_err_t official_chat_service_init(void)
  */
 void official_chat_service_enter_foreground(void)
 {
-    s_shutdown_requested = false;
-    s_shutdown_stop_requested = false;
-    s_shutdown_destroy_deadline_ticks = 0;
-    s_foreground_requested = true;
-    official_chat_service_set_foreground_audio_active(true, "official_chat");
+    const esp_err_t ret = official_chat_service_post_command(
+        OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND, 0);
+    if (ret != ESP_OK)
+    {
+        official_chat_service_set_last_error(ret);
+        ESP_LOGW(TAG, "enter_foreground command failed: %s",
+                 esp_err_to_name(ret));
+    }
 }
 
 /**
  * @brief 标记聊天页离开前台。
  *
- * 留在后台的实例是否关闭，由上层后续显式调用 shutdown 接口决定。
+ * V1 聊天是纯前台按需服务：页面退出就投递完整停机命令，
+ * 不保留“离开页面但后台 idle”的隐式长期会话。
  */
 void official_chat_service_leave_foreground(void)
 {
-    s_foreground_requested = false;
-    official_chat_service_set_foreground_audio_active(false, "official_chat");
+    const esp_err_t ret = official_chat_service_post_command(
+        OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP, 0);
+    if (ret != ESP_OK)
+    {
+        official_chat_service_set_last_error(ret);
+        ESP_LOGW(TAG, "leave_foreground command failed: %s",
+                 esp_err_to_name(ret));
+    }
 }
 
 /**
@@ -674,7 +858,7 @@ void official_chat_service_leave_foreground(void)
  */
 void official_chat_service_request_shutdown(void)
 {
-    official_chat_service_request_shutdown_internal();
+    official_chat_service_leave_foreground();
 }
 
 /**
@@ -683,7 +867,7 @@ void official_chat_service_request_shutdown(void)
  */
 bool official_chat_service_is_shutdown_pending(void)
 {
-    return s_shutdown_requested;
+    return official_chat_service_copy_snapshot().stop_pending;
 }
 
 /**
@@ -692,14 +876,28 @@ bool official_chat_service_is_shutdown_pending(void)
  */
 esp_err_t official_chat_service_shutdown(void)
 {
-    official_chat_service_request_shutdown_internal();
+    const esp_err_t command_ret = official_chat_service_post_command(
+        OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP,
+        pdMS_TO_TICKS(100));
+    if (command_ret != ESP_OK)
+    {
+        official_chat_service_set_last_error(command_ret);
+        return command_ret;
+    }
 
     const TickType_t start_ticks = xTaskGetTickCount();
     const TickType_t timeout_ticks = pdMS_TO_TICKS(kShutdownWaitTimeoutMs);
 
-    while (s_shutdown_requested || s_chat_handle != NULL ||
-           s_service_state != OFFICIAL_CHAT_SERVICE_STATE_STOPPED)
+    while (true)
     {
+        const official_chat_service_snapshot_t snapshot =
+            official_chat_service_copy_snapshot();
+        if (!snapshot.stop_pending &&
+            snapshot.state == OFFICIAL_CHAT_SERVICE_STATE_STOPPED)
+        {
+            break;
+        }
+
         if ((xTaskGetTickCount() - start_ticks) >= timeout_ticks)
         {
             return ESP_ERR_TIMEOUT;
@@ -721,7 +919,7 @@ esp_err_t official_chat_service_shutdown(void)
  */
 official_chat_service_state_t official_chat_service_get_state(void)
 {
-    return s_service_state;
+    return official_chat_service_copy_snapshot().state;
 }
 
 /**
@@ -730,7 +928,24 @@ official_chat_service_state_t official_chat_service_get_state(void)
  */
 esp_err_t official_chat_service_get_last_error(void)
 {
-    return s_last_error;
+    return official_chat_service_copy_snapshot().last_error;
+}
+
+/**
+ * @brief 获取服务生命周期快照。
+ * @param out_snapshot 输出快照，不能为空。
+ * @return `ESP_OK` 表示成功复制。
+ */
+esp_err_t official_chat_service_get_snapshot(
+    official_chat_service_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *out_snapshot = official_chat_service_copy_snapshot();
+    return ESP_OK;
 }
 
 /**

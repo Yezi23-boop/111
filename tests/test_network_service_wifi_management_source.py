@@ -32,6 +32,11 @@ class NetworkServiceWifiManagementSourceTests(unittest.TestCase):
             "esp_err_t network_service_get_wifi_status(network_service_wifi_status_t *status);",
             header,
         )
+        self.assertIn("network_service_snapshot_t", header)
+        self.assertIn(
+            "esp_err_t network_service_get_snapshot(network_service_snapshot_t *snapshot);",
+            header,
+        )
 
     def test_source_bridges_wifi_actions_to_network_manager(self) -> None:
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
@@ -50,6 +55,34 @@ class NetworkServiceWifiManagementSourceTests(unittest.TestCase):
         self.assertIn("network_manager_get_recent_networks(NULL, 0, &count)", source)
         self.assertIn("network_service_map_transport_to_manager(", source)
         self.assertIn("network_service_map_transport_from_manager(", source)
+
+    def test_source_publishes_snapshot_without_volatile_state_protocol(self) -> None:
+        header = NETWORK_SERVICE_HEADER.read_text(encoding="utf-8")
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("wifi_connected", header)
+        self.assertIn("service_ready", header)
+        self.assertIn("probe_active", header)
+        self.assertIn("probe_paused_by_budget", header)
+        self.assertIn("power_save_applied", header)
+        self.assertIn("last_probe_result", header)
+        self.assertIn("portMUX_TYPE s_snapshot_lock", source)
+        self.assertIn("network_service_copy_snapshot(", source)
+        self.assertIn("network_service_get_snapshot(", source)
+        self.assertNotIn("static volatile", source)
+
+    def test_cloud_probe_can_pause_by_power_budget_without_disconnect(self) -> None:
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("budget.network_sync_allowed", source)
+        self.assertIn("network service probe paused by power budget", source)
+        self.assertIn("network_service_set_probe_snapshot(", source)
+        self.assertIn("probe_paused_by_budget", source)
+        self.assertIn("network sync paused by power budget", source)
+        probe_body = source.split(
+            "static esp_err_t probe_network_services_ready(void)", 1)[1].split(
+            "static void network_service_apply_power_budget(void)", 1)[0]
+        self.assertNotIn("network_manager_disconnect", probe_body)
 
 
 if __name__ == "__main__":

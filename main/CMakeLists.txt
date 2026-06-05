@@ -8,6 +8,8 @@ set(app_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/app/board_power.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/app/board_imu.c
+
     ${CMAKE_CURRENT_LIST_DIR}/app/resource_fs.c
 
 )
@@ -29,6 +31,8 @@ set(service_srcs
     ${CMAKE_CURRENT_LIST_DIR}/services/wakeup_evidence_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/system_time_service.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/imu_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/startup_readiness.c
 
@@ -199,6 +203,10 @@ idf_component_register(
         axp2101
 
         pcf85063atl
+
+        qmi8658c
+
+        imu_motion
 
         78__xiaozhi-fonts
 

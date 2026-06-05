@@ -67,6 +67,8 @@ evidence_level: design
   `docs/context/knowledge/project/layering-boundary-map.md`
 - Runtime owner contract:
   `docs/context/knowledge/project/runtime-owner-contract.md`
+- Owner snapshot / lifecycle / FreeRTOS communication:
+  `docs/context/knowledge/project/owner-snapshot-lifecycle-freertos-contract.md`
 - Detailed agent operations:
   `docs/context/knowledge/project/agent-operational-rules.md`
 - Embedded C/C++ rules:

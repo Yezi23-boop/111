@@ -2,7 +2,7 @@
 id: project-framework
 tags: project, framework, architecture, owner, startup, runtime, context
 summary: 当前 ESP32-S3 手表固件的整体项目框架总图，串联启动阶段、分层边界、owner、资源预算、后台能力和上下文更新规则。
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-02
 memory_type: project_knowledge
 scope: repo
 owners: docs/context/knowledge/project/project-framework.md, docs/context/knowledge/project/runtime-owner-contract.md, docs/context/knowledge/project/layering-boundary-map.md
@@ -25,7 +25,7 @@ App/UI 表达用户意图
   -> Vendor/SDK 提供原始能力
 ```
 
-框架核心规则是：先找写 owner，再看调用方向；策略层发布预算或请求，真实资源只能由自己的 owner 执行。
+框架核心规则是：先找写 owner，再看调用方向；策略层发布预算或请求，真实资源只能由自己的 owner 执行。当前 V1 运行时基线是 `FreeRTOS owner snapshot + power_budget`，不引入 `runtime lease` 或中心化硬件资源管家。
 
 ## 本文定位
 
@@ -41,6 +41,7 @@ App/UI 表达用户意图
 本文不替代专项卡：
 
 - 运行时 owner 细节：`runtime-owner-contract.md`
+- Owner snapshot / 生命周期 / FreeRTOS 通信：`owner-snapshot-lifecycle-freertos-contract.md`
 - 分层边界：`layering-boundary-map.md`
 - 低功耗总框架：`low-power-framework-architecture.md`
 - 网络配网架构：`network-provisioning-custom-upper-architecture.md`
@@ -184,7 +185,7 @@ main/ui        LVGL UI runtime、generated 页面、custom 控制器
 
 ## 资源预算链路
 
-当前资源预算不是一个大 manager，而是一条单向链：
+当前资源预算不是一个大 manager，也不是 `runtime lease` 仲裁中心，而是一条单向链：
 
 ```text
 owner snapshot
@@ -196,11 +197,16 @@ owner snapshot
 
 规则：
 
+- 长期 owner 保持独立 FreeRTOS task 或明确的 owner 执行上下文。
+- 跨 owner 读取只走只读 snapshot API；推荐形态为 `xxx_get_snapshot(out)`，getter 不做 I/O、不阻塞、不推进状态。
+- 跨 owner 控制不直接改内部 flag：轻量唤醒用 task notification，带参数命令用 queue，系统 ready 状态用 event group。
 - `power_policy` 是预算发布者，不是硬件执行者。
 - `LOW_BATTERY_WARN`、`CHARGING`、`EXTERNAL_POWER` 是 flag 或预算修饰，不是独立产品主状态。
 - 产品层 V1 主状态只保留 `ACTIVE / STANDBY`。
 - `STANDBY` V1 是运行态省电，不进入 ESP sleep。
 - `sleep_permission / sleep_blockers / sleep_interval_hint` 属于预算输出；真实 sleep 只能由 `sleep_coordinator` 显式测试执行。
+- 资源结束不是从外部删除或抢占，而是向 owner 发请求；owner 停止新工作、完成短收尾、释放 session/硬件并发布 released/inactive snapshot。
+- V1 不做 `runtime lease`、不做抢占、不做统一 TTL 租约账本；后续只有在 sleep blocker、防泄漏和多 owner 资源冲突变成真实问题时再重新评估。
 
 ## 后台能力链路
 
@@ -211,6 +217,7 @@ Safety Monitor 当前正式链路：
 ```text
 危险识别页 UI 开关
   -> background_service_manager_set_danger_detection_enabled()
+  -> background_service_manager task notification
   -> background_service_manager 读取 power budget + audio session snapshot
   -> safety_monitor_session should_run
   -> danger_detection_service
@@ -223,6 +230,7 @@ Safety Monitor 当前正式链路：
 - UI 不能直接 start/stop 长期后台 runtime。
 - 页面退出不等于停止后台能力。
 - AI 前台音频、低电量、维护窗口、麦克风占用等必须表现为可解释 blocker。
+- 用户开关、前台音频和 power budget 变化只唤醒 `background_service_manager` 重算目标态；真实 start/stop 仍只由 `safety_monitor_session` 执行。
 - 新后台能力接入前必须先明确用户授权、资源 owner、snapshot、budget 字段和 session/lifecycle owner。
 
 ## 网络框架
@@ -298,6 +306,7 @@ V1 sleep 路线：
 ## 禁止路径
 
 - 不新增大而全 `ResourceManager`、`resource_policy`、`system_power_manager`、`session_router` 或默认 `ui_manager`。
+- 不在 V1 新增 `runtime lease` 仲裁中心、通用资源账本或中心化硬件管家。
 - 不让 UI 直接操作 Wi-Fi、I2S、PMIC、LCD panel、touch driver、ESP-DL runtime。
 - 不让 `power_policy` 直接操作硬件、LVGL、Wi-Fi、音频、模型或 ESP sleep API。
 - 不让 `background_service_manager` 变成通用任务调度器、模型 owner、提醒策略 owner 或音频仲裁器。
@@ -313,6 +322,8 @@ V1 sleep 路线：
 - 某个资源/事实的写 owner 改变。
 - 跨层调用方向改变。
 - 新增长期后台能力或长期 session。
+- FreeRTOS owner task / snapshot / queue / notification / event group 的运行时合同变化。
+- 资源结束、释放、抢占或租约语义变化。
 - `power_policy` budget 字段、产品主状态或 sleep 许可语义变化。
 - 网络配网长期主线变化。
 - UI generated/custom/runtime 边界变化。

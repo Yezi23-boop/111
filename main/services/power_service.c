@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "services/power_policy.h"
 
 /*
  * 电源服务实现说明：
@@ -262,6 +263,7 @@ static void power_service_task(void *pv_parameter)
             if (state_changed)
             {
                 power_service_log_state_change(published_state);
+                (void)power_policy_notify(POWER_POLICY_NOTIFY_POWER_STATE);
                 if (callback != NULL)
                 {
                     callback(published_state);
@@ -281,6 +283,7 @@ static void power_service_task(void *pv_parameter)
             if (state_changed)
             {
                 power_service_log_state_change(published_state);
+                (void)power_policy_notify(POWER_POLICY_NOTIFY_POWER_STATE);
                 if (callback != NULL)
                 {
                     callback(published_state);
@@ -360,8 +363,30 @@ void power_service_register_callback(power_state_changed_cb_t cb)
 }
 
 /**
- * @brief 获取当前发布中的电源状态快照。
- * @return 服务层拥有的只读快照指针。
+ * @brief 复制当前发布中的电源状态快照。
+ *
+ * 该接口只复制双缓冲中的活动快照，不执行 I2C/PMIC 访问，也不推进采样状态机。
+ *
+ * @param[out] out_state 输出快照，不能为空。
+ * @return `ESP_OK` 表示成功复制。
+ */
+esp_err_t power_service_get_snapshot(board_power_state_t *out_state)
+{
+    if (out_state == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    taskENTER_CRITICAL(&s_lock);
+    *out_state = s_state_buffers[s_active_state_index];
+    taskEXIT_CRITICAL(&s_lock);
+
+    return ESP_OK;
+}
+
+/**
+ * @brief 获取当前发布中的电源状态快照视图。
+ * @return 服务层拥有的只读快照指针；新增代码优先使用 `power_service_get_snapshot(out)`。
  */
 const board_power_state_t *power_service_get_state(void)
 {

@@ -13,6 +13,7 @@ class PowerServiceSourceTests(unittest.TestCase):
         self.assertIn("esp_err_t power_service_init(void);", header)
         self.assertIn("esp_err_t power_service_start(void);", header)
         self.assertIn("void power_service_register_callback(power_state_changed_cb_t cb);", header)
+        self.assertIn("esp_err_t power_service_get_snapshot(board_power_state_t *out_state);", header)
         self.assertIn("const board_power_state_t *power_service_get_state(void);", header)
 
     def test_source_uses_1s_2s_5s_polling_backoff_and_board_power_contract(self) -> None:
@@ -55,6 +56,27 @@ class PowerServiceSourceTests(unittest.TestCase):
         )
         self.assertNotIn("lhs->battery_mv == rhs->battery_mv", source)
         self.assertNotIn("lhs->system_mv == rhs->system_mv", source)
+
+    def test_source_exposes_out_copy_snapshot_without_i2c_or_state_advance(self) -> None:
+        self.assertTrue(POWER_SERVICE_SOURCE.exists(), "main/services/power_service.c should exist")
+        source = POWER_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("esp_err_t power_service_get_snapshot(board_power_state_t *out_state)", source)
+        snapshot_body = source.split(
+            "esp_err_t power_service_get_snapshot(board_power_state_t *out_state)", 1
+        )[1].split("const board_power_state_t *power_service_get_state(void)", 1)[0]
+        self.assertIn("*out_state = s_state_buffers[s_active_state_index];", snapshot_body)
+        self.assertIn("taskENTER_CRITICAL(&s_lock);", snapshot_body)
+        self.assertNotIn("board_power_refresh", snapshot_body)
+        self.assertNotIn("board_power_get_cached_state", snapshot_body)
+
+    def test_source_notifies_power_policy_when_effective_state_changes(self) -> None:
+        self.assertTrue(POWER_SERVICE_SOURCE.exists(), "main/services/power_service.c should exist")
+        source = POWER_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include "services/power_policy.h"', source)
+        self.assertIn("POWER_POLICY_NOTIFY_POWER_STATE", source)
+        self.assertIn("(void)power_policy_notify(POWER_POLICY_NOTIFY_POWER_STATE);", source)
 
 
 if __name__ == "__main__":

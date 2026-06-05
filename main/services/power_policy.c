@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
+#include "services/background_service_manager.h"
 #include "services/power_service.h"
 #include "ui_refresh_policy.h"
 
@@ -374,6 +375,8 @@ static void power_policy_store_budget(const power_policy_budget_t *budget)
 
     if (changed)
     {
+        (void)background_service_manager_notify_policy_changed();
+
         char blocker_text[160];
         power_policy_format_sleep_blockers(budget->sleep_blockers,
                                            blocker_text,
@@ -408,8 +411,16 @@ static void power_policy_store_budget(const power_policy_budget_t *budget)
 
 static void power_policy_recalculate(uint32_t notify_reasons)
 {
+    board_power_state_t power_snapshot = {0};
+    const board_power_state_t *power_state = NULL;
+
+    if (power_service_get_snapshot(&power_snapshot) == ESP_OK)
+    {
+        power_state = &power_snapshot;
+    }
+
     power_policy_budget_t budget =
-        power_policy_build_budget(power_service_get_state(), notify_reasons);
+        power_policy_build_budget(power_state, notify_reasons);
     power_policy_store_budget(&budget);
 }
 

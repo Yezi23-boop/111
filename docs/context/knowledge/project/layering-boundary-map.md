@@ -24,9 +24,12 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 
 分层的核心目的不是多建目录，而是隔离真实变化点：UI/业务不直接依赖芯片、协议、SDK 和外设细节；硬件或 SDK 变化时，优先收敛在 owner 模块内修改。
 
+板级事实是单独的变化点：GPIO/中断线、I2C 地址、片选、传感器安装轴向、板级阈值和硬件变体配置默认收敛到 `main/app/board_*` 或现有 board owner。临时 diagnostic/probe 可以直接写已确认常量；一旦进入长期 service/session 或主启动链路，就必须先抽到 board 配置接口。
+
 ## 当前目录映射
 
 - App/UI：`main/app`、`main/ui`、`main/features/*`，负责业务入口、页面交互和用户可见功能。
+- Board Facts / Board Adapter：`main/app/board_*.c` 或现有 board owner，负责本板 GPIO/中断线、I2C 地址、片选、传感器安装轴向、板级阈值、硬件变体和上电基础设施事实。
 - Service：`main/services/*`，负责后台生命周期、状态推进、重试、超时、任务协作和跨模块编排。
 - Manager/Domain：`components/network_manager`、`components/audio_codec`、`components/mp3_player`、`components/espdl_inference`、`main/app/board_power.c`，负责领域语义和资源 owner。
 - Driver Adapter：`components/network_provisioning_adapter`、`components/ap_portal_adapter`、`components/wifi_control`、`components/co5300_panel`、`components/touch_ft5x06`、`components/axp2101`、`components/lvgl_port`，负责把项目语义适配到具体 SDK、协议或器件。
@@ -37,8 +40,10 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 - `main/ui` 默认不直接 include 或调用 `esp_wifi_*`、`wifi_prov_mgr_*`、`httpd_*`、`esp_lcd_*`、`i2s_*`、`axp2101_*`、`co5300_panel_*`、`touch_ft5x06_*`。
 - UI 高频路径只读快照或调用 service/manager 的语义接口，不顺手推进联网、硬件、播放、低功耗状态机。
 - Service 拥有后台状态推进和生命周期；UI 不抢 service 的重试、超时、stop/start owner。
+- Service 不长期硬编码 GPIO/I2C 地址/片选/中断线/传感器安装轴向/板级阈值；需要这些事实时只读取 board 配置接口。
 - Manager/Domain 输出语义能力，不新增“只转发一层”的空 wrapper。
 - Driver Adapter 拥有 SDK、协议、寄存器、上电顺序、总线时序和错误码翻译。
+- Driver Adapter 不拥有板上接线、安装方向或产品动作阈值；这些事实由 board 层或 service/domain 配置提供。
 - 函数指针容器只在确实存在多实现替换、运行时注入或测试替身时使用；单实现路径优先用 C 头文件和 ESP-IDF component 边界。
 
 ## 典型链路
@@ -90,6 +95,15 @@ UI/alerts
   -> ESP-DL model/runtime
 ```
 
+IMU / 抬腕链路：
+
+```text
+main/services/imu_service.c
+  -> main/app/board_imu.c
+  -> components/qmi8658c
+  -> I2C / QMI8658C registers
+```
+
 ## 常见风险
 
 - 过度抽象：只有一个实现却加 platform/implementation/function-pointer 多层跳转，增加 token 和调试成本。
@@ -104,6 +118,7 @@ UI/alerts
 - 不为了分层而批量重命名目录；先尊重当前 `main/* + components/*` 结构。
 - 新增抽象前先回答：是否有真实替换风险、是否有两个以上调用者、是否能减少上层变化。
 - 新增跨层接口前先回答：owner 是谁、谁能调用、生命周期谁释放、错误如何返回、如何验证。
+- Diagnostic/probe 升级为长期 service/session 前，必须把板级事实抽到 board 层，并补 source test 锁定 service/driver 不再各自硬编码同一事实。
 - 简单 bugfix 不强制输出完整文件划分方案；新增模块、跨文件改动或明显重构时才需要先说明模块职责。
 - 如果要临时越层调试，必须标注临时性，并在收尾时说明是否回退或固化到正确 owner。
 

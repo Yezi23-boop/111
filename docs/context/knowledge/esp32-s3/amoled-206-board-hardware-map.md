@@ -2,7 +2,7 @@
 id: esp32-s3-amoled-206-board-hardware-map
 tags: esp32-s3, schematic, hardware, display, touch, audio, power
 summary: 基于原理图和现有代码整理的 ESP32-S3-Touch-AMOLED-2.06 板级器件与关键网络映射。
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-04
 memory_type: semantic
 scope: board
 owners: components/co5300_panel, components/touch_ft5x06, components/audio_codec, components/axp2101
@@ -14,9 +14,8 @@ evidence_level: observed
 
 ## 原理图文件位置
 
-- 仓库路径：`D:\esp32S3\111\ESP32-S3-Touch-AMOLED-2.06.pdf`
-- 本次复核文件：`C:\Users\ye\Desktop\esp32s3手表项目手册\ESP32-S3-Touch-AMOLED-2.06.pdf`
-- 两份文件名一致时，当前上下文默认以视觉复核过的原理图 PDF 为准。
+- 当前视觉复核文件：`C:\Users\ye\Desktop\esp32s3手表项目手册\ESP32-S3-Touch-AMOLED-2.06.pdf`
+- 2026-06-04 检查时，仓库根目录未发现同名 PDF；板级网络判断以当前视觉复核文件第 1 页为准。
 
 ## 核心器件
 
@@ -49,6 +48,8 @@ evidence_level: observed
 - 共享 `I2C`：`GPIO14 -> ESP32_SCL`、`GPIO15 -> ESP32_SDA`
 - `RTC_INT -> GPIO39`
 - `QMI_INT1 -> GPIO21`
+- `QMI_INT1 -> GPIO21` 为直接网络，中间没有外部上拉、下拉、串联电阻、RC、复用器或测试点
+- `QMI_INT2 -> TP15`，未接入 ESP32；`TP15` 是 QMI 中断输出的板上观测点
 - `SDCS -> GPIO17`
 - `MOTOR -> GPIO18`
 - `USB_N -> GPIO19`、`USB_P -> GPIO20`
@@ -66,6 +67,11 @@ evidence_level: observed
 ## 共享资源提示
 
 - `GPIO14/15` 在代码中同时承担触摸和音频控制的 `I2C`，原理图上同一组 `ESP32_SCL/SDA` 还连接了 `QMI8658C` 与 `PCF85063ATL`。
+- 共享 I2C 在 codec 区域由 `R23/R49` 两个 `2.2k` 电阻上拉到 `VCC3V3`。
+- `TP_INT -> GPIO38` 属于触摸中断，不是 QMI 中断；排查 QMI 时应使用 `GPIO21` 或临时把输出切到 `INT2/TP15`。
+- QMI8658C 的 `VDD/VDDIO/CS` 接 `VCC3V3`，使用 I2C 模式；原理图标注地址 `0x6B`，但 `SA0` 接地与 Rev0.6 手册地址描述存在矛盾，当前地址以板级实测为准。
+- 原理图标称 `QMI_INT1 -> GPIO21`，但 2026-06-04 当前样板的确定性板测显示 GPIO21 可被内部下拉改变，且不跟随三次真实 `STATUSINT.INT1` WoM 事件；应将该样板视为 INT1 物理通路浮空/开路，不能把原理图网络名当作导通证据。
+- 当前样板正式固件会检测该不一致并使用 20 ms `STATUS1.WoM` 轮询降级；若需要真实硬件 IRQ，应测量/修复 U5 INT1 到 GPIO21 的通断，或使用 `INT2/TP15` 飞线。
 - 显示使用独立 `QSPI` 和 `TE` 信号，不与触摸/音频复用总线，但会与 UI 刷新时序强相关。
 - 电源由 `AXP2101` 集中管理，后续若做低功耗、背光、唤醒或 RTC 保活，需要优先从 PMIC 视角建模。
 - `GPIO10` 虽然当前软件作为配网键使用，但从原理图看它实际接的是 `SYS_OUT`，与 `PWRON` 物理按键链路相关联，后续做电源键语义时不能把它当完全独立的普通按键。

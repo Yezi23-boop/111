@@ -63,8 +63,12 @@ evidence_level: observed
 - `components/network_provisioning_adapter`：官方 `network_provisioning` 底层适配层，统一承接 `BLE / SOFTAP` provisioning transport。
 - `components/ap_portal_adapter`：自定义浏览器 AP 页面与 SoftAP HTTP API 桥接层。
 - `components/axp2101`：只读第一阶段 PMIC 驱动，负责 AXP2101 探测、快照读取和 IRQ 原始状态访问。
+- `components/pcf85063atl`：RTC 寄存器、时间和 countdown timer 的器件驱动。
+- `components/qmi8658c`：QMI8658C 原始数据、WoM、CTRL9 和 AE 数据面的器件驱动。
 - `components/sd_card`：SD 卡挂载和文件访问。
 - `main/app/board_power.c`：把 AXP2101 快照转换成板级统一电源语义，并缓存最近一次成功状态。
+- `main/app/board_imu.c`：持有 QMI8658C 地址、INT1 GPIO、安装方向和抬腕阈值等板级事实。
+- `main/services/imu_service.c`：长期管理 WoM、原始六轴动作窗口、最终姿态与抬腕结果。
 - `main/features/weather/time_weather.c`、`main/features/audio/audio_app.c`：时间天气和音频初始化相关应用逻辑；当前配网与联网主链路已经收敛到 `network_manager + network_provisioning_adapter + ap_portal_adapter`。
 - `components/ap_portal_adapter/web/` 当前承载自定义 AP 门户网页资源；`components/sd_card/sd_manager.c` 把 SD 卡挂载到 `/sdcard` 并显式放到 `SPI3_HOST` 以避开屏幕的 `SPI2_HOST`。
 
@@ -76,8 +80,9 @@ evidence_level: observed
 - 音频数据面使用 `I2S0`，当前代码使用 `GPIO16/41/45/40/42/46` 这一组时钟、数据和功放控制引脚。
 - 原理图里的 `AXP2101`、`QMI8658C`、`PCF85063ATL` 已能确认存在；其中：
   - `AXP2101` 已有本地驱动接入，并通过 `board_power + power_service` 接入主流程
-  - `QMI8658C`、`PCF85063ATL` 仍未见正式驱动接入
-  - `AXP_IRQ / RTC_INT` 也尚未接入到当前唤醒/中断链路
+  - `PCF85063ATL` 已通过 `wakeup_evidence_service` 建立 RTC timer 与 `RTC_INT(GPIO39)` 运行态证据
+  - `QMI8658C` 已通过 `board_imu + imu_service` 建立原始数据、WoM、AE 和抬腕证据链；当前样板 `QMI_INT1(GPIO21)` 已确定物理通路浮空/开路，正式 service 使用 20 ms WoM 轮询降级，真实 IRQ 仍需硬件修复
+  - `AXP_IRQ/EXIO5` 最终 MCU 映射和真实 ESP sleep 唤醒仍未闭环
 
 ## 排查优先级建议
 

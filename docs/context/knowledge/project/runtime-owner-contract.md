@@ -2,7 +2,7 @@
 id: runtime-owner-contract
 tags: project, architecture, framework, runtime, owner, startup, resource-management, background-service
 summary: 固定当前 ESP32-S3 手表固件的运行时 owner 合同：启动阶段、资源 owner、后台能力、调用方向和禁止加层边界。
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-02
 memory_type: project_knowledge
 scope: repo
 owners: main/app/app_main.c, main/app/hardware_init.c, main/ui/lvgl_task.c, main/services/power_policy.c, main/services/background_service_manager.c, main/services/safety_monitor_session.c, main/services/network_service.c, main/services/official_chat_service.c, components/audio_codec, components/network_manager, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c
@@ -23,7 +23,7 @@ status: active
 - 后台能力应如何从用户意图变成长期运行 session。
 - 什么时候可以新增 owner，什么时候必须沿用现有 owner。
 
-本文件不是新计划，也不要求新增代码层。它把已完成的启动框架、资源框架、GUI Guider 边界和 Safety Monitor 后台化结论收敛成一张可执行合同。
+本文件不是新计划，也不要求新增代码层。它把已完成的启动框架、资源框架、GUI Guider 边界、FreeRTOS owner snapshot 基线和 Safety Monitor 后台化结论收敛成一张可执行合同。
 
 ## 总原则
 
@@ -33,6 +33,8 @@ status: active
 - Domain owner 负责资源语义，例如音频 session、网络状态、危险识别风险状态。
 - Driver adapter 负责 SDK、器件、寄存器、时序和错误码翻译。
 - 不新增大而全 `ResourceManager`、`resource_policy`、`session_router` 或默认 `ui_manager`。
+- V1 不新增 `runtime lease` 仲裁中心；资源可用性先通过 owner snapshot、blocker 和 `power_policy` budget 表达。
+- 资源结束必须由真实 owner 自己完成：谁打开谁关闭，谁持有谁发布 released/inactive snapshot。
 
 ## Agent 写代码默认动作
 
@@ -45,6 +47,57 @@ status: active
 5. 是否触发禁止路径，例如把后台能力塞进 `hardware_init()`，或新增大而全 manager。
 
 若本合同能回答落点，直接沿用本合同；不要从当前代码现状重新发明框架。
+
+## FreeRTOS Owner Snapshot 合同
+
+详细专项合同见 `owner-snapshot-lifecycle-freertos-contract.md`。本节只保留后续写代码时必须先遵守的核心边界。
+
+当前 V1 运行时骨架采用 `FreeRTOS owner snapshot + power_budget`，不是中心化 `runtime lease`。
+
+长期 owner 默认形态：
+
+```text
+owner task / owner 执行上下文
+  -> 写自己的内部状态
+  -> 对外发布只读 snapshot
+  -> 接收 budget / command / notify
+  -> 在自己资源域内执行降级、恢复或释放
+```
+
+FreeRTOS 原语使用口径：
+
+- 长期服务用 task 表达，例如 `power_service`、`power_policy`、`network_service`、`official_chat_service`、`background_service_manager`、`sleep_coordinator`。
+- 轻量状态变化用 task notification 唤醒，例如电源变化、预算变化、用户熄屏、音频状态变化。
+- 带参数控制用 queue，例如服务启动/退出、网络同步请求、后台能力控制。
+- 组合 readiness 用 event group，例如 UI 首帧、网络就绪、电源就绪。
+- snapshot 和共享状态用 mutex、critical section 或 owner 内部锁保护。
+- timeout、低频兜底和释放等待用 software timer 或带超时的 FreeRTOS wait。
+
+snapshot API 合同：
+
+- 推荐形态为 `xxx_get_snapshot(out)` 或返回小型 snapshot 值。
+- getter 返回副本，不暴露内部可写对象。
+- getter 不做 I/O、不阻塞等待硬件、不推进状态机、不顺手重试。
+- 如果 task 未启动，可返回默认安全快照或明确错误，不在 getter 内创建 task。
+
+资源结束合同：
+
+```text
+policy / UI / service 发出结束意图
+  -> owner 收到 command / notify
+  -> owner 停止接收新工作
+  -> owner 等当前关键动作短收尾
+  -> owner 释放 session / 关闭自己域内硬件
+  -> owner 更新 snapshot 为 inactive / released
+  -> power_policy 下一轮聚合看到资源已释放
+```
+
+禁止把资源结束实现为：
+
+- `power_policy` 直接关闭硬件或 suspend task。
+- 其他模块直接改 owner 内部 flag。
+- 中心 runtime 直接删除“资源占用记录”并假装硬件已释放。
+- UI 页面退出时直接 stop 长期后台 runtime。
 
 ## 分层合同
 
@@ -94,6 +147,7 @@ status: active
 ```text
 危险识别页 UI 开关
   -> background_service_manager_set_danger_detection_enabled()
+  -> background_service_manager task notification
   -> background_service_manager 读取 power budget + 音频资源快照
   -> safety_monitor_session should_run -> runtime lifecycle
   -> danger_detection_service
@@ -116,7 +170,7 @@ status: active
 | 环节 | Owner | 固定职责 | 禁止扩张 |
 | --- | --- | --- | --- |
 | 用户入口 | `danger_detection_controller` | 显示状态、写入 `安全监听` 用户开关、退出页面不停止后台监听 | 直接调用 `danger_detection_service_start/stop()` 或拥有模型生命周期 |
-| 后台目标态 | `background_service_manager` | 保存用户意图，读取 `power_policy` budget 与 `audio_codec` session snapshot，合成 Safety Monitor 是否应运行 | 变成模型 owner、提醒策略 owner、音频仲裁器或通用任务调度器 |
+| 后台目标态 | `background_service_manager` | 保存用户意图，通过 task notification 响应用户开关/前台音频/power budget 变化，读取 `power_policy` budget 与 `audio_codec` session snapshot，合成 Safety Monitor 是否应运行 | 变成模型 owner、提醒策略 owner、音频仲裁器或通用任务调度器 |
 | 会话生命周期 | `safety_monitor_session` | 把 `should_run` 翻译成 start/stop、FAILED 恢复、退避和运行确认 | 解释 UI 文案、power budget、麦克风优先级或风险状态 |
 | 风险语义 | `danger_detection_service` | 管 `MONITORING / SUSPICIOUS / ALERTING / COOLDOWN` 风险状态、连续证据、hold/clear/cooldown | 判断页面生命周期或后台运行授权 |
 | 推理 runtime | `components/espdl_inference` | 模型加载、音频预处理、推理、后处理和 input session 占用 | 维护用户开关、power policy 或提醒编排 |
@@ -140,6 +194,8 @@ status: active
 - UI 直接调用 `esp_wifi_*`、`wifi_prov_mgr_*`、`httpd_*`、`i2s_*`、`axp2101_*`、`co5300_panel_*`、`touch_ft5x06_*`。
 - `hardware_init()` 初始化 LVGL 对象树、网络服务、official_chat 前台会话、ESP-DL runtime 或 Safety Monitor。
 - `power_policy` 直接控制亮度、LVGL、Wi-Fi、音频 session、模型或具体维护任务。
+- 任何非 owner 模块直接结束、删除、抢占或重置别的 owner 的资源状态。
+- V1 新增 `runtime lease`、通用资源账本或中心化资源仲裁器来绕过 owner snapshot。
 - `background_service_manager` 变成通用任务调度器、模型后端 owner、提醒策略 owner 或音频仲裁器。
 - `LocalAudioCodecAdapter` 绕过 `audio_codec` session 直接读写麦克风/喇叭。
 - GUI Guider generated 层承载产品状态机、资源生命周期、后台服务或跨任务同步。
@@ -160,13 +216,13 @@ status: active
 框架相关改动至少执行：
 
 ```powershell
-uv run python scripts/context/validate_context.py --level light --q "runtime owner contract framework background_service_manager power_policy safety monitor" --brief
+uv run python scripts/context/validate_context.py --level light --q "runtime owner contract FreeRTOS owner snapshot power_policy safety monitor" --brief
 ```
 
 只改 context 文档时执行：
 
 ```powershell
-uv run python scripts/context/validate_context.py --level standard --q "runtime owner contract framework background_service_manager power_policy safety monitor" --brief
+uv run python scripts/context/validate_context.py --level standard --q "runtime owner contract FreeRTOS owner snapshot power_policy safety monitor" --brief
 ```
 
 改源码时按影响面补充对应 source test，并在确认 `export.ps1` 可用后运行：
@@ -189,6 +245,7 @@ idf.py build
 ## 关联文档
 
 - `docs/context/knowledge/project/layering-boundary-map.md`
+- `docs/context/knowledge/project/owner-snapshot-lifecycle-freertos-contract.md`
 - `docs/context/knowledge/project/gui-guider-visual-editor-runtime-boundary.md`
 - `docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md`
 - `docs/context/plans/completed/2026-05-12-apple-watch-like-boot-flow-plan.md`

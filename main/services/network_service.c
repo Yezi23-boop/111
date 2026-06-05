@@ -24,11 +24,20 @@ static const uint32_t kProbeAttemptMax = 15;                                // �
 static const uint32_t kServicePollPeriodMs = 1000U;                         // 服务层轮询 network_manager 的周期。
 
 static TaskHandle_t s_network_task_handle = NULL; // 网络服务后台任务句柄。
-static volatile network_service_state_t s_network_state =
-    NETWORK_SERVICE_STATE_OFFLINE;
 static char s_network_ip[16] = {0}; // 当前缓存的 IPv4 字符串，仅由服务层更新。
 static bool s_runtime_power_save_applied = false; // 最近一次按预算下发的 Wi-Fi 省电状态。
 static bool s_runtime_power_save_known = false;   // false 表示尚未下发过 Wi-Fi 省电配置。
+static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
+static network_service_snapshot_t s_snapshot = {
+    .state = NETWORK_SERVICE_STATE_OFFLINE,
+    .wifi_connected = false,
+    .service_ready = false,
+    .probe_active = false,
+    .probe_paused_by_budget = false,
+    .power_save_applied = false,
+    .last_error = ESP_OK,
+    .last_probe_result = ESP_ERR_INVALID_STATE,
+};
 
 static const char *network_service_state_name(network_service_state_t state);
 static void network_service_set_state(network_service_state_t state,
@@ -49,6 +58,61 @@ static bool resolve_hostname_once(const char *hostname);
 static esp_err_t probe_network_services_ready(void);
 static void network_service_apply_power_budget(void);
 static void network_service_task(void *pv_parameter);
+
+/**
+ * @brief 复制网络服务快照。
+ *
+ * 该函数只复制内存中的 owner facts，不执行 DNS、Wi-Fi 或 network_manager I/O。
+ */
+static network_service_snapshot_t network_service_copy_snapshot(void)
+{
+    network_service_snapshot_t snapshot;
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    snapshot = s_snapshot;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    return snapshot;
+}
+
+/**
+ * @brief 原子更新最近错误码。
+ * @param error 错误码。
+ */
+static void network_service_set_last_error(esp_err_t error)
+{
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.last_error = error;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+/**
+ * @brief 原子更新 Wi-Fi 连接事实。
+ * @param connected true 表示当前 Wi-Fi 已连接。
+ */
+static void network_service_set_wifi_connected(bool connected)
+{
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.wifi_connected = connected;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+/**
+ * @brief 原子更新云端探测状态。
+ * @param active true 表示探测正在进行。
+ * @param paused_by_budget true 表示因预算暂停探测。
+ * @param result 最近一次探测结果。
+ */
+static void network_service_set_probe_snapshot(bool active,
+                                               bool paused_by_budget,
+                                               esp_err_t result)
+{
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.probe_active = active;
+    s_snapshot.probe_paused_by_budget = paused_by_budget;
+    s_snapshot.last_probe_result = result;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
 
 /**
  * @brief 清空服务层缓存的 IPv4 地址。
@@ -98,7 +162,8 @@ static const char *network_service_state_name(network_service_state_t state)
 static void network_service_set_state(network_service_state_t state,
                                       const char *reason)
 {
-    const network_service_state_t old_state = s_network_state;
+    const network_service_state_t old_state =
+        network_service_copy_snapshot().state;
 
     if (old_state != state)
     {
@@ -108,7 +173,11 @@ static void network_service_set_state(network_service_state_t state,
                  reason != NULL ? reason : "no-reason");
     }
 
-    s_network_state = state;
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.state = state;
+    s_snapshot.service_ready =
+        (state == NETWORK_SERVICE_STATE_SERVICE_READY);
+    portEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 /**
@@ -146,8 +215,11 @@ static void network_service_sync_cached_ip(
     if (status == NULL || !status->wifi_connected || status->ip[0] == '\0')
     {
         network_service_clear_cached_ip();
+        network_service_set_wifi_connected(false);
         return;
     }
+
+    network_service_set_wifi_connected(true);
 
     if (strcmp(s_network_ip, status->ip) != 0)
     {
@@ -287,6 +359,8 @@ static bool resolve_hostname_once(const char *hostname)
  */
 static esp_err_t probe_network_services_ready(void)
 {
+    network_service_set_probe_snapshot(true, false, ESP_ERR_INVALID_STATE);
+
     for (size_t host_index = 0;
          host_index < (sizeof(kProbeHosts) / sizeof(kProbeHosts[0]));
          ++host_index)
@@ -294,6 +368,15 @@ static esp_err_t probe_network_services_ready(void)
         const char *hostname = kProbeHosts[host_index];
         for (uint32_t attempt = 1; attempt <= kProbeAttemptMax; ++attempt)
         {
+            const power_policy_budget_t budget = power_policy_get_budget();
+            if (!budget.network_sync_allowed)
+            {
+                network_service_set_probe_snapshot(
+                    false, true, ESP_ERR_INVALID_STATE);
+                ESP_LOGI(TAG, "network service probe paused by power budget");
+                return ESP_ERR_INVALID_STATE;
+            }
+
             if (resolve_hostname_once(hostname))
             {
                 break;
@@ -304,6 +387,8 @@ static esp_err_t probe_network_services_ready(void)
                 ESP_LOGW(TAG,
                          "network service probe timed out: host=%s attempts=%u",
                          hostname, (unsigned)attempt);
+                network_service_set_probe_snapshot(
+                    false, false, ESP_ERR_TIMEOUT);
                 return ESP_ERR_TIMEOUT;
             }
 
@@ -311,6 +396,7 @@ static esp_err_t probe_network_services_ready(void)
         }
     }
 
+    network_service_set_probe_snapshot(false, false, ESP_OK);
     return ESP_OK;
 }
 
@@ -337,6 +423,7 @@ static void network_service_apply_power_budget(void)
     esp_err_t ret = wifi_control_set_power_save(power_save);
     if (ret != ESP_OK)
     {
+        network_service_set_last_error(ret);
         ESP_LOGW(TAG, "Wi-Fi power save apply failed: standby=%d err=%s",
                  power_save ? 1 : 0, esp_err_to_name(ret));
         return;
@@ -344,6 +431,9 @@ static void network_service_apply_power_budget(void)
 
     s_runtime_power_save_applied = power_save;
     s_runtime_power_save_known = true;
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.power_save_applied = power_save;
+    portEXIT_CRITICAL(&s_snapshot_lock);
     ESP_LOGI(TAG, "Wi-Fi power save %s by power budget",
              power_save ? "enabled" : "disabled");
 }
@@ -371,6 +461,9 @@ static void network_service_task(void *pv_parameter)
         if (ret != ESP_OK)
         {
             network_service_clear_cached_ip();
+            network_service_set_wifi_connected(false);
+            network_service_set_last_error(ret);
+            network_service_set_probe_snapshot(false, false, ESP_FAIL);
             network_service_set_state(NETWORK_SERVICE_STATE_ERROR,
                                       "network manager status unavailable");
             vTaskDelay(pdMS_TO_TICKS(kServicePollPeriodMs));
@@ -382,7 +475,8 @@ static void network_service_task(void *pv_parameter)
 
         if (status.wifi_connected && budget.network_sync_allowed)
         {
-            if (s_network_state != NETWORK_SERVICE_STATE_SERVICE_READY)
+            if (network_service_copy_snapshot().state !=
+                NETWORK_SERVICE_STATE_SERVICE_READY)
             {
                 network_service_set_state(
                     NETWORK_SERVICE_STATE_WIFI_READY,
@@ -407,6 +501,8 @@ static void network_service_task(void *pv_parameter)
         }
         else if (status.wifi_connected)
         {
+            network_service_set_probe_snapshot(
+                false, true, ESP_ERR_INVALID_STATE);
             network_service_set_state(
                 NETWORK_SERVICE_STATE_WIFI_READY,
                 "network sync paused by power budget");
@@ -414,6 +510,9 @@ static void network_service_task(void *pv_parameter)
         else
         {
             network_service_clear_cached_ip();
+            network_service_set_wifi_connected(false);
+            network_service_set_probe_snapshot(
+                false, false, ESP_ERR_INVALID_STATE);
             network_service_set_state(
                 network_service_map_manager_state(&status),
                 "mirrored from network manager");
@@ -442,6 +541,7 @@ esp_err_t network_service_start(void)
     ret = network_manager_start();
     if (ret != ESP_OK)
     {
+        network_service_set_last_error(ret);
         network_service_set_state(NETWORK_SERVICE_STATE_ERROR,
                                   "network manager start failed");
         return ret;
@@ -453,6 +553,7 @@ esp_err_t network_service_start(void)
     if (result != pdPASS)
     {
         s_network_task_handle = NULL;
+        network_service_set_last_error(ESP_FAIL);
         network_service_set_state(NETWORK_SERVICE_STATE_ERROR,
                                   "network service task create failed");
         return ESP_FAIL;
@@ -467,7 +568,23 @@ esp_err_t network_service_start(void)
  */
 network_service_state_t network_service_get_state(void)
 {
-    return s_network_state;
+    return network_service_copy_snapshot().state;
+}
+
+/**
+ * @brief 获取网络服务生命周期快照。
+ * @param snapshot 输出快照，不能为空。
+ * @return `ESP_OK` 表示成功复制。
+ */
+esp_err_t network_service_get_snapshot(network_service_snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *snapshot = network_service_copy_snapshot();
+    return ESP_OK;
 }
 
 /**
@@ -628,7 +745,7 @@ network_service_get_default_provision_transport(void)
  */
 bool network_service_is_service_ready(void)
 {
-    return s_network_state == NETWORK_SERVICE_STATE_SERVICE_READY;
+    return network_service_copy_snapshot().service_ready;
 }
 
 /**

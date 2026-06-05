@@ -19,6 +19,7 @@
 #include "services/sleep_coordinator.h"
 #include "services/wakeup_evidence_service.h"
 #include "services/system_time_service.h"
+#include "services/imu_service.h"
 #include "services/background_service_manager.h"
 #include "services/startup_readiness.h"
 
@@ -175,6 +176,19 @@ static void start_deferred_services(void)
     else
     {
         ESP_LOGI(TAG, "boot_stage: official_chat_ready");
+    }
+
+    /*
+     * QMI8658C 内部 WoM/INT1 第一版只做事件日志验证。它不直接点亮屏幕，
+     * 不调用 sleep API，也不让 UI getter 访问 QMI8658C。
+     */
+    if (imu_service_start() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "IMU service start failed");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "boot_stage: imu_service_ready");
     }
 }
 

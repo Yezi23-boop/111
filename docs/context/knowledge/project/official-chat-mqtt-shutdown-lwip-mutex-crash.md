@@ -30,7 +30,7 @@ evidence_level: observed
 
 - 当前仓库此前只对 `connecting / listening / speaking` 做停机静默窗。
 - 当 `official_chat` 已完成激活并进入 `idle` 时，MQTT/TLS 连接仍然保持在线订阅。
-- AI 页面此时若立即调用 `official_chat_service_shutdown()`，服务线程会直接 `official_chat_destroy()`。
+- AI 页面此时若同步阻塞式关闭并立即销毁，会走到 `official_chat_destroy()` 的高风险窗口。
 - `Application::~Application()` 最终进入 `MqttProtocol::~MqttProtocol()`，在 MQTT 连接仍活跃或刚完成回调切换时直接 stop/destroy，容易把 `esp-tls` / `lwip` 套接字清理压到尚未完全静默的传输链路上，最终在 `lwip_shutdown()` 内命中 `sys_mutex_lock` 断言。
 
 ## 关键代码证据
@@ -40,7 +40,7 @@ evidence_level: observed
 - `D:\esp32S3\111\components\official_chat\protocols\mqtt_protocol.cc`
   - `StopMqttClientLocked()` 原先直接 `esp_mqtt_client_stop()` 后立刻 `esp_mqtt_client_destroy()`，没有先显式请求 disconnect，也没有等待 `MQTT_EVENT_DISCONNECTED`。
 - `D:\esp32S3\111\main\ui\custom\ai_ui_controller.c`
-  - 返回主页会同步调用 `official_chat_service_shutdown()`，因此退出页就是这条销毁链路的直接触发点。
+  - 返回主页会触发 official_chat 停机，因此退出页就是这条销毁链路的直接触发点。
 
 ## 最小修复
 
@@ -57,9 +57,9 @@ evidence_level: observed
 
 ### 2. UI 层退出要改成异步两阶段
 
-- 返回键不应同步调用阻塞式 `official_chat_service_shutdown()` 后立刻离页。
+- 返回键不应同步调用阻塞式 `official_chat_service_shutdown()` 后立刻离页；V1 应投递 `official_chat_service_leave_foreground()`，等待 owner task 发布 `STOPPED` 后再离页。
 - 正确做法是：
-  - UI 先调用 `official_chat_service_request_shutdown()`
+  - UI 先调用 `official_chat_service_leave_foreground()`
   - UI 本地要锁存一次 `exit requested`，不能只盯着 service 的 `shutdown_pending`
   - 页面进入“正在退出”态，禁用交互
   - 轮询 `official_chat_service_is_shutdown_pending()` 与 `official_chat_service_get_state()`

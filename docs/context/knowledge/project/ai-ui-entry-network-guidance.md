@@ -48,10 +48,10 @@ evidence_level: observed
 - 当未联网或需要重配网时，页面显示本地 AP 配网提示，并保留 `http://192.168.100.1/` 引导文案。
 - 正式 AI 页 `main/ui/custom/ai_ui_controller.c` 现在只在当前页面生命周期内持有 AI 会话：
   - 进入页面后，若网络已就绪，才调用 `official_chat_service_enter_foreground()`
-  - 返回主页时调用 `official_chat_service_shutdown()`
+  - 返回主页时调用 `official_chat_service_leave_foreground()`
   - 同时销毁当前 hand-written AI 页面对象并清空消息视图句柄
   - 下次再次进入 AI 页时，通过 `ai_ui_ensure_screen_created()` 重新建页并重新拉起新的 AI 会话
-  - `official_chat_service_shutdown()` 当前不是“立刻 delete handle”，而是：
+  - V1 语义是“退出页面就完整停止 official_chat 会话”，但真正停机由 `official_chat_service` owner task 异步收敛，不阻塞 LVGL 页面线程：
     - 若仍处于 `connecting / listening / speaking`，先调用 `official_chat_stop_listening()`
     - 再等待一段传输静默窗口后才真正 `official_chat_destroy()`
     - 这样可以避免 speaking 态直接销毁 `official_chat` 时触发 `esp_mqtt_client_destroy()` 与 lwIP 互斥崩溃
@@ -96,7 +96,7 @@ evidence_level: observed
 - 在 `network_service` 真正进入 `SERVICE_READY` 后再启动 `official_chat`
 - 给正式 UI 主流程提供统一的 AI 启动骨架
 - 缓存最近一轮文本并维护小型消息队列，供 hand-written AI 页面读取
-- 提供 `official_chat_service_shutdown()`，由正式 AI 页在返回主页时显式销毁 `official_chat` 句柄、清空缓存并等待 service task 完成停机
+- 提供 `official_chat_service_leave_foreground()`，由正式 AI 页在返回主页时投递“离开前台并完整停止”命令；service task 负责销毁 `official_chat` 句柄、清空缓存并发布 stopped snapshot
   - 对于 `speaking` 态，必须先走 `official_chat_stop_listening()` 和传输静默等待，不能只靠“状态回到 idle”就立即 destroy
 
 ## 共享聊天视图位置
