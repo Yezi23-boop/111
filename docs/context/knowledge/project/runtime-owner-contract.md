@@ -157,7 +157,10 @@ policy / UI / service 发出结束意图
 
 规则：
 
-- 进入危险识别页不自动启动模型。
+- Safety Monitor 默认按用户意图开启，但仍必须等 `ui_first_frame_ready`
+  后由 `background_service_manager` 按 power budget 与麦克风 owner 合成
+  `should_run`；不得在 `hardware_init()` 或 UI 首帧前直接启动模型。
+- 进入危险识别页只展示和修改后台开关状态，不直接启动模型。
 - 打开 `安全监听` 开关才表达后台监听意图。
 - 页面退出不停止 Safety Monitor。
 - AI 对话页前台期间暂停 Safety Monitor；退出后若开关仍开启再恢复。

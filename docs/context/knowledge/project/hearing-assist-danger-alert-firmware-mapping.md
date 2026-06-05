@@ -48,7 +48,7 @@ evidence_level: observed
 - 负责模型加载、INT8/Float 输入输出桥接、危险阈值判定和二分类标签落点。
 - 当前 `alert_threshold` 的真正归属在这里，而不是 `danger_detection_service`。
 - 当前已经按模型类型内置阈值：
-  - `DS-CNN` 默认 `0.80`
+  - `DS-CNN` 默认 `0.90`
   - `DS-TCN` 默认 `0.35`
 
 ### `espdl_audio_runtime`
@@ -89,7 +89,7 @@ evidence_level: observed
 
 | 参数名 | 设计定义 | 当前归属 / 文件 | 当前状态 | 当前代码行为 | 主要差距 / 下一步 |
 | --- | --- | --- | --- | --- | --- |
-| `feature_enabled` | 控制危险提醒功能是否整体开启 | `danger_detection_controller.c` + `background_service_manager.c` | 已实现（非持久化） | 危险识别页提供 `安全监听` 开关，后台 manager 保存 `danger_enabled_by_user` 并按策略运行 Safety Monitor | 后续若需要重启后保持用户选择，再单独接 NVS 持久化 |
+| `feature_enabled` | 控制危险提醒功能是否整体开启 | `danger_detection_controller.c` + `background_service_manager.c` | 已实现（默认开启、非持久化） | 固件启动后默认 `danger_enabled_by_user=true`，后台 manager 等 UI 首帧 ready 后按 power budget 和麦克风 owner 运行 Safety Monitor；危险识别页提供 `安全监听` 开关用于临时关闭或重新开启 | 后续若需要重启后保持用户选择，再单独接 NVS 持久化 |
 | `runtime_ready_required` | 运行时未就绪时不得进入监听 | `danger_detection_service.c` / `espdl_audio_runtime.cpp` | 已实现 | `danger_detection_service_start_with_backend()` 会检查 init 和 backend；`espdl_audio_runtime_start()` 会检查 runner、audio codec、input session 是否成功 | 已有基础，但仍缺少更明确的“用户看到功能开启/未就绪”的状态映射 |
 | `mic_resource_required` | 麦克风资源不可用时不得启动 | `background_service_manager.c` + `espdl_audio_runtime.cpp` + `audio_codec` | 已实现 | manager 读取 `audio_codec` input owner 快照并在前台音频占用时阻塞 Safety Monitor；ESP-DL runtime 启动时显式申请 `AUDIO_CODEC_OWNER_ESPDL_INFERENCE` input session | 已补 `danger_block_reason`，后续若 UI 需要展示具体 owner 再补窄字段 |
 | `background_run_allowed` | 离开专页后是否允许后台继续工作 | `background_service_manager.c` + `safety_monitor_session.c` | 已实现 | 用户打开 `安全监听` 后，页面退出不再 stop；后台 manager 按用户开关、power budget 和麦克风资源继续运行或恢复，并通过 `danger_should_run / danger_block_reason` 发布目标态 | 后续重点转向 stop timeout、提醒层并发安全、持续提醒和事件记录 |
@@ -100,7 +100,7 @@ evidence_level: observed
 | 参数名 | 设计定义 | 当前归属 / 文件 | 当前状态 | 当前代码行为 | 主要差距 / 下一步 |
 | --- | --- | --- | --- | --- | --- |
 | `suspicious_threshold` | 进入可疑观察态的门槛 | `danger_detection_service.c`（基于模型 danger 标签） | 部分实现 | 当前第一个 ESP-DL danger 窗口进入 `SUSPICIOUS`，尚未单独引入低于正式阈值的可疑阈值 | 后续若模型输出分布稳定，可引入独立 suspicious threshold 或 sensitivity profile |
-| `alert_threshold` | 单窗正式危险证据门槛 | `espdl_model_runner.cpp` / `espdl_model_runner.h` | 已实现 | `fill_binary_threshold_result()` 内用 `danger_prob >= threshold` 决定 danger 标签；DS-CNN 默认阈值为 `0.80` | 当前门槛仍是模型 runner 内常量；若后续做 profile 化，应提升为部署策略的一部分 |
+| `alert_threshold` | 单窗正式危险证据门槛 | `espdl_model_runner.cpp` / `espdl_model_runner.h` | 已实现 | `fill_binary_threshold_result()` 内用 `danger_prob >= threshold` 决定 danger 标签；DS-CNN 默认阈值为 `0.90` | 当前门槛仍是模型 runner 内常量；若后续做 profile 化，应提升为部署策略的一部分 |
 | `enter_alert_rule` | 连续证据确认进入告警 | `danger_detection_service.c` | 已实现（固定规则） | 当前写死为 `2` 个连续 danger 窗口后才触发告警 | 规则已存在，但仍是写死常量，不是可配置 profile |
 | `clear_rule` | 连续安全证据确认退出告警 | `danger_detection_service.c` | 已实现（固定规则） | 当前写死为 hold 到期后连续 `3` 个 non-danger 窗口才允许清除 | 已具备基础回滞，但还没有显式 `Cooldown` 阶段 |
 | `min_alert_hold_ms` | 正式告警最短保持时长 | `danger_detection_service.c` | 已实现 | 当前 `ESPDL_ALERT_HOLD_MS = 2000U`，未到 hold 时间不会清除 | 已实现，但仍是硬编码常量 |
@@ -135,7 +135,7 @@ evidence_level: observed
 | `window_size_ms` | 单次推理音频窗口长度 | `espdl_audio_runtime.cpp` | 已实现（固定） | 当前 runtime 维护固定长度滑窗并在窗口填满后推理 | 建议后续通过 profile 名称对外表达，而不是散落在实现细节中 |
 | `stride_ms` | 相邻推理窗口步长 | `espdl_audio_runtime.cpp` | 已实现（固定） | 当前 `kStrideMs = 300U` | 已有基础，但尚未 profile 化 |
 | `feature_pipeline_profile` | 当前特征提取方案标识 | `espdl_audio_runtime.cpp`（隐式） | 部分实现 | 当前实际上是固定 Fbank 流水线，但没有正式 profile 名称 | 若后续允许换特征，应先引入稳定 profile ID，而不是只改实现 |
-| `model_profile_id` | 当前启用模型版本标识 | `espdl_audio_runtime.cpp` + `espdl_model_runner.cpp` | 部分实现 | 当前通过 `"dscnn_v3.3"` 和内置 rodata runner 间接表达 active 模型 | 已能识别当前模型，但还不是统一版本治理接口 |
+| `model_profile_id` | 当前启用模型版本标识 | `espdl_audio_runtime.cpp` + `espdl_model_runner.cpp` | 部分实现 | 当前通过 `"dscnn_v3.4_t90"` 和内置 rodata runner 间接表达 active 模型 | 已能识别当前模型，但还不是统一版本治理接口 |
 | `danger_class_profile` | 当前 active danger 事件边界 | 设计层文档 + `danger_detection_service` 二分类语义 | 部分实现 | 当前服务层只区分 `danger/non_danger`，训练和产品边界在文档中已固定为 `siren/horn/alarm` | 产品定义已稳定，但固件侧没有独立 profile 名称或切换接口 |
 | `deployment_threshold_profile` | 当前整套后处理参数配置标识 | `danger_detection_service.c` | 已实现（service 后处理部分） | `danger_detection_policy_profile_t` 已发布 confirm windows、clear windows、hold、cooldown 和 danger class profile；模型阈值仍归 `espdl_model_runner` | 后续若做版本化和 A/B，应把 runner 阈值 profile 与 service profile 建立统一版本映射 |
 

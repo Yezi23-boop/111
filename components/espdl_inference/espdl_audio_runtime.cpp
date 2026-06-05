@@ -3,7 +3,7 @@
  * @brief ESP-DL 单模型实时音频推理运行时实现。
  *
  * 在 FreeRTOS 后台任务中持续读取麦克风音频，重采样到 16kHz，
- * 提取 Fbank 特征后运行当前 active 的 V3.3 DS-CNN-tiny 模型。
+ * 提取 Fbank 特征后运行当前 active 的 V3.4 T90 sharp 单模型。
  *
  * 音频管线与 traffic_inference_realtime.cc 保持一致：
  *   ES7210 ADC (24kHz, 2ch TDM, "MR" 格式)
@@ -37,7 +37,7 @@
 #include "freertos/task.h"
 
 /* Active 单模型 .espdl rodata 声明。 */
-extern const uint8_t dscnn_tiny_espdl[] asm("_binary_edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503_espdl_start");
+extern const uint8_t dscnn_t90_sharp_espdl[] asm("_binary_edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511_espdl_start");
 
 static const char *TAG = "espdl_runtime";
 
@@ -245,7 +245,7 @@ void runtime_task(void *arg)
 
     ESP_LOGI(TAG,
              "启动 ESPDL 实时推理: hw=%dHz/%dch, target=%dHz, "
-             "chunk=%u, stride=%ums, model=dscnn_v3.3",
+             "chunk=%u, stride=%ums, model=dscnn_v3.4_t90",
              AUDIO_PLATFORM_HW_SAMPLE_RATE,
              AUDIO_PLATFORM_HW_INPUT_CHANNELS,
              ESPDL_SAMPLE_RATE_HZ,
@@ -410,10 +410,10 @@ esp_err_t espdl_audio_runtime_start(const espdl_audio_runtime_config_t *config)
         return ret;
     }
 
-    /* 初始化 active 单模型。当前只加载 V3.3，避免双模型常驻导致 RAM 峰值过高。 */
+    /* 初始化 active 单模型。当前只加载 V3.4 T90 sharp，避免多模型常驻导致 RAM 峰值过高。 */
     ret = espdl_model_runner_create(&s_runtime.model_runner,
-                                    dscnn_tiny_espdl,
-                                    "dscnn_v3.3");
+                                    dscnn_t90_sharp_espdl,
+                                    "dscnn_v3.4_t90");
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ESP-DL active 模型初始化失败: %s", esp_err_to_name(ret));
         return ret;

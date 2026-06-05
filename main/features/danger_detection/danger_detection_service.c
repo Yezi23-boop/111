@@ -25,7 +25,7 @@
  */
 
 static const danger_detection_policy_profile_t k_espdl_policy_profile = {
-    .deployment_profile_id = "espdl_dscnn_v3_3_core_t90_2w3c_h2s_cd3s",
+    .deployment_profile_id = "espdl_dscnn_v3_4_t90_core_2w3c_h2s_cd3s",
     .danger_class_profile = "core_siren_horn_alarm",
     .confirm_windows = 2U,
     .clear_windows = 3U,
@@ -269,8 +269,8 @@ static void danger_detection_on_alert(
  * @brief ESP-DL 单模型推理结果回调。
  *
  * 将 ESP-DL active 模型结果映射到 danger_detection_snapshot，并在检测到
- * danger 时触发应用级告警。当前 active 模型为 V3.3 DS-CNN-tiny，避免双模型
- * 常驻导致 RAM 峰值过高。
+ * danger 时触发应用级告警。当前 active 模型为 V3.4 T90 sharp，保持单模型
+ * 常驻，避免多模型同时占用 RAM。
  */
 static void danger_detection_on_espdl_result(
     const espdl_model_result_t *result,

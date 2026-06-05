@@ -1,5 +1,5 @@
 ## espdl_inference 组件 CMakeLists.txt
-## 基于 ESP-DL 的单模型推理组件，当前 active 模型为 V3.3 DS-CNN-tiny。
+## 基于 ESP-DL 的单模型推理组件，当前 active 模型为 V3.4 T90 sharp。
 
 set(srcs
     espdl_model_runner.cpp
@@ -21,9 +21,9 @@ endif()
 set(cmake_dir ${espdl_dir}/fbs_loader/cmake)
 include(${cmake_dir}/utilities.cmake)
 
-# 只嵌入 active 模型，避免 V3.2 + V3.3 双模型同时占用 flash/PSRAM。
+# 只嵌入 active 模型，避免多模型同时占用 flash/PSRAM。
 set(embed_files
-    models/edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503.espdl
+    models/edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.espdl
 )
 
 idf_component_register(

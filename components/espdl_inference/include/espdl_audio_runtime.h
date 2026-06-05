@@ -4,7 +4,7 @@
  *
  * 镜像 traffic_audio_runtime 的生命周期管理，但使用 ESP-DL active 单模型推理：
  *   ES7210 ADC (24kHz, 2ch TDM) → 提取主麦克风 → 重采样到 16kHz
- *   → Fbank 特征提取 → V3.3 DS-CNN-tiny → 回调通知上层
+ *   → Fbank 特征提取 → V3.4 T90 sharp 单模型 → 回调通知上层
  *
  * 使用方法：
  *   1. espdl_audio_runtime_start() 启动后台 FreeRTOS 任务

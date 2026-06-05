@@ -14,7 +14,8 @@ class EspdlSingleModelRuntimeSourceTests(unittest.TestCase):
     def test_component_embeds_only_active_dscnn_model(self) -> None:
         cmake = ESPDL_CMAKE.read_text(encoding="utf-8")
 
-        self.assertIn("edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503.espdl", cmake)
+        self.assertIn("edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.espdl", cmake)
+        self.assertNotIn("edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503.espdl", cmake)
         self.assertNotIn("edge_mix_teacher_dstcn_small_1s_int8input_v20260503.espdl", cmake)
         self.assertNotIn("espdl_dual_runner.cpp", cmake)
 
@@ -37,7 +38,7 @@ class EspdlSingleModelRuntimeSourceTests(unittest.TestCase):
     def test_active_dscnn_threshold_is_tuned_for_speech_false_positive(self) -> None:
         runner_header = ESPDL_MODEL_RUNNER_HEADER.read_text(encoding="utf-8")
 
-        self.assertIn("ESPDL_DSCNN_DANGER_THRESHOLD  0.80f", runner_header)
+        self.assertIn("ESPDL_DSCNN_DANGER_THRESHOLD  0.90f", runner_header)
 
     def test_runtime_stop_timeout_can_cleanup_on_later_stop_or_start(self) -> None:
         source = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
