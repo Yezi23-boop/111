@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 import time
@@ -22,8 +23,10 @@ MIMO_ASR_API_KEY = os.getenv("MIMO_ASR_API_KEY", os.getenv("XIAOMI_API_KEY", "")
 MIMO_ASR_MODEL = os.getenv("MIMO_ASR_MODEL", "mimo-v2.5-asr")
 MIMO_ASR_LANGUAGE = os.getenv("MIMO_ASR_LANGUAGE", "auto")
 MIMO_ASR_TIMEOUT_SECONDS = float(os.getenv("MIMO_ASR_TIMEOUT_SECONDS", "60"))
+MIMO_ASR_TRANSCODE_TIMEOUT_SECONDS = float(os.getenv("MIMO_ASR_TRANSCODE_TIMEOUT_SECONDS", "20"))
 MAX_AUDIO_BYTES = int(os.getenv("WATCH_MAX_AUDIO_BYTES", str(6 * 1024 * 1024)))
 REPLY_MAX_CHARS = int(os.getenv("WATCH_REPLY_MAX_CHARS", "80"))
+MIMO_ASR_DIRECT_MIME_TYPES = {"audio/wav", "audio/mp3", "audio/mpeg"}
 
 WATCH_INSTRUCTIONS = (
     "你是 AI Memory Watch 的 Hermes 大脑。输入来自 ESP32-S3 手表短语音转写。"
@@ -150,9 +153,55 @@ def _extract_asr_text(payload: dict) -> str:
     return str(message.get("content") or "").strip()
 
 
+async def _transcode_to_wav(audio_bytes: bytes) -> tuple[bytes, str]:
+    process = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        "pipe:0",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-f",
+        "wav",
+        "pipe:1",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(audio_bytes),
+            timeout=MIMO_ASR_TRANSCODE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        process.kill()
+        await process.wait()
+        raise HTTPException(status_code=500, detail="audio_transcode_timeout") from exc
+    if process.returncode != 0 or not stdout:
+        raise HTTPException(
+            status_code=500,
+            detail=f"audio_transcode_failed:{stderr.decode('utf-8', errors='ignore')[:120]}",
+        )
+    return stdout, "audio/wav"
+
+
+async def _prepare_mimo_asr_audio(audio_bytes: bytes, mime_type: str | None) -> tuple[bytes, str]:
+    content_type = mime_type or "audio/ogg"
+    if content_type == "application/octet-stream":
+        content_type = "audio/ogg"
+    if content_type in MIMO_ASR_DIRECT_MIME_TYPES:
+        return audio_bytes, content_type
+    return await _transcode_to_wav(audio_bytes)
+
+
 async def _call_mimo_asr(audio_bytes: bytes, mime_type: str | None) -> str:
     if not MIMO_ASR_BASE_URL or not MIMO_ASR_API_KEY:
         raise HTTPException(status_code=500, detail="mimo_asr_config_missing")
+    prepared_audio, prepared_mime_type = await _prepare_mimo_asr_audio(audio_bytes, mime_type)
     body = {
         "model": MIMO_ASR_MODEL,
         "messages": [
@@ -162,7 +211,7 @@ async def _call_mimo_asr(audio_bytes: bytes, mime_type: str | None) -> str:
                     {
                         "type": "input_audio",
                         "input_audio": {
-                            "data": _audio_data_uri(audio_bytes, mime_type),
+                            "data": _audio_data_uri(prepared_audio, prepared_mime_type),
                         },
                     }
                 ],

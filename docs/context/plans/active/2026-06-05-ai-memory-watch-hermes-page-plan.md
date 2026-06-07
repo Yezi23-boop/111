@@ -88,6 +88,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - 常驻容器读取 `D:\Docker_data\hermes\watch_voice_endpoint.env`，该文件保存 `HERMES_API_KEY` 与 `WATCH_DEVICE_TOKENS`，不得提交进仓库。
 - 常驻入口 `GET /v1/watch/health?device_id=watch-001` 已验证返回 `hermes_status=online`。
 - 常驻入口 `POST /v1/watch/voice-command` 已用 dummy Ogg Opus + mock ASR 验证可返回手表 V1 固定 7 字段 JSON。
+- MiMo ASR adapter 已用本机合成中文语音样本验证：WAV 经 ffmpeg 转 Ogg Opus 上传，endpoint 再转 16 kHz mono WAV 调 `mimo-v2.5-asr`，ASR 文本为 `记一下，明天看电池日志。`，随后 Hermes 返回 `status=done/action=memory_saved`。
 - Webhook platform 当前未启用；V1 不优先走 webhook，因为手表侧需要同步等待最终文本结果。
 
 因此本计划的服务器链路已从纯 mock 推进为：
@@ -225,7 +226,8 @@ error
 
 - 开发期服务器可保存上传音频用于调试；正式环境默认不保存音频。
 - ASR 落在 watch voice endpoint 内部 adapter，不放进 ESP32-S3，也不假设 Hermes `/v1/responses` 自带音频转写能力。
-- 开发期默认 `WATCH_ASR_PROVIDER=mock`；后续可切换 `WATCH_ASR_PROVIDER=mimo`，用 `mimo-v2.5-asr` 调 OpenAI-compatible `/chat/completions`，将 Ogg Opus 作为 base64 `input_audio` data URI 上传。
+- 开发期默认 `WATCH_ASR_PROVIDER=mock`；后续可切换 `WATCH_ASR_PROVIDER=mimo`，用 `mimo-v2.5-asr` 调 OpenAI-compatible `/chat/completions`。
+- MiMo ASR 当前不接受 `audio/ogg`，只接受 `audio/wav`、`audio/mp3` 或 `audio/mpeg`；因此 voice endpoint 对手表上传的 Ogg Opus 先用 ffmpeg 转成 16 kHz mono WAV，再作为 base64 `input_audio` data URI 上传。
 - V1 原型允许 Hermes 执行外部工具；ESP32 不做工具白名单判断。
 - 外部工具失败时，手表只显示简短失败，详细错误写服务器日志。
 - Hermes watch-specific instructions 必须固定：输入来自手表短语音；优先识别记忆、提醒、问答或工具动作；回复适合小屏；需要追问时一次只问一个问题。
@@ -359,7 +361,7 @@ done / timeout / error / canceled
 - `[x]` 启用并验证 Hermes API Server `/v1/responses` 文本链路。
 - `[x]` 落地 watch voice endpoint 的最小 server mock / adapter。
 - `[x]` 以 Docker Desktop 常驻容器方式提供本机联调入口 `127.0.0.1:8787`。
-- `[x]` 落地可配置 MiMo ASR adapter 骨架，默认保持 mock ASR，真实音频样本验证待后续执行。
+- `[x]` 落地可配置 MiMo ASR adapter，默认保持 mock ASR，并已用本机合成中文 Ogg Opus 样本验证真实 ASR -> Hermes 链路。
 - `[ ]` 落地页面与 service skeleton。
 
 ## Decision Log
@@ -385,6 +387,9 @@ done / timeout / error / canceled
 - 2026-06-08：
   - 决策：真实 ASR 不塞进 Hermes `/v1/responses` 调用，也不放在 ESP32-S3；watch voice endpoint 增加 `WATCH_ASR_PROVIDER=mimo` adapter，按 MiMo 官方 ASR 文档调用 `mimo-v2.5-asr` 的 OpenAI-compatible `/chat/completions`。
   - 原因：MiMo ASR 的官方入口是 `input_audio` data URI -> `/chat/completions`，而 Hermes API Server 当前本机未暴露可确认的 OpenAPI 或 audio transcription endpoint；把 ASR 留在 endpoint 内部可保持手表 V1 JSON 和 Hermes agent 调用不变。
+- 2026-06-08：
+  - 决策：即使 ESP32-S3 继续上传 Ogg Opus，voice endpoint 给 MiMo ASR 前必须转码为 WAV；当前 Docker 镜像安装 ffmpeg，并在 `WATCH_ASR_PROVIDER=mimo` 路径执行 Ogg/未知 MIME -> 16 kHz mono WAV。
+  - 原因：MiMo ASR 对 `audio/ogg` 返回 `400 Param Incorrect`，错误体明确要求 `audio/wav`、`audio/mp3` 或 `audio/mpeg`；转码放在服务器侧不会改变 ESP32 V1 协议，也比让手表改音频格式更符合当前“复用已能正常通信的 Opus 代码”约束。
 
 ## Validation and Acceptance
 
@@ -423,6 +428,7 @@ docker build -t ai-memory-watch-voice-endpoint:dev .
 docker run --name ai-memory-watch-voice-endpoint-test -p 127.0.0.1:8789:8787 ...
 .\server\watch_voice_endpoint\smoke_test.ps1
 Invoke-RestMethod http://127.0.0.1:8642/openapi.json
+docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787 -e WATCH_ASR_PROVIDER=mimo ...
 ```
 
 已观察到的结果：
@@ -435,6 +441,9 @@ Invoke-RestMethod http://127.0.0.1:8642/openapi.json
 - 常驻容器 `ai-memory-watch-voice-endpoint` 已启动，`127.0.0.1:8787` 的 smoke test 返回 `status=done`、`action=memory_saved` 和固定 7 字段。
 - MiMo ASR adapter 的 source test 已锁定 `/chat/completions`、`mimo-v2.5-asr`、`input_audio` data URI、`Authorization: Bearer` 和 `trust_env=False`。
 - Hermes API Server `GET /openapi.json` 当前返回 404，不能把 ASR 端点假设为 Hermes API Server 自带能力。
+- 直接向 MiMo ASR 发送 `data:audio/ogg;base64,...` 返回 400，错误体要求 `audio/wav/audio/mp3/audio/mpeg`。
+- 带 ffmpeg 的临时 `WATCH_ASR_PROVIDER=mimo` 容器已用本机中文 TTS Ogg 样本跑通：`asr_text=记一下，明天看电池日志。`，Hermes 返回 `status=done/action=memory_saved`。
+- 常驻 `ai-memory-watch-voice-endpoint` 容器已重建到带 ffmpeg 的新镜像，默认 mock smoke test 仍通过。
 
 期望看到的结果：
 
@@ -457,7 +466,7 @@ Invoke-RestMethod http://127.0.0.1:8642/openapi.json
 ## Next Step
 
 - 将 `server/watch_voice_endpoint` 接到真实 ASR adapter，保持外层 V1 JSON 不变。
-- 用 ESP32-S3 或本地真实 Ogg Opus 语音样本验证 `WATCH_ASR_PROVIDER=mimo`，确认音频 MIME、时长、语言和错误路径。
+- 用 ESP32-S3 实机麦克风 Ogg Opus 样本验证 `WATCH_ASR_PROVIDER=mimo`，确认手表端实际 MIME、音量、时长、语言和错误路径。
 - 将本机 `127.0.0.1:8787` 联调入口按需要放到服务器域名后，例如反向代理到 `/v1/watch/*`，再增加 TLS 与公网访问控制。
 - 再写 `memory_watch_service` 的 public header 草案、source test 和页面 wireframe。
 - 固件侧只接 voice endpoint，不接 Hermes Dashboard，不保存 Hermes API key。

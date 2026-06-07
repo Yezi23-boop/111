@@ -94,6 +94,7 @@ async def test_cancel_records_canceled_request(watch_app):
 @pytest.mark.anyio
 async def test_mimo_asr_adapter_uses_openai_compatible_audio_payload(watch_app, monkeypatch):
     seen = {}
+    transcode_seen = {}
 
     class FakeAsyncClient:
         def __init__(self, timeout, trust_env):
@@ -125,6 +126,12 @@ async def test_mimo_asr_adapter_uses_openai_compatible_audio_payload(watch_app, 
             )
 
     monkeypatch.setattr(watch_app.httpx, "AsyncClient", FakeAsyncClient)
+
+    async def fake_transcode(audio_bytes: bytes):
+        transcode_seen["audio_bytes"] = audio_bytes
+        return b"RIFF-test-wav", "audio/wav"
+
+    monkeypatch.setattr(watch_app, "_transcode_to_wav", fake_transcode)
     watch_app.MIMO_ASR_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
     watch_app.MIMO_ASR_API_KEY = "test-asr-key"
 
@@ -134,9 +141,10 @@ async def test_mimo_asr_adapter_uses_openai_compatible_audio_payload(watch_app, 
     assert seen["url"] == "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
     assert seen["headers"] == {"Authorization": "Bearer test-asr-key"}
     assert seen["trust_env"] is False
+    assert transcode_seen["audio_bytes"] == b"OggS\x00\x01"
     body = seen["json"]
     assert body["model"] == "mimo-v2.5-asr"
     assert body["asr_options"] == {"language": "auto"}
     content = body["messages"][0]["content"][0]
     assert content["type"] == "input_audio"
-    assert content["input_audio"]["data"].startswith("data:audio/ogg;base64,")
+    assert content["input_audio"]["data"].startswith("data:audio/wav;base64,")

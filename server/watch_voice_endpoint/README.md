@@ -65,7 +65,7 @@ MIMO_ASR_MODEL=mimo-v2.5-asr
 MIMO_ASR_LANGUAGE=auto
 ```
 
-The MiMo ASR adapter sends the uploaded Ogg Opus as a base64 `input_audio` data URI to the OpenAI-compatible `/chat/completions` endpoint, then passes the resulting text to Hermes `/v1/responses`.
+MiMo ASR currently accepts WAV/MP3 style MIME types, so the endpoint transcodes watch Ogg Opus uploads to 16 kHz mono WAV with ffmpeg before sending a base64 `input_audio` data URI to the OpenAI-compatible `/chat/completions` endpoint. The resulting text is then passed to Hermes `/v1/responses`.
 
 ## Persistent Local Smoke Test
 
