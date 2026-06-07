@@ -87,14 +87,12 @@ D:\Docker_data\hermes\watch_voice_endpoint.env
 ```
 
 That file stores `HERMES_API_KEY` and `WATCH_DEVICE_TOKENS`, so keep it outside git.
+Do not paste `docker compose config` output into logs or issues because Docker Compose expands `env_file` values.
 
 Start a persistent Docker Desktop container:
 
 ```powershell
-docker run -d --name ai-memory-watch-voice-endpoint --restart unless-stopped `
-  -p 127.0.0.1:8787:8787 `
-  --env-file D:\Docker_data\hermes\watch_voice_endpoint.env `
-  ai-memory-watch-voice-endpoint:dev
+docker compose -f compose.local.yml up -d --build
 ```
 
 Verify the full server-side path without printing tokens:
@@ -107,4 +105,13 @@ Verify real ASR with an Ogg Opus sample:
 
 ```powershell
 .\smoke_test.ps1 -UseRealAsr -AudioPath C:\path\to\sample.ogg
+```
+
+Manual `docker run` is still useful for one-off isolation:
+
+```powershell
+docker run -d --name ai-memory-watch-voice-endpoint --restart unless-stopped `
+  -p 127.0.0.1:8787:8787 `
+  --env-file D:\Docker_data\hermes\watch_voice_endpoint.env `
+  ai-memory-watch-voice-endpoint:dev
 ```

@@ -93,6 +93,9 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - voice endpoint 已实现 `device_id + request_id` 最小幂等：已完成请求返回缓存结果，处理中重复请求等待同一任务，已取消请求返回 `canceled/no_action`，完成后再 cancel 返回完成结果。
 - 本地 `/health` 会返回 `asr_provider`、`inflight_requests`、`completed_requests` 与 `canceled_requests`，用于联调时判断服务是否卡住；不返回 token 或 API key。
 - Docker 常驻容器已验证幂等：同一个 `request_id` 连续提交两次，第二次返回第一次缓存结果，`asr_text` 未被第二次 mock 文本覆盖，`/health` 显示 `inflight_requests=0`。
+- `server/watch_voice_endpoint/compose.local.yml` 已作为本地可重复部署入口，`docker compose -f compose.local.yml up -d --build` 可构建并启动 `ai-memory-watch-voice-endpoint`，healthcheck 当前为 `healthy`。
+- 安全注意：不要把 `docker compose config` 输出贴到日志或 issue，因为 Compose 会展开 `env_file` 中的 API key 和 device token。
+- 轮换过 Hermes `API_SERVER_KEY` 与 `watch-001` device token 后，已重新验证 Hermes `/health`、`/v1/models`、`/v1/responses` 和 watch endpoint 真实 ASR smoke 均可用。
 - Webhook platform 当前未启用；V1 不优先走 webhook，因为手表侧需要同步等待最终文本结果。
 
 因此本计划的服务器链路已从纯 mock 推进为：
@@ -368,6 +371,7 @@ done / timeout / error / canceled
 - `[x]` 落地可配置 MiMo ASR adapter，默认保持 mock ASR，并已用本机合成中文 Ogg Opus 样本验证真实 ASR -> Hermes 链路。
 - `[x]` 将常驻本机联调容器切到 `WATCH_ASR_PROVIDER=mimo`，保留 smoke 脚本的 mock override 快速检查。
 - `[x]` 实现 voice endpoint `device_id + request_id` 最小幂等与本地健康统计，降低 ESP32 Wi-Fi 重试导致重复记忆/提醒的风险。
+- `[x]` 增加 Docker Compose 本地可重复部署入口，并验证容器 healthcheck 为 healthy。
 - `[ ]` 落地页面与 service skeleton。
 
 ## Decision Log
@@ -399,6 +403,9 @@ done / timeout / error / canceled
 - 2026-06-08：
   - 决策：voice endpoint 在 V1 使用内存态 request registry 实现 `device_id + request_id` 幂等，不引入数据库；完成结果按 `WATCH_REQUEST_CACHE_LIMIT` 缓存，取消集合按 `WATCH_CANCELED_REQUEST_LIMIT` 限制。
   - 原因：ESP32-S3 后续可能因 Wi-Fi 抖动或 120 秒等待重试同一个 `request_id`；服务器必须避免重复 ASR/Hermes/tool 动作，同时保持第一版可回退、可观察、无需额外存储服务。
+- 2026-06-08：
+  - 决策：本地服务器侧联调用 `compose.local.yml` 承载 `ai-memory-watch-voice-endpoint` 的可重复 build/up/healthcheck；仍只绑定 `127.0.0.1:8787`。
+  - 原因：把手动 `docker run` 收敛为可重复操作，便于 Docker Desktop 长时间联调和重启恢复；公网域名/TLS 暴露仍后置，不把 Hermes API Server 直接暴露给 ESP32。
 
 ## Validation and Acceptance
 
@@ -455,6 +462,8 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 常驻 `ai-memory-watch-voice-endpoint` 容器已重建到带 ffmpeg 的新镜像并切到 `WATCH_ASR_PROVIDER=mimo`；`smoke_test.ps1 -UseRealAsr -AudioPath <sample.ogg>` 与默认 mock smoke test 均通过。
 - voice endpoint source tests 已覆盖完成请求复用、处理中重复请求共享同一任务、完成后 cancel 返回旧结果。
 - 常驻 Docker 运行态已验证重复 `request_id` 不重复处理：两次响应完全一致，第二次 `asr_text` 仍为第一次请求文本。
+- `docker compose -f compose.local.yml up -d --build` 已验证可启动容器，Docker healthcheck 状态为 `healthy`，真实 ASR smoke test 仍返回 `status=done/action=memory_saved`。
+- Hermes API Server key 与 watch device token 轮换后复验通过：Hermes `/v1/responses` 返回 `status=completed`，watch endpoint 真实 ASR smoke 返回 `status=done/action=memory_saved`。
 
 期望看到的结果：
 
