@@ -16,6 +16,7 @@ HERMES_API_URL = os.getenv("HERMES_API_URL", "http://127.0.0.1:8642").rstrip("/"
 HERMES_API_KEY = os.getenv("HERMES_API_KEY", "")
 HERMES_MODEL = os.getenv("HERMES_MODEL", "hermes-agent")
 HERMES_TIMEOUT_SECONDS = float(os.getenv("HERMES_TIMEOUT_SECONDS", "120"))
+WATCH_REQUEST_TIMEOUT_SECONDS = float(os.getenv("WATCH_REQUEST_TIMEOUT_SECONDS", "115"))
 WATCH_CONVERSATION_SUFFIX = os.getenv("WATCH_CONVERSATION_SUFFIX", "ai-memory-watch")
 WATCH_MOCK_ASR_TEXT = os.getenv("WATCH_MOCK_ASR_TEXT", "记一下明天看电池日志")
 REQUEST_CACHE_LIMIT = int(os.getenv("WATCH_REQUEST_CACHE_LIMIT", "256"))
@@ -153,6 +154,17 @@ def _error_watch_response(
         asr_text=asr_text,
         reply_text=reply_text,
         error_code="asr_or_agent_error",
+    )
+
+
+def _timeout_watch_response(request_id: str, asr_text: str = "") -> WatchResponse:
+    return WatchResponse(
+        request_id=request_id,
+        status="timeout",
+        action="error",
+        asr_text=asr_text,
+        reply_text="Hermes 处理超时",
+        error_code="server_timeout",
     )
 
 
@@ -320,7 +332,7 @@ async def _call_hermes(device_id: str, asr_text: str, clarification_id: str | No
         return _extract_output_text(response.json())
 
 
-async def _process_voice_command(
+async def _process_voice_command_inner(
     request_id: str,
     device_id: str,
     audio_bytes: bytes,
@@ -356,14 +368,7 @@ async def _process_voice_command(
     try:
         reply_text = await _call_hermes(device_id, asr_text, clarification_id)
     except httpx.TimeoutException:
-        return WatchResponse(
-            request_id=request_id,
-            status="timeout",
-            action="error",
-            asr_text=asr_text,
-            reply_text="Hermes 处理超时",
-            error_code="server_timeout",
-        )
+        return _timeout_watch_response(request_id, asr_text)
     except Exception:
         return WatchResponse(
             request_id=request_id,
@@ -386,6 +391,30 @@ async def _process_voice_command(
         clarification_id=None,
         error_code=None,
     )
+
+
+async def _process_voice_command(
+    request_id: str,
+    device_id: str,
+    audio_bytes: bytes,
+    audio_content_type: str | None,
+    clarification_id: str | None,
+    mock_asr_text: str | None,
+) -> WatchResponse:
+    try:
+        return await asyncio.wait_for(
+            _process_voice_command_inner(
+                request_id=request_id,
+                device_id=device_id,
+                audio_bytes=audio_bytes,
+                audio_content_type=audio_content_type,
+                clarification_id=clarification_id,
+                mock_asr_text=mock_asr_text,
+            ),
+            timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        return _timeout_watch_response(request_id)
 
 
 async def _await_request_task(
@@ -511,11 +540,12 @@ async def cancel_request(
 
 
 @app.get("/health")
-async def service_health() -> dict[str, str | int]:
+async def service_health() -> dict[str, str | int | float]:
     return {
         "status": "ok",
         "time": int(time.time()),
         "asr_provider": ASR_PROVIDER,
+        "request_timeout_seconds": WATCH_REQUEST_TIMEOUT_SECONDS,
         "inflight_requests": len(_inflight_requests),
         "completed_requests": len(_completed_requests),
         "canceled_requests": len(_canceled_requests),

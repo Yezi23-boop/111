@@ -247,6 +247,36 @@ async def test_cancel_completed_request_returns_completed_result(watch_app, monk
 
 
 @pytest.mark.anyio
+async def test_voice_command_returns_timeout_before_watch_deadline(watch_app, monkeypatch):
+    async def fake_call_hermes(device_id: str, asr_text: str, clarification_id: str | None) -> str:
+        await asyncio.sleep(0.05)
+        return "这条回复不应赶在总预算内返回"
+
+    monkeypatch.setattr(watch_app, "WATCH_REQUEST_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(watch_app, "_call_hermes", fake_call_hermes)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/watch/voice-command",
+            headers={"Authorization": "Bearer test-token"},
+            data={
+                "request_id": "watch-001-timeout-0001",
+                "device_id": "watch-001",
+                "mock_asr_text": "记一下明天看电池日志",
+            },
+            files={"audio": ("command.ogg", b"OggS\x00\x01", "audio/ogg")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert sorted(payload.keys()) == WATCH_RESPONSE_KEYS
+    assert payload["status"] == "timeout"
+    assert payload["action"] == "error"
+    assert payload["request_id"] == "watch-001-timeout-0001"
+    assert payload["error_code"] == "server_timeout"
+
+
+@pytest.mark.anyio
 async def test_mimo_asr_adapter_uses_openai_compatible_audio_payload(watch_app, monkeypatch):
     seen = {}
     transcode_seen = {}
