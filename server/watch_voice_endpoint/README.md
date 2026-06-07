@@ -91,3 +91,9 @@ Verify the full server-side path without printing tokens:
 ```powershell
 .\smoke_test.ps1
 ```
+
+Verify real ASR with an Ogg Opus sample:
+
+```powershell
+.\smoke_test.ps1 -UseRealAsr -AudioPath C:\path\to\sample.ogg
+```

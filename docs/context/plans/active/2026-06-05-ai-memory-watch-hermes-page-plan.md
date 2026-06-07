@@ -87,7 +87,8 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `server/watch_voice_endpoint` 已构建为 Docker 镜像 `ai-memory-watch-voice-endpoint:dev`，并以常驻容器 `ai-memory-watch-voice-endpoint` 运行在宿主机本地 `127.0.0.1:8787`。
 - 常驻容器读取 `D:\Docker_data\hermes\watch_voice_endpoint.env`，该文件保存 `HERMES_API_KEY` 与 `WATCH_DEVICE_TOKENS`，不得提交进仓库。
 - 常驻入口 `GET /v1/watch/health?device_id=watch-001` 已验证返回 `hermes_status=online`。
-- 常驻入口 `POST /v1/watch/voice-command` 已用 dummy Ogg Opus + mock ASR 验证可返回手表 V1 固定 7 字段 JSON。
+- 常驻入口 `POST /v1/watch/voice-command` 已切到 `WATCH_ASR_PROVIDER=mimo`，用本机合成中文 Ogg Opus 样本验证可返回手表 V1 固定 7 字段 JSON。
+- `server/watch_voice_endpoint/smoke_test.ps1` 支持默认 mock 快速健康检查，也支持 `-UseRealAsr -AudioPath <sample.ogg>` 真实 ASR 检查。
 - MiMo ASR adapter 已用本机合成中文语音样本验证：WAV 经 ffmpeg 转 Ogg Opus 上传，endpoint 再转 16 kHz mono WAV 调 `mimo-v2.5-asr`，ASR 文本为 `记一下，明天看电池日志。`，随后 Hermes 返回 `status=done/action=memory_saved`。
 - Webhook platform 当前未启用；V1 不优先走 webhook，因为手表侧需要同步等待最终文本结果。
 
@@ -362,6 +363,7 @@ done / timeout / error / canceled
 - `[x]` 落地 watch voice endpoint 的最小 server mock / adapter。
 - `[x]` 以 Docker Desktop 常驻容器方式提供本机联调入口 `127.0.0.1:8787`。
 - `[x]` 落地可配置 MiMo ASR adapter，默认保持 mock ASR，并已用本机合成中文 Ogg Opus 样本验证真实 ASR -> Hermes 链路。
+- `[x]` 将常驻本机联调容器切到 `WATCH_ASR_PROVIDER=mimo`，保留 smoke 脚本的 mock override 快速检查。
 - `[ ]` 落地页面与 service skeleton。
 
 ## Decision Log
@@ -443,7 +445,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - Hermes API Server `GET /openapi.json` 当前返回 404，不能把 ASR 端点假设为 Hermes API Server 自带能力。
 - 直接向 MiMo ASR 发送 `data:audio/ogg;base64,...` 返回 400，错误体要求 `audio/wav/audio/mp3/audio/mpeg`。
 - 带 ffmpeg 的临时 `WATCH_ASR_PROVIDER=mimo` 容器已用本机中文 TTS Ogg 样本跑通：`asr_text=记一下，明天看电池日志。`，Hermes 返回 `status=done/action=memory_saved`。
-- 常驻 `ai-memory-watch-voice-endpoint` 容器已重建到带 ffmpeg 的新镜像，默认 mock smoke test 仍通过。
+- 常驻 `ai-memory-watch-voice-endpoint` 容器已重建到带 ffmpeg 的新镜像并切到 `WATCH_ASR_PROVIDER=mimo`；`smoke_test.ps1 -UseRealAsr -AudioPath <sample.ogg>` 与默认 mock smoke test 均通过。
 
 期望看到的结果：
 

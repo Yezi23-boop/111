@@ -2,7 +2,9 @@ param(
   [string]$BaseUrl = "http://127.0.0.1:8787",
   [string]$EnvFile = "D:\Docker_data\hermes\watch_voice_endpoint.env",
   [string]$DeviceId = "watch-001",
-  [string]$MockAsrText = "记一下明天看电池日志"
+  [string]$MockAsrText = "记一下明天看电池日志",
+  [string]$AudioPath = "",
+  [switch]$UseRealAsr
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,15 +43,21 @@ $headers = @{ Authorization = "Bearer $token" }
 $localHealth = Invoke-RestMethod -Uri "$BaseUrl/health" -TimeoutSec 5
 $watchHealth = Invoke-RestMethod -Uri "$BaseUrl/v1/watch/health?device_id=$DeviceId" -Headers $headers -TimeoutSec 10
 
-$tmpAudio = Join-Path $env:TEMP "watch-smoke-test.opus"
-[byte[]]$bytes = 0x4F, 0x67, 0x67, 0x53, 0x00, 0x01, 0x02, 0x03
-[System.IO.File]::WriteAllBytes($tmpAudio, $bytes)
+if ([string]::IsNullOrWhiteSpace($AudioPath)) {
+  $tmpAudio = Join-Path $env:TEMP "watch-smoke-test.opus"
+  [byte[]]$bytes = 0x4F, 0x67, 0x67, 0x53, 0x00, 0x01, 0x02, 0x03
+  [System.IO.File]::WriteAllBytes($tmpAudio, $bytes)
+  $AudioPath = $tmpAudio
+}
 
 $form = @{
   request_id = "smoke-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
   device_id = $DeviceId
-  audio = Get-Item -LiteralPath $tmpAudio
-  mock_asr_text = $MockAsrText
+  audio = Get-Item -LiteralPath $AudioPath
+}
+
+if (-not $UseRealAsr) {
+  $form["mock_asr_text"] = $MockAsrText
 }
 
 $voice = Invoke-RestMethod -Uri "$BaseUrl/v1/watch/voice-command" `
@@ -68,6 +76,7 @@ if ($missing.Count -gt 0) {
   local_health = $localHealth.status
   watch_health = $watchHealth.status
   hermes_status = $watchHealth.hermes_status
+  asr_mode = $(if ($UseRealAsr) { "real" } else { "mock" })
   voice_status = $voice.status
   voice_action = $voice.action
   asr_text = $voice.asr_text
