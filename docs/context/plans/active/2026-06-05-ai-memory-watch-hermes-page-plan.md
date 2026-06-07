@@ -3,7 +3,7 @@ id: 2026-06-05-ai-memory-watch-hermes-page-plan
 tags: plan, active, ai-memory-watch, hermes, voice, ui, official-chat, owner
 summary: 将 AI Memory Watch 作为独立 Hermes 功能页面推进，固定 V1 触摸录音、Ogg Opus 一次性 HTTP 上传、服务器侧 ASR/Hermes 处理和当前 owner 边界。
 created: 2026-06-05
-last_updated: 2026-06-05
+last_updated: 2026-06-08
 last_reviewed: 2026-06-05
 status: active
 memory_type: project_plan
@@ -73,22 +73,25 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 
 ## Current Hermes Docker Status
 
-2026-06-08 只读确认：
+2026-06-08 验证结论：
 
 - Docker 容器 `hermes` 已运行，镜像为 `nousresearch/hermes-agent:latest`。
 - 数据目录挂载到 `D:\Docker_data\hermes\data`。
-- Hermes Dashboard 可通过宿主机本地 `http://127.0.0.1:9119` 访问；该 Dashboard 不是 ESP32-S3 的设备接口。
+- Hermes Dashboard 可通过宿主机本地 `http://127.0.0.1:9119` 访问；Dashboard 可用不等于 API Server 可用，该 Dashboard 也不是 ESP32-S3 的设备接口。
 - Hermes 当前模型为 `mimo-v2.5`，provider 为 `Xiaomi MiMo`。
-- `D:\Docker_data\hermes\data\.env` 当前已有 MiMo 相关配置，但尚未启用 `API_SERVER_ENABLED`，也未配置 `API_SERVER_KEY`。
-- Docker 已映射宿主机 `8642`，但容器内当前没有 API Server 监听该端口；因此 ESP32-S3 暂时不能直接请求 `http://<host>:8642/v1/...`。
+- `D:\Docker_data\hermes\data\.env` 当前已有 MiMo 相关配置，并已启用 `API_SERVER_ENABLED=true`、`API_SERVER_HOST=0.0.0.0`、`API_SERVER_PORT=8642` 与强随机 `API_SERVER_KEY`；该密钥不得写入仓库或 ESP32-S3 固件。
+- Docker 已映射宿主机 `8642`，容器内和宿主机均已验证 API Server 有服务监听。
+- 宿主机 `GET http://127.0.0.1:8642/health` 返回 `status=ok`。
+- 带 `Authorization: Bearer <api_server_key>` 的 `GET /v1/models` 返回 `hermes-agent`。
+- 带同一鉴权的 `POST /v1/responses`，输入 `手表用户说：记一下明天看电池日志`、`conversation=watch-001-ai-memory-watch`，已同步返回 Hermes + MiMo 最终文本。
 - Webhook platform 当前未启用；V1 不优先走 webhook，因为手表侧需要同步等待最终文本结果。
 
-因此本计划的服务器下一步从纯 mock 调整为：
+因此本计划的服务器链路已从纯 mock 推进为：
 
 ```text
-先启用 Hermes OpenAI-compatible API Server
-  -> 用 /v1/responses 文本请求验证 Hermes + MiMo
-  -> 再增加 watch voice endpoint 做 Ogg Opus -> ASR -> Hermes API -> 手表 JSON
+Hermes OpenAI-compatible API Server /v1/responses 已验证
+  -> watch voice endpoint 原型接收 Ogg Opus multipart
+  -> mock ASR 文本 -> Hermes API -> 手表 V1 7 字段 JSON
 ```
 
 ## V1 Communication Contract
@@ -347,8 +350,8 @@ done / timeout / error / canceled
 - `[x]` 设计 `memory_watch_service` 的 command/snapshot/API。
 - `[x]` 确定 Hermes voice endpoint 的最小协议。
 - `[x]` 已确认 Docker Hermes 部署存在，MiMo 模型已配置。
-- `[ ]` 启用并验证 Hermes API Server `/v1/responses` 文本链路。
-- `[ ]` 落地 watch voice endpoint 的最小 server mock / adapter。
+- `[x]` 启用并验证 Hermes API Server `/v1/responses` 文本链路。
+- `[x]` 落地 watch voice endpoint 的最小 server mock / adapter。
 - `[ ]` 落地页面与 service skeleton。
 
 ## Decision Log
@@ -365,6 +368,9 @@ done / timeout / error / canceled
 - 2026-06-08：
   - 决策：已部署 Docker Hermes 后，V1 服务器链路优先启用 Hermes API Server `/v1/responses`，由 watch voice endpoint 调用；不让 ESP32-S3 直接调用 Dashboard API，也不优先用 webhook。
   - 原因：`/v1/responses` 支持同步返回最终文本并可用 `conversation` 维护手表会话，更贴合 ESP32-S3 侧 120 秒等待和小屏 JSON 返回；Dashboard 是本地管理 UI，webhook 更适合外部事件触发，不适合作为第一版同步语音命令返回路径。
+- 2026-06-08：
+  - 决策：服务器端新增 `server/watch_voice_endpoint` 原型，使用 FastAPI 暴露 `/v1/watch/health`、`/v1/watch/voice-command` 和 `/v1/watch/request/{request_id}/cancel`；开发期 ASR 先固定为 mock 文本，再调用 Hermes `/v1/responses`。
+  - 原因：先验证 `ESP32-S3 -> voice endpoint -> Hermes API Server -> 手表 V1 JSON` 的同步闭环，避免在固件侧提前引入 ASR、Hermes API key 或 Dashboard 依赖；真实 ASR 后续只替换 endpoint 内部 adapter。
 
 ## Validation and Acceptance
 
@@ -391,11 +397,32 @@ curl http://127.0.0.1:8642/v1/responses `
   -d "{\"model\":\"hermes-agent\",\"input\":\"手表用户说：记一下明天看电池日志\",\"conversation\":\"watch-001-ai-memory-watch\"}"
 ```
 
+2026-06-08 已通过的服务器验证：
+
+```powershell
+docker ps --filter "name=hermes"
+Invoke-RestMethod http://127.0.0.1:8642/health
+Invoke-RestMethod http://127.0.0.1:8642/v1/models -Headers @{ Authorization = "Bearer <api_server_key>" }
+Invoke-RestMethod http://127.0.0.1:8642/v1/responses -Method Post -Headers @{ Authorization = "Bearer <api_server_key>" } -Body <redacted-json>
+uv run --with pytest==8.3.4 --with fastapi==0.115.6 --with httpx==0.28.1 --with python-multipart==0.0.20 --with "uvicorn[standard]==0.34.0" python -m pytest tests -q
+docker build -t ai-memory-watch-voice-endpoint:dev .
+docker run --name ai-memory-watch-voice-endpoint-test -p 127.0.0.1:8789:8787 ...
+```
+
+已观察到的结果：
+
+- `hermes` 容器运行，`8642` 映射到宿主机，`9119` Dashboard 仍只作为本地管理界面。
+- Hermes `/health` 返回 `status=ok`，`/v1/models` 返回 `hermes-agent`。
+- Hermes `/v1/responses` 对中文手表记忆请求同步返回最终文本。
+- watch voice endpoint 单元测试 3 项通过。
+- watch voice endpoint Docker smoke test 返回 `status=done`、`action=memory_saved`、`asr_text=记一下明天看电池日志`、非空 `reply_text`，并包含固定 7 字段。
+
 期望看到的结果：
 
 - context 检查无错误警告。
 - Hermes API Server 有服务监听，`/health` 可访问。
 - `/v1/responses` 能同步返回 Hermes + MiMo 的最终文本。
+- watch voice endpoint 能把 mock Ogg Opus 上传转换成手表 V1 7 字段 JSON。
 - 新页面不改变现有 AI 页面进入/退出语义。
 - 新 service 不直接操作 LVGL 对象，不绕过 `audio_codec` session。
 - 新 service 使用 `AUDIO_CODEC_OWNER_HERMES`，不复用 `AUDIO_CODEC_OWNER_OFFICIAL_CHAT`。
@@ -405,10 +432,11 @@ curl http://127.0.0.1:8642/v1/responses `
 ## Idempotence and Recovery
 
 - 如果中途中断，下次从本计划继续，先补 `memory_watch_service` command/snapshot 草案和 V1 source tests。
+- 如果 `server/watch_voice_endpoint` 原型出错，回退时只停止/删除该服务或容器；不要改动 `hermes` Dashboard、MiMo 配置、`official_chat` 主线或 ESP32 UI。
 - 如果新页面方案失败，最小回退路径是只删除新增页面入口和新 service，不影响 `official_chat_service` 与现有 AI 页。
 
 ## Next Step
 
-- 先启用 Hermes API Server，验证 `/v1/responses` 文本请求能得到最终回复。
-- 再写 watch voice endpoint 的最小 adapter：固定 ASR 文本 -> Hermes API -> 手表 V1 JSON。
-- 服务端文本链路稳定后，再写 `memory_watch_service` 的 public header 草案、source test 和页面 wireframe。
+- 将 `server/watch_voice_endpoint` 接到真实 ASR adapter，保持外层 V1 JSON 不变。
+- 再写 `memory_watch_service` 的 public header 草案、source test 和页面 wireframe。
+- 固件侧只接 voice endpoint，不接 Hermes Dashboard，不保存 Hermes API key。
