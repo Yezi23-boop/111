@@ -89,6 +89,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - 常驻入口 `GET /v1/watch/health?device_id=watch-001` 已验证返回 `hermes_status=online`。
 - 常驻入口 `POST /v1/watch/voice-command` 已切到 `WATCH_ASR_PROVIDER=mimo`，用本机合成中文 Ogg Opus 样本验证可返回手表 V1 固定 7 字段 JSON。
 - `server/watch_voice_endpoint/smoke_test.ps1` 支持默认 mock 快速健康检查，也支持 `-UseRealAsr -AudioPath <sample.ogg>` 真实 ASR 检查。
+- `server/watch_voice_endpoint/make_tts_sample.ps1` 可在 Windows 本机用中文 System.Speech voice + ffmpeg 生成可复现 Ogg Opus 测试样本；`smoke_test.ps1 -UseRealAsr` 现在要求显式传入 `AudioPath`，避免把 dummy Ogg 当真实语音测试。
 - MiMo ASR adapter 已用本机合成中文语音样本验证：WAV 经 ffmpeg 转 Ogg Opus 上传，endpoint 再转 16 kHz mono WAV 调 `mimo-v2.5-asr`，ASR 文本为 `记一下，明天看电池日志。`，随后 Hermes 返回 `status=done/action=memory_saved`。
 - voice endpoint 已实现 `device_id + request_id` 最小幂等：已完成请求返回缓存结果，处理中重复请求等待同一任务，已取消请求返回 `canceled/no_action`，完成后再 cancel 返回完成结果。
 - 本地 `/health` 会返回 `asr_provider`、`inflight_requests`、`completed_requests` 与 `canceled_requests`，用于联调时判断服务是否卡住；不返回 token 或 API key。
@@ -374,6 +375,7 @@ done / timeout / error / canceled
 - `[x]` 实现 voice endpoint `device_id + request_id` 最小幂等与本地健康统计，降低 ESP32 Wi-Fi 重试导致重复记忆/提醒的风险。
 - `[x]` 增加 Docker Compose 本地可重复部署入口，并验证容器 healthcheck 为 healthy。
 - `[x]` 增加公网域名反向代理示例，固定只暴露 watch endpoint，不暴露 Hermes Dashboard 或 Hermes API Server。
+- `[x]` 增加可复现中文 Ogg Opus 样本生成脚本，稳定真实 ASR smoke test 输入。
 - `[ ]` 落地页面与 service skeleton。
 
 ## Decision Log
@@ -470,6 +472,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - `docker compose -f compose.local.yml up -d --build` 已验证可启动容器，Docker healthcheck 状态为 `healthy`，真实 ASR smoke test 仍返回 `status=done/action=memory_saved`。
 - Hermes API Server key 与 watch device token 轮换后复验通过：Hermes `/v1/responses` 返回 `status=completed`，watch endpoint 真实 ASR smoke 返回 `status=done/action=memory_saved`。
 - `deploy/Caddyfile.example` 只包含占位域名和 `/v1/watch/*` 反向代理，不包含任何 key/token。
+- `make_tts_sample.ps1` 已生成 `ai-memory-watch-tts.ogg`，随后 `smoke_test.ps1 -UseRealAsr -AudioPath <generated.ogg>` 返回 `status=done/action=memory_saved`；未提供 `AudioPath` 时会明确报错。
 
 期望看到的结果：
 

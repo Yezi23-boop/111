@@ -104,7 +104,8 @@ Verify the full server-side path without printing tokens:
 Verify real ASR with an Ogg Opus sample:
 
 ```powershell
-.\smoke_test.ps1 -UseRealAsr -AudioPath C:\path\to\sample.ogg
+$sample = .\make_tts_sample.ps1 | ConvertFrom-Json
+.\smoke_test.ps1 -UseRealAsr -AudioPath $sample.ogg_path
 ```
 
 Manual `docker run` is still useful for one-off isolation:

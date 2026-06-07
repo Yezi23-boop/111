@@ -43,6 +43,10 @@ $headers = @{ Authorization = "Bearer $token" }
 $localHealth = Invoke-RestMethod -Uri "$BaseUrl/health" -TimeoutSec 5
 $watchHealth = Invoke-RestMethod -Uri "$BaseUrl/v1/watch/health?device_id=$DeviceId" -Headers $headers -TimeoutSec 10
 
+if ($UseRealAsr -and [string]::IsNullOrWhiteSpace($AudioPath)) {
+  throw "AudioPath is required when UseRealAsr is set"
+}
+
 if ([string]::IsNullOrWhiteSpace($AudioPath)) {
   $tmpAudio = Join-Path $env:TEMP "watch-smoke-test.opus"
   [byte[]]$bytes = 0x4F, 0x67, 0x67, 0x53, 0x00, 0x01, 0x02, 0x03
