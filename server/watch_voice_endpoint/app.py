@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+import re
 import time
 from typing import Literal
 
@@ -29,6 +30,8 @@ MIMO_ASR_TRANSCODE_TIMEOUT_SECONDS = float(os.getenv("MIMO_ASR_TRANSCODE_TIMEOUT
 MAX_AUDIO_BYTES = int(os.getenv("WATCH_MAX_AUDIO_BYTES", str(6 * 1024 * 1024)))
 REPLY_MAX_CHARS = int(os.getenv("WATCH_REPLY_MAX_CHARS", "80"))
 MIMO_ASR_DIRECT_MIME_TYPES = {"audio/wav", "audio/mp3", "audio/mpeg"}
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,96}$")
+INVALID_REQUEST_ID = "invalid-request"
 
 WATCH_INSTRUCTIONS = (
     "你是 AI Memory Watch 的 Hermes 大脑。输入来自 ESP32-S3 手表短语音转写。"
@@ -136,6 +139,28 @@ def _canceled_watch_response(request_id: str, asr_text: str = "") -> WatchRespon
         asr_text=asr_text,
         reply_text="已取消等待",
     )
+
+
+def _error_watch_response(
+    request_id: str,
+    reply_text: str = "没有处理成功，请再说一次",
+    asr_text: str = "",
+) -> WatchResponse:
+    return WatchResponse(
+        request_id=request_id,
+        status="error",
+        action="error",
+        asr_text=asr_text,
+        reply_text=reply_text,
+        error_code="asr_or_agent_error",
+    )
+
+
+def _normalize_request_id(request_id: str) -> str | None:
+    normalized = request_id.strip()
+    if not REQUEST_ID_PATTERN.fullmatch(normalized):
+        return None
+    return normalized
 
 
 def _trim_completed_requests() -> None:
@@ -418,6 +443,10 @@ async def voice_command(
 ) -> WatchResponse:
     _require_device(device_id, authorization)
     del battery_percent, charging, rssi, firmware_version, locale, timezone, source, ui_state
+    normalized_request_id = _normalize_request_id(request_id)
+    if normalized_request_id is None:
+        return _error_watch_response(INVALID_REQUEST_ID, "请求编号异常，请重新发送")
+    request_id = normalized_request_id
     key = (device_id, request_id)
 
     async with _request_lock:
@@ -429,7 +458,14 @@ async def voice_command(
     if task is not None:
         return await _await_request_task(key, task)
 
-    audio_bytes = await _read_audio(audio)
+    try:
+        audio_bytes = await _read_audio(audio)
+    except HTTPException as exc:
+        if exc.status_code == 413:
+            return _error_watch_response(request_id, "语音太长，请说短一点")
+        raise
+    if not audio_bytes:
+        return _error_watch_response(request_id, "没有收到音频，请再说一次")
     async with _request_lock:
         if key in _completed_requests:
             return _completed_requests[key]
@@ -458,6 +494,10 @@ async def cancel_request(
     authorization: str | None = Header(default=None),
 ) -> WatchResponse:
     _require_device(device_id, authorization)
+    normalized_request_id = _normalize_request_id(request_id)
+    if normalized_request_id is None:
+        return _error_watch_response(INVALID_REQUEST_ID, "请求编号异常，请重新发送")
+    request_id = normalized_request_id
     key = (device_id, request_id)
     async with _request_lock:
         if key in _completed_requests:

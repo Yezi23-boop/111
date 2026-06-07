@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：补强 AI Memory Watch watch voice endpoint 的 ESP32-S3 上传输入校验：`request_id` 限制为 1-96 位 ASCII 安全字符，空音频和超长音频在进入 ASR/Hermes 前返回手表 V1 固定 7 字段 JSON 错误；单元测试覆盖畸形 `request_id` 与空音频，常驻 Docker 容器重建后已验证畸形 `request_id` 返回 `status=error/action=error/error_code=asr_or_agent_error`。
 - 2026-06-08：新增 `server/watch_voice_endpoint/make_tts_sample.ps1`，用 Windows `System.Speech` 中文 voice 与 ffmpeg 生成可复现 Ogg Opus 测试样本；`smoke_test.ps1 -UseRealAsr` 现在必须显式传入 `AudioPath`，避免误用 dummy Ogg 当真实 ASR 测试。已验证生成样本后真实 ASR smoke 返回 `status=done/action=memory_saved`，未传 `AudioPath` 时会明确报错。
 - 2026-06-08：新增 `server/watch_voice_endpoint/deploy/Caddyfile.example` 作为 AI Memory Watch 公网域名第一版反向代理示例：只代理 `/v1/watch/*` 到本机 `127.0.0.1:8787`，明确 Hermes API Server `8642` 与 Dashboard `9119` 保持私有，ESP32-S3 只配置 watch endpoint URL 与 device token，不持有 Hermes API key。
 - 2026-06-08：完成 watch voice endpoint 本地 Compose 联调后的密钥卫生复验：轮换 Hermes `API_SERVER_KEY` 与 `watch-001` device token，更新仓库外 `D:\Docker_data\hermes\watch_voice_endpoint.env`，重启 Hermes 与 `ai-memory-watch-voice-endpoint` 后重新验证 Hermes `/health`、`/v1/models`、`/v1/responses` 和 watch endpoint 真实 ASR smoke 均通过；文档继续只记录配置项和验证结果，不记录真实 key/token。

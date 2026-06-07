@@ -12,6 +12,17 @@ def anyio_backend():
     return "asyncio"
 
 
+WATCH_RESPONSE_KEYS = [
+    "action",
+    "asr_text",
+    "clarification_id",
+    "error_code",
+    "reply_text",
+    "request_id",
+    "status",
+]
+
+
 @pytest.fixture()
 def watch_app(monkeypatch):
     monkeypatch.setenv("WATCH_DEVICE_TOKENS", "watch-001=test-token")
@@ -50,15 +61,7 @@ async def test_voice_command_returns_watch_json(watch_app, monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert sorted(payload.keys()) == [
-        "action",
-        "asr_text",
-        "clarification_id",
-        "error_code",
-        "reply_text",
-        "request_id",
-        "status",
-    ]
+    assert sorted(payload.keys()) == WATCH_RESPONSE_KEYS
     assert payload["status"] == "done"
     assert payload["action"] == "memory_saved"
     assert payload["reply_text"] == "已记录：明天看电池日志，这段较长的回复会"[:20]
@@ -76,6 +79,54 @@ async def test_voice_command_rejects_unknown_device(watch_app):
         )
 
     assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_voice_command_returns_watch_json_for_invalid_request_id(watch_app):
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/watch/voice-command",
+            headers={"Authorization": "Bearer test-token"},
+            data={
+                "request_id": "bad request id",
+                "device_id": "watch-001",
+                "mock_asr_text": "记一下明天看电池日志",
+            },
+            files={"audio": ("command.ogg", b"OggS\x00\x01", "audio/ogg")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert sorted(payload.keys()) == WATCH_RESPONSE_KEYS
+    assert payload["request_id"] == "invalid-request"
+    assert payload["status"] == "error"
+    assert payload["action"] == "error"
+    assert payload["error_code"] == "asr_or_agent_error"
+
+
+@pytest.mark.anyio
+async def test_voice_command_returns_watch_json_for_empty_audio(watch_app):
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/watch/voice-command",
+            headers={"Authorization": "Bearer test-token"},
+            data={
+                "request_id": "watch-001-empty-audio",
+                "device_id": "watch-001",
+                "mock_asr_text": "记一下明天看电池日志",
+            },
+            files={"audio": ("command.ogg", b"", "audio/ogg")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert sorted(payload.keys()) == WATCH_RESPONSE_KEYS
+    assert payload["request_id"] == "watch-001-empty-audio"
+    assert payload["status"] == "error"
+    assert payload["action"] == "error"
+    assert payload["error_code"] == "asr_or_agent_error"
 
 
 @pytest.mark.anyio

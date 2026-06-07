@@ -26,6 +26,12 @@ Authorization: Bearer <device_token>
 
 The Hermes API key is only configured on this server through `HERMES_API_KEY`; it must not be written into ESP32 firmware.
 
+## Request Contract
+
+`request_id` must be 1-96 ASCII characters using only letters, numbers, `.`, `_`, `:`, or `-`.
+
+For V1, normal bad watch input such as an invalid `request_id`, an empty upload, or an audio body larger than `WATCH_MAX_AUDIO_BYTES` returns the same seven-field watch JSON with `status=error` and `error_code=asr_or_agent_error`. Device authentication failures still use HTTP 401/403.
+
 ## Request Idempotency
 
 `POST /v1/watch/voice-command` is keyed by `device_id + request_id`.
