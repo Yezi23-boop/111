@@ -115,3 +115,22 @@ docker run -d --name ai-memory-watch-voice-endpoint --restart unless-stopped `
   --env-file D:\Docker_data\hermes\watch_voice_endpoint.env `
   ai-memory-watch-voice-endpoint:dev
 ```
+
+## Domain And TLS
+
+Use [deploy/Caddyfile.example](deploy/Caddyfile.example) as the first public-domain shape:
+
+```text
+ESP32-S3 -> https://watch.example.com/v1/watch/*
+          -> Caddy
+          -> http://127.0.0.1:8787/v1/watch/*
+```
+
+Keep these private:
+
+```text
+Hermes API Server :8642
+Hermes Dashboard  :9119
+```
+
+The ESP32 should only know the public watch endpoint URL and its `device_token`; it must not know `HERMES_API_KEY` or call the Hermes Dashboard.

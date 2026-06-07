@@ -96,6 +96,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `server/watch_voice_endpoint/compose.local.yml` 已作为本地可重复部署入口，`docker compose -f compose.local.yml up -d --build` 可构建并启动 `ai-memory-watch-voice-endpoint`，healthcheck 当前为 `healthy`。
 - 安全注意：不要把 `docker compose config` 输出贴到日志或 issue，因为 Compose 会展开 `env_file` 中的 API key 和 device token。
 - 轮换过 Hermes `API_SERVER_KEY` 与 `watch-001` device token 后，已重新验证 Hermes `/health`、`/v1/models`、`/v1/responses` 和 watch endpoint 真实 ASR smoke 均可用。
+- 已新增 `server/watch_voice_endpoint/deploy/Caddyfile.example`，公网域名第一版只反向代理 `/v1/watch/*` 到 `127.0.0.1:8787`；Hermes API Server `8642` 与 Dashboard `9119` 继续保持私有。
 - Webhook platform 当前未启用；V1 不优先走 webhook，因为手表侧需要同步等待最终文本结果。
 
 因此本计划的服务器链路已从纯 mock 推进为：
@@ -372,6 +373,7 @@ done / timeout / error / canceled
 - `[x]` 将常驻本机联调容器切到 `WATCH_ASR_PROVIDER=mimo`，保留 smoke 脚本的 mock override 快速检查。
 - `[x]` 实现 voice endpoint `device_id + request_id` 最小幂等与本地健康统计，降低 ESP32 Wi-Fi 重试导致重复记忆/提醒的风险。
 - `[x]` 增加 Docker Compose 本地可重复部署入口，并验证容器 healthcheck 为 healthy。
+- `[x]` 增加公网域名反向代理示例，固定只暴露 watch endpoint，不暴露 Hermes Dashboard 或 Hermes API Server。
 - `[ ]` 落地页面与 service skeleton。
 
 ## Decision Log
@@ -406,6 +408,9 @@ done / timeout / error / canceled
 - 2026-06-08：
   - 决策：本地服务器侧联调用 `compose.local.yml` 承载 `ai-memory-watch-voice-endpoint` 的可重复 build/up/healthcheck；仍只绑定 `127.0.0.1:8787`。
   - 原因：把手动 `docker run` 收敛为可重复操作，便于 Docker Desktop 长时间联调和重启恢复；公网域名/TLS 暴露仍后置，不把 Hermes API Server 直接暴露给 ESP32。
+- 2026-06-08：
+  - 决策：公网域名第一版用反向代理只暴露 `/v1/watch/*` 到 voice endpoint；Hermes API Server `8642`、Dashboard `9119` 和全部 provider/API key 只留在服务器侧。
+  - 原因：ESP32-S3 只需要 device endpoint 与 device token；让设备直连 Hermes Dashboard 或持有 Hermes API key 会破坏端云边界，也不利于后续公网安全收敛。
 
 ## Validation and Acceptance
 
@@ -464,6 +469,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 常驻 Docker 运行态已验证重复 `request_id` 不重复处理：两次响应完全一致，第二次 `asr_text` 仍为第一次请求文本。
 - `docker compose -f compose.local.yml up -d --build` 已验证可启动容器，Docker healthcheck 状态为 `healthy`，真实 ASR smoke test 仍返回 `status=done/action=memory_saved`。
 - Hermes API Server key 与 watch device token 轮换后复验通过：Hermes `/v1/responses` 返回 `status=completed`，watch endpoint 真实 ASR smoke 返回 `status=done/action=memory_saved`。
+- `deploy/Caddyfile.example` 只包含占位域名和 `/v1/watch/*` 反向代理，不包含任何 key/token。
 
 期望看到的结果：
 

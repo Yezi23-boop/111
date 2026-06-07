@@ -1,0 +1,11 @@
+# Replace watch.example.com with the domain that points to this server.
+# Only expose the watch-facing API. Keep Hermes API Server :8642 and Dashboard
+# :9119 private to the host or Docker network.
+watch.example.com {
+  encode zstd gzip
+
+  @watch path /v1/watch/*
+  reverse_proxy @watch 127.0.0.1:8787
+
+  respond "not found" 404
+}
