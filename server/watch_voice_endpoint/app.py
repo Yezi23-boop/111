@@ -69,6 +69,20 @@ app = FastAPI(title="AI Memory Watch Voice Endpoint", version="0.1.0")
 _canceled_requests: set[tuple[str, str]] = set()
 _completed_requests: dict[tuple[str, str], WatchResponse] = {}
 _inflight_requests: dict[tuple[str, str], asyncio.Task[WatchResponse]] = {}
+_request_event_counts = {
+    "processed": 0,
+    "cache_hits": 0,
+    "inflight_waits": 0,
+    "canceled_hits": 0,
+}
+_request_status_counts = {
+    "done": 0,
+    "error": 0,
+    "timeout": 0,
+    "canceled": 0,
+}
+_request_error_counts: dict[str, int] = {}
+_last_request_summary: dict[str, str | int | float | None] = {}
 _request_lock = asyncio.Lock()
 
 
@@ -173,6 +187,39 @@ def _normalize_request_id(request_id: str) -> str | None:
     if not REQUEST_ID_PATTERN.fullmatch(normalized):
         return None
     return normalized
+
+
+def _record_request_event(name: str) -> None:
+    _request_event_counts[name] = _request_event_counts.get(name, 0) + 1
+
+
+def _record_request_result(
+    device_id: str,
+    request_id: str,
+    response: WatchResponse,
+    started_at: float,
+    audio_bytes: int,
+) -> WatchResponse:
+    duration_ms = int((time.monotonic() - started_at) * 1000)
+    _record_request_event("processed")
+    _request_status_counts[response.status] = _request_status_counts.get(response.status, 0) + 1
+    if response.error_code:
+        _request_error_counts[response.error_code] = _request_error_counts.get(response.error_code, 0) + 1
+    _last_request_summary.clear()
+    _last_request_summary.update(
+        {
+            "device_id": device_id,
+            "request_id": request_id,
+            "status": response.status,
+            "action": response.action,
+            "error_code": response.error_code,
+            "duration_ms": duration_ms,
+            "audio_bytes": audio_bytes,
+            "asr_provider": ASR_PROVIDER,
+            "completed_at": int(time.time()),
+        }
+    )
+    return response
 
 
 def _trim_completed_requests() -> None:
@@ -401,8 +448,9 @@ async def _process_voice_command(
     clarification_id: str | None,
     mock_asr_text: str | None,
 ) -> WatchResponse:
+    started_at = time.monotonic()
     try:
-        return await asyncio.wait_for(
+        response = await asyncio.wait_for(
             _process_voice_command_inner(
                 request_id=request_id,
                 device_id=device_id,
@@ -414,7 +462,8 @@ async def _process_voice_command(
             timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
-        return _timeout_watch_response(request_id)
+        response = _timeout_watch_response(request_id)
+    return _record_request_result(device_id, request_id, response, started_at, len(audio_bytes))
 
 
 async def _await_request_task(
@@ -430,6 +479,8 @@ async def _await_request_task(
     async with _request_lock:
         if _inflight_requests.get(key) is task:
             _inflight_requests.pop(key, None)
+            if response.status == "canceled":
+                _record_request_result(device_id, request_id, response, time.monotonic(), 0)
         if key in _canceled_requests:
             return _canceled_watch_response(request_id, response.asr_text)
         if response.status != "canceled":
@@ -474,31 +525,39 @@ async def voice_command(
     del battery_percent, charging, rssi, firmware_version, locale, timezone, source, ui_state
     normalized_request_id = _normalize_request_id(request_id)
     if normalized_request_id is None:
-        return _error_watch_response(INVALID_REQUEST_ID, "请求编号异常，请重新发送")
+        response = _error_watch_response(INVALID_REQUEST_ID, "请求编号异常，请重新发送")
+        return _record_request_result(device_id, INVALID_REQUEST_ID, response, time.monotonic(), 0)
     request_id = normalized_request_id
     key = (device_id, request_id)
 
     async with _request_lock:
         if key in _completed_requests:
+            _record_request_event("cache_hits")
             return _completed_requests[key]
         if key in _canceled_requests:
+            _record_request_event("canceled_hits")
             return _canceled_watch_response(request_id)
         task = _inflight_requests.get(key)
     if task is not None:
+        _record_request_event("inflight_waits")
         return await _await_request_task(key, task)
 
     try:
         audio_bytes = await _read_audio(audio)
     except HTTPException as exc:
         if exc.status_code == 413:
-            return _error_watch_response(request_id, "语音太长，请说短一点")
+            response = _error_watch_response(request_id, "语音太长，请说短一点")
+            return _record_request_result(device_id, request_id, response, time.monotonic(), MAX_AUDIO_BYTES + 1)
         raise
     if not audio_bytes:
-        return _error_watch_response(request_id, "没有收到音频，请再说一次")
+        response = _error_watch_response(request_id, "没有收到音频，请再说一次")
+        return _record_request_result(device_id, request_id, response, time.monotonic(), 0)
     async with _request_lock:
         if key in _completed_requests:
+            _record_request_event("cache_hits")
             return _completed_requests[key]
         if key in _canceled_requests:
+            _record_request_event("canceled_hits")
             return _canceled_watch_response(request_id)
         task = _inflight_requests.get(key)
         if task is None:
@@ -525,9 +584,11 @@ async def cancel_request(
     _require_device(device_id, authorization)
     normalized_request_id = _normalize_request_id(request_id)
     if normalized_request_id is None:
-        return _error_watch_response(INVALID_REQUEST_ID, "请求编号异常，请重新发送")
+        response = _error_watch_response(INVALID_REQUEST_ID, "请求编号异常，请重新发送")
+        return _record_request_result(device_id, INVALID_REQUEST_ID, response, time.monotonic(), 0)
     request_id = normalized_request_id
     key = (device_id, request_id)
+    should_record_cancel = False
     async with _request_lock:
         if key in _completed_requests:
             return _completed_requests[key]
@@ -536,11 +597,16 @@ async def cancel_request(
         task = _inflight_requests.get(key)
         if task is not None and not task.done():
             task.cancel()
-    return _canceled_watch_response(request_id)
+        if task is None:
+            should_record_cancel = True
+    response = _canceled_watch_response(request_id)
+    if should_record_cancel:
+        _record_request_result(device_id, request_id, response, time.monotonic(), 0)
+    return response
 
 
 @app.get("/health")
-async def service_health() -> dict[str, str | int | float]:
+async def service_health() -> dict[str, object]:
     return {
         "status": "ok",
         "time": int(time.time()),
@@ -549,4 +615,8 @@ async def service_health() -> dict[str, str | int | float]:
         "inflight_requests": len(_inflight_requests),
         "completed_requests": len(_completed_requests),
         "canceled_requests": len(_canceled_requests),
+        "request_events": dict(_request_event_counts),
+        "request_status_counts": dict(_request_status_counts),
+        "request_error_counts": dict(_request_error_counts),
+        "last_request": dict(_last_request_summary) if _last_request_summary else None,
     }

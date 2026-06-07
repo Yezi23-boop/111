@@ -174,6 +174,10 @@ if ($hermesModels -and $hermesModels.ok -and $hermesModels.payload.data) {
       asr_provider = $(if ($serviceHealth.payload) { $serviceHealth.payload.asr_provider } else { $null })
       request_timeout_seconds = $(if ($serviceHealth.payload) { $serviceHealth.payload.request_timeout_seconds } else { $null })
       inflight_requests = $(if ($serviceHealth.payload) { $serviceHealth.payload.inflight_requests } else { $null })
+      request_events = $(if ($serviceHealth.payload) { $serviceHealth.payload.request_events } else { $null })
+      request_status_counts = $(if ($serviceHealth.payload) { $serviceHealth.payload.request_status_counts } else { $null })
+      request_error_counts = $(if ($serviceHealth.payload) { $serviceHealth.payload.request_error_counts } else { $null })
+      last_request = $(if ($serviceHealth.payload) { $serviceHealth.payload.last_request } else { $null })
     }
     watch_health = [pscustomobject]@{
       ok = $watchHealth.ok

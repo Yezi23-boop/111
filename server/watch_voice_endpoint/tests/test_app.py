@@ -34,6 +34,24 @@ def watch_app(monkeypatch):
     module._canceled_requests.clear()
     module._completed_requests.clear()
     module._inflight_requests.clear()
+    module._request_event_counts.update(
+        {
+            "processed": 0,
+            "cache_hits": 0,
+            "inflight_waits": 0,
+            "canceled_hits": 0,
+        }
+    )
+    module._request_status_counts.update(
+        {
+            "done": 0,
+            "error": 0,
+            "timeout": 0,
+            "canceled": 0,
+        }
+    )
+    module._request_error_counts.clear()
+    module._last_request_summary.clear()
     return module
 
 
@@ -274,6 +292,44 @@ async def test_voice_command_returns_timeout_before_watch_deadline(watch_app, mo
     assert payload["action"] == "error"
     assert payload["request_id"] == "watch-001-timeout-0001"
     assert payload["error_code"] == "server_timeout"
+
+
+@pytest.mark.anyio
+async def test_service_health_exposes_non_secret_request_metrics(watch_app, monkeypatch):
+    async def fake_call_hermes(device_id: str, asr_text: str, clarification_id: str | None) -> str:
+        return "已记录：明天看电池日志。"
+
+    monkeypatch.setattr(watch_app, "_call_hermes", fake_call_hermes)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/watch/voice-command",
+            headers={"Authorization": "Bearer test-token"},
+            data={
+                "request_id": "watch-001-metrics-0001",
+                "device_id": "watch-001",
+                "mock_asr_text": "记一下明天看电池日志",
+            },
+            files={"audio": ("command.ogg", b"OggS\x00\x01", "audio/ogg")},
+        )
+        health = await client.get("/health")
+
+    assert response.status_code == 200
+    assert health.status_code == 200
+    payload = health.json()
+    assert payload["request_events"]["processed"] == 1
+    assert payload["request_status_counts"]["done"] == 1
+    assert payload["request_error_counts"] == {}
+    last_request = payload["last_request"]
+    assert last_request["device_id"] == "watch-001"
+    assert last_request["request_id"] == "watch-001-metrics-0001"
+    assert last_request["status"] == "done"
+    assert last_request["action"] == "memory_saved"
+    assert last_request["audio_bytes"] == 6
+    assert last_request["duration_ms"] >= 0
+    assert "asr_text" not in last_request
+    assert "reply_text" not in last_request
+    assert "authorization" not in last_request
 
 
 @pytest.mark.anyio

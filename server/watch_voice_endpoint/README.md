@@ -115,6 +115,8 @@ Inspect local runtime status without printing tokens:
 .\runtime_status.ps1
 ```
 
+`/health` and `runtime_status.ps1` expose non-secret request metrics for debugging: event counters, response status counters, error-code counters, and the latest request summary with status, action, duration, and audio byte size. They do not include ASR text, reply text, audio contents, API keys, or bearer tokens.
+
 Verify real ASR with an Ogg Opus sample:
 
 ```powershell
