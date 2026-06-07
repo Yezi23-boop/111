@@ -89,6 +89,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - 常驻入口 `GET /v1/watch/health?device_id=watch-001` 已验证返回 `hermes_status=online`。
 - 常驻入口 `POST /v1/watch/voice-command` 已切到 `WATCH_ASR_PROVIDER=mimo`，用本机合成中文 Ogg Opus 样本验证可返回手表 V1 固定 7 字段 JSON。
 - `server/watch_voice_endpoint/smoke_test.ps1` 支持默认 mock 快速健康检查，也支持 `-UseRealAsr -AudioPath <sample.ogg>` 真实 ASR 检查。
+- `smoke_test.ps1` 已支持 `-BaseUrl <https://watch.example.com>` 指向公网域名，并可用 `-SkipServiceHealth` 跳过私有 `/health`；这样 Caddy 只公开 `/v1/watch/*` 时仍能验证设备协议入口。
 - `server/watch_voice_endpoint/make_tts_sample.ps1` 可在 Windows 本机用中文 System.Speech voice + ffmpeg 生成可复现 Ogg Opus 测试样本；`smoke_test.ps1 -UseRealAsr` 现在要求显式传入 `AudioPath`，避免把 dummy Ogg 当真实语音测试。
 - voice endpoint 已补强 ESP32-S3 上传输入校验：`request_id` 只接受 1-96 位 ASCII 字母、数字、`.`、`_`、`:`、`-`，空音频和超长音频会在进入 ASR/Hermes 前返回手表 V1 固定 7 字段 JSON 错误，避免真实录音/重试异常掉进 ffmpeg 或 ASR 后才失败。
 - MiMo ASR adapter 已用本机合成中文语音样本验证：WAV 经 ffmpeg 转 Ogg Opus 上传，endpoint 再转 16 kHz mono WAV 调 `mimo-v2.5-asr`，ASR 文本为 `记一下，明天看电池日志。`，随后 Hermes 返回 `status=done/action=memory_saved`。
@@ -475,6 +476,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - `deploy/Caddyfile.example` 只包含占位域名和 `/v1/watch/*` 反向代理，不包含任何 key/token。
 - `make_tts_sample.ps1` 已生成 `ai-memory-watch-tts.ogg`，随后 `smoke_test.ps1 -UseRealAsr -AudioPath <generated.ogg>` 返回 `status=done/action=memory_saved`；未提供 `AudioPath` 时会明确报错。
 - voice endpoint 输入校验已验证：畸形 `request_id` 运行态返回 `status=error/action=error/error_code=asr_or_agent_error` 和固定 7 字段 JSON；单元测试覆盖畸形 `request_id` 与空音频。
+- `smoke_test.ps1 -SkipServiceHealth` 已验证可在不访问 `/health` 的情况下完成 `/v1/watch/health` 与 `/v1/watch/voice-command` 检查，适配只公开 `/v1/watch/*` 的公网反向代理形态；默认 mock 音频临时文件已改成 GUID 文件名，避免并发 smoke 抢占同一 `%TEMP%` 文件。
 
 期望看到的结果：
 

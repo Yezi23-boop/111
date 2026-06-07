@@ -4,7 +4,8 @@ param(
   [string]$DeviceId = "watch-001",
   [string]$MockAsrText = "记一下明天看电池日志",
   [string]$AudioPath = "",
-  [switch]$UseRealAsr
+  [switch]$UseRealAsr,
+  [switch]$SkipServiceHealth
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,7 +41,11 @@ function Get-WatchDeviceToken {
 $token = Get-WatchDeviceToken -Path $EnvFile -TargetDeviceId $DeviceId
 $headers = @{ Authorization = "Bearer $token" }
 
-$localHealth = Invoke-RestMethod -Uri "$BaseUrl/health" -TimeoutSec 5
+$localHealthStatus = "skipped"
+if (-not $SkipServiceHealth) {
+  $localHealth = Invoke-RestMethod -Uri "$BaseUrl/health" -TimeoutSec 5
+  $localHealthStatus = $localHealth.status
+}
 $watchHealth = Invoke-RestMethod -Uri "$BaseUrl/v1/watch/health?device_id=$DeviceId" -Headers $headers -TimeoutSec 10
 
 if ($UseRealAsr -and [string]::IsNullOrWhiteSpace($AudioPath)) {
@@ -48,7 +53,7 @@ if ($UseRealAsr -and [string]::IsNullOrWhiteSpace($AudioPath)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($AudioPath)) {
-  $tmpAudio = Join-Path $env:TEMP "watch-smoke-test.opus"
+  $tmpAudio = Join-Path $env:TEMP "watch-smoke-test-$([guid]::NewGuid().ToString('N')).opus"
   [byte[]]$bytes = 0x4F, 0x67, 0x67, 0x53, 0x00, 0x01, 0x02, 0x03
   [System.IO.File]::WriteAllBytes($tmpAudio, $bytes)
   $AudioPath = $tmpAudio
@@ -77,7 +82,7 @@ if ($missing.Count -gt 0) {
 }
 
 [pscustomobject]@{
-  local_health = $localHealth.status
+  local_health = $localHealthStatus
   watch_health = $watchHealth.status
   hermes_status = $watchHealth.hermes_status
   asr_mode = $(if ($UseRealAsr) { "real" } else { "mock" })

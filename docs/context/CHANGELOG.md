@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：为 AI Memory Watch watch voice endpoint 的公网域名联调补充 smoke 能力：`smoke_test.ps1` 已支持 `-SkipServiceHealth`，在 Caddy 只公开 `/v1/watch/*`、不公开私有 `/health` 时仍能验证 `/v1/watch/health` 与 `/v1/watch/voice-command`；同时将默认 mock 音频临时文件改成 GUID 文件名，避免并发 smoke 抢占同一 `%TEMP%` 文件。README 与 active plan 同步记录该用法。
 - 2026-06-08：补强 AI Memory Watch watch voice endpoint 的 ESP32-S3 上传输入校验：`request_id` 限制为 1-96 位 ASCII 安全字符，空音频和超长音频在进入 ASR/Hermes 前返回手表 V1 固定 7 字段 JSON 错误；单元测试覆盖畸形 `request_id` 与空音频，常驻 Docker 容器重建后已验证畸形 `request_id` 返回 `status=error/action=error/error_code=asr_or_agent_error`。
 - 2026-06-08：新增 `server/watch_voice_endpoint/make_tts_sample.ps1`，用 Windows `System.Speech` 中文 voice 与 ffmpeg 生成可复现 Ogg Opus 测试样本；`smoke_test.ps1 -UseRealAsr` 现在必须显式传入 `AudioPath`，避免误用 dummy Ogg 当真实 ASR 测试。已验证生成样本后真实 ASR smoke 返回 `status=done/action=memory_saved`，未传 `AudioPath` 时会明确报错。
 - 2026-06-08：新增 `server/watch_voice_endpoint/deploy/Caddyfile.example` 作为 AI Memory Watch 公网域名第一版反向代理示例：只代理 `/v1/watch/*` 到本机 `127.0.0.1:8787`，明确 Hermes API Server `8642` 与 Dashboard `9119` 保持私有，ESP32-S3 只配置 watch endpoint URL 与 device token，不持有 Hermes API key。

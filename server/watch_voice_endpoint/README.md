@@ -114,6 +114,12 @@ $sample = .\make_tts_sample.ps1 | ConvertFrom-Json
 .\smoke_test.ps1 -UseRealAsr -AudioPath $sample.ogg_path
 ```
 
+For a public domain that only proxies `/v1/watch/*`, skip the private service health endpoint:
+
+```powershell
+.\smoke_test.ps1 -BaseUrl "https://watch.example.com" -SkipServiceHealth
+```
+
 Manual `docker run` is still useful for one-off isolation:
 
 ```powershell
