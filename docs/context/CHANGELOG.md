@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：新增 AI Memory Watch `server/watch_voice_endpoint/acceptance_test.ps1`，将 runtime status、mock voice、cancel、无效 token 403、中文 Ogg Opus 生成与真实 MiMo ASR smoke 串为一键服务器侧验收；本机已验证返回 `status=passed`，输出摘要不包含 ASR 文本、回复文本、音频内容或任何 key/token。
 - 2026-06-08：为 AI Memory Watch `server/watch_voice_endpoint/smoke_test.ps1` 增加 `-IncludeAuthFailure` 负向鉴权 smoke：用无效 device token 请求 `/v1/watch/health`，期望 HTTP 403 且不打印真实 token；本机已验证正向 voice/cancel 与负向鉴权同跑通过。
 - 2026-06-08：将 AI Memory Watch `server/watch_voice_endpoint/smoke_test.ps1` 的手表 V1 响应校验从“缺字段检查”提升为“恰好 7 字段”契约检查；voice 与可选 cancel 响应若出现缺字段或多字段都会失败，已用本机 `-IncludeCancel` smoke 验证通过。
 - 2026-06-08：扩展 `server/watch_voice_endpoint/smoke_test.ps1` 的运行态覆盖，新增 `-IncludeCancel` 以验证 `POST /v1/watch/request/{request_id}/cancel` 固定 7 字段返回；本机常驻容器已通过 mock smoke 与真实 ASR smoke 两种路径，均得到 `cancel_status=canceled/cancel_action=no_action`，`runtime_status.ps1` 随后显示 `canceled_count=2`。

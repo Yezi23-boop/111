@@ -93,6 +93,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `smoke_test.ps1` 现在对 voice 与可选 cancel 响应执行“恰好 7 字段”校验，缺字段或多字段都会失败，防止 ESP32-S3 固定解析契约漂移。
 - `smoke_test.ps1` 已支持 `-IncludeAuthFailure`，用无效 device token 验证 `/v1/watch/health` 返回 HTTP 403，不输出真实 token。
 - `server/watch_voice_endpoint/runtime_status.ps1` 可输出无密钥 JSON 状态总览，覆盖 env key presence、Docker 容器状态、watch endpoint `/health`、`/v1/watch/health`、Hermes `/health` 与 `/v1/models`。
+- `server/watch_voice_endpoint/acceptance_test.ps1` 可一键串起 runtime status、mock voice、cancel、无效 token 403、中文 Ogg Opus 生成和真实 MiMo ASR smoke，作为服务器侧版本迭代前验收门槛。
 - 私有 `/health` 与 `runtime_status.ps1` 已增加非敏感请求指标：event/status/error 计数与最近一次请求摘要；最近请求只包含 `device_id/request_id/status/action/error_code/duration_ms/audio_bytes/asr_provider/completed_at`，不包含 ASR 文本、回复文本、音频内容或任何 key/token。
 - `smoke_test.ps1` 已支持 `-BaseUrl <https://watch.example.com>` 指向公网域名，并可用 `-SkipServiceHealth` 跳过私有 `/health`；这样 Caddy 只公开 `/v1/watch/*` 时仍能验证设备协议入口。
 - `server/watch_voice_endpoint/make_tts_sample.ps1` 可在 Windows 本机用中文 System.Speech voice + ffmpeg 生成可复现 Ogg Opus 测试样本；`smoke_test.ps1 -UseRealAsr` 现在要求显式传入 `AudioPath`，避免把 dummy Ogg 当真实语音测试。
@@ -489,6 +490,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - cancel endpoint 运行态 smoke 已验证：`smoke_test.ps1 -IncludeCancel` 与 `smoke_test.ps1 -UseRealAsr -AudioPath <generated.ogg> -IncludeCancel` 均返回 `cancel_status=canceled/cancel_action=no_action`；随后 `runtime_status.ps1` 显示 `canceled_count=2`。
 - 固定 7 字段契约已提升到 smoke 精确校验：mock `-IncludeCancel` 本机 smoke 通过，voice 与 cancel 均没有多余字段。
 - 负向鉴权 smoke 已验证：`smoke_test.ps1 -IncludeCancel -IncludeAuthFailure` 本机返回 `auth_failure_status_code=403`，同时正向 voice/cancel 仍通过。
+- 服务器侧 acceptance 已验证：`acceptance_test.ps1` 返回 `status=passed`，mock 与 real ASR smoke 均 `voice_status=done/action=memory_saved`，cancel 均 `canceled/no_action`，负向鉴权为 403，运行前后 `inflight_requests=0`，输出不含 ASR 文本、回复文本或任何 key/token。
 
 期望看到的结果：
 

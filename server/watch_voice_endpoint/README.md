@@ -122,6 +122,14 @@ Inspect local runtime status without printing tokens:
 
 `/health` and `runtime_status.ps1` expose non-secret request metrics for debugging: event counters, response status counters, error-code counters, and the latest request summary with status, action, duration, and audio byte size. They do not include ASR text, reply text, audio contents, API keys, or bearer tokens.
 
+Run the full local acceptance loop before server-side iteration commits:
+
+```powershell
+.\acceptance_test.ps1
+```
+
+This composes runtime status, mock voice, cancel, invalid-token rejection, generated Chinese Ogg Opus, and real MiMo ASR smoke checks. Its summary omits ASR text, reply text, audio contents, API keys, and bearer tokens.
+
 Verify real ASR with an Ogg Opus sample:
 
 ```powershell
