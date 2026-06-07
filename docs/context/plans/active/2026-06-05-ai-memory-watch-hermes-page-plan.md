@@ -89,6 +89,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - 常驻入口 `GET /v1/watch/health?device_id=watch-001` 已验证返回 `hermes_status=online`。
 - 常驻入口 `POST /v1/watch/voice-command` 已切到 `WATCH_ASR_PROVIDER=mimo`，用本机合成中文 Ogg Opus 样本验证可返回手表 V1 固定 7 字段 JSON。
 - `server/watch_voice_endpoint/smoke_test.ps1` 支持默认 mock 快速健康检查，也支持 `-UseRealAsr -AudioPath <sample.ogg>` 真实 ASR 检查。
+- `smoke_test.ps1` 已支持 `-IncludeCancel`，可在同一次 smoke 中额外验证 `POST /v1/watch/request/{request_id}/cancel` 返回固定 7 字段 `status=canceled/action=no_action`。
 - `server/watch_voice_endpoint/runtime_status.ps1` 可输出无密钥 JSON 状态总览，覆盖 env key presence、Docker 容器状态、watch endpoint `/health`、`/v1/watch/health`、Hermes `/health` 与 `/v1/models`。
 - 私有 `/health` 与 `runtime_status.ps1` 已增加非敏感请求指标：event/status/error 计数与最近一次请求摘要；最近请求只包含 `device_id/request_id/status/action/error_code/duration_ms/audio_bytes/asr_provider/completed_at`，不包含 ASR 文本、回复文本、音频内容或任何 key/token。
 - `smoke_test.ps1` 已支持 `-BaseUrl <https://watch.example.com>` 指向公网域名，并可用 `-SkipServiceHealth` 跳过私有 `/health`；这样 Caddy 只公开 `/v1/watch/*` 时仍能验证设备协议入口。
@@ -483,6 +484,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 端到端请求预算已验证：单元测试覆盖超出 `WATCH_REQUEST_TIMEOUT_SECONDS` 时返回固定 7 字段 `timeout/server_timeout`；常驻容器 `/health` 显示 `request_timeout_seconds=115.0`，mock smoke 与真实 ASR smoke 均继续通过。
 - `runtime_status.ps1` 已验证默认本机模式返回 `watch_voice_endpoint=healthy`、`watch_health=ok`、`hermes_status=online`、`hermes_models.model_count=1`；`-SkipDocker -SkipHermesApi` 模式可只检查公网 watch endpoint，不输出真实 key/token。
 - 请求指标已验证：重建容器后先跑 mock smoke 与真实 ASR smoke，再读 `runtime_status.ps1` 得到 `processed=2/done=2`、最近请求 `status=done/action=memory_saved/audio_bytes=8345`，且最近请求摘要不包含 `asr_text` 或 `reply_text` 字段。
+- cancel endpoint 运行态 smoke 已验证：`smoke_test.ps1 -IncludeCancel` 与 `smoke_test.ps1 -UseRealAsr -AudioPath <generated.ogg> -IncludeCancel` 均返回 `cancel_status=canceled/cancel_action=no_action`；随后 `runtime_status.ps1` 显示 `canceled_count=2`。
 
 期望看到的结果：
 

@@ -107,6 +107,7 @@ Verify the full server-side path without printing tokens:
 
 ```powershell
 .\smoke_test.ps1
+.\smoke_test.ps1 -IncludeCancel
 ```
 
 Inspect local runtime status without printing tokens:
@@ -122,6 +123,7 @@ Verify real ASR with an Ogg Opus sample:
 ```powershell
 $sample = .\make_tts_sample.ps1 | ConvertFrom-Json
 .\smoke_test.ps1 -UseRealAsr -AudioPath $sample.ogg_path
+.\smoke_test.ps1 -UseRealAsr -AudioPath $sample.ogg_path -IncludeCancel
 ```
 
 For a public domain that only proxies `/v1/watch/*`, skip the private service health endpoint:

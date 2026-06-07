@@ -5,7 +5,8 @@ param(
   [string]$MockAsrText = "记一下明天看电池日志",
   [string]$AudioPath = "",
   [switch]$UseRealAsr,
-  [switch]$SkipServiceHealth
+  [switch]$SkipServiceHealth,
+  [switch]$IncludeCancel
 )
 
 $ErrorActionPreference = "Stop"
@@ -81,6 +82,20 @@ if ($missing.Count -gt 0) {
   throw "Missing watch response fields: $($missing -join ', ')"
 }
 
+$cancel = $null
+if ($IncludeCancel) {
+  $cancelRequestId = "cancel-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+  $cancel = Invoke-RestMethod -Uri "$BaseUrl/v1/watch/request/$cancelRequestId/cancel" `
+    -Method Post `
+    -Headers $headers `
+    -Form @{ device_id = $DeviceId } `
+    -TimeoutSec 15
+  $cancelMissing = @($fields | Where-Object { -not ($cancel.PSObject.Properties.Name -contains $_) })
+  if ($cancelMissing.Count -gt 0) {
+    throw "Missing cancel response fields: $($cancelMissing -join ', ')"
+  }
+}
+
 [pscustomobject]@{
   local_health = $localHealthStatus
   watch_health = $watchHealth.status
@@ -88,6 +103,8 @@ if ($missing.Count -gt 0) {
   asr_mode = $(if ($UseRealAsr) { "real" } else { "mock" })
   voice_status = $voice.status
   voice_action = $voice.action
+  cancel_status = $(if ($cancel) { $cancel.status } else { $null })
+  cancel_action = $(if ($cancel) { $cancel.action } else { $null })
   asr_text = $voice.asr_text
   reply_text = $voice.reply_text
   field_count = $fields.Count
