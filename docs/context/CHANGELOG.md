@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：更新 AI Memory Watch / Hermes active plan 的服务器路线：确认 `D:\Docker_data\hermes\data` 下 Docker Hermes 已部署，Dashboard 本地 `9119` 可用，当前模型为 `mimo-v2.5 / Xiaomi MiMo`；但 `.env` 尚未启用 `API_SERVER_ENABLED` / `API_SERVER_KEY`，容器内 `8642` 还没有 API Server 监听，webhook platform 也未启用。下一步从纯 mock 调整为先启用 Hermes OpenAI-compatible API Server `/v1/responses`，再由 watch voice endpoint 完成 `Ogg Opus -> ASR -> Hermes API -> 手表 V1 JSON`，避免 ESP32-S3 直接调用 Dashboard 或持有 Hermes API key。
 - 2026-06-06：将后台 Safety Monitor 默认用户意图改为开启：`background_service_manager` 冷启动默认 `danger_enabled_by_user=true`，但仍等待 UI 首帧 ready，并继续按 power budget、前台音频/麦克风 owner 仲裁后再启动 ESP-DL 危险识别 runtime；危险识别页只负责展示和临时开关，不直接拥有模型生命周期。
 - 2026-06-05：将主工程危险识别 active ESP-DL 单模型切到 `edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511`，运行阈值固定为 `0.90`，服务层继续使用连续 2 个 danger 窗口确认、3 个 non-danger 窗口清除、2 秒 hold 和 3 秒 cooldown；旧 V3.2/V3.3 模型仅作为回退资产保留，不参与当前固件嵌入和运行。
 - 2026-06-05：扩展 `plans/active/2026-06-05-ai-memory-watch-hermes-page-plan.md` 为 V1 功能与通信规格：固定 Hermes 独立入口、触摸按住说话/滑出取消、Ogg Opus + HTTP multipart 一次性上传、服务器侧 ASR/Hermes 处理、120 秒同步等待、cancel endpoint、`device_id + token` 鉴权、`device_id + boot_id + seq` request_id、澄清会话 `clarification_id`、只显示文本不做 TTS/震动/离线缓存/主动推送，以及 `AUDIO_CODEC_OWNER_HERMES` 的麦克风 session 边界。
