@@ -46,3 +46,28 @@ docker run --rm -p 8787:8787 `
 ```
 
 For Docker on Windows, use `HERMES_API_URL=http://host.docker.internal:8642` when Hermes API Server is exposed on the host.
+
+## Persistent Local Smoke Test
+
+Current local联调 uses:
+
+```powershell
+D:\Docker_data\hermes\watch_voice_endpoint.env
+```
+
+That file stores `HERMES_API_KEY` and `WATCH_DEVICE_TOKENS`, so keep it outside git.
+
+Start a persistent Docker Desktop container:
+
+```powershell
+docker run -d --name ai-memory-watch-voice-endpoint --restart unless-stopped `
+  -p 127.0.0.1:8787:8787 `
+  --env-file D:\Docker_data\hermes\watch_voice_endpoint.env `
+  ai-memory-watch-voice-endpoint:dev
+```
+
+Verify the full server-side path without printing tokens:
+
+```powershell
+.\smoke_test.ps1
+```

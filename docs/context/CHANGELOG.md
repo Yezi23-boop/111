@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：将 AI Memory Watch watch voice endpoint 从临时 smoke test 推进到 Docker Desktop 常驻联调入口：新增 `server/watch_voice_endpoint/smoke_test.ps1`，并以 `ai-memory-watch-voice-endpoint` 容器绑定本机 `127.0.0.1:8787`，读取仓库外 `D:\Docker_data\hermes\watch_voice_endpoint.env` 中的 Hermes API key 与设备 token；验证 `/v1/watch/health` 返回 Hermes online，`/v1/watch/voice-command` 经 Hermes `/v1/responses` 返回 `status=done/action=memory_saved` 和手表 V1 固定 7 字段 JSON。
 - 2026-06-08：闭环 AI Memory Watch / Hermes 服务器链路第一版：在 `D:\Docker_data\hermes\data\.env` 中启用 Hermes API Server（密钥不入仓库），验证 `8642` 的 `/health`、`/v1/models` 与 `/v1/responses` 可用，中文手表记忆请求能经 Hermes + MiMo 同步返回最终文本；新增 `server/watch_voice_endpoint` 原型，用 FastAPI 接收 Ogg Opus multipart、校验 `device_id + device_token`、开发期 mock ASR、调用 Hermes `/v1/responses` 并返回手表 V1 固定 7 字段 JSON，单元测试与 Docker smoke test 均通过。
 - 2026-06-06：将后台 Safety Monitor 默认用户意图改为开启：`background_service_manager` 冷启动默认 `danger_enabled_by_user=true`，但仍等待 UI 首帧 ready，并继续按 power budget、前台音频/麦克风 owner 仲裁后再启动 ESP-DL 危险识别 runtime；危险识别页只负责展示和临时开关，不直接拥有模型生命周期。
 - 2026-06-05：将主工程危险识别 active ESP-DL 单模型切到 `edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511`，运行阈值固定为 `0.90`，服务层继续使用连续 2 个 danger 窗口确认、3 个 non-danger 窗口清除、2 秒 hold 和 3 秒 cooldown；旧 V3.2/V3.3 模型仅作为回退资产保留，不参与当前固件嵌入和运行。
