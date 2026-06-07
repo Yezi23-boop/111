@@ -109,6 +109,12 @@ Verify the full server-side path without printing tokens:
 .\smoke_test.ps1
 ```
 
+Inspect local runtime status without printing tokens:
+
+```powershell
+.\runtime_status.ps1
+```
+
 Verify real ASR with an Ogg Opus sample:
 
 ```powershell
@@ -120,6 +126,7 @@ For a public domain that only proxies `/v1/watch/*`, skip the private service he
 
 ```powershell
 .\smoke_test.ps1 -BaseUrl "https://watch.example.com" -SkipServiceHealth
+.\runtime_status.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi
 ```
 
 Manual `docker run` is still useful for one-off isolation:

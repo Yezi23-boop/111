@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：新增 `server/watch_voice_endpoint/runtime_status.ps1` 作为 AI Memory Watch 服务器侧无密钥状态总览脚本：输出 env key presence、Docker 容器状态、watch endpoint `/health` 与 `/v1/watch/health`、Hermes `/health` 和 `/v1/models` 的 JSON 摘要，不打印真实 key/token；本机默认模式和 `-SkipDocker -SkipHermesApi` 模式均已验证通过。
 - 2026-06-08：为 AI Memory Watch watch voice endpoint 增加端到端请求预算 `WATCH_REQUEST_TIMEOUT_SECONDS`，默认 115 秒，确保 ASR + Hermes 总耗时超过预算时服务器先返回手表 V1 固定 7 字段 `status=timeout/error_code=server_timeout`，而不是晚于 ESP32-S3 侧 120 秒等待窗口；单元测试覆盖总预算超时，常驻容器 `/health` 已验证 `request_timeout_seconds=115.0`，mock 与真实 ASR smoke 均通过。
 - 2026-06-08：为 AI Memory Watch watch voice endpoint 的公网域名联调补充 smoke 能力：`smoke_test.ps1` 已支持 `-SkipServiceHealth`，在 Caddy 只公开 `/v1/watch/*`、不公开私有 `/health` 时仍能验证 `/v1/watch/health` 与 `/v1/watch/voice-command`；同时将默认 mock 音频临时文件改成 GUID 文件名，避免并发 smoke 抢占同一 `%TEMP%` 文件。README 与 active plan 同步记录该用法。
 - 2026-06-08：补强 AI Memory Watch watch voice endpoint 的 ESP32-S3 上传输入校验：`request_id` 限制为 1-96 位 ASCII 安全字符，空音频和超长音频在进入 ASR/Hermes 前返回手表 V1 固定 7 字段 JSON 错误；单元测试覆盖畸形 `request_id` 与空音频，常驻 Docker 容器重建后已验证畸形 `request_id` 返回 `status=error/action=error/error_code=asr_or_agent_error`。

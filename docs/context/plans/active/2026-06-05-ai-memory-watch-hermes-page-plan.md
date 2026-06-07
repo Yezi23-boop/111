@@ -89,6 +89,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - 常驻入口 `GET /v1/watch/health?device_id=watch-001` 已验证返回 `hermes_status=online`。
 - 常驻入口 `POST /v1/watch/voice-command` 已切到 `WATCH_ASR_PROVIDER=mimo`，用本机合成中文 Ogg Opus 样本验证可返回手表 V1 固定 7 字段 JSON。
 - `server/watch_voice_endpoint/smoke_test.ps1` 支持默认 mock 快速健康检查，也支持 `-UseRealAsr -AudioPath <sample.ogg>` 真实 ASR 检查。
+- `server/watch_voice_endpoint/runtime_status.ps1` 可输出无密钥 JSON 状态总览，覆盖 env key presence、Docker 容器状态、watch endpoint `/health`、`/v1/watch/health`、Hermes `/health` 与 `/v1/models`。
 - `smoke_test.ps1` 已支持 `-BaseUrl <https://watch.example.com>` 指向公网域名，并可用 `-SkipServiceHealth` 跳过私有 `/health`；这样 Caddy 只公开 `/v1/watch/*` 时仍能验证设备协议入口。
 - `server/watch_voice_endpoint/make_tts_sample.ps1` 可在 Windows 本机用中文 System.Speech voice + ffmpeg 生成可复现 Ogg Opus 测试样本；`smoke_test.ps1 -UseRealAsr` 现在要求显式传入 `AudioPath`，避免把 dummy Ogg 当真实语音测试。
 - voice endpoint 已增加 `WATCH_REQUEST_TIMEOUT_SECONDS` 端到端请求预算，当前常驻容器配置为 `115` 秒，小于 ESP32-S3 侧 120 秒等待窗口；ASR + Hermes 处理超过总预算时服务器先返回手表 V1 `status=timeout/error_code=server_timeout`。
@@ -479,6 +480,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - voice endpoint 输入校验已验证：畸形 `request_id` 运行态返回 `status=error/action=error/error_code=asr_or_agent_error` 和固定 7 字段 JSON；单元测试覆盖畸形 `request_id` 与空音频。
 - `smoke_test.ps1 -SkipServiceHealth` 已验证可在不访问 `/health` 的情况下完成 `/v1/watch/health` 与 `/v1/watch/voice-command` 检查，适配只公开 `/v1/watch/*` 的公网反向代理形态；默认 mock 音频临时文件已改成 GUID 文件名，避免并发 smoke 抢占同一 `%TEMP%` 文件。
 - 端到端请求预算已验证：单元测试覆盖超出 `WATCH_REQUEST_TIMEOUT_SECONDS` 时返回固定 7 字段 `timeout/server_timeout`；常驻容器 `/health` 显示 `request_timeout_seconds=115.0`，mock smoke 与真实 ASR smoke 均继续通过。
+- `runtime_status.ps1` 已验证默认本机模式返回 `watch_voice_endpoint=healthy`、`watch_health=ok`、`hermes_status=online`、`hermes_models.model_count=1`；`-SkipDocker -SkipHermesApi` 模式可只检查公网 watch endpoint，不输出真实 key/token。
 
 期望看到的结果：
 
