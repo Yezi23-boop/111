@@ -6,7 +6,8 @@ param(
   [string]$AudioPath = "",
   [switch]$UseRealAsr,
   [switch]$SkipServiceHealth,
-  [switch]$IncludeCancel
+  [switch]$IncludeCancel,
+  [switch]$IncludeAuthFailure
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,6 +49,25 @@ if (-not $SkipServiceHealth) {
   $localHealthStatus = $localHealth.status
 }
 $watchHealth = Invoke-RestMethod -Uri "$BaseUrl/v1/watch/health?device_id=$DeviceId" -Headers $headers -TimeoutSec 10
+
+$authFailureStatusCode = $null
+if ($IncludeAuthFailure) {
+  try {
+    Invoke-RestMethod -Uri "$BaseUrl/v1/watch/health?device_id=$DeviceId" `
+      -Headers @{ Authorization = "Bearer invalid-smoke-token" } `
+      -TimeoutSec 10 | Out-Null
+    throw "Invalid device token unexpectedly succeeded"
+  } catch {
+    $response = $_.Exception.Response
+    if ($null -eq $response) {
+      throw
+    }
+    $authFailureStatusCode = [int]$response.StatusCode
+    if ($authFailureStatusCode -ne 403) {
+      throw "Expected invalid device token to return 403, got $authFailureStatusCode"
+    }
+  }
+}
 
 if ($UseRealAsr -and [string]::IsNullOrWhiteSpace($AudioPath)) {
   throw "AudioPath is required when UseRealAsr is set"
@@ -116,6 +136,7 @@ if ($IncludeCancel) {
   voice_action = $voice.action
   cancel_status = $(if ($cancel) { $cancel.status } else { $null })
   cancel_action = $(if ($cancel) { $cancel.action } else { $null })
+  auth_failure_status_code = $authFailureStatusCode
   asr_text = $voice.asr_text
   reply_text = $voice.reply_text
   field_count = $fields.Count

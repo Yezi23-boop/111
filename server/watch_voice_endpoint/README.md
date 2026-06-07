@@ -108,9 +108,11 @@ Verify the full server-side path without printing tokens:
 ```powershell
 .\smoke_test.ps1
 .\smoke_test.ps1 -IncludeCancel
+.\smoke_test.ps1 -IncludeCancel -IncludeAuthFailure
 ```
 
 The smoke script rejects missing or extra watch response fields, so both voice and optional cancel checks must return exactly the V1 seven-field JSON shape.
+With `-IncludeAuthFailure`, it also verifies that an invalid device token is rejected with HTTP 403 without printing any token.
 
 Inspect local runtime status without printing tokens:
 

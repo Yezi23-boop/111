@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：为 AI Memory Watch `server/watch_voice_endpoint/smoke_test.ps1` 增加 `-IncludeAuthFailure` 负向鉴权 smoke：用无效 device token 请求 `/v1/watch/health`，期望 HTTP 403 且不打印真实 token；本机已验证正向 voice/cancel 与负向鉴权同跑通过。
 - 2026-06-08：将 AI Memory Watch `server/watch_voice_endpoint/smoke_test.ps1` 的手表 V1 响应校验从“缺字段检查”提升为“恰好 7 字段”契约检查；voice 与可选 cancel 响应若出现缺字段或多字段都会失败，已用本机 `-IncludeCancel` smoke 验证通过。
 - 2026-06-08：扩展 `server/watch_voice_endpoint/smoke_test.ps1` 的运行态覆盖，新增 `-IncludeCancel` 以验证 `POST /v1/watch/request/{request_id}/cancel` 固定 7 字段返回；本机常驻容器已通过 mock smoke 与真实 ASR smoke 两种路径，均得到 `cancel_status=canceled/cancel_action=no_action`，`runtime_status.ps1` 随后显示 `canceled_count=2`。
 - 2026-06-08：补强 AI Memory Watch watch voice endpoint 的服务器侧可观测性：私有 `/health` 与 `runtime_status.ps1` 新增非敏感请求指标，包含 event/status/error 计数与最近一次请求摘要（状态、动作、耗时、音频字节数等），明确不返回 ASR 文本、回复文本、音频内容、API key 或 bearer token；单元测试覆盖指标字段，常驻容器重建后通过 mock 与真实 ASR smoke 验证 `processed=2/done=2`。
