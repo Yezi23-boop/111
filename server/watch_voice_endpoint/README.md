@@ -110,6 +110,8 @@ Verify the full server-side path without printing tokens:
 .\smoke_test.ps1 -IncludeCancel
 ```
 
+The smoke script rejects missing or extra watch response fields, so both voice and optional cancel checks must return exactly the V1 seven-field JSON shape.
+
 Inspect local runtime status without printing tokens:
 
 ```powershell

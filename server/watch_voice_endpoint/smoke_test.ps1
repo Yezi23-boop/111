@@ -77,10 +77,24 @@ $voice = Invoke-RestMethod -Uri "$BaseUrl/v1/watch/voice-command" `
   -TimeoutSec 130
 
 $fields = @("request_id", "status", "action", "asr_text", "reply_text", "clarification_id", "error_code")
-$missing = @($fields | Where-Object { -not ($voice.PSObject.Properties.Name -contains $_) })
-if ($missing.Count -gt 0) {
-  throw "Missing watch response fields: $($missing -join ', ')"
+
+function Assert-WatchResponseFields {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Payload,
+    [Parameter(Mandatory = $true)]
+    [string]$Label
+  )
+
+  $names = @($Payload.PSObject.Properties.Name)
+  $missing = @($fields | Where-Object { -not ($names -contains $_) })
+  $extra = @($names | Where-Object { -not ($fields -contains $_) })
+  if ($missing.Count -gt 0 -or $extra.Count -gt 0) {
+    throw "$Label response field mismatch. Missing: $($missing -join ', '); Extra: $($extra -join ', ')"
+  }
 }
+
+Assert-WatchResponseFields -Payload $voice -Label "voice"
 
 $cancel = $null
 if ($IncludeCancel) {
@@ -90,10 +104,7 @@ if ($IncludeCancel) {
     -Headers $headers `
     -Form @{ device_id = $DeviceId } `
     -TimeoutSec 15
-  $cancelMissing = @($fields | Where-Object { -not ($cancel.PSObject.Properties.Name -contains $_) })
-  if ($cancelMissing.Count -gt 0) {
-    throw "Missing cancel response fields: $($cancelMissing -join ', ')"
-  }
+  Assert-WatchResponseFields -Payload $cancel -Label "cancel"
 }
 
 [pscustomobject]@{
