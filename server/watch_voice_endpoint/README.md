@@ -26,6 +26,17 @@ Authorization: Bearer <device_token>
 
 The Hermes API key is only configured on this server through `HERMES_API_KEY`; it must not be written into ESP32 firmware.
 
+## Request Idempotency
+
+`POST /v1/watch/voice-command` is keyed by `device_id + request_id`.
+
+- A repeated completed request returns the cached watch JSON.
+- A repeated in-flight request waits for the same processing task instead of calling ASR/Hermes again.
+- A canceled request returns `status=canceled` and `action=no_action`.
+- Cancel after completion returns the completed result, because server-side tools may already have run.
+
+This keeps ESP32 retry behavior from duplicating memory or reminder actions during unstable Wi-Fi.
+
 ## Local Run
 
 ```powershell

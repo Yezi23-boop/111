@@ -17,6 +17,8 @@ HERMES_MODEL = os.getenv("HERMES_MODEL", "hermes-agent")
 HERMES_TIMEOUT_SECONDS = float(os.getenv("HERMES_TIMEOUT_SECONDS", "120"))
 WATCH_CONVERSATION_SUFFIX = os.getenv("WATCH_CONVERSATION_SUFFIX", "ai-memory-watch")
 WATCH_MOCK_ASR_TEXT = os.getenv("WATCH_MOCK_ASR_TEXT", "记一下明天看电池日志")
+REQUEST_CACHE_LIMIT = int(os.getenv("WATCH_REQUEST_CACHE_LIMIT", "256"))
+CANCELED_REQUEST_LIMIT = int(os.getenv("WATCH_CANCELED_REQUEST_LIMIT", "1024"))
 ASR_PROVIDER = os.getenv("WATCH_ASR_PROVIDER", "mock").strip().lower()
 MIMO_ASR_BASE_URL = os.getenv("MIMO_ASR_BASE_URL", os.getenv("XIAOMI_BASE_URL", "")).rstrip("/")
 MIMO_ASR_API_KEY = os.getenv("MIMO_ASR_API_KEY", os.getenv("XIAOMI_API_KEY", ""))
@@ -61,6 +63,9 @@ class HealthResponse(BaseModel):
 
 app = FastAPI(title="AI Memory Watch Voice Endpoint", version="0.1.0")
 _canceled_requests: set[tuple[str, str]] = set()
+_completed_requests: dict[tuple[str, str], WatchResponse] = {}
+_inflight_requests: dict[tuple[str, str], asyncio.Task[WatchResponse]] = {}
+_request_lock = asyncio.Lock()
 
 
 def _device_tokens() -> dict[str, str]:
@@ -121,6 +126,26 @@ def _infer_action(asr_text: str, reply_text: str) -> str:
     if "需要" in reply_text and ("补充" in reply_text or "确认" in reply_text):
         return "clarification_needed"
     return "memory_saved"
+
+
+def _canceled_watch_response(request_id: str, asr_text: str = "") -> WatchResponse:
+    return WatchResponse(
+        request_id=request_id,
+        status="canceled",
+        action="no_action",
+        asr_text=asr_text,
+        reply_text="已取消等待",
+    )
+
+
+def _trim_completed_requests() -> None:
+    while len(_completed_requests) > REQUEST_CACHE_LIMIT:
+        _completed_requests.pop(next(iter(_completed_requests)))
+
+
+def _trim_canceled_requests() -> None:
+    while len(_canceled_requests) > CANCELED_REQUEST_LIMIT:
+        _canceled_requests.pop()
 
 
 async def _read_audio(audio: UploadFile) -> bytes:
@@ -270,54 +295,20 @@ async def _call_hermes(device_id: str, asr_text: str, clarification_id: str | No
         return _extract_output_text(response.json())
 
 
-@app.get("/v1/watch/health", response_model=HealthResponse)
-async def health(
-    device_id: str = Query(...),
-    authorization: str | None = Header(default=None),
-) -> HealthResponse:
-    _require_device(device_id, authorization)
-    try:
-        async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-            response = await client.get(f"{HERMES_API_URL}/health")
-            response.raise_for_status()
-        return HealthResponse(status="ok", hermes_status="online", device_id=device_id)
-    except Exception:
-        return HealthResponse(status="error", hermes_status="offline", device_id=device_id)
-
-
-@app.post("/v1/watch/voice-command", response_model=WatchResponse)
-async def voice_command(
-    request_id: str = Form(...),
-    device_id: str = Form(...),
-    audio: UploadFile = File(...),
-    clarification_id: str | None = Form(default=None),
-    battery_percent: int | None = Form(default=None),
-    charging: bool | None = Form(default=None),
-    rssi: int | None = Form(default=None),
-    firmware_version: str | None = Form(default=None),
-    locale: str = Form("zh-CN"),
-    timezone: str = Form("Asia/Shanghai"),
-    source: str = Form("watch_hermes_page"),
-    ui_state: str = Form("ready"),
-    mock_asr_text: str | None = Form(default=None),
-    authorization: str | None = Header(default=None),
+async def _process_voice_command(
+    request_id: str,
+    device_id: str,
+    audio_bytes: bytes,
+    audio_content_type: str | None,
+    clarification_id: str | None,
+    mock_asr_text: str | None,
 ) -> WatchResponse:
-    _require_device(device_id, authorization)
-    del battery_percent, charging, rssi, firmware_version, locale, timezone, source, ui_state
-    audio_bytes = await _read_audio(audio)
-
     key = (device_id, request_id)
     if key in _canceled_requests:
-        return WatchResponse(
-            request_id=request_id,
-            status="canceled",
-            action="no_action",
-            asr_text="",
-            reply_text="已取消等待",
-        )
+        return _canceled_watch_response(request_id)
 
     try:
-        asr_text = await _transcribe_audio(audio_bytes, audio.content_type, mock_asr_text)
+        asr_text = await _transcribe_audio(audio_bytes, audio_content_type, mock_asr_text)
     except Exception:
         return WatchResponse(
             request_id=request_id,
@@ -359,13 +350,7 @@ async def voice_command(
         )
 
     if key in _canceled_requests:
-        return WatchResponse(
-            request_id=request_id,
-            status="canceled",
-            action="no_action",
-            asr_text=asr_text,
-            reply_text="已取消等待",
-        )
+        return _canceled_watch_response(request_id, asr_text)
 
     return WatchResponse(
         request_id=request_id,
@@ -378,6 +363,94 @@ async def voice_command(
     )
 
 
+async def _await_request_task(
+    key: tuple[str, str],
+    task: asyncio.Task[WatchResponse],
+) -> WatchResponse:
+    device_id, request_id = key
+    try:
+        response = await asyncio.shield(task)
+    except asyncio.CancelledError:
+        response = _canceled_watch_response(request_id)
+
+    async with _request_lock:
+        if _inflight_requests.get(key) is task:
+            _inflight_requests.pop(key, None)
+        if key in _canceled_requests:
+            return _canceled_watch_response(request_id, response.asr_text)
+        if response.status != "canceled":
+            _completed_requests[key] = response
+            _trim_completed_requests()
+        return response
+
+
+@app.get("/v1/watch/health", response_model=HealthResponse)
+async def health(
+    device_id: str = Query(...),
+    authorization: str | None = Header(default=None),
+) -> HealthResponse:
+    _require_device(device_id, authorization)
+    try:
+        async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+            response = await client.get(f"{HERMES_API_URL}/health")
+            response.raise_for_status()
+        return HealthResponse(status="ok", hermes_status="online", device_id=device_id)
+    except Exception:
+        return HealthResponse(status="error", hermes_status="offline", device_id=device_id)
+
+
+@app.post("/v1/watch/voice-command", response_model=WatchResponse)
+async def voice_command(
+    request_id: str = Form(...),
+    device_id: str = Form(...),
+    audio: UploadFile = File(...),
+    clarification_id: str | None = Form(default=None),
+    battery_percent: int | None = Form(default=None),
+    charging: bool | None = Form(default=None),
+    rssi: int | None = Form(default=None),
+    firmware_version: str | None = Form(default=None),
+    locale: str = Form("zh-CN"),
+    timezone: str = Form("Asia/Shanghai"),
+    source: str = Form("watch_hermes_page"),
+    ui_state: str = Form("ready"),
+    mock_asr_text: str | None = Form(default=None),
+    authorization: str | None = Header(default=None),
+) -> WatchResponse:
+    _require_device(device_id, authorization)
+    del battery_percent, charging, rssi, firmware_version, locale, timezone, source, ui_state
+    key = (device_id, request_id)
+
+    async with _request_lock:
+        if key in _completed_requests:
+            return _completed_requests[key]
+        if key in _canceled_requests:
+            return _canceled_watch_response(request_id)
+        task = _inflight_requests.get(key)
+    if task is not None:
+        return await _await_request_task(key, task)
+
+    audio_bytes = await _read_audio(audio)
+    async with _request_lock:
+        if key in _completed_requests:
+            return _completed_requests[key]
+        if key in _canceled_requests:
+            return _canceled_watch_response(request_id)
+        task = _inflight_requests.get(key)
+        if task is None:
+            task = asyncio.create_task(
+                _process_voice_command(
+                    request_id=request_id,
+                    device_id=device_id,
+                    audio_bytes=audio_bytes,
+                    audio_content_type=audio.content_type,
+                    clarification_id=clarification_id,
+                    mock_asr_text=mock_asr_text,
+                )
+            )
+            _inflight_requests[key] = task
+    return await _await_request_task(key, task)
+
+
 @app.post("/v1/watch/request/{request_id}/cancel", response_model=WatchResponse)
 async def cancel_request(
     request_id: str,
@@ -385,18 +458,25 @@ async def cancel_request(
     authorization: str | None = Header(default=None),
 ) -> WatchResponse:
     _require_device(device_id, authorization)
-    _canceled_requests.add((device_id, request_id))
-    if len(_canceled_requests) > 1024:
-        _canceled_requests.clear()
-    return WatchResponse(
-        request_id=request_id,
-        status="canceled",
-        action="no_action",
-        asr_text="",
-        reply_text="已取消等待",
-    )
+    key = (device_id, request_id)
+    async with _request_lock:
+        if key in _completed_requests:
+            return _completed_requests[key]
+        _canceled_requests.add(key)
+        _trim_canceled_requests()
+        task = _inflight_requests.get(key)
+        if task is not None and not task.done():
+            task.cancel()
+    return _canceled_watch_response(request_id)
 
 
 @app.get("/health")
 async def service_health() -> dict[str, str | int]:
-    return {"status": "ok", "time": int(time.time())}
+    return {
+        "status": "ok",
+        "time": int(time.time()),
+        "asr_provider": ASR_PROVIDER,
+        "inflight_requests": len(_inflight_requests),
+        "completed_requests": len(_completed_requests),
+        "canceled_requests": len(_canceled_requests),
+    }

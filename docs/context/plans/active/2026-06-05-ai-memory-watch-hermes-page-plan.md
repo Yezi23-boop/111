@@ -90,6 +90,9 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - 常驻入口 `POST /v1/watch/voice-command` 已切到 `WATCH_ASR_PROVIDER=mimo`，用本机合成中文 Ogg Opus 样本验证可返回手表 V1 固定 7 字段 JSON。
 - `server/watch_voice_endpoint/smoke_test.ps1` 支持默认 mock 快速健康检查，也支持 `-UseRealAsr -AudioPath <sample.ogg>` 真实 ASR 检查。
 - MiMo ASR adapter 已用本机合成中文语音样本验证：WAV 经 ffmpeg 转 Ogg Opus 上传，endpoint 再转 16 kHz mono WAV 调 `mimo-v2.5-asr`，ASR 文本为 `记一下，明天看电池日志。`，随后 Hermes 返回 `status=done/action=memory_saved`。
+- voice endpoint 已实现 `device_id + request_id` 最小幂等：已完成请求返回缓存结果，处理中重复请求等待同一任务，已取消请求返回 `canceled/no_action`，完成后再 cancel 返回完成结果。
+- 本地 `/health` 会返回 `asr_provider`、`inflight_requests`、`completed_requests` 与 `canceled_requests`，用于联调时判断服务是否卡住；不返回 token 或 API key。
+- Docker 常驻容器已验证幂等：同一个 `request_id` 连续提交两次，第二次返回第一次缓存结果，`asr_text` 未被第二次 mock 文本覆盖，`/health` 显示 `inflight_requests=0`。
 - Webhook platform 当前未启用；V1 不优先走 webhook，因为手表侧需要同步等待最终文本结果。
 
 因此本计划的服务器链路已从纯 mock 推进为：
@@ -364,6 +367,7 @@ done / timeout / error / canceled
 - `[x]` 以 Docker Desktop 常驻容器方式提供本机联调入口 `127.0.0.1:8787`。
 - `[x]` 落地可配置 MiMo ASR adapter，默认保持 mock ASR，并已用本机合成中文 Ogg Opus 样本验证真实 ASR -> Hermes 链路。
 - `[x]` 将常驻本机联调容器切到 `WATCH_ASR_PROVIDER=mimo`，保留 smoke 脚本的 mock override 快速检查。
+- `[x]` 实现 voice endpoint `device_id + request_id` 最小幂等与本地健康统计，降低 ESP32 Wi-Fi 重试导致重复记忆/提醒的风险。
 - `[ ]` 落地页面与 service skeleton。
 
 ## Decision Log
@@ -392,6 +396,9 @@ done / timeout / error / canceled
 - 2026-06-08：
   - 决策：即使 ESP32-S3 继续上传 Ogg Opus，voice endpoint 给 MiMo ASR 前必须转码为 WAV；当前 Docker 镜像安装 ffmpeg，并在 `WATCH_ASR_PROVIDER=mimo` 路径执行 Ogg/未知 MIME -> 16 kHz mono WAV。
   - 原因：MiMo ASR 对 `audio/ogg` 返回 `400 Param Incorrect`，错误体明确要求 `audio/wav`、`audio/mp3` 或 `audio/mpeg`；转码放在服务器侧不会改变 ESP32 V1 协议，也比让手表改音频格式更符合当前“复用已能正常通信的 Opus 代码”约束。
+- 2026-06-08：
+  - 决策：voice endpoint 在 V1 使用内存态 request registry 实现 `device_id + request_id` 幂等，不引入数据库；完成结果按 `WATCH_REQUEST_CACHE_LIMIT` 缓存，取消集合按 `WATCH_CANCELED_REQUEST_LIMIT` 限制。
+  - 原因：ESP32-S3 后续可能因 Wi-Fi 抖动或 120 秒等待重试同一个 `request_id`；服务器必须避免重复 ASR/Hermes/tool 动作，同时保持第一版可回退、可观察、无需额外存储服务。
 
 ## Validation and Acceptance
 
@@ -446,6 +453,8 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 直接向 MiMo ASR 发送 `data:audio/ogg;base64,...` 返回 400，错误体要求 `audio/wav/audio/mp3/audio/mpeg`。
 - 带 ffmpeg 的临时 `WATCH_ASR_PROVIDER=mimo` 容器已用本机中文 TTS Ogg 样本跑通：`asr_text=记一下，明天看电池日志。`，Hermes 返回 `status=done/action=memory_saved`。
 - 常驻 `ai-memory-watch-voice-endpoint` 容器已重建到带 ffmpeg 的新镜像并切到 `WATCH_ASR_PROVIDER=mimo`；`smoke_test.ps1 -UseRealAsr -AudioPath <sample.ogg>` 与默认 mock smoke test 均通过。
+- voice endpoint source tests 已覆盖完成请求复用、处理中重复请求共享同一任务、完成后 cancel 返回旧结果。
+- 常驻 Docker 运行态已验证重复 `request_id` 不重复处理：两次响应完全一致，第二次 `asr_text` 仍为第一次请求文本。
 
 期望看到的结果：
 

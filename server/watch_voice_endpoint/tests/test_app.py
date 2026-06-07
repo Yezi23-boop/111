@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 
 import httpx
@@ -20,6 +21,8 @@ def watch_app(monkeypatch):
 
     module = importlib.reload(app)
     module._canceled_requests.clear()
+    module._completed_requests.clear()
+    module._inflight_requests.clear()
     return module
 
 
@@ -89,6 +92,107 @@ async def test_cancel_records_canceled_request(watch_app):
     payload = response.json()
     assert payload["status"] == "canceled"
     assert payload["action"] == "no_action"
+
+
+@pytest.mark.anyio
+async def test_voice_command_reuses_completed_request_result(watch_app, monkeypatch):
+    calls = 0
+
+    async def fake_call_hermes(device_id: str, asr_text: str, clarification_id: str | None) -> str:
+        nonlocal calls
+        calls += 1
+        return "已记录：明天看电池日志。"
+
+    monkeypatch.setattr(watch_app, "_call_hermes", fake_call_hermes)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post(
+            "/v1/watch/voice-command",
+            headers={"Authorization": "Bearer test-token"},
+            data={
+                "request_id": "watch-001-idem-0001",
+                "device_id": "watch-001",
+                "mock_asr_text": "记一下明天看电池日志",
+            },
+            files={"audio": ("command.ogg", b"OggS\x00\x01", "audio/ogg")},
+        )
+        second = await client.post(
+            "/v1/watch/voice-command",
+            headers={"Authorization": "Bearer test-token"},
+            data={
+                "request_id": "watch-001-idem-0001",
+                "device_id": "watch-001",
+                "mock_asr_text": "这是重复请求，不应重新处理",
+            },
+            files={"audio": ("command.ogg", b"OggS\x00\x02", "audio/ogg")},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls == 1
+    assert second.json() == first.json()
+
+
+@pytest.mark.anyio
+async def test_concurrent_duplicate_voice_command_shares_inflight_task(watch_app, monkeypatch):
+    calls = 0
+
+    async def fake_call_hermes(device_id: str, asr_text: str, clarification_id: str | None) -> str:
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.03)
+        return "已记录：明天看电池日志。"
+
+    monkeypatch.setattr(watch_app, "_call_hermes", fake_call_hermes)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async def send_duplicate():
+            return await client.post(
+                "/v1/watch/voice-command",
+                headers={"Authorization": "Bearer test-token"},
+                data={
+                    "request_id": "watch-001-idem-0002",
+                    "device_id": "watch-001",
+                    "mock_asr_text": "记一下明天看电池日志",
+                },
+                files={"audio": ("command.ogg", b"OggS\x00\x01", "audio/ogg")},
+            )
+
+        first, second = await asyncio.gather(send_duplicate(), send_duplicate())
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls == 1
+    assert first.json() == second.json()
+
+
+@pytest.mark.anyio
+async def test_cancel_completed_request_returns_completed_result(watch_app, monkeypatch):
+    async def fake_call_hermes(device_id: str, asr_text: str, clarification_id: str | None) -> str:
+        return "已记录：明天看电池日志。"
+
+    monkeypatch.setattr(watch_app, "_call_hermes", fake_call_hermes)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        completed = await client.post(
+            "/v1/watch/voice-command",
+            headers={"Authorization": "Bearer test-token"},
+            data={
+                "request_id": "watch-001-idem-0003",
+                "device_id": "watch-001",
+                "mock_asr_text": "记一下明天看电池日志",
+            },
+            files={"audio": ("command.ogg", b"OggS\x00\x01", "audio/ogg")},
+        )
+        canceled = await client.post(
+            "/v1/watch/request/watch-001-idem-0003/cancel",
+            headers={"Authorization": "Bearer test-token"},
+            data={"device_id": "watch-001"},
+        )
+
+    assert completed.status_code == 200
+    assert canceled.status_code == 200
+    assert canceled.json() == completed.json()
 
 
 @pytest.mark.anyio
