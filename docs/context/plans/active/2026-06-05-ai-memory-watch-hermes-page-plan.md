@@ -96,6 +96,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `server/watch_voice_endpoint/acceptance_test.ps1` 可一键串起 runtime status、mock voice、cancel、无效 token 403、中文 Ogg Opus 生成和真实 MiMo ASR smoke，作为服务器侧版本迭代前验收门槛。
 - 私有 `/health` 与 `runtime_status.ps1` 已增加非敏感请求指标：event/status/error 计数与最近一次请求摘要；最近请求只包含 `device_id/request_id/status/action/error_code/duration_ms/audio_bytes/asr_provider/completed_at`，不包含 ASR 文本、回复文本、音频内容或任何 key/token。
 - `smoke_test.ps1` 已支持 `-BaseUrl <https://watch.example.com>` 指向公网域名，并可用 `-SkipServiceHealth` 跳过私有 `/health`；这样 Caddy 只公开 `/v1/watch/*` 时仍能验证设备协议入口。
+- `runtime_status.ps1` 与 `acceptance_test.ps1` 也已支持 `-SkipServiceHealth`；公网只代理 `/v1/watch/*` 时可同时跳过 Docker、Hermes API 和私有 `/health` 检查。
 - `server/watch_voice_endpoint/make_tts_sample.ps1` 可在 Windows 本机用中文 System.Speech voice + ffmpeg 生成可复现 Ogg Opus 测试样本；`smoke_test.ps1 -UseRealAsr` 现在要求显式传入 `AudioPath`，避免把 dummy Ogg 当真实语音测试。
 - voice endpoint 已增加 `WATCH_REQUEST_TIMEOUT_SECONDS` 端到端请求预算，当前常驻容器配置为 `115` 秒，小于 ESP32-S3 侧 120 秒等待窗口；ASR + Hermes 处理超过总预算时服务器先返回手表 V1 `status=timeout/error_code=server_timeout`。
 - voice endpoint 已补强 ESP32-S3 上传输入校验：`request_id` 只接受 1-96 位 ASCII 字母、数字、`.`、`_`、`:`、`-`，空音频和超长音频会在进入 ASR/Hermes 前返回手表 V1 固定 7 字段 JSON 错误，避免真实录音/重试异常掉进 ffmpeg 或 ASR 后才失败。
@@ -491,6 +492,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 固定 7 字段契约已提升到 smoke 精确校验：mock `-IncludeCancel` 本机 smoke 通过，voice 与 cancel 均没有多余字段。
 - 负向鉴权 smoke 已验证：`smoke_test.ps1 -IncludeCancel -IncludeAuthFailure` 本机返回 `auth_failure_status_code=403`，同时正向 voice/cancel 仍通过。
 - 服务器侧 acceptance 已验证：`acceptance_test.ps1` 返回 `status=passed`，mock 与 real ASR smoke 均 `voice_status=done/action=memory_saved`，cancel 均 `canceled/no_action`，负向鉴权为 403，运行前后 `inflight_requests=0`，输出不含 ASR 文本、回复文本或任何 key/token。
+- 公网形态验收参数已本机模拟验证：`acceptance_test.ps1 -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr` 只依赖 `/v1/watch/*` 设备入口，返回 `status=passed` 且 `service_health_skipped=true`。
 
 期望看到的结果：
 

@@ -57,6 +57,7 @@ function Select-RuntimeSummary {
     watch_voice_endpoint = $Runtime.docker.watch_voice_endpoint.status
     watch_voice_endpoint_health = $Runtime.docker.watch_voice_endpoint.health
     hermes = $Runtime.docker.hermes.status
+    service_health_skipped = $serviceHealth.skipped
     service_health_ok = $serviceHealth.ok
     service_status = $serviceHealth.status
     watch_health_ok = $Runtime.endpoints.watch_health.ok
@@ -82,6 +83,9 @@ if ($SkipDocker) {
 }
 if ($SkipHermesApi) {
   $statusArgs.SkipHermesApi = $true
+}
+if ($SkipServiceHealth) {
+  $statusArgs.SkipServiceHealth = $true
 }
 
 $smokeArgs = @{

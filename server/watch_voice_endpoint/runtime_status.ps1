@@ -5,7 +5,8 @@ param(
   [string]$HermesEnvFile = "D:\Docker_data\hermes\data\.env",
   [string]$DeviceId = "watch-001",
   [switch]$SkipDocker,
-  [switch]$SkipHermesApi
+  [switch]$SkipHermesApi,
+  [switch]$SkipServiceHealth
 )
 
 $ErrorActionPreference = "Stop"
@@ -128,7 +129,10 @@ if (-not [string]::IsNullOrWhiteSpace($hermesApiKey)) {
   $hermesHeaders.Authorization = "Bearer $hermesApiKey"
 }
 
-$serviceHealth = Invoke-StatusGet -Uri "$BaseUrl/health" -TimeoutSec 5
+$serviceHealth = $null
+if (-not $SkipServiceHealth) {
+  $serviceHealth = Invoke-StatusGet -Uri "$BaseUrl/health" -TimeoutSec 5
+}
 $watchHealth = Invoke-StatusGet -Uri "$BaseUrl/v1/watch/health?device_id=$DeviceId" -Headers $watchHeaders -TimeoutSec 10
 
 $hermesHealth = $null
@@ -168,16 +172,17 @@ if ($hermesModels -and $hermesModels.ok -and $hermesModels.payload.data) {
   docker = $dockerStatus
   endpoints = [pscustomobject]@{
     service_health = [pscustomobject]@{
-      ok = $serviceHealth.ok
-      error = $serviceHealth.error
-      status = $(if ($serviceHealth.payload) { $serviceHealth.payload.status } else { $null })
-      asr_provider = $(if ($serviceHealth.payload) { $serviceHealth.payload.asr_provider } else { $null })
-      request_timeout_seconds = $(if ($serviceHealth.payload) { $serviceHealth.payload.request_timeout_seconds } else { $null })
-      inflight_requests = $(if ($serviceHealth.payload) { $serviceHealth.payload.inflight_requests } else { $null })
-      request_events = $(if ($serviceHealth.payload) { $serviceHealth.payload.request_events } else { $null })
-      request_status_counts = $(if ($serviceHealth.payload) { $serviceHealth.payload.request_status_counts } else { $null })
-      request_error_counts = $(if ($serviceHealth.payload) { $serviceHealth.payload.request_error_counts } else { $null })
-      last_request = $(if ($serviceHealth.payload) { $serviceHealth.payload.last_request } else { $null })
+      skipped = [bool]$SkipServiceHealth
+      ok = $(if ($serviceHealth) { $serviceHealth.ok } else { $null })
+      error = $(if ($serviceHealth) { $serviceHealth.error } else { $null })
+      status = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.status } else { $null })
+      asr_provider = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.asr_provider } else { $null })
+      request_timeout_seconds = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.request_timeout_seconds } else { $null })
+      inflight_requests = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.inflight_requests } else { $null })
+      request_events = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.request_events } else { $null })
+      request_status_counts = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.request_status_counts } else { $null })
+      request_error_counts = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.request_error_counts } else { $null })
+      last_request = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.last_request } else { $null })
     }
     watch_health = [pscustomobject]@{
       ok = $watchHealth.ok
