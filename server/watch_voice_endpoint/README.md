@@ -8,7 +8,7 @@ Flow:
 ESP32-S3 watch -> /v1/watch/voice-command -> Hermes /v1/responses -> watch JSON
 ```
 
-V1 keeps ASR mocked so the watch can first validate Ogg Opus upload, auth, timeout, cancel, and text rendering. Real ASR can replace `_call_hermes` input preparation later without changing the ESP32 protocol.
+V1 keeps ASR mocked so the watch can first validate Ogg Opus upload, auth, timeout, cancel, and text rendering. Real ASR can replace the server-side transcription adapter later without changing the ESP32 protocol.
 
 ## Endpoints
 
@@ -46,6 +46,26 @@ docker run --rm -p 8787:8787 `
 ```
 
 For Docker on Windows, use `HERMES_API_URL=http://host.docker.internal:8642` when Hermes API Server is exposed on the host.
+
+## ASR Provider
+
+Default ASR is mocked:
+
+```text
+WATCH_ASR_PROVIDER=mock
+```
+
+MiMo ASR can be enabled without changing the watch protocol:
+
+```text
+WATCH_ASR_PROVIDER=mimo
+MIMO_ASR_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+MIMO_ASR_API_KEY=<redacted>
+MIMO_ASR_MODEL=mimo-v2.5-asr
+MIMO_ASR_LANGUAGE=auto
+```
+
+The MiMo ASR adapter sends the uploaded Ogg Opus as a base64 `input_audio` data URI to the OpenAI-compatible `/chat/completions` endpoint, then passes the resulting text to Hermes `/v1/responses`.
 
 ## Persistent Local Smoke Test
 

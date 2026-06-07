@@ -89,3 +89,54 @@ async def test_cancel_records_canceled_request(watch_app):
     payload = response.json()
     assert payload["status"] == "canceled"
     assert payload["action"] == "no_action"
+
+
+@pytest.mark.anyio
+async def test_mimo_asr_adapter_uses_openai_compatible_audio_payload(watch_app, monkeypatch):
+    seen = {}
+
+    class FakeAsyncClient:
+        def __init__(self, timeout, trust_env):
+            seen["timeout"] = timeout
+            seen["trust_env"] = trust_env
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, headers, json):
+            seen["url"] = url
+            seen["headers"] = headers
+            seen["json"] = json
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "记一下明天看电池日志",
+                            }
+                        }
+                    ]
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(watch_app.httpx, "AsyncClient", FakeAsyncClient)
+    watch_app.MIMO_ASR_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
+    watch_app.MIMO_ASR_API_KEY = "test-asr-key"
+
+    text = await watch_app._call_mimo_asr(b"OggS\x00\x01", "audio/ogg")
+
+    assert text == "记一下明天看电池日志"
+    assert seen["url"] == "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+    assert seen["headers"] == {"Authorization": "Bearer test-asr-key"}
+    assert seen["trust_env"] is False
+    body = seen["json"]
+    assert body["model"] == "mimo-v2.5-asr"
+    assert body["asr_options"] == {"language": "auto"}
+    content = body["messages"][0]["content"][0]
+    assert content["type"] == "input_audio"
+    assert content["input_audio"]["data"].startswith("data:audio/ogg;base64,")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import time
 from typing import Literal
@@ -15,6 +16,12 @@ HERMES_MODEL = os.getenv("HERMES_MODEL", "hermes-agent")
 HERMES_TIMEOUT_SECONDS = float(os.getenv("HERMES_TIMEOUT_SECONDS", "120"))
 WATCH_CONVERSATION_SUFFIX = os.getenv("WATCH_CONVERSATION_SUFFIX", "ai-memory-watch")
 WATCH_MOCK_ASR_TEXT = os.getenv("WATCH_MOCK_ASR_TEXT", "记一下明天看电池日志")
+ASR_PROVIDER = os.getenv("WATCH_ASR_PROVIDER", "mock").strip().lower()
+MIMO_ASR_BASE_URL = os.getenv("MIMO_ASR_BASE_URL", os.getenv("XIAOMI_BASE_URL", "")).rstrip("/")
+MIMO_ASR_API_KEY = os.getenv("MIMO_ASR_API_KEY", os.getenv("XIAOMI_API_KEY", ""))
+MIMO_ASR_MODEL = os.getenv("MIMO_ASR_MODEL", "mimo-v2.5-asr")
+MIMO_ASR_LANGUAGE = os.getenv("MIMO_ASR_LANGUAGE", "auto")
+MIMO_ASR_TIMEOUT_SECONDS = float(os.getenv("MIMO_ASR_TIMEOUT_SECONDS", "60"))
 MAX_AUDIO_BYTES = int(os.getenv("WATCH_MAX_AUDIO_BYTES", str(6 * 1024 * 1024)))
 REPLY_MAX_CHARS = int(os.getenv("WATCH_REPLY_MAX_CHARS", "80"))
 
@@ -113,7 +120,8 @@ def _infer_action(asr_text: str, reply_text: str) -> str:
     return "memory_saved"
 
 
-async def _read_audio_size(audio: UploadFile) -> int:
+async def _read_audio(audio: UploadFile) -> bytes:
+    chunks: list[bytes] = []
     total = 0
     while True:
         chunk = await audio.read(64 * 1024)
@@ -122,7 +130,71 @@ async def _read_audio_size(audio: UploadFile) -> int:
         total += len(chunk)
         if total > MAX_AUDIO_BYTES:
             raise HTTPException(status_code=413, detail="audio_too_large")
-    return total
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _audio_data_uri(audio_bytes: bytes, mime_type: str | None) -> str:
+    content_type = mime_type or "audio/ogg"
+    if content_type == "application/octet-stream":
+        content_type = "audio/ogg"
+    encoded = base64.b64encode(audio_bytes).decode("ascii")
+    return f"data:{content_type};base64,{encoded}"
+
+
+def _extract_asr_text(payload: dict) -> str:
+    choices = payload.get("choices", []) or []
+    if not choices:
+        return ""
+    message = choices[0].get("message", {}) or {}
+    return str(message.get("content") or "").strip()
+
+
+async def _call_mimo_asr(audio_bytes: bytes, mime_type: str | None) -> str:
+    if not MIMO_ASR_BASE_URL or not MIMO_ASR_API_KEY:
+        raise HTTPException(status_code=500, detail="mimo_asr_config_missing")
+    body = {
+        "model": MIMO_ASR_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": _audio_data_uri(audio_bytes, mime_type),
+                        },
+                    }
+                ],
+            }
+        ],
+        "asr_options": {
+            "language": MIMO_ASR_LANGUAGE,
+        },
+    }
+    timeout = httpx.Timeout(MIMO_ASR_TIMEOUT_SECONDS)
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+        response = await client.post(
+            f"{MIMO_ASR_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {MIMO_ASR_API_KEY}"},
+            json=body,
+        )
+        response.raise_for_status()
+        return _extract_asr_text(response.json())
+
+
+async def _transcribe_audio(
+    audio_bytes: bytes,
+    mime_type: str | None,
+    mock_asr_text: str | None,
+) -> str:
+    if mock_asr_text:
+        return mock_asr_text.strip()
+    if ASR_PROVIDER in ("", "mock"):
+        return WATCH_MOCK_ASR_TEXT.strip()
+    if ASR_PROVIDER == "mimo":
+        return await _call_mimo_asr(audio_bytes, mime_type)
+    raise HTTPException(status_code=500, detail="unsupported_asr_provider")
 
 
 async def _call_hermes(device_id: str, asr_text: str, clarification_id: str | None) -> str:
@@ -183,7 +255,7 @@ async def voice_command(
 ) -> WatchResponse:
     _require_device(device_id, authorization)
     del battery_percent, charging, rssi, firmware_version, locale, timezone, source, ui_state
-    await _read_audio_size(audio)
+    audio_bytes = await _read_audio(audio)
 
     key = (device_id, request_id)
     if key in _canceled_requests:
@@ -195,7 +267,27 @@ async def voice_command(
             reply_text="已取消等待",
         )
 
-    asr_text = (mock_asr_text or WATCH_MOCK_ASR_TEXT).strip()
+    try:
+        asr_text = await _transcribe_audio(audio_bytes, audio.content_type, mock_asr_text)
+    except Exception:
+        return WatchResponse(
+            request_id=request_id,
+            status="error",
+            action="error",
+            asr_text="",
+            reply_text="没有处理成功，请再说一次",
+            error_code="asr_or_agent_error",
+        )
+    if not asr_text:
+        return WatchResponse(
+            request_id=request_id,
+            status="error",
+            action="error",
+            asr_text="",
+            reply_text="没有听清，请再说一次",
+            error_code="asr_or_agent_error",
+        )
+
     try:
         reply_text = await _call_hermes(device_id, asr_text, clarification_id)
     except httpx.TimeoutException:
