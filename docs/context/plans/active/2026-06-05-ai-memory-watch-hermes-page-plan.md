@@ -502,7 +502,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 服务器侧 acceptance 已验证：`acceptance_test.ps1` 返回 `status=passed`，mock 与 real ASR smoke 均 `voice_status=done/action=memory_saved`，cancel 均 `canceled/no_action`，负向鉴权为 403，运行前后 `inflight_requests=0`，输出不含 ASR 文本、回复文本或任何 key/token。
 - 公网形态验收参数已本机模拟验证：`acceptance_test.ps1 -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr` 只依赖 `/v1/watch/*` 设备入口，返回 `status=passed` 且 `service_health_skipped=true`。
 - 设备 V1 契约一致性已验证：`tests/test_contract.py` 将 `watch_contract.v1.json` 的 7 字段响应、status/action 枚举、`request_id` 正则、最大音频大小、115 秒服务器预算和 `/v1/watch/*` 公网范围锁定到 `app.py`；server pytest 当前 13 项通过。
-- 固件侧 `memory_watch_service` 运行期 endpoint 配置、health 检查和 request_id 生成已通过 source tests；`memory_watch_service` 源码仍不调用 `memory_watch_voice_client_post_voice_command()`，避免 120 秒 HTTP 阻塞 owner task command queue。memory_watch source tests 28 项通过，`idf.py build` 通过，当前仍保留 app 分区 5% free 的既有警告。
+- 固件侧 `memory_watch_service` 已接入独立 upload/cancel worker：owner task 只处理 command queue、状态快照、stop/cancel 意图和 worker result；upload worker 负责 `memory_watch_recorder_capture_ogg_opus()`、PSRAM 优先的 Ogg 缓冲和 `memory_watch_voice_client_post_voice_command()` 同步 HTTP；cancel waiting 走独立 cancel worker，不用 120 秒 HTTP 阻塞 UI/owner command queue。当前 source tests 31 项通过，`idf.py build` 通过，仍保留 app 分区 5% free 的既有警告。
 
 期望看到的结果：
 
@@ -518,7 +518,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 
 ## Idempotence and Recovery
 
-- 如果中途中断，下次从本计划继续，优先补 `memory_watch_service` recorder/upload worker：owner task 只投递 job、消费结果和处理 cancel，worker 执行录音、Ogg Opus 缓冲和同步 HTTP。
+- 如果中途中断，下次从本计划继续，优先做 ESP32-S3 实机 Wi-Fi/麦克风上传验证：当前 `memory_watch_service` recorder/upload worker 已完成 source/build 闭环，但尚未采集板端串口证据。
 - 如果 `server/watch_voice_endpoint` 原型出错，回退时只停止/删除该服务或容器；不要改动 `hermes` Dashboard、MiMo 配置、`official_chat` 主线或 ESP32 UI。
 - 如果新页面方案失败，最小回退路径是只删除新增页面入口和新 service，不影响 `official_chat_service` 与现有 AI 页。
 
@@ -527,6 +527,6 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 板端网络当前不可用，等待用户回来提供热点后再做 ESP32-S3 实机 Wi-Fi 上传和串口证据采集。
 - 用 ESP32-S3 实机麦克风 Ogg Opus 样本验证 `WATCH_ASR_PROVIDER=mimo`，确认手表端实际 MIME、音量、时长、语言和错误路径。
 - 将本机 `127.0.0.1:8787` 联调入口按需要放到服务器域名后，例如反向代理到 `/v1/watch/*`，再增加 TLS 与公网访问控制。
-- 将 `memory_watch_voice_client` 接入 `memory_watch_service` worker task：owner task 只投递请求、消费结果和处理 cancel，上传 worker 执行同步 HTTP，避免 120 秒等待阻塞 command queue。
-- 继续把 `memory_watch_service` 从 skeleton 推进到真实上传：把 `memory_watch_recorder` 的 Ogg Opus 输出接入 HTTP multipart client，仍不复用 `official_chat` 主线；接入时不得让 service owner task 长时间阻塞导致 cancel command 无法消费，应使用 recorder worker task 或 owner 可观测的 stop flag。
+- 板端验证时重点确认 `memory_watch_service` upload worker 的录音取消延迟、Ogg Opus 实际大小、HTTPS 上传结果、2 分钟等待窗口和 late result 忽略路径。
+- 根据实机日志再决定是否把 RSSI 从 `network_service` 增加窄只读 API；V1 固件当前不让 Memory Watch 直接调用 `esp_wifi_sta_get_ap_info()`。
 - 固件侧只接 voice endpoint，不接 Hermes Dashboard，不保存 Hermes API key。

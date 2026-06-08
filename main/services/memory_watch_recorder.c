@@ -84,6 +84,16 @@ static uint32_t memory_watch_recorder_normalize_input_timeout(
     return config->input_timeout_ms;
 }
 
+static uint32_t memory_watch_recorder_normalize_read_timeout(
+    const memory_watch_recorder_config_t *config)
+{
+    if (config->read_timeout_ms == 0U)
+    {
+        return MEMORY_WATCH_RECORDER_DEFAULT_READ_TIMEOUT_MS;
+    }
+    return config->read_timeout_ms;
+}
+
 static bool memory_watch_recorder_should_stop(
     const memory_watch_recorder_config_t *config,
     uint32_t duration_ms)
@@ -99,6 +109,16 @@ static bool memory_watch_recorder_should_stop(
         return false;
     }
     return config->should_stop_cb(config->should_stop_user_ctx);
+}
+
+static bool memory_watch_recorder_should_abort(
+    const memory_watch_recorder_config_t *config)
+{
+    if (config->should_abort_cb == NULL)
+    {
+        return false;
+    }
+    return config->should_abort_cb(config->should_abort_user_ctx);
 }
 
 static void memory_watch_recorder_convert_hw_to_opus_frame(
@@ -338,10 +358,18 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
 
     const uint32_t max_packets =
         max_duration_ms / MEMORY_WATCH_RECORDER_OPUS_FRAME_DURATION_MS;
+    const TickType_t read_timeout_ticks = pdMS_TO_TICKS(
+        memory_watch_recorder_normalize_read_timeout(config));
     uint32_t encoded_packets = 0;
     uint32_t opus_bytes = 0;
     for (uint32_t packet_index = 0; packet_index < max_packets; ++packet_index)
     {
+        if (memory_watch_recorder_should_abort(config))
+        {
+            ret = ESP_ERR_INVALID_STATE;
+            goto cleanup;
+        }
+
         const uint32_t duration_after_packet =
             (packet_index + 1U) * MEMORY_WATCH_RECORDER_OPUS_FRAME_DURATION_MS;
         const bool final_packet =
@@ -349,7 +377,8 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
             memory_watch_recorder_should_stop(config, duration_after_packet);
 
         size_t bytes_read = 0;
-        ret = audio_codec_read(hw_pcm, hw_bytes, &bytes_read, portMAX_DELAY);
+        ret = audio_codec_read(hw_pcm, hw_bytes, &bytes_read,
+                               read_timeout_ticks);
         if (ret != ESP_OK || bytes_read != hw_bytes)
         {
             ret = ret != ESP_OK ? ret : ESP_ERR_TIMEOUT;

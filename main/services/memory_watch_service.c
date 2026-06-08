@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_random.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -11,11 +13,18 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "network_service.h"
+#include "power_policy.h"
+#include "services/memory_watch_recorder.h"
 #include "services/memory_watch_voice_client.h"
 
 static const char *TAG = "memory_watch";
 static const UBaseType_t kCommandQueueLength = 8;
+static const UBaseType_t kWorkerQueueLength = 1;
+static const UBaseType_t kCancelQueueLength = 1;
 static const uint32_t kTaskStackWords = 2048;
+static const uint32_t kUploadWorkerStackWords = 6144;
+static const uint32_t kCancelWorkerStackWords = 3072;
+static const size_t kAudioBufferInitialBytes = 8192U;
 
 typedef enum
 {
@@ -25,12 +34,9 @@ typedef enum
     MEMORY_WATCH_SERVICE_CMD_CANCEL_RECORDING,
     MEMORY_WATCH_SERVICE_CMD_CANCEL_WAITING,
     MEMORY_WATCH_SERVICE_CMD_CANCEL_CLARIFICATION,
+    MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED,
+    MEMORY_WATCH_SERVICE_CMD_WORKER_DONE,
 } memory_watch_service_cmd_type_t;
-
-typedef struct
-{
-    memory_watch_service_cmd_type_t type;
-} memory_watch_service_cmd_t;
 
 typedef struct
 {
@@ -50,14 +56,66 @@ typedef struct
     char device_token[MEMORY_WATCH_SERVICE_DEVICE_TOKEN_MAX_BYTES];
 } memory_watch_service_client_config_snapshot_t;
 
+typedef struct
+{
+    memory_watch_service_client_config_snapshot_t client_config;
+    char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+    char clarification_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+} memory_watch_service_upload_job_t;
+
+typedef struct
+{
+    memory_watch_service_client_config_snapshot_t client_config;
+    char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+} memory_watch_service_cancel_job_t;
+
+typedef struct
+{
+    char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+    esp_err_t error;
+    bool has_response;
+    bool cancel_requested;
+    memory_watch_voice_client_response_t response;
+} memory_watch_service_worker_result_t;
+
+typedef struct
+{
+    uint8_t *data;
+    size_t len;
+    size_t capacity;
+} memory_watch_service_audio_buffer_t;
+
+typedef struct
+{
+    memory_watch_service_cmd_type_t type;
+    memory_watch_service_worker_result_t worker_result;
+    char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+} memory_watch_service_cmd_t;
+
 static TaskHandle_t s_service_task_handle = NULL;
+static TaskHandle_t s_upload_worker_task_handle = NULL;
+static TaskHandle_t s_cancel_worker_task_handle = NULL;
 static QueueHandle_t s_command_queue = NULL;
+static QueueHandle_t s_upload_worker_queue = NULL;
+static QueueHandle_t s_cancel_worker_queue = NULL;
 static StaticQueue_t s_command_queue_buffer;
-static uint8_t s_command_queue_storage[8 * sizeof(memory_watch_service_cmd_t)];
+static StaticQueue_t s_upload_worker_queue_buffer;
+static StaticQueue_t s_cancel_worker_queue_buffer;
+static uint8_t s_command_queue_storage[
+    8 * sizeof(memory_watch_service_cmd_t)];
+static uint8_t s_upload_worker_queue_storage[
+    1 * sizeof(memory_watch_service_upload_job_t)];
+static uint8_t s_cancel_worker_queue_storage[
+    1 * sizeof(memory_watch_service_cancel_job_t)];
 static StaticTask_t s_service_task_buffer;
+static StaticTask_t s_upload_worker_task_buffer;
+static StaticTask_t s_cancel_worker_task_buffer;
 static StackType_t s_service_task_stack[2048];
+static StackType_t s_upload_worker_task_stack[6144];
+static StackType_t s_cancel_worker_task_stack[3072];
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_endpoint_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_worker_lock = portMUX_INITIALIZER_UNLOCKED;
 static memory_watch_service_snapshot_t s_snapshot = {
     .state = MEMORY_WATCH_SERVICE_STATE_READY,
     .network_ready = false,
@@ -70,6 +128,9 @@ static memory_watch_service_snapshot_t s_snapshot = {
 static memory_watch_service_endpoint_state_t s_endpoint_config = {0};
 static uint32_t s_boot_id = 0;
 static uint32_t s_request_seq = 0;
+static bool s_record_stop_requested = false;
+static bool s_record_discard_requested = false;
+static bool s_wait_cancel_requested = false;
 
 /**
  * @brief 复制当前快照。
@@ -256,6 +317,300 @@ static void memory_watch_service_set_request_id(const char *request_id)
     portEXIT_CRITICAL(&s_snapshot_lock);
 }
 
+static void memory_watch_service_copy_current_clarification(
+    char *out_clarification_id, size_t out_len)
+{
+    if (out_clarification_id == NULL || out_len == 0U)
+    {
+        return;
+    }
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    memory_watch_service_copy_text(out_clarification_id, out_len,
+                                   s_snapshot.clarification_active
+                                       ? s_snapshot.clarification_id
+                                       : "");
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+static bool memory_watch_service_request_id_matches_current(
+    const char *request_id)
+{
+    if (request_id == NULL)
+    {
+        return false;
+    }
+
+    bool matches = false;
+    portENTER_CRITICAL(&s_snapshot_lock);
+    matches = strcmp(s_snapshot.request_id, request_id) == 0;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+    return matches;
+}
+
+static void memory_watch_service_set_response_texts(
+    const memory_watch_voice_client_response_t *response)
+{
+    if (response == NULL)
+    {
+        return;
+    }
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    memory_watch_service_copy_text(s_snapshot.asr_text,
+                                   sizeof(s_snapshot.asr_text),
+                                   response->asr_text);
+    memory_watch_service_copy_text(s_snapshot.reply_text,
+                                   sizeof(s_snapshot.reply_text),
+                                   response->reply_text);
+    memory_watch_service_copy_text(s_snapshot.clarification_id,
+                                   sizeof(s_snapshot.clarification_id),
+                                   response->clarification_id);
+    s_snapshot.clarification_active = response->clarification_id[0] != '\0';
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+static void memory_watch_service_reset_worker_flags(void)
+{
+    portENTER_CRITICAL(&s_worker_lock);
+    s_record_stop_requested = false;
+    s_record_discard_requested = false;
+    s_wait_cancel_requested = false;
+    portEXIT_CRITICAL(&s_worker_lock);
+}
+
+static void memory_watch_service_request_record_stop(bool discard)
+{
+    portENTER_CRITICAL(&s_worker_lock);
+    s_record_stop_requested = true;
+    if (discard)
+    {
+        s_record_discard_requested = true;
+    }
+    portEXIT_CRITICAL(&s_worker_lock);
+}
+
+static void memory_watch_service_request_wait_cancel(void)
+{
+    portENTER_CRITICAL(&s_worker_lock);
+    s_wait_cancel_requested = true;
+    portEXIT_CRITICAL(&s_worker_lock);
+}
+
+static bool memory_watch_service_should_stop_recording(void *user_ctx)
+{
+    (void)user_ctx;
+
+    bool should_stop = false;
+    portENTER_CRITICAL(&s_worker_lock);
+    should_stop = s_record_stop_requested || s_record_discard_requested;
+    portEXIT_CRITICAL(&s_worker_lock);
+    return should_stop;
+}
+
+static bool memory_watch_service_is_record_discard_requested(void)
+{
+    bool discard = false;
+    portENTER_CRITICAL(&s_worker_lock);
+    discard = s_record_discard_requested;
+    portEXIT_CRITICAL(&s_worker_lock);
+    return discard;
+}
+
+static bool memory_watch_service_should_abort_recording(void *user_ctx)
+{
+    (void)user_ctx;
+    return memory_watch_service_is_record_discard_requested();
+}
+
+static bool memory_watch_service_is_wait_cancel_requested(void)
+{
+    bool cancel_requested = false;
+    portENTER_CRITICAL(&s_worker_lock);
+    cancel_requested = s_wait_cancel_requested;
+    portEXIT_CRITICAL(&s_worker_lock);
+    return cancel_requested;
+}
+
+static void *memory_watch_service_alloc(size_t len)
+{
+    void *ptr = heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (ptr == NULL)
+    {
+        ptr = heap_caps_malloc(len, MALLOC_CAP_8BIT);
+    }
+    return ptr;
+}
+
+static void memory_watch_service_free(void *ptr)
+{
+    if (ptr != NULL)
+    {
+        heap_caps_free(ptr);
+    }
+}
+
+static void memory_watch_service_audio_buffer_free(
+    memory_watch_service_audio_buffer_t *buffer)
+{
+    if (buffer == NULL)
+    {
+        return;
+    }
+
+    memory_watch_service_free(buffer->data);
+    buffer->data = NULL;
+    buffer->len = 0U;
+    buffer->capacity = 0U;
+}
+
+static esp_err_t memory_watch_service_audio_buffer_reserve(
+    memory_watch_service_audio_buffer_t *buffer, size_t required)
+{
+    if (buffer == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (required <= buffer->capacity)
+    {
+        return ESP_OK;
+    }
+    if (required > MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    size_t next_capacity = buffer->capacity > 0U
+                               ? buffer->capacity
+                               : kAudioBufferInitialBytes;
+    while (next_capacity < required)
+    {
+        if (next_capacity > (MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES / 2U))
+        {
+            next_capacity = MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES;
+        }
+        else
+        {
+            next_capacity *= 2U;
+        }
+    }
+
+    uint8_t *next_data = (uint8_t *)memory_watch_service_alloc(next_capacity);
+    if (next_data == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    if (buffer->data != NULL && buffer->len > 0U)
+    {
+        memcpy(next_data, buffer->data, buffer->len);
+    }
+    memory_watch_service_free(buffer->data);
+    buffer->data = next_data;
+    buffer->capacity = next_capacity;
+    return ESP_OK;
+}
+
+static esp_err_t memory_watch_service_audio_write_cb(const uint8_t *data,
+                                                     size_t len,
+                                                     void *user_ctx)
+{
+    memory_watch_service_audio_buffer_t *buffer =
+        (memory_watch_service_audio_buffer_t *)user_ctx;
+    if (buffer == NULL || (data == NULL && len > 0U))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (len == 0U)
+    {
+        return ESP_OK;
+    }
+    if (len > MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES ||
+        buffer->len > MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES - len)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    const size_t required = buffer->len + len;
+    esp_err_t err =
+        memory_watch_service_audio_buffer_reserve(buffer, required);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    memcpy(buffer->data + buffer->len, data, len);
+    buffer->len = required;
+    return ESP_OK;
+}
+
+static esp_err_t memory_watch_service_post_worker_result(
+    const memory_watch_service_worker_result_t *result)
+{
+    if (s_command_queue == NULL || result == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memory_watch_service_cmd_t command = {
+        .type = MEMORY_WATCH_SERVICE_CMD_WORKER_DONE,
+        .worker_result = *result,
+    };
+    if (xQueueSend(s_command_queue, &command, portMAX_DELAY) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t memory_watch_service_post_upload_started(
+    const char *request_id)
+{
+    if (s_command_queue == NULL || request_id == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memory_watch_service_cmd_t command = {
+        .type = MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED,
+    };
+    memory_watch_service_copy_text(command.request_id,
+                                   sizeof(command.request_id),
+                                   request_id);
+    if (xQueueSend(s_command_queue, &command, portMAX_DELAY) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
+static const char *memory_watch_service_firmware_version(void)
+{
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    if (app_desc == NULL || app_desc->version[0] == '\0')
+    {
+        return NULL;
+    }
+    return app_desc->version;
+}
+
+static void memory_watch_service_fill_power_fields(
+    memory_watch_voice_client_request_t *request)
+{
+    if (request == NULL)
+    {
+        return;
+    }
+
+    const power_policy_budget_t budget = power_policy_get_budget();
+    if (budget.battery_data_valid && budget.battery_percent <= 100U)
+    {
+        request->has_battery_percent = true;
+        request->battery_percent = (int)budget.battery_percent;
+    }
+    request->has_charging = true;
+    request->charging = (budget.flags & POWER_POLICY_FLAG_CHARGING) != 0U;
+}
+
 static void memory_watch_service_clear_clarification(void)
 {
     portENTER_CRITICAL(&s_snapshot_lock);
@@ -274,8 +629,8 @@ static bool memory_watch_service_can_begin_from_state(
     case MEMORY_WATCH_SERVICE_STATE_TIMEOUT:
     case MEMORY_WATCH_SERVICE_STATE_ERROR:
     case MEMORY_WATCH_SERVICE_STATE_CANCELED:
-        return true;
     case MEMORY_WATCH_SERVICE_STATE_NEEDS_CLARIFICATION:
+        return true;
     case MEMORY_WATCH_SERVICE_STATE_WAITING_NETWORK:
     case MEMORY_WATCH_SERVICE_STATE_RECORDING:
     case MEMORY_WATCH_SERVICE_STATE_ENCODING:
@@ -284,6 +639,53 @@ static bool memory_watch_service_can_begin_from_state(
     default:
         return false;
     }
+}
+
+static esp_err_t memory_watch_service_start_upload_job(
+    const memory_watch_service_client_config_snapshot_t *client_config,
+    const char *request_id)
+{
+    if (s_upload_worker_queue == NULL || client_config == NULL ||
+        request_id == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memory_watch_service_upload_job_t job = {
+        .client_config = *client_config,
+    };
+    memory_watch_service_copy_text(job.request_id, sizeof(job.request_id),
+                                   request_id);
+    memory_watch_service_copy_current_clarification(
+        job.clarification_id, sizeof(job.clarification_id));
+
+    if (xQueueSend(s_upload_worker_queue, &job, 0) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t memory_watch_service_start_cancel_job(
+    const memory_watch_service_client_config_snapshot_t *client_config,
+    const char *request_id)
+{
+    if (s_cancel_worker_queue == NULL || client_config == NULL ||
+        request_id == NULL || request_id[0] == '\0')
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memory_watch_service_cancel_job_t job = {
+        .client_config = *client_config,
+    };
+    memory_watch_service_copy_text(job.request_id, sizeof(job.request_id),
+                                   request_id);
+    if (xQueueSend(s_cancel_worker_queue, &job, 0) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
 }
 
 static void memory_watch_service_handle_begin_recording(void)
@@ -335,8 +737,15 @@ static void memory_watch_service_handle_begin_recording(void)
 
     memory_watch_service_set_request_id(request_id);
     memory_watch_service_set_request_active(true);
+    memory_watch_service_reset_worker_flags();
     memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_RECORDING,
                                    ESP_OK);
+    err = memory_watch_service_start_upload_job(&client_config, request_id);
+    if (err != ESP_OK)
+    {
+        memory_watch_service_set_request_active(false);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
+    }
 }
 
 static void memory_watch_service_handle_check_health(void)
@@ -402,23 +811,129 @@ static void memory_watch_service_handle_send_recording(void)
         return;
     }
 
-    /*
-     * V1 skeleton 先固定 owner 状态推进位置。真实 Ogg Opus 编码、
-     * audio_codec input session 和 HTTP multipart 上传会在后续窄实现中接入。
-     */
+    memory_watch_service_request_record_stop(false);
     memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ENCODING,
                                    ESP_OK);
+}
+
+static void memory_watch_service_handle_cancel_recording(void)
+{
+    const memory_watch_service_snapshot_t before =
+        memory_watch_service_copy_snapshot();
+    if (before.state == MEMORY_WATCH_SERVICE_STATE_RECORDING ||
+        before.state == MEMORY_WATCH_SERVICE_STATE_ENCODING)
+    {
+        memory_watch_service_request_record_stop(true);
+    }
+    memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_CANCELED,
+                                   ESP_OK);
+}
+
+static void memory_watch_service_handle_cancel_waiting(void)
+{
+    const memory_watch_service_snapshot_t before =
+        memory_watch_service_copy_snapshot();
+    if (!before.request_active || before.request_id[0] == '\0')
+    {
+        memory_watch_service_set_request_active(false);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_CANCELED,
+                                       ESP_OK);
+        return;
+    }
+
+    memory_watch_service_request_wait_cancel();
+    memory_watch_service_client_config_snapshot_t client_config;
+    esp_err_t err = memory_watch_service_copy_client_config(&client_config);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_service_start_cancel_job(&client_config,
+                                                    before.request_id);
+    }
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "server cancel job failed: %s", esp_err_to_name(err));
+    }
+    memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_CANCELED,
+                                   ESP_OK);
+}
+
+static void memory_watch_service_handle_upload_started(
+    const char *request_id)
+{
+    if (!memory_watch_service_request_id_matches_current(request_id) ||
+        memory_watch_service_is_wait_cancel_requested())
+    {
+        return;
+    }
+
     memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_UPLOADING,
                                    ESP_OK);
     memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_THINKING,
                                    ESP_OK);
 }
 
-static void memory_watch_service_handle_cancel(void)
+static memory_watch_service_state_t
+memory_watch_service_state_from_response(
+    const memory_watch_voice_client_response_t *response,
+    esp_err_t error)
 {
+    if (response != NULL)
+    {
+        if (strcmp(response->status, "canceled") == 0)
+        {
+            return MEMORY_WATCH_SERVICE_STATE_CANCELED;
+        }
+        if (strcmp(response->status, "timeout") == 0)
+        {
+            return MEMORY_WATCH_SERVICE_STATE_TIMEOUT;
+        }
+        if (strcmp(response->status, "error") == 0)
+        {
+            return MEMORY_WATCH_SERVICE_STATE_ERROR;
+        }
+        if (strcmp(response->action, "clarification_needed") == 0 ||
+            response->clarification_id[0] != '\0')
+        {
+            return MEMORY_WATCH_SERVICE_STATE_NEEDS_CLARIFICATION;
+        }
+        return MEMORY_WATCH_SERVICE_STATE_DONE;
+    }
+
+    if (error == ESP_ERR_TIMEOUT)
+    {
+        return MEMORY_WATCH_SERVICE_STATE_TIMEOUT;
+    }
+    return MEMORY_WATCH_SERVICE_STATE_ERROR;
+}
+
+static void memory_watch_service_handle_worker_done(
+    const memory_watch_service_worker_result_t *result)
+{
+    if (result == NULL ||
+        !memory_watch_service_request_id_matches_current(result->request_id))
+    {
+        return;
+    }
+
+    if (result->cancel_requested)
+    {
+        memory_watch_service_set_request_active(false);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_CANCELED,
+                                       ESP_OK);
+        return;
+    }
+
+    if (result->has_response)
+    {
+        memory_watch_service_set_response_texts(&result->response);
+    }
+
+    const memory_watch_service_state_t next_state =
+        memory_watch_service_state_from_response(
+            result->has_response ? &result->response : NULL,
+            result->error);
     memory_watch_service_set_request_active(false);
-    memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_CANCELED,
-                                   ESP_OK);
+    memory_watch_service_set_state(next_state, result->error);
 }
 
 static void memory_watch_service_handle_command(
@@ -441,8 +956,10 @@ static void memory_watch_service_handle_command(
         memory_watch_service_handle_send_recording();
         break;
     case MEMORY_WATCH_SERVICE_CMD_CANCEL_RECORDING:
+        memory_watch_service_handle_cancel_recording();
+        break;
     case MEMORY_WATCH_SERVICE_CMD_CANCEL_WAITING:
-        memory_watch_service_handle_cancel();
+        memory_watch_service_handle_cancel_waiting();
         break;
     case MEMORY_WATCH_SERVICE_CMD_CANCEL_CLARIFICATION:
         memory_watch_service_clear_clarification();
@@ -450,8 +967,104 @@ static void memory_watch_service_handle_command(
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_READY,
                                        ESP_OK);
         break;
+    case MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED:
+        memory_watch_service_handle_upload_started(command->request_id);
+        break;
+    case MEMORY_WATCH_SERVICE_CMD_WORKER_DONE:
+        memory_watch_service_handle_worker_done(&command->worker_result);
+        break;
     default:
         break;
+    }
+}
+
+static void memory_watch_service_upload_worker_task(void *arg)
+{
+    (void)arg;
+
+    while (1)
+    {
+        memory_watch_service_upload_job_t job;
+        if (xQueueReceive(s_upload_worker_queue, &job, portMAX_DELAY) !=
+            pdTRUE)
+        {
+            continue;
+        }
+
+        memory_watch_service_worker_result_t result = {0};
+        memory_watch_service_copy_text(result.request_id,
+                                       sizeof(result.request_id),
+                                       job.request_id);
+        result.error = ESP_OK;
+
+        memory_watch_service_audio_buffer_t audio_buffer = {0};
+        memory_watch_recorder_result_t recorder_result = {0};
+        memory_watch_recorder_config_t recorder_config = {
+            .ogg_serial = esp_random(),
+            .write_cb = memory_watch_service_audio_write_cb,
+            .write_user_ctx = &audio_buffer,
+            .should_stop_cb = memory_watch_service_should_stop_recording,
+            .should_stop_user_ctx = NULL,
+            .should_abort_cb = memory_watch_service_should_abort_recording,
+            .should_abort_user_ctx = NULL,
+        };
+        result.error = memory_watch_recorder_capture_ogg_opus(
+            &recorder_config, &recorder_result);
+
+        const bool discard_requested =
+            memory_watch_service_is_record_discard_requested();
+        if (discard_requested)
+        {
+            result.cancel_requested = true;
+            result.error = ESP_OK;
+        }
+        else if (result.error == ESP_OK)
+        {
+            (void)memory_watch_service_post_upload_started(job.request_id);
+
+            memory_watch_voice_client_request_t request = {
+                .request_id = job.request_id,
+                .audio = audio_buffer.data,
+                .audio_len = audio_buffer.len,
+                .clarification_id = job.clarification_id,
+                .firmware_version = memory_watch_service_firmware_version(),
+                .ui_state = memory_watch_service_state_to_string(
+                    MEMORY_WATCH_SERVICE_STATE_THINKING),
+            };
+            memory_watch_service_fill_power_fields(&request);
+            result.error = memory_watch_voice_client_post_voice_command(
+                &job.client_config.client_config, &request, &result.response);
+            result.has_response = result.error == ESP_OK;
+            result.cancel_requested =
+                memory_watch_service_is_wait_cancel_requested();
+        }
+
+        memory_watch_service_audio_buffer_free(&audio_buffer);
+        (void)memory_watch_service_post_worker_result(&result);
+    }
+}
+
+static void memory_watch_service_cancel_worker_task(void *arg)
+{
+    (void)arg;
+
+    while (1)
+    {
+        memory_watch_service_cancel_job_t job;
+        if (xQueueReceive(s_cancel_worker_queue, &job, portMAX_DELAY) !=
+            pdTRUE)
+        {
+            continue;
+        }
+
+        memory_watch_voice_client_response_t response = {0};
+        const esp_err_t err = memory_watch_voice_client_cancel_request(
+            &job.client_config.client_config, job.request_id, &response);
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "server cancel request failed: %s",
+                     esp_err_to_name(err));
+        }
     }
 }
 
@@ -490,9 +1103,17 @@ static esp_err_t memory_watch_service_post_command(
 
 esp_err_t memory_watch_service_init(void)
 {
-    if (s_service_task_handle != NULL)
+    if (s_service_task_handle != NULL &&
+        s_upload_worker_task_handle != NULL &&
+        s_cancel_worker_task_handle != NULL)
     {
         return ESP_OK;
+    }
+    if (s_service_task_handle != NULL ||
+        s_upload_worker_task_handle != NULL ||
+        s_cancel_worker_task_handle != NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
     }
 
     memory_watch_service_init_boot_id();
@@ -511,6 +1132,34 @@ esp_err_t memory_watch_service_init(void)
                                        ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
+    if (s_upload_worker_queue == NULL)
+    {
+        s_upload_worker_queue = xQueueCreateStatic(
+            kWorkerQueueLength,
+            sizeof(memory_watch_service_upload_job_t),
+            s_upload_worker_queue_storage,
+            &s_upload_worker_queue_buffer);
+    }
+    if (s_upload_worker_queue == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+    if (s_cancel_worker_queue == NULL)
+    {
+        s_cancel_worker_queue = xQueueCreateStatic(
+            kCancelQueueLength,
+            sizeof(memory_watch_service_cancel_job_t),
+            s_cancel_worker_queue_storage,
+            &s_cancel_worker_queue_buffer);
+    }
+    if (s_cancel_worker_queue == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
 
     s_service_task_handle = xTaskCreateStatic(
         memory_watch_service_task,
@@ -521,6 +1170,36 @@ esp_err_t memory_watch_service_init(void)
         s_service_task_stack,
         &s_service_task_buffer);
     if (s_service_task_handle == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_upload_worker_task_handle = xTaskCreateStatic(
+        memory_watch_service_upload_worker_task,
+        "mw_upload",
+        kUploadWorkerStackWords,
+        NULL,
+        4,
+        s_upload_worker_task_stack,
+        &s_upload_worker_task_buffer);
+    if (s_upload_worker_task_handle == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_cancel_worker_task_handle = xTaskCreateStatic(
+        memory_watch_service_cancel_worker_task,
+        "mw_cancel",
+        kCancelWorkerStackWords,
+        NULL,
+        4,
+        s_cancel_worker_task_stack,
+        &s_cancel_worker_task_buffer);
+    if (s_cancel_worker_task_handle == NULL)
     {
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);

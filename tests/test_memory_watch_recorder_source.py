@@ -16,7 +16,11 @@ class MemoryWatchRecorderSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_recorder_config_t", header)
         self.assertIn("memory_watch_recorder_result_t", header)
         self.assertIn("memory_watch_recorder_should_stop_cb_t", header)
+        self.assertIn("memory_watch_recorder_should_abort_cb_t", header)
         self.assertIn("MEMORY_WATCH_RECORDER_OPUS_FRAME_DURATION_MS 60U", header)
+        self.assertIn("MEMORY_WATCH_RECORDER_DEFAULT_READ_TIMEOUT_MS 500U", header)
+        self.assertIn("uint32_t read_timeout_ms", header)
+        self.assertIn("should_abort_cb", header)
         self.assertIn("memory_watch_recorder_capture_ogg_opus", header)
         self.assertIn("memory_watch_ogg_write_cb_t write_cb", header)
 
@@ -61,6 +65,15 @@ class MemoryWatchRecorderSourceTests(unittest.TestCase):
         self.assertNotIn('#include "lvgl', combined.lower())
         self.assertNotIn("lv_obj", combined)
         self.assertNotIn("esp_http_client", combined)
+
+    def test_recorder_uses_finite_audio_read_timeout(self) -> None:
+        source = MEMORY_WATCH_RECORDER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_recorder_normalize_read_timeout", source)
+        self.assertIn("memory_watch_recorder_should_abort", source)
+        self.assertIn("MEMORY_WATCH_RECORDER_DEFAULT_READ_TIMEOUT_MS", source)
+        self.assertIn("read_timeout_ticks", source)
+        self.assertNotIn("audio_codec_read(hw_pcm, hw_bytes, &bytes_read, portMAX_DELAY)", source)
 
     def test_main_cmake_registers_recorder_and_audio_codec_dependency(self) -> None:
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")

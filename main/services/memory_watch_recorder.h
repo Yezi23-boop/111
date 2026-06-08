@@ -16,6 +16,7 @@ extern "C"
 #define MEMORY_WATCH_RECORDER_DEFAULT_MIN_DURATION_MS 500U
 #define MEMORY_WATCH_RECORDER_OPUS_FRAME_DURATION_MS 60U
 #define MEMORY_WATCH_RECORDER_DEFAULT_INPUT_TIMEOUT_MS 500U
+#define MEMORY_WATCH_RECORDER_DEFAULT_READ_TIMEOUT_MS 500U
 
     /**
      * @brief 录音循环停止回调。
@@ -26,6 +27,14 @@ extern "C"
     typedef bool (*memory_watch_recorder_should_stop_cb_t)(void *user_ctx);
 
     /**
+     * @brief 录音立即放弃回调。
+     *
+     * 返回 true 表示本次录音已被用户取消，应尽快释放麦克风并丢弃音频；
+     * 与 `should_stop_cb` 不同，该回调不受最短录音时长保护。
+     */
+    typedef bool (*memory_watch_recorder_should_abort_cb_t)(void *user_ctx);
+
+    /**
      * @brief AI Memory Watch 录音配置。
      */
     typedef struct
@@ -34,11 +43,14 @@ extern "C"
         uint32_t min_duration_ms;     /**< 最短录音时长，单位毫秒。 */
         uint32_t max_duration_ms;     /**< 最长录音时长，单位毫秒。 */
         uint32_t input_timeout_ms;    /**< 申请麦克风 session 超时，单位毫秒。 */
+        uint32_t read_timeout_ms;     /**< 单次读取硬件 PCM 超时，单位毫秒。 */
         float record_gain_db;         /**< ES7210 录音增益；小于等于 0 时不主动设置。 */
         memory_watch_ogg_write_cb_t write_cb; /**< Ogg Opus 输出回调。 */
         void *write_user_ctx;         /**< 输出回调上下文。 */
         memory_watch_recorder_should_stop_cb_t should_stop_cb; /**< 停止回调。 */
         void *should_stop_user_ctx;   /**< 停止回调上下文。 */
+        memory_watch_recorder_should_abort_cb_t should_abort_cb; /**< 立即取消回调。 */
+        void *should_abort_user_ctx;  /**< 立即取消回调上下文。 */
     } memory_watch_recorder_config_t;
 
     /**

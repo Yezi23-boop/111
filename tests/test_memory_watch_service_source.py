@@ -57,8 +57,13 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("xQueueSend(", source)
         self.assertIn("xQueueReceive(", source)
         self.assertIn("xTaskCreateStatic(", source)
+        self.assertIn("s_upload_worker_queue", source)
+        self.assertIn("s_cancel_worker_queue", source)
+        self.assertIn("memory_watch_service_upload_worker_task", source)
+        self.assertIn("memory_watch_service_cancel_worker_task", source)
         self.assertIn("portMUX_TYPE s_snapshot_lock", source)
         self.assertIn("portMUX_TYPE s_endpoint_lock", source)
+        self.assertIn("portMUX_TYPE s_worker_lock", source)
         self.assertIn("memory_watch_service_copy_snapshot(", source)
         self.assertIn("memory_watch_service_handle_command(", source)
         self.assertIn("memory_watch_service_can_begin_from_state(", source)
@@ -91,7 +96,41 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn('"%s-%08" PRIx32 "-%04" PRIu32', source)
         self.assertIn("s_request_seq", source)
         self.assertIn("memory_watch_service_set_request_id(request_id)", source)
-        self.assertNotIn("memory_watch_voice_client_post_voice_command", source)
+        self.assertIn("case MEMORY_WATCH_SERVICE_STATE_NEEDS_CLARIFICATION", source)
+
+    def test_service_runs_recorder_and_http_only_in_workers(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include "services/memory_watch_recorder.h"', source)
+        self.assertIn('#include "esp_heap_caps.h"', source)
+        self.assertIn("memory_watch_service_upload_worker_task", source)
+        self.assertIn("memory_watch_recorder_capture_ogg_opus", source)
+        self.assertIn("memory_watch_voice_client_post_voice_command", source)
+        self.assertIn("memory_watch_service_audio_write_cb", source)
+        self.assertIn("memory_watch_service_should_abort_recording", source)
+        self.assertIn(".should_abort_cb = memory_watch_service_should_abort_recording", source)
+        self.assertIn("MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES", source)
+        self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
+
+        send_section = source.split(
+            "static void memory_watch_service_handle_send_recording"
+        )[1].split("static void memory_watch_service_handle_cancel_recording")[0]
+        self.assertIn("memory_watch_service_request_record_stop(false)", send_section)
+        self.assertNotIn("memory_watch_recorder_capture_ogg_opus", send_section)
+        self.assertNotIn("memory_watch_voice_client_post_voice_command", send_section)
+
+    def test_service_splits_cancel_paths_and_ignores_late_results(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_service_handle_cancel_recording", source)
+        self.assertIn("memory_watch_service_handle_cancel_waiting", source)
+        self.assertIn("memory_watch_service_request_record_stop(true)", source)
+        self.assertIn("memory_watch_service_start_cancel_job", source)
+        self.assertIn("memory_watch_voice_client_cancel_request", source)
+        self.assertIn("memory_watch_service_request_id_matches_current", source)
+        self.assertIn("result->cancel_requested", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CMD_WORKER_DONE", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED", source)
 
     def test_service_keeps_official_chat_and_ui_boundaries(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
