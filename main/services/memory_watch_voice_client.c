@@ -119,12 +119,25 @@ static esp_err_t memory_watch_voice_client_validate_config(
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if (strncmp(config->base_url, "http://", 7) != 0 &&
-        strncmp(config->base_url, "https://", 8) != 0)
+    const bool uses_http = strncmp(config->base_url, "http://", 7) == 0;
+    const bool uses_https = strncmp(config->base_url, "https://", 8) == 0;
+    if (!uses_http && !uses_https)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (uses_http && !config->allow_insecure_http)
     {
         return ESP_ERR_INVALID_ARG;
     }
     return ESP_OK;
+}
+
+static bool memory_watch_voice_client_request_id_matches_device(
+    const char *request_id, const char *device_id)
+{
+    const size_t device_len = strlen(device_id);
+    return strncmp(request_id, device_id, device_len) == 0 &&
+           request_id[device_len] == '-';
 }
 
 static esp_err_t memory_watch_voice_client_validate_request(
@@ -1050,6 +1063,12 @@ esp_err_t memory_watch_voice_client_get_health(
         err = memory_watch_voice_client_parse_health(
             response, response_len, config->device_id, out_health);
     }
+    if (err == ESP_OK &&
+        (strcmp(out_health->status, "ok") != 0 ||
+         strcmp(out_health->hermes_status, "online") != 0))
+    {
+        err = ESP_FAIL;
+    }
 
     memory_watch_voice_client_free(response);
     out_health->transport_error = err;
@@ -1075,6 +1094,12 @@ esp_err_t memory_watch_voice_client_cancel_request(
     esp_err_t err = memory_watch_voice_client_validate_config(config);
     if (err == ESP_OK &&
         !memory_watch_voice_client_is_request_id_valid(request_id))
+    {
+        err = ESP_ERR_INVALID_ARG;
+    }
+    if (err == ESP_OK &&
+        !memory_watch_voice_client_request_id_matches_device(
+            request_id, config->device_id))
     {
         err = ESP_ERR_INVALID_ARG;
     }
@@ -1174,6 +1199,12 @@ esp_err_t memory_watch_voice_client_post_voice_command(
     if (err == ESP_OK)
     {
         err = memory_watch_voice_client_validate_request(request);
+    }
+    if (err == ESP_OK &&
+        !memory_watch_voice_client_request_id_matches_device(
+            request->request_id, config->device_id))
+    {
+        err = ESP_ERR_INVALID_ARG;
     }
     if (err != ESP_OK)
     {

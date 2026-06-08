@@ -34,6 +34,7 @@ extern "C"
         const char *device_id;    /**< 服务器 allowlist 中的设备 ID。 */
         const char *device_token; /**< 设备 token，运行期配置/NVS 提供，不硬编码源码。 */
         uint32_t timeout_ms;      /**< HTTP 总等待预算；0 使用 V1 默认 120 秒。 */
+        bool allow_insecure_http; /**< 仅开发联调使用；false 时拒绝明文 HTTP 发送 device token。 */
     } memory_watch_voice_client_config_t;
 
     /**

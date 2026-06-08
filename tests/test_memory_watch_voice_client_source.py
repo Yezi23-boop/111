@@ -17,6 +17,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("const char *base_url", header)
         self.assertIn("const char *device_id", header)
         self.assertIn("const char *device_token", header)
+        self.assertIn("allow_insecure_http", header)
         self.assertIn("MEMORY_WATCH_VOICE_CLIENT_DEFAULT_TIMEOUT_MS 120000U", header)
         self.assertIn("MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES", header)
         self.assertIn("memory_watch_voice_client_request_t", header)
@@ -83,6 +84,8 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("cJSON_GetArraySize(root) != 3", source)
         self.assertIn('root, "hermes_status"', source)
         self.assertIn('strcmp(out_health->device_id, expected_device_id)', source)
+        self.assertIn('strcmp(out_health->status, "ok") != 0', source)
+        self.assertIn('strcmp(out_health->hermes_status, "online") != 0', source)
         for value in ["ok", "offline", "online"]:
             self.assertIn(f'"{value}"', source)
 
@@ -92,6 +95,8 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("MEMORY_WATCH_VOICE_CLIENT_REQUEST_ID_MAX_LEN", source)
         self.assertIn("MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES", source)
         self.assertIn("memory_watch_voice_client_is_request_id_valid", source)
+        self.assertIn("memory_watch_voice_client_request_id_matches_device", source)
+        self.assertIn("request_id[device_len] == '-'", source)
         self.assertIn("cJSON_ParseWithLength", source)
         self.assertIn("cJSON_GetArraySize(root) != 7", source)
         self.assertIn("cJSON_GetObjectItemCaseSensitive", source)
@@ -131,6 +136,13 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertNotIn("memory_watch_voice_client_make_body", source)
         self.assertIn("只允许上传 worker task 调用", header)
         self.assertIn("不得在 owner task 内直接等待 120 秒 HTTP 响应", header)
+
+    def test_voice_client_rejects_plain_http_by_default(self) -> None:
+        source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("uses_http && !config->allow_insecure_http", source)
+        self.assertIn("uses_https", source)
+        self.assertIn("拒绝明文 HTTP", MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8"))
 
     def test_voice_client_keeps_secret_and_owner_boundaries(self) -> None:
         header = MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8")

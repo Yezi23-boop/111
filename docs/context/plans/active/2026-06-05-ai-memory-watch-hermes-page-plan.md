@@ -391,7 +391,7 @@ done / timeout / error / canceled
 - `[x]` 落地 `memory_watch_service` owner skeleton 和 `AUDIO_CODEC_OWNER_HERMES`，先固定 FreeRTOS command queue、只读 snapshot、网络 ready 读取和不复用 `official_chat` 的边界。
 - `[x]` 落地独立 `memory_watch_ogg_opus_muxer`，将裸 Opus packet 封装为 Ogg Opus 容器；写回调失败后进入 fail-closed，避免半页写出后继续复用损坏流。
 - `[x]` 落地 `memory_watch_recorder` 窄模块，封装 Hermes 麦克风 owner session、后台 Safety Monitor 暂停、硬件 PCM 主麦通道选取、24 kHz -> 16 kHz mono 线性重采样、Opus 编码和 Ogg muxer 输出；尚未接 HTTP multipart 和实机手表语音样本。
-- `[x]` 落地 `memory_watch_voice_client` 窄模块，覆盖 `GET /v1/watch/health`、`POST /v1/watch/voice-command` 与 `POST /v1/watch/request/{request_id}/cancel` 三个设备入口；语音请求按 `watch_contract.v1.json` 流式写入 `multipart/form-data`，只使用运行期 `device_id/device_token/base_url`，固定 `locale=zh-CN`、`timezone=Asia/Shanghai`、`source=watch_hermes_page`；响应解析要求大小写敏感的固定字段、`status/action/hermes_status` 枚举合法且 `request_id/device_id` 匹配本次请求。已通过 source tests 与 `idf.py build`，尚未接入 service worker 或真机 Wi-Fi 上传。
+- `[x]` 落地 `memory_watch_voice_client` 窄模块，覆盖 `GET /v1/watch/health`、`POST /v1/watch/voice-command` 与 `POST /v1/watch/request/{request_id}/cancel` 三个设备入口；语音请求按 `watch_contract.v1.json` 流式写入 `multipart/form-data`，只使用运行期 `device_id/device_token/base_url`，默认拒绝明文 HTTP，固定 `locale=zh-CN`、`timezone=Asia/Shanghai`、`source=watch_hermes_page`；响应解析要求大小写敏感的固定字段、`status/action/hermes_status` 枚举合法且 `request_id/device_id` 匹配本次请求，health 只有 `status=ok/hermes_status=online` 才返回成功。已通过 source tests 与 `idf.py build`，尚未接入 service worker 或真机 Wi-Fi 上传。
 - `[ ]` 等用户回来提供热点后，用 ESP32-S3 实机 Wi-Fi 跑真实 `voice endpoint` 上传联调，确认音量、MIME、超时、错误和重试路径。
 - `[ ]` 落地独立 Hermes 页面 skeleton。
 
