@@ -68,6 +68,15 @@ docker run --rm -p 8787:8787 `
 
 For Docker on Windows, use `HERMES_API_URL=http://host.docker.internal:8642` when Hermes API Server is exposed on the host.
 
+## Source Tests
+
+Run the server source tests from the repo root:
+
+```powershell
+uv run --with pytest==8.3.4 --with fastapi==0.115.6 --with httpx==0.28.1 --with python-multipart==0.0.20 --with "uvicorn[standard]==0.34.0" `
+  python -m pytest server/watch_voice_endpoint/tests -q
+```
+
 ## ASR Provider
 
 Default ASR is mocked:
