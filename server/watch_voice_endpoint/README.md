@@ -132,6 +132,7 @@ Inspect local runtime status without printing tokens:
 ```
 
 `/health` and `runtime_status.ps1` expose non-secret request metrics for debugging: event counters, response status counters, error-code counters, and the latest request summary with status, action, duration, and audio byte size. They do not include ASR text, reply text, audio contents, API keys, or bearer tokens.
+If Docker inspect is blocked by the current shell permissions, container status is reported as `inspect_unavailable`; use the endpoint checks in the same output as the authoritative service availability signal.
 
 Run the full local acceptance loop before server-side iteration commits:
 

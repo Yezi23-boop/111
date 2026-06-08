@@ -88,16 +88,28 @@ function Invoke-StatusGet {
 function Get-ContainerStatus {
   param([string]$Name)
 
-  try {
-    $json = docker inspect $Name 2>$null | ConvertFrom-Json
-    if (-not $json) {
+  $inspectOutput = docker inspect $Name 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    $message = ($inspectOutput | Out-String).Trim()
+    if ($message -match "No such object") {
       return [pscustomobject]@{
         exists = $false
         status = "missing"
         health = $null
+        error = $null
       }
     }
 
+    return [pscustomobject]@{
+      exists = $null
+      status = "inspect_unavailable"
+      health = $null
+      error = $message
+    }
+  }
+
+  try {
+    $json = $inspectOutput | ConvertFrom-Json
     $container = $json[0]
     $health = $null
     if ($container.State.Health) {
@@ -107,12 +119,14 @@ function Get-ContainerStatus {
       exists = $true
       status = $container.State.Status
       health = $health
+      error = $null
     }
   } catch {
     return [pscustomobject]@{
-      exists = $false
-      status = "unknown"
+      exists = $null
+      status = "inspect_parse_error"
       health = $null
+      error = $_.Exception.Message
     }
   }
 }
