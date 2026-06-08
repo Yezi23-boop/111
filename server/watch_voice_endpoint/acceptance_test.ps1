@@ -16,6 +16,7 @@ $ErrorActionPreference = "Stop"
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtimeStatusScript = Join-Path $scriptRoot "runtime_status.ps1"
 $smokeTestScript = Join-Path $scriptRoot "smoke_test.ps1"
+$hermesTextSmokeScript = Join-Path $scriptRoot "hermes_text_smoke.ps1"
 $ttsScript = Join-Path $scriptRoot "make_tts_sample.ps1"
 
 function Convert-JsonOutput {
@@ -43,6 +44,23 @@ function Select-SmokeSummary {
     cancel_action = $Smoke.cancel_action
     auth_failure_status_code = $Smoke.auth_failure_status_code
     field_count = $Smoke.field_count
+  }
+}
+
+function Select-HermesTextSummary {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Smoke
+  )
+
+  return [pscustomobject]@{
+    health_status = $Smoke.health_status
+    model_count = $Smoke.model_count
+    first_model = $Smoke.first_model
+    response_status = $Smoke.response_status
+    response_id_present = $Smoke.response_id_present
+    output_text_present = $Smoke.output_text_present
+    output_text_chars = $Smoke.output_text_chars
   }
 }
 
@@ -169,6 +187,10 @@ if (-not [string]::IsNullOrWhiteSpace($preflightFailure)) {
   Write-AcceptanceFailure -Reason $preflightFailure -Runtime $before
 }
 
+$hermesText = $null
+if (-not $SkipHermesApi) {
+  $hermesText = Convert-JsonOutput -Output (& $hermesTextSmokeScript -HermesUrl $HermesUrl -HermesEnvFile $HermesEnvFile)
+}
 $mock = Convert-JsonOutput -Output (& $smokeTestScript @smokeArgs)
 
 $sample = $null
@@ -197,6 +219,7 @@ $after = Convert-JsonOutput -Output (& $runtimeStatusScript @statusArgs)
   device_id = $DeviceId
   generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
   runtime_before = Select-RuntimeSummary -Runtime $before
+  hermes_text_smoke = $(if ($hermesText) { Select-HermesTextSummary -Smoke $hermesText } else { $null })
   mock_smoke = Select-SmokeSummary -Smoke $mock
   real_asr_smoke = $(if ($real) { Select-SmokeSummary -Smoke $real } else { $null })
   real_asr_sample = $(if ($sample) {

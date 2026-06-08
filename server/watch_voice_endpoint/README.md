@@ -117,10 +117,13 @@ docker compose -f compose.local.yml up -d --build
 Verify the full server-side path without printing tokens:
 
 ```powershell
+.\hermes_text_smoke.ps1
 .\smoke_test.ps1
 .\smoke_test.ps1 -IncludeCancel
 .\smoke_test.ps1 -IncludeCancel -IncludeAuthFailure
 ```
+
+`hermes_text_smoke.ps1` directly verifies Hermes API Server `/health`, `/v1/models`, and `/v1/responses` with `API_SERVER_KEY` loaded from `D:\Docker_data\hermes\data\.env`. It reports only non-secret status, model count, response status, and output length.
 
 The smoke script rejects missing or extra watch response fields, so both voice and optional cancel checks must return exactly the V1 seven-field JSON shape.
 With `-IncludeAuthFailure`, it also verifies that an invalid device token is rejected with HTTP 403 without printing any token.
@@ -140,7 +143,7 @@ Run the full local acceptance loop before server-side iteration commits:
 .\acceptance_test.ps1
 ```
 
-This composes runtime status, mock voice, cancel, invalid-token rejection, generated Chinese Ogg Opus, and real MiMo ASR smoke checks. Its summary omits ASR text, reply text, audio contents, API keys, and bearer tokens.
+This composes runtime status, direct Hermes text smoke, mock voice, cancel, invalid-token rejection, generated Chinese Ogg Opus, and real MiMo ASR smoke checks. Its summary omits ASR text, reply text, audio contents, API keys, and bearer tokens.
 If required endpoints are offline, it exits with `status=failed` and a non-secret preflight summary instead of a raw PowerShell REST stack trace.
 
 Verify real ASR with an Ogg Opus sample:
