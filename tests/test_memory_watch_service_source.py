@@ -59,11 +59,16 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("xTaskCreateStatic(", source)
         self.assertIn("s_upload_worker_queue", source)
         self.assertIn("s_cancel_worker_queue", source)
+        self.assertIn("s_health_worker_queue", source)
         self.assertIn("memory_watch_service_upload_worker_task", source)
         self.assertIn("memory_watch_service_cancel_worker_task", source)
+        self.assertIn("memory_watch_service_health_worker_task", source)
         self.assertIn("portMUX_TYPE s_snapshot_lock", source)
         self.assertIn("portMUX_TYPE s_endpoint_lock", source)
         self.assertIn("portMUX_TYPE s_worker_lock", source)
+        self.assertIn("s_upload_worker_busy", source)
+        self.assertIn("memory_watch_service_set_upload_worker_busy", source)
+        self.assertIn("memory_watch_service_is_upload_worker_busy", source)
         self.assertIn("memory_watch_service_copy_snapshot(", source)
         self.assertIn("memory_watch_service_handle_command(", source)
         self.assertIn("memory_watch_service_can_begin_from_state(", source)
@@ -83,8 +88,24 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("s_endpoint_config = next_config", source)
         self.assertIn("memory_watch_service_set_endpoint_snapshot(true, false)", source)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_CHECK_HEALTH", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CMD_HEALTH_DONE", source)
+        self.assertIn("memory_watch_service_start_health_job", source)
+        self.assertIn("memory_watch_service_handle_health_done", source)
+        self.assertIn("before.request_active", source)
         self.assertIn("memory_watch_voice_client_get_health", source)
         self.assertIn("MEMORY_WATCH_SERVICE_HEALTH_TIMEOUT_MS", source)
+
+        health_section = source.split(
+            "static void memory_watch_service_handle_check_health"
+        )[1].split("static void memory_watch_service_handle_send_recording")[0]
+        self.assertIn("memory_watch_service_start_health_job", health_section)
+        self.assertNotIn("memory_watch_voice_client_get_health", health_section)
+
+        init_section = source.split("esp_err_t memory_watch_service_init(void)")[1]
+        self.assertIn("s_health_worker_task_handle != NULL", init_section)
+        self.assertIn("s_health_worker_queue = xQueueCreateStatic", init_section)
+        self.assertIn("sizeof(memory_watch_service_health_job_t)", init_section)
+        self.assertIn("memory_watch_service_health_worker_task", init_section)
         self.assertNotIn("HERMES_API_KEY", combined)
         self.assertNotIn("API_SERVER_KEY", combined)
         self.assertNotIn("XIAOMI_API_KEY", combined)
@@ -104,8 +125,10 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn('#include "services/memory_watch_recorder.h"', source)
         self.assertIn('#include "esp_heap_caps.h"', source)
         self.assertIn("memory_watch_service_upload_worker_task", source)
+        self.assertIn("memory_watch_service_health_worker_task", source)
         self.assertIn("memory_watch_recorder_capture_ogg_opus", source)
         self.assertIn("memory_watch_voice_client_post_voice_command", source)
+        self.assertIn("memory_watch_voice_client_get_health", source)
         self.assertIn("memory_watch_service_audio_write_cb", source)
         self.assertIn("memory_watch_service_should_abort_recording", source)
         self.assertIn(".should_abort_cb = memory_watch_service_should_abort_recording", source)
@@ -119,18 +142,49 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertNotIn("memory_watch_recorder_capture_ogg_opus", send_section)
         self.assertNotIn("memory_watch_voice_client_post_voice_command", send_section)
 
+        health_worker_section = source.split(
+            "static void memory_watch_service_health_worker_task"
+        )[1].split("static void memory_watch_service_cancel_worker_task")[0]
+        self.assertIn("memory_watch_voice_client_get_health", health_worker_section)
+
     def test_service_splits_cancel_paths_and_ignores_late_results(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("memory_watch_service_handle_cancel_recording", source)
         self.assertIn("memory_watch_service_handle_cancel_waiting", source)
         self.assertIn("memory_watch_service_request_record_stop(true)", source)
+        self.assertIn("memory_watch_service_request_wait_cancel(before.request_id)", source)
+        self.assertIn("memory_watch_service_is_wait_canceled_request", source)
         self.assertIn("memory_watch_service_start_cancel_job", source)
         self.assertIn("memory_watch_voice_client_cancel_request", source)
         self.assertIn("memory_watch_service_request_id_matches_current", source)
         self.assertIn("result->cancel_requested", source)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_WORKER_DONE", source)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED", source)
+
+        cancel_waiting_section = source.split(
+            "static void memory_watch_service_handle_cancel_waiting"
+        )[1].split("static void memory_watch_service_handle_upload_started")[0]
+        self.assertIn("MEMORY_WATCH_SERVICE_STATE_RECORDING", cancel_waiting_section)
+        self.assertIn("MEMORY_WATCH_SERVICE_STATE_ENCODING", cancel_waiting_section)
+        self.assertIn("memory_watch_service_request_record_stop(true)", cancel_waiting_section)
+        self.assertIn("MEMORY_WATCH_SERVICE_STATE_UPLOADING", cancel_waiting_section)
+        self.assertIn("MEMORY_WATCH_SERVICE_STATE_THINKING", cancel_waiting_section)
+        self.assertIn("memory_watch_service_set_request_active(false)", cancel_waiting_section)
+
+        worker_done_section = source.split(
+            "static void memory_watch_service_handle_worker_done"
+        )[1].split("static void memory_watch_service_handle_command")[0]
+        self.assertLess(
+            worker_done_section.index("memory_watch_service_is_wait_canceled_request"),
+            worker_done_section.index("memory_watch_service_request_id_matches_current"),
+        )
+
+        upload_worker_section = source.split(
+            "static void memory_watch_service_upload_worker_task"
+        )[1].split("static void memory_watch_service_health_worker_task")[0]
+        self.assertIn("memory_watch_service_set_upload_worker_busy(false)", upload_worker_section)
+        self.assertIn("memory_watch_service_is_wait_canceled_request(job.request_id)", upload_worker_section)
 
     def test_service_keeps_official_chat_and_ui_boundaries(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")

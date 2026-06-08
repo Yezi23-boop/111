@@ -502,7 +502,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 服务器侧 acceptance 已验证：`acceptance_test.ps1` 返回 `status=passed`，mock 与 real ASR smoke 均 `voice_status=done/action=memory_saved`，cancel 均 `canceled/no_action`，负向鉴权为 403，运行前后 `inflight_requests=0`，输出不含 ASR 文本、回复文本或任何 key/token。
 - 公网形态验收参数已本机模拟验证：`acceptance_test.ps1 -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr` 只依赖 `/v1/watch/*` 设备入口，返回 `status=passed` 且 `service_health_skipped=true`。
 - 设备 V1 契约一致性已验证：`tests/test_contract.py` 将 `watch_contract.v1.json` 的 7 字段响应、status/action 枚举、`request_id` 正则、最大音频大小、115 秒服务器预算和 `/v1/watch/*` 公网范围锁定到 `app.py`；server pytest 当前 13 项通过。
-- 固件侧 `memory_watch_service` 已接入独立 upload/cancel worker：owner task 只处理 command queue、状态快照、stop/cancel 意图和 worker result；upload worker 负责 `memory_watch_recorder_capture_ogg_opus()`、PSRAM 优先的 Ogg 缓冲和 `memory_watch_voice_client_post_voice_command()` 同步 HTTP；cancel waiting 走独立 cancel worker，不用 120 秒 HTTP 阻塞 UI/owner command queue。当前 source tests 31 项通过，`idf.py build` 通过，仍保留 app 分区 5% free 的既有警告。
+- 固件侧 `memory_watch_service` 已接入独立 upload/cancel/health worker：owner task 只处理 command queue、状态快照、stop/cancel 意图和 worker result；upload worker 负责 `memory_watch_recorder_capture_ogg_opus()`、PSRAM 优先的 Ogg 缓冲和 `memory_watch_voice_client_post_voice_command()` 同步 HTTP；cancel waiting 走独立 cancel worker；页面进入时的 `/v1/watch/health` 短 HTTP 检查也走 health worker，避免任何 HTTP 阻塞 owner command queue。当前 source tests 31 项通过，`idf.py build` 通过，仍保留 app 分区 5% free 的既有警告。
 
 期望看到的结果：
 

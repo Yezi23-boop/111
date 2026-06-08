@@ -21,9 +21,11 @@ static const char *TAG = "memory_watch";
 static const UBaseType_t kCommandQueueLength = 8;
 static const UBaseType_t kWorkerQueueLength = 1;
 static const UBaseType_t kCancelQueueLength = 1;
+static const UBaseType_t kHealthQueueLength = 1;
 static const uint32_t kTaskStackWords = 2048;
 static const uint32_t kUploadWorkerStackWords = 6144;
 static const uint32_t kCancelWorkerStackWords = 3072;
+static const uint32_t kHealthWorkerStackWords = 3072;
 static const size_t kAudioBufferInitialBytes = 8192U;
 
 typedef enum
@@ -34,6 +36,7 @@ typedef enum
     MEMORY_WATCH_SERVICE_CMD_CANCEL_RECORDING,
     MEMORY_WATCH_SERVICE_CMD_CANCEL_WAITING,
     MEMORY_WATCH_SERVICE_CMD_CANCEL_CLARIFICATION,
+    MEMORY_WATCH_SERVICE_CMD_HEALTH_DONE,
     MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED,
     MEMORY_WATCH_SERVICE_CMD_WORKER_DONE,
 } memory_watch_service_cmd_type_t;
@@ -71,6 +74,17 @@ typedef struct
 
 typedef struct
 {
+    memory_watch_service_client_config_snapshot_t client_config;
+} memory_watch_service_health_job_t;
+
+typedef struct
+{
+    esp_err_t error;
+    bool hermes_online;
+} memory_watch_service_health_result_t;
+
+typedef struct
+{
     char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
     esp_err_t error;
     bool has_response;
@@ -88,6 +102,7 @@ typedef struct
 typedef struct
 {
     memory_watch_service_cmd_type_t type;
+    memory_watch_service_health_result_t health_result;
     memory_watch_service_worker_result_t worker_result;
     char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
 } memory_watch_service_cmd_t;
@@ -95,24 +110,31 @@ typedef struct
 static TaskHandle_t s_service_task_handle = NULL;
 static TaskHandle_t s_upload_worker_task_handle = NULL;
 static TaskHandle_t s_cancel_worker_task_handle = NULL;
+static TaskHandle_t s_health_worker_task_handle = NULL;
 static QueueHandle_t s_command_queue = NULL;
 static QueueHandle_t s_upload_worker_queue = NULL;
 static QueueHandle_t s_cancel_worker_queue = NULL;
+static QueueHandle_t s_health_worker_queue = NULL;
 static StaticQueue_t s_command_queue_buffer;
 static StaticQueue_t s_upload_worker_queue_buffer;
 static StaticQueue_t s_cancel_worker_queue_buffer;
+static StaticQueue_t s_health_worker_queue_buffer;
 static uint8_t s_command_queue_storage[
     8 * sizeof(memory_watch_service_cmd_t)];
 static uint8_t s_upload_worker_queue_storage[
     1 * sizeof(memory_watch_service_upload_job_t)];
 static uint8_t s_cancel_worker_queue_storage[
     1 * sizeof(memory_watch_service_cancel_job_t)];
+static uint8_t s_health_worker_queue_storage[
+    1 * sizeof(memory_watch_service_health_job_t)];
 static StaticTask_t s_service_task_buffer;
 static StaticTask_t s_upload_worker_task_buffer;
 static StaticTask_t s_cancel_worker_task_buffer;
+static StaticTask_t s_health_worker_task_buffer;
 static StackType_t s_service_task_stack[2048];
 static StackType_t s_upload_worker_task_stack[6144];
 static StackType_t s_cancel_worker_task_stack[3072];
+static StackType_t s_health_worker_task_stack[3072];
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_endpoint_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_worker_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -131,6 +153,8 @@ static uint32_t s_request_seq = 0;
 static bool s_record_stop_requested = false;
 static bool s_record_discard_requested = false;
 static bool s_wait_cancel_requested = false;
+static bool s_upload_worker_busy = false;
+static char s_wait_canceled_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
 
 /**
  * @brief 复制当前快照。
@@ -376,6 +400,7 @@ static void memory_watch_service_reset_worker_flags(void)
     s_record_stop_requested = false;
     s_record_discard_requested = false;
     s_wait_cancel_requested = false;
+    s_wait_canceled_request_id[0] = '\0';
     portEXIT_CRITICAL(&s_worker_lock);
 }
 
@@ -390,10 +415,13 @@ static void memory_watch_service_request_record_stop(bool discard)
     portEXIT_CRITICAL(&s_worker_lock);
 }
 
-static void memory_watch_service_request_wait_cancel(void)
+static void memory_watch_service_request_wait_cancel(const char *request_id)
 {
     portENTER_CRITICAL(&s_worker_lock);
     s_wait_cancel_requested = true;
+    memory_watch_service_copy_text(s_wait_canceled_request_id,
+                                   sizeof(s_wait_canceled_request_id),
+                                   request_id);
     portEXIT_CRITICAL(&s_worker_lock);
 }
 
@@ -430,6 +458,38 @@ static bool memory_watch_service_is_wait_cancel_requested(void)
     cancel_requested = s_wait_cancel_requested;
     portEXIT_CRITICAL(&s_worker_lock);
     return cancel_requested;
+}
+
+static bool memory_watch_service_is_wait_canceled_request(
+    const char *request_id)
+{
+    if (request_id == NULL)
+    {
+        return false;
+    }
+
+    bool canceled = false;
+    portENTER_CRITICAL(&s_worker_lock);
+    canceled = s_wait_canceled_request_id[0] != '\0' &&
+               strcmp(s_wait_canceled_request_id, request_id) == 0;
+    portEXIT_CRITICAL(&s_worker_lock);
+    return canceled;
+}
+
+static void memory_watch_service_set_upload_worker_busy(bool busy)
+{
+    portENTER_CRITICAL(&s_worker_lock);
+    s_upload_worker_busy = busy;
+    portEXIT_CRITICAL(&s_worker_lock);
+}
+
+static bool memory_watch_service_is_upload_worker_busy(void)
+{
+    bool busy = false;
+    portENTER_CRITICAL(&s_worker_lock);
+    busy = s_upload_worker_busy;
+    portEXIT_CRITICAL(&s_worker_lock);
+    return busy;
 }
 
 static void *memory_watch_service_alloc(size_t len)
@@ -562,6 +622,25 @@ static esp_err_t memory_watch_service_post_worker_result(
     return ESP_OK;
 }
 
+static esp_err_t memory_watch_service_post_health_result(
+    const memory_watch_service_health_result_t *result)
+{
+    if (s_command_queue == NULL || result == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memory_watch_service_cmd_t command = {
+        .type = MEMORY_WATCH_SERVICE_CMD_HEALTH_DONE,
+        .health_result = *result,
+    };
+    if (xQueueSend(s_command_queue, &command, portMAX_DELAY) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
 static esp_err_t memory_watch_service_post_upload_started(
     const char *request_id)
 {
@@ -659,8 +738,10 @@ static esp_err_t memory_watch_service_start_upload_job(
     memory_watch_service_copy_current_clarification(
         job.clarification_id, sizeof(job.clarification_id));
 
+    memory_watch_service_set_upload_worker_busy(true);
     if (xQueueSend(s_upload_worker_queue, &job, 0) != pdTRUE)
     {
+        memory_watch_service_set_upload_worker_busy(false);
         return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
@@ -682,6 +763,26 @@ static esp_err_t memory_watch_service_start_cancel_job(
     memory_watch_service_copy_text(job.request_id, sizeof(job.request_id),
                                    request_id);
     if (xQueueSend(s_cancel_worker_queue, &job, 0) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t memory_watch_service_start_health_job(
+    const memory_watch_service_client_config_snapshot_t *client_config)
+{
+    if (s_health_worker_queue == NULL || client_config == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memory_watch_service_health_job_t job = {
+        .client_config = *client_config,
+    };
+    job.client_config.client_config.timeout_ms =
+        MEMORY_WATCH_SERVICE_HEALTH_TIMEOUT_MS;
+    if (xQueueSend(s_health_worker_queue, &job, 0) != pdTRUE)
     {
         return ESP_ERR_TIMEOUT;
     }
@@ -721,6 +822,12 @@ static void memory_watch_service_handle_begin_recording(void)
             ESP_ERR_INVALID_STATE);
         memory_watch_service_set_request_active(false);
         ESP_LOGW(TAG, "recording blocked: network service is not ready");
+        return;
+    }
+    if (memory_watch_service_is_upload_worker_busy())
+    {
+        memory_watch_service_set_state(before.state, ESP_ERR_INVALID_STATE);
+        ESP_LOGW(TAG, "recording blocked: upload worker is still busy");
         return;
     }
 
@@ -779,25 +886,14 @@ static void memory_watch_service_handle_check_health(void)
         return;
     }
 
-    /*
-     * 页面进入时的 health 只判断 watch endpoint / Hermes 是否在线，不使用
-     * 语音请求 120 秒预算，避免 owner task 因短健康检查长时间不可响应。
-     */
-    client_config.client_config.timeout_ms =
-        MEMORY_WATCH_SERVICE_HEALTH_TIMEOUT_MS;
-    memory_watch_voice_client_health_t health = {0};
-    err = memory_watch_voice_client_get_health(
-        &client_config.client_config, &health);
-    if (err == ESP_OK)
+    err = memory_watch_service_start_health_job(&client_config);
+    if (err != ESP_OK)
     {
-        memory_watch_service_set_endpoint_snapshot(true, true);
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_READY,
-                                       ESP_OK);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
         return;
     }
 
     memory_watch_service_set_endpoint_snapshot(true, false);
-    memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
 }
 
 static void memory_watch_service_handle_send_recording(void)
@@ -833,6 +929,14 @@ static void memory_watch_service_handle_cancel_waiting(void)
 {
     const memory_watch_service_snapshot_t before =
         memory_watch_service_copy_snapshot();
+    if (before.state == MEMORY_WATCH_SERVICE_STATE_RECORDING ||
+        before.state == MEMORY_WATCH_SERVICE_STATE_ENCODING)
+    {
+        memory_watch_service_request_record_stop(true);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_CANCELED,
+                                       ESP_OK);
+        return;
+    }
     if (!before.request_active || before.request_id[0] == '\0')
     {
         memory_watch_service_set_request_active(false);
@@ -840,8 +944,15 @@ static void memory_watch_service_handle_cancel_waiting(void)
                                        ESP_OK);
         return;
     }
+    if (before.state != MEMORY_WATCH_SERVICE_STATE_UPLOADING &&
+        before.state != MEMORY_WATCH_SERVICE_STATE_THINKING)
+    {
+        memory_watch_service_set_state(before.state, ESP_ERR_INVALID_STATE);
+        return;
+    }
 
-    memory_watch_service_request_wait_cancel();
+    memory_watch_service_request_wait_cancel(before.request_id);
+    memory_watch_service_set_request_active(false);
     memory_watch_service_client_config_snapshot_t client_config;
     esp_err_t err = memory_watch_service_copy_client_config(&client_config);
     if (err == ESP_OK)
@@ -861,7 +972,8 @@ static void memory_watch_service_handle_upload_started(
     const char *request_id)
 {
     if (!memory_watch_service_request_id_matches_current(request_id) ||
-        memory_watch_service_is_wait_cancel_requested())
+        memory_watch_service_is_wait_cancel_requested() ||
+        memory_watch_service_is_wait_canceled_request(request_id))
     {
         return;
     }
@@ -870,6 +982,28 @@ static void memory_watch_service_handle_upload_started(
                                    ESP_OK);
     memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_THINKING,
                                    ESP_OK);
+}
+
+static void memory_watch_service_handle_health_done(
+    const memory_watch_service_health_result_t *result)
+{
+    if (result == NULL)
+    {
+        return;
+    }
+
+    memory_watch_service_set_endpoint_snapshot(true, result->hermes_online);
+    const memory_watch_service_snapshot_t before =
+        memory_watch_service_copy_snapshot();
+    if (before.request_active)
+    {
+        return;
+    }
+
+    memory_watch_service_set_state(
+        result->hermes_online ? MEMORY_WATCH_SERVICE_STATE_READY
+                              : MEMORY_WATCH_SERVICE_STATE_ERROR,
+        result->error);
 }
 
 static memory_watch_service_state_t
@@ -909,8 +1043,20 @@ memory_watch_service_state_from_response(
 static void memory_watch_service_handle_worker_done(
     const memory_watch_service_worker_result_t *result)
 {
-    if (result == NULL ||
-        !memory_watch_service_request_id_matches_current(result->request_id))
+    if (result == NULL)
+    {
+        return;
+    }
+
+    if (memory_watch_service_is_wait_canceled_request(result->request_id))
+    {
+        memory_watch_service_set_request_active(false);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_CANCELED,
+                                       ESP_OK);
+        return;
+    }
+
+    if (!memory_watch_service_request_id_matches_current(result->request_id))
     {
         return;
     }
@@ -966,6 +1112,9 @@ static void memory_watch_service_handle_command(
         memory_watch_service_set_request_active(false);
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_READY,
                                        ESP_OK);
+        break;
+    case MEMORY_WATCH_SERVICE_CMD_HEALTH_DONE:
+        memory_watch_service_handle_health_done(&command->health_result);
         break;
     case MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED:
         memory_watch_service_handle_upload_started(command->request_id);
@@ -1036,11 +1185,37 @@ static void memory_watch_service_upload_worker_task(void *arg)
                 &job.client_config.client_config, &request, &result.response);
             result.has_response = result.error == ESP_OK;
             result.cancel_requested =
-                memory_watch_service_is_wait_cancel_requested();
+                memory_watch_service_is_wait_cancel_requested() ||
+                memory_watch_service_is_wait_canceled_request(job.request_id);
         }
 
         memory_watch_service_audio_buffer_free(&audio_buffer);
+        memory_watch_service_set_upload_worker_busy(false);
         (void)memory_watch_service_post_worker_result(&result);
+    }
+}
+
+static void memory_watch_service_health_worker_task(void *arg)
+{
+    (void)arg;
+
+    while (1)
+    {
+        memory_watch_service_health_job_t job;
+        if (xQueueReceive(s_health_worker_queue, &job, portMAX_DELAY) !=
+            pdTRUE)
+        {
+            continue;
+        }
+
+        memory_watch_voice_client_health_t health = {0};
+        const esp_err_t err = memory_watch_voice_client_get_health(
+            &job.client_config.client_config, &health);
+        const memory_watch_service_health_result_t result = {
+            .error = err,
+            .hermes_online = err == ESP_OK,
+        };
+        (void)memory_watch_service_post_health_result(&result);
     }
 }
 
@@ -1105,13 +1280,15 @@ esp_err_t memory_watch_service_init(void)
 {
     if (s_service_task_handle != NULL &&
         s_upload_worker_task_handle != NULL &&
-        s_cancel_worker_task_handle != NULL)
+        s_cancel_worker_task_handle != NULL &&
+        s_health_worker_task_handle != NULL)
     {
         return ESP_OK;
     }
     if (s_service_task_handle != NULL ||
         s_upload_worker_task_handle != NULL ||
-        s_cancel_worker_task_handle != NULL)
+        s_cancel_worker_task_handle != NULL ||
+        s_health_worker_task_handle != NULL)
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1160,6 +1337,20 @@ esp_err_t memory_watch_service_init(void)
                                        ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
+    if (s_health_worker_queue == NULL)
+    {
+        s_health_worker_queue = xQueueCreateStatic(
+            kHealthQueueLength,
+            sizeof(memory_watch_service_health_job_t),
+            s_health_worker_queue_storage,
+            &s_health_worker_queue_buffer);
+    }
+    if (s_health_worker_queue == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
 
     s_service_task_handle = xTaskCreateStatic(
         memory_watch_service_task,
@@ -1185,6 +1376,21 @@ esp_err_t memory_watch_service_init(void)
         s_upload_worker_task_stack,
         &s_upload_worker_task_buffer);
     if (s_upload_worker_task_handle == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_health_worker_task_handle = xTaskCreateStatic(
+        memory_watch_service_health_worker_task,
+        "mw_health",
+        kHealthWorkerStackWords,
+        NULL,
+        4,
+        s_health_worker_task_stack,
+        &s_health_worker_task_buffer);
+    if (s_health_worker_task_handle == NULL)
     {
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);
