@@ -28,6 +28,8 @@ set(service_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_recorder.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_voice_client.c
+
     ${CMAKE_CURRENT_LIST_DIR}/services/power_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/power_policy.c

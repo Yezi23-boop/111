@@ -1,0 +1,96 @@
+#ifndef MEMORY_WATCH_VOICE_CLIENT_H
+#define MEMORY_WATCH_VOICE_CLIENT_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "esp_err.h"
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+#define MEMORY_WATCH_VOICE_CLIENT_REQUEST_ID_MAX_LEN 96U
+#define MEMORY_WATCH_VOICE_CLIENT_ID_MAX_BYTES \
+    (MEMORY_WATCH_VOICE_CLIENT_REQUEST_ID_MAX_LEN + 1U)
+#define MEMORY_WATCH_VOICE_CLIENT_STATUS_MAX_BYTES 24U
+#define MEMORY_WATCH_VOICE_CLIENT_ACTION_MAX_BYTES 32U
+#define MEMORY_WATCH_VOICE_CLIENT_TEXT_MAX_BYTES 256U
+#define MEMORY_WATCH_VOICE_CLIENT_ERROR_MAX_BYTES 64U
+#define MEMORY_WATCH_VOICE_CLIENT_DEFAULT_TIMEOUT_MS 120000U
+#define MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES (6U * 1024U * 1024U)
+
+    /**
+     * @brief AI Memory Watch 设备侧 HTTP client 配置。
+     *
+     * `device_token` 只代表 watch endpoint 的设备 token；Hermes API key、
+     * API Server key 与 MiMo key 必须只保留在服务器侧。
+     */
+    typedef struct
+    {
+        const char *base_url;     /**< watch endpoint 基础地址，例如 `https://watch.example.com`。 */
+        const char *device_id;    /**< 服务器 allowlist 中的设备 ID。 */
+        const char *device_token; /**< 设备 token，运行期配置/NVS 提供，不硬编码源码。 */
+        uint32_t timeout_ms;      /**< HTTP 总等待预算；0 使用 V1 默认 120 秒。 */
+    } memory_watch_voice_client_config_t;
+
+    /**
+     * @brief voice-command 请求参数。
+     */
+    typedef struct
+    {
+        const char *request_id;       /**< `<device_id>-<boot_id>-<seq>`，最长 96 字符。 */
+        const uint8_t *audio;         /**< Ogg Opus 音频数据。 */
+        size_t audio_len;             /**< 音频字节数，必须在服务器 6 MiB 上限内。 */
+        const char *clarification_id; /**< 可选追问 ID；无追问可传 NULL 或空字符串。 */
+        bool has_battery_percent;     /**< 是否上传电量百分比。 */
+        int battery_percent;          /**< 电量百分比，0..100。 */
+        bool has_charging;            /**< 是否上传充电状态。 */
+        bool charging;                /**< 当前是否充电。 */
+        bool has_rssi;                /**< 是否上传 Wi-Fi RSSI。 */
+        int rssi;                     /**< Wi-Fi RSSI，单位 dBm。 */
+        const char *firmware_version; /**< 可选固件版本。 */
+        const char *ui_state;         /**< 当前页面状态；NULL 时使用 `ready`。 */
+    } memory_watch_voice_client_request_t;
+
+    /**
+     * @brief watch endpoint 固定 7 字段响应。
+     */
+    typedef struct
+    {
+        int http_status;          /**< HTTP 状态码，传输失败时为 0。 */
+        esp_err_t transport_error; /**< 最近一次 HTTP/解析错误。 */
+        char request_id[MEMORY_WATCH_VOICE_CLIENT_ID_MAX_BYTES];
+        char status[MEMORY_WATCH_VOICE_CLIENT_STATUS_MAX_BYTES];
+        char action[MEMORY_WATCH_VOICE_CLIENT_ACTION_MAX_BYTES];
+        char asr_text[MEMORY_WATCH_VOICE_CLIENT_TEXT_MAX_BYTES];
+        char reply_text[MEMORY_WATCH_VOICE_CLIENT_TEXT_MAX_BYTES];
+        char clarification_id[MEMORY_WATCH_VOICE_CLIENT_ID_MAX_BYTES];
+        char error_code[MEMORY_WATCH_VOICE_CLIENT_ERROR_MAX_BYTES];
+    } memory_watch_voice_client_response_t;
+
+    /**
+     * @brief 上传一次 Ogg Opus 语音请求并解析手表 V1 响应。
+     *
+     * 该函数同步执行 HTTP 请求，只允许上传 worker task 调用；
+     * `memory_watch_service` owner task 后续应只投递请求、消费结果和处理
+     * cancel 命令，不得在 owner task 内直接等待 120 秒 HTTP 响应。
+     * 也不得在 LVGL timer/getter 或音频采样高频路径中调用。
+     *
+     * @param[in] config HTTP client 配置。
+     * @param[in] request 请求参数。
+     * @param[out] out_response 固定 7 字段响应；失败时也会尽量填入 HTTP 状态。
+     * @return `ESP_OK` 表示 HTTP 2xx 且响应契约解析成功。
+     */
+    esp_err_t memory_watch_voice_client_post_voice_command(
+        const memory_watch_voice_client_config_t *config,
+        const memory_watch_voice_client_request_t *request,
+        memory_watch_voice_client_response_t *out_response);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // MEMORY_WATCH_VOICE_CLIENT_H
