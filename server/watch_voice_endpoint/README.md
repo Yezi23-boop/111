@@ -140,6 +140,7 @@ Run the full local acceptance loop before server-side iteration commits:
 ```
 
 This composes runtime status, mock voice, cancel, invalid-token rejection, generated Chinese Ogg Opus, and real MiMo ASR smoke checks. Its summary omits ASR text, reply text, audio contents, API keys, and bearer tokens.
+If required endpoints are offline, it exits with `status=failed` and a non-secret preflight summary instead of a raw PowerShell REST stack trace.
 
 Verify real ASR with an Ogg Opus sample:
 

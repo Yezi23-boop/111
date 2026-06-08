@@ -71,6 +71,69 @@ function Select-RuntimeSummary {
   }
 }
 
+function Select-EndpointErrors {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Runtime
+  )
+
+  return [pscustomobject]@{
+    service_health = $Runtime.endpoints.service_health.error
+    watch_health = $Runtime.endpoints.watch_health.error
+    hermes_health = $Runtime.endpoints.hermes_health.error
+    hermes_models = $Runtime.endpoints.hermes_models.error
+  }
+}
+
+function Get-PreflightFailureReason {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Runtime
+  )
+
+  $reasons = @()
+  if (-not $Runtime.env.watch_device_token_present) {
+    $reasons += "watch_device_token_missing"
+  }
+  if ((-not $SkipServiceHealth) -and (-not $Runtime.endpoints.service_health.ok)) {
+    $reasons += "service_health_unreachable"
+  }
+  if (-not $Runtime.endpoints.watch_health.ok) {
+    $reasons += "watch_health_unreachable"
+  }
+  if ((-not $SkipHermesApi) -and (-not $Runtime.endpoints.hermes_health.ok)) {
+    $reasons += "hermes_health_unreachable"
+  }
+  if ((-not $SkipHermesApi) -and ($Runtime.endpoints.hermes_models.model_count -lt 1)) {
+    $reasons += "hermes_models_unavailable"
+  }
+
+  if ($reasons.Count -eq 0) {
+    return $null
+  }
+  return $reasons -join ";"
+}
+
+function Write-AcceptanceFailure {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Reason,
+    [Parameter(Mandatory = $true)]
+    [object]$Runtime
+  )
+
+  [pscustomobject]@{
+    status = "failed"
+    reason = $Reason
+    base_url = $BaseUrl
+    device_id = $DeviceId
+    generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+    runtime_before = Select-RuntimeSummary -Runtime $Runtime
+    endpoint_errors = Select-EndpointErrors -Runtime $Runtime
+  } | ConvertTo-Json -Depth 8
+  exit 1
+}
+
 $statusArgs = @{
   BaseUrl = $BaseUrl
   HermesUrl = $HermesUrl
@@ -101,6 +164,11 @@ if ($SkipServiceHealth) {
 }
 
 $before = Convert-JsonOutput -Output (& $runtimeStatusScript @statusArgs)
+$preflightFailure = Get-PreflightFailureReason -Runtime $before
+if (-not [string]::IsNullOrWhiteSpace($preflightFailure)) {
+  Write-AcceptanceFailure -Reason $preflightFailure -Runtime $before
+}
+
 $mock = Convert-JsonOutput -Output (& $smokeTestScript @smokeArgs)
 
 $sample = $null
