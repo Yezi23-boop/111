@@ -26,6 +26,8 @@ set(service_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_ogg_opus_muxer.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_recorder.c
+
     ${CMAKE_CURRENT_LIST_DIR}/services/power_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/power_policy.c
@@ -215,6 +217,8 @@ idf_component_register(
         78__xiaozhi-fonts
 
         chmorgan__esp-audio-player
+
+        espressif__esp_audio_codec
 
         nvs_flash
 
