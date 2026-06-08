@@ -31,7 +31,11 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("reply_text", header)
         self.assertIn("clarification_id", header)
         self.assertIn("error_code", header)
+        self.assertIn("memory_watch_voice_client_health_t", header)
+        self.assertIn("hermes_status", header)
+        self.assertIn("memory_watch_voice_client_get_health", header)
         self.assertIn("memory_watch_voice_client_post_voice_command", header)
+        self.assertIn("memory_watch_voice_client_cancel_request", header)
 
     def test_voice_client_posts_contract_multipart_fields(self) -> None:
         source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
@@ -61,6 +65,26 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("zh-CN", source)
         self.assertIn("Asia/Shanghai", source)
         self.assertIn("watch_hermes_page", source)
+
+    def test_voice_client_supports_health_and_cancel_contract(self) -> None:
+        source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('"/v1/watch/health?device_id="', source)
+        self.assertIn('"/v1/watch/request/"', source)
+        self.assertIn('"/cancel"', source)
+        self.assertIn("memory_watch_voice_client_build_health_path", source)
+        self.assertIn("memory_watch_voice_client_build_cancel_path", source)
+        self.assertIn("memory_watch_voice_client_append_url_encoded", source)
+        self.assertIn("HTTP_METHOD_GET", source)
+        self.assertIn("HTTP_METHOD_POST", source)
+        self.assertIn("memory_watch_voice_client_write_cancel_body", source)
+        self.assertIn('"device_id"', source)
+        self.assertIn("memory_watch_voice_client_parse_health", source)
+        self.assertIn("cJSON_GetArraySize(root) != 3", source)
+        self.assertIn('root, "hermes_status"', source)
+        self.assertIn('strcmp(out_health->device_id, expected_device_id)', source)
+        for value in ["ok", "offline", "online"]:
+            self.assertIn(f'"{value}"', source)
 
     def test_voice_client_validates_limits_and_parses_exact_watch_json(self) -> None:
         source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")

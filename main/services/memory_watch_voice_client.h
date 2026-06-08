@@ -72,6 +72,32 @@ extern "C"
     } memory_watch_voice_client_response_t;
 
     /**
+     * @brief `/v1/watch/health` 设备侧健康检查响应。
+     */
+    typedef struct
+    {
+        int http_status;           /**< HTTP 状态码，传输失败时为 0。 */
+        esp_err_t transport_error; /**< 最近一次 HTTP/解析错误。 */
+        char status[MEMORY_WATCH_VOICE_CLIENT_STATUS_MAX_BYTES];
+        char hermes_status[MEMORY_WATCH_VOICE_CLIENT_STATUS_MAX_BYTES];
+        char device_id[MEMORY_WATCH_VOICE_CLIENT_ID_MAX_BYTES];
+    } memory_watch_voice_client_health_t;
+
+    /**
+     * @brief 进入 Hermes 页面时检查 watch endpoint 与 Hermes 在线状态。
+     *
+     * 该函数同步执行 HTTP GET，只允许 service/worker task 调用；UI 只能读取
+     * `memory_watch_service` 发布的 snapshot，不得直接调用本函数。
+     *
+     * @param[in] config HTTP client 配置。
+     * @param[out] out_health 健康检查响应。
+     * @return `ESP_OK` 表示 HTTP 2xx 且响应解析成功。
+     */
+    esp_err_t memory_watch_voice_client_get_health(
+        const memory_watch_voice_client_config_t *config,
+        memory_watch_voice_client_health_t *out_health);
+
+    /**
      * @brief 上传一次 Ogg Opus 语音请求并解析手表 V1 响应。
      *
      * 该函数同步执行 HTTP 请求，只允许上传 worker task 调用；
@@ -87,6 +113,22 @@ extern "C"
     esp_err_t memory_watch_voice_client_post_voice_command(
         const memory_watch_voice_client_config_t *config,
         const memory_watch_voice_client_request_t *request,
+        memory_watch_voice_client_response_t *out_response);
+
+    /**
+     * @brief 通知服务器取消当前等待请求。
+     *
+     * 取消只负责让手表回到 ready 并尽力通知 voice endpoint；它不承诺撤销
+     * Hermes 已经执行的外部工具副作用。
+     *
+     * @param[in] config HTTP client 配置。
+     * @param[in] request_id 要取消的请求 ID。
+     * @param[out] out_response 固定 7 字段响应。
+     * @return `ESP_OK` 表示 HTTP 2xx 且响应契约解析成功。
+     */
+    esp_err_t memory_watch_voice_client_cancel_request(
+        const memory_watch_voice_client_config_t *config,
+        const char *request_id,
         memory_watch_voice_client_response_t *out_response);
 
 #ifdef __cplusplus

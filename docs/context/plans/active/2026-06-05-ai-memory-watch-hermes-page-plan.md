@@ -391,7 +391,7 @@ done / timeout / error / canceled
 - `[x]` 落地 `memory_watch_service` owner skeleton 和 `AUDIO_CODEC_OWNER_HERMES`，先固定 FreeRTOS command queue、只读 snapshot、网络 ready 读取和不复用 `official_chat` 的边界。
 - `[x]` 落地独立 `memory_watch_ogg_opus_muxer`，将裸 Opus packet 封装为 Ogg Opus 容器；写回调失败后进入 fail-closed，避免半页写出后继续复用损坏流。
 - `[x]` 落地 `memory_watch_recorder` 窄模块，封装 Hermes 麦克风 owner session、后台 Safety Monitor 暂停、硬件 PCM 主麦通道选取、24 kHz -> 16 kHz mono 线性重采样、Opus 编码和 Ogg muxer 输出；尚未接 HTTP multipart 和实机手表语音样本。
-- `[x]` 落地 `memory_watch_voice_client` 窄模块，按 `watch_contract.v1.json` 流式写入 `multipart/form-data` 并 `POST /v1/watch/voice-command`，只使用运行期 `device_id/device_token/base_url`，固定 `locale=zh-CN`、`timezone=Asia/Shanghai`、`source=watch_hermes_page`；响应解析要求大小写敏感的固定 7 字段、`status/action` 枚举合法且 `request_id` 匹配本次请求。已通过 source tests 与 `idf.py build`，尚未接入 service worker 或真机 Wi-Fi 上传。
+- `[x]` 落地 `memory_watch_voice_client` 窄模块，覆盖 `GET /v1/watch/health`、`POST /v1/watch/voice-command` 与 `POST /v1/watch/request/{request_id}/cancel` 三个设备入口；语音请求按 `watch_contract.v1.json` 流式写入 `multipart/form-data`，只使用运行期 `device_id/device_token/base_url`，固定 `locale=zh-CN`、`timezone=Asia/Shanghai`、`source=watch_hermes_page`；响应解析要求大小写敏感的固定字段、`status/action/hermes_status` 枚举合法且 `request_id/device_id` 匹配本次请求。已通过 source tests 与 `idf.py build`，尚未接入 service worker 或真机 Wi-Fi 上传。
 - `[ ]` 等用户回来提供热点后，用 ESP32-S3 实机 Wi-Fi 跑真实 `voice endpoint` 上传联调，确认音量、MIME、超时、错误和重试路径。
 - `[ ]` 落地独立 Hermes 页面 skeleton。
 
@@ -525,6 +525,6 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 板端网络当前不可用，等待用户回来提供热点后再做 ESP32-S3 实机 Wi-Fi 上传和串口证据采集。
 - 用 ESP32-S3 实机麦克风 Ogg Opus 样本验证 `WATCH_ASR_PROVIDER=mimo`，确认手表端实际 MIME、音量、时长、语言和错误路径。
 - 将本机 `127.0.0.1:8787` 联调入口按需要放到服务器域名后，例如反向代理到 `/v1/watch/*`，再增加 TLS 与公网访问控制。
-- 补 `memory_watch_voice_client` 的 `/v1/watch/health` 和 cancel helper，再接入 `memory_watch_service` worker task。
+- 将 `memory_watch_voice_client` 接入 `memory_watch_service` worker task：owner task 只投递请求、消费结果和处理 cancel，上传 worker 执行同步 HTTP，避免 120 秒等待阻塞 command queue。
 - 继续把 `memory_watch_service` 从 skeleton 推进到真实上传：把 `memory_watch_recorder` 的 Ogg Opus 输出接入 HTTP multipart client，仍不复用 `official_chat` 主线；接入时不得让 service owner task 长时间阻塞导致 cancel command 无法消费，应使用 recorder worker task 或 owner 可观测的 stop flag。
 - 固件侧只接 voice endpoint，不接 Hermes Dashboard，不保存 Hermes API key。

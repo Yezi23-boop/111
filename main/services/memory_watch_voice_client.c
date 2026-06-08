@@ -13,6 +13,9 @@
 static const char *TAG = "memory_watch_http";
 
 static const char kVoiceCommandPath[] = "/v1/watch/voice-command";
+static const char kHealthPathPrefix[] = "/v1/watch/health?device_id=";
+static const char kCancelPathPrefix[] = "/v1/watch/request/";
+static const char kCancelPathSuffix[] = "/cancel";
 static const char kBoundaryPrefix[] = "ai-memory-watch-";
 static const char kLocaleZhCn[] = "zh-CN";
 static const char kTimezoneShanghai[] = "Asia/Shanghai";
@@ -166,6 +169,72 @@ static esp_err_t memory_watch_voice_client_build_url(
     const int written = snprintf(out_url, out_url_len, "%.*s%s",
                                  (int)base_len, base_url, path);
     if (written < 0 || (size_t)written >= out_url_len)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return ESP_OK;
+}
+
+static bool memory_watch_voice_client_is_url_unreserved(char c)
+{
+    return (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') ||
+           c == '-' || c == '_' || c == '.' || c == '~';
+}
+
+static esp_err_t memory_watch_voice_client_append_url_encoded(
+    char *dst, size_t dst_len, size_t *offset, const char *value)
+{
+    static const char kHex[] = "0123456789ABCDEF";
+    for (const char *p = value; *p != '\0'; ++p)
+    {
+        const unsigned char c = (unsigned char)*p;
+        if (memory_watch_voice_client_is_url_unreserved((char)c))
+        {
+            if (*offset + 1U >= dst_len)
+            {
+                return ESP_ERR_INVALID_SIZE;
+            }
+            dst[*offset] = (char)c;
+            *offset += 1U;
+            continue;
+        }
+
+        if (*offset + 3U >= dst_len)
+        {
+            return ESP_ERR_INVALID_SIZE;
+        }
+        dst[*offset] = '%';
+        dst[*offset + 1U] = kHex[(c >> 4U) & 0x0FU];
+        dst[*offset + 2U] = kHex[c & 0x0FU];
+        *offset += 3U;
+    }
+    dst[*offset] = '\0';
+    return ESP_OK;
+}
+
+static esp_err_t memory_watch_voice_client_build_health_path(
+    const char *device_id, char *out_path, size_t out_path_len)
+{
+    const size_t prefix_len = strlen(kHealthPathPrefix);
+    if (prefix_len >= out_path_len)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(out_path, kHealthPathPrefix, prefix_len);
+    size_t offset = prefix_len;
+    return memory_watch_voice_client_append_url_encoded(
+        out_path, out_path_len, &offset, device_id);
+}
+
+static esp_err_t memory_watch_voice_client_build_cancel_path(
+    const char *request_id, char *out_path, size_t out_path_len)
+{
+    const int written = snprintf(out_path, out_path_len, "%s%s%s",
+                                 kCancelPathPrefix, request_id,
+                                 kCancelPathSuffix);
+    if (written < 0 || (size_t)written >= out_path_len)
     {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -624,6 +693,83 @@ static bool memory_watch_voice_client_is_action_allowed(const char *action)
         action, allowed, sizeof(allowed) / sizeof(allowed[0]));
 }
 
+static bool memory_watch_voice_client_is_health_status_allowed(
+    const char *status)
+{
+    static const char *const allowed[] = {
+        "ok",
+        "error",
+    };
+    return memory_watch_voice_client_string_in_list(
+        status, allowed, sizeof(allowed) / sizeof(allowed[0]));
+}
+
+static bool memory_watch_voice_client_is_hermes_status_allowed(
+    const char *status)
+{
+    static const char *const allowed[] = {
+        "online",
+        "offline",
+    };
+    return memory_watch_voice_client_string_in_list(
+        status, allowed, sizeof(allowed) / sizeof(allowed[0]));
+}
+
+static esp_err_t memory_watch_voice_client_parse_health(
+    const char *json_text, size_t json_len, const char *expected_device_id,
+    memory_watch_voice_client_health_t *out_health)
+{
+    cJSON *root = cJSON_ParseWithLength(json_text, json_len);
+    if (root == NULL)
+    {
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = ESP_OK;
+    if (!cJSON_IsObject(root) || cJSON_GetArraySize(root) != 3)
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            root, "status", out_health->status,
+            sizeof(out_health->status), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            root, "hermes_status", out_health->hermes_status,
+            sizeof(out_health->hermes_status), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            root, "device_id", out_health->device_id,
+            sizeof(out_health->device_id), false);
+    }
+    if (err == ESP_OK &&
+        !memory_watch_voice_client_is_health_status_allowed(
+            out_health->status))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK &&
+        !memory_watch_voice_client_is_hermes_status_allowed(
+            out_health->hermes_status))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK &&
+        strcmp(out_health->device_id, expected_device_id) != 0)
+    {
+        err = ESP_FAIL;
+    }
+
+    cJSON_Delete(root);
+    return err;
+}
+
 static esp_err_t memory_watch_voice_client_parse_response(
     const char *json_text, size_t json_len, const char *expected_request_id,
     memory_watch_voice_client_response_t *out_response)
@@ -747,6 +893,270 @@ static esp_err_t memory_watch_voice_client_read_response(
     response[offset] = '\0';
     *out_len = offset;
     return ESP_OK;
+}
+
+typedef esp_err_t (*memory_watch_voice_client_http_writer_t)(
+    esp_http_client_handle_t client, void *user_ctx);
+
+static esp_err_t memory_watch_voice_client_perform_http_json(
+    const memory_watch_voice_client_config_t *config,
+    const char *path,
+    esp_http_client_method_t method,
+    const char *content_type,
+    size_t body_len,
+    memory_watch_voice_client_http_writer_t writer,
+    void *writer_ctx,
+    int *out_http_status,
+    char *response,
+    size_t response_size,
+    size_t *out_response_len)
+{
+    if (body_len > (size_t)INT_MAX)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char url[384];
+    esp_err_t err = memory_watch_voice_client_build_url(
+        config->base_url, path, url, sizeof(url));
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    char *auth_header = NULL;
+    err = memory_watch_voice_client_build_bearer(config->device_token,
+                                                &auth_header);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    esp_http_client_config_t http_config = {
+        .url = url,
+        .timeout_ms = (int)memory_watch_voice_client_timeout_ms(config),
+        .buffer_size = kHttpBufferSize,
+        .buffer_size_tx = kHttpBufferSize,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&http_config);
+    if (client == NULL)
+    {
+        memory_watch_voice_client_free(auth_header);
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_http_client_set_method(client, method);
+    esp_http_client_set_header(client, "Authorization", auth_header);
+    esp_http_client_set_header(client, "Accept", "application/json");
+    if (content_type != NULL)
+    {
+        esp_http_client_set_header(client, "Content-Type", content_type);
+    }
+
+    err = esp_http_client_open(client, (int)body_len);
+    if (err == ESP_OK && writer != NULL)
+    {
+        err = writer(client, writer_ctx);
+    }
+    if (err == ESP_OK)
+    {
+        const int fetch_result = esp_http_client_fetch_headers(client);
+        if (fetch_result < 0)
+        {
+            err = ESP_FAIL;
+        }
+        *out_http_status = esp_http_client_get_status_code(client);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_read_response(
+            client, response, response_size, out_response_len);
+    }
+
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    memory_watch_voice_client_free(auth_header);
+    return err;
+}
+
+typedef struct
+{
+    const char *boundary;
+    const char *device_id;
+} memory_watch_voice_client_cancel_body_t;
+
+static esp_err_t memory_watch_voice_client_write_cancel_body(
+    esp_http_client_handle_t client, void *user_ctx)
+{
+    const memory_watch_voice_client_cancel_body_t *ctx =
+        (const memory_watch_voice_client_cancel_body_t *)user_ctx;
+    esp_err_t err = memory_watch_voice_client_write_text_part(
+        client, ctx->boundary, "device_id", ctx->device_id);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_finish(client, ctx->boundary);
+    }
+    return err;
+}
+
+esp_err_t memory_watch_voice_client_get_health(
+    const memory_watch_voice_client_config_t *config,
+    memory_watch_voice_client_health_t *out_health)
+{
+    if (out_health == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out_health, 0, sizeof(*out_health));
+
+    esp_err_t err = memory_watch_voice_client_validate_config(config);
+    if (err != ESP_OK)
+    {
+        out_health->transport_error = err;
+        return err;
+    }
+
+    char path[256];
+    err = memory_watch_voice_client_build_health_path(
+        config->device_id, path, sizeof(path));
+    if (err != ESP_OK)
+    {
+        out_health->transport_error = err;
+        return err;
+    }
+
+    char *response =
+        (char *)memory_watch_voice_client_alloc(kMaxResponseBytes + 1U);
+    if (response == NULL)
+    {
+        out_health->transport_error = ESP_ERR_NO_MEM;
+        return ESP_ERR_NO_MEM;
+    }
+
+    size_t response_len = 0;
+    err = memory_watch_voice_client_perform_http_json(
+        config, path, HTTP_METHOD_GET, NULL, 0U, NULL, NULL,
+        &out_health->http_status, response, kMaxResponseBytes + 1U,
+        &response_len);
+    if (err == ESP_OK && (out_health->http_status < 200 ||
+                          out_health->http_status >= 300))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_parse_health(
+            response, response_len, config->device_id, out_health);
+    }
+
+    memory_watch_voice_client_free(response);
+    out_health->transport_error = err;
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "health check failed: status=%d err=%s",
+                 out_health->http_status, esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t memory_watch_voice_client_cancel_request(
+    const memory_watch_voice_client_config_t *config,
+    const char *request_id,
+    memory_watch_voice_client_response_t *out_response)
+{
+    if (out_response == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out_response, 0, sizeof(*out_response));
+
+    esp_err_t err = memory_watch_voice_client_validate_config(config);
+    if (err == ESP_OK &&
+        !memory_watch_voice_client_is_request_id_valid(request_id))
+    {
+        err = ESP_ERR_INVALID_ARG;
+    }
+    if (err != ESP_OK)
+    {
+        out_response->transport_error = err;
+        return err;
+    }
+
+    char path[160];
+    err = memory_watch_voice_client_build_cancel_path(
+        request_id, path, sizeof(path));
+    if (err != ESP_OK)
+    {
+        out_response->transport_error = err;
+        return err;
+    }
+
+    char boundary[sizeof(kBoundaryPrefix) +
+                  MEMORY_WATCH_VOICE_CLIENT_REQUEST_ID_MAX_LEN + 1U];
+    const int boundary_len = snprintf(boundary, sizeof(boundary), "%s%s",
+                                      kBoundaryPrefix, request_id);
+    if (boundary_len < 0 || (size_t)boundary_len >= sizeof(boundary))
+    {
+        out_response->transport_error = ESP_ERR_INVALID_SIZE;
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char content_type[160];
+    const int content_type_len = snprintf(
+        content_type, sizeof(content_type),
+        "multipart/form-data; boundary=%s", boundary);
+    if (content_type_len < 0 ||
+        (size_t)content_type_len >= sizeof(content_type))
+    {
+        out_response->transport_error = ESP_ERR_INVALID_SIZE;
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    const size_t body_len =
+        memory_watch_voice_client_text_part_len(
+            boundary, "device_id", config->device_id) +
+        memory_watch_voice_client_finish_len(boundary);
+
+    memory_watch_voice_client_cancel_body_t writer_ctx = {
+        .boundary = boundary,
+        .device_id = config->device_id,
+    };
+
+    char *response =
+        (char *)memory_watch_voice_client_alloc(kMaxResponseBytes + 1U);
+    if (response == NULL)
+    {
+        out_response->transport_error = ESP_ERR_NO_MEM;
+        return ESP_ERR_NO_MEM;
+    }
+
+    size_t response_len = 0;
+    err = memory_watch_voice_client_perform_http_json(
+        config, path, HTTP_METHOD_POST, content_type, body_len,
+        memory_watch_voice_client_write_cancel_body, &writer_ctx,
+        &out_response->http_status, response, kMaxResponseBytes + 1U,
+        &response_len);
+    if (err == ESP_OK && (out_response->http_status < 200 ||
+                          out_response->http_status >= 300))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_parse_response(
+            response, response_len, request_id, out_response);
+    }
+
+    memory_watch_voice_client_free(response);
+    out_response->transport_error = err;
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "cancel request failed: status=%d err=%s",
+                 out_response->http_status, esp_err_to_name(err));
+    }
+    return err;
 }
 
 esp_err_t memory_watch_voice_client_post_voice_command(
