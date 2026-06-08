@@ -425,6 +425,15 @@ async def _process_voice_command_inner(
             reply_text="没有处理成功，请再说一次",
             error_code="asr_or_agent_error",
         )
+    if not reply_text:
+        return WatchResponse(
+            request_id=request_id,
+            status="error",
+            action="error",
+            asr_text=asr_text,
+            reply_text="没有处理成功，请再说一次",
+            error_code="asr_or_agent_error",
+        )
 
     if key in _canceled_requests:
         return _canceled_watch_response(request_id, asr_text)

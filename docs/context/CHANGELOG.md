@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：补齐 AI Memory Watch watch voice endpoint 关键失败映射 pytest：新增超大音频、ASR 异常、ASR 空文本、Hermes 5xx、Hermes 空回复、Hermes timeout 与 ffmpeg 转码失败覆盖，断言这些路径仍返回手表 V1 固定 7 字段 JSON 或 `timeout/server_timeout`，并确认 runtime metrics 的最近请求摘要不包含 ASR 文本、回复文本、Authorization、token、音频内容或转码失败 detail；server pytest 当前 30 项通过。
 - 2026-06-08：补齐 AI Memory Watch watch voice endpoint 全端点鉴权负向 pytest：`server/watch_voice_endpoint/tests/test_app.py` 新增 `missing bearer`、`wrong token`、`unknown device` 对 `/v1/watch/health`、`/v1/watch/voice-command`、`/v1/watch/request/{request_id}/cancel` 的参数化覆盖，断言鉴权失败返回 401/403 的稳定错误码且不会推进 request metrics；server pytest 当前 23 项通过。
 - 2026-06-08：补强 AI Memory Watch 固件/服务器协议一致性与 SoftAP 配置入口安全边界：新增固件 source test 读取 `server/watch_voice_endpoint/watch_contract.v1.json`，锁定 ESP32-S3 voice client 与服务器 V1 endpoint、字段、枚举、超时和安全约束一致；`ap_portal_adapter` 的 `/api/memory-watch/config` 读取 body 遇到反复 socket timeout 时有限退出并返回 408，`memory_watch_service_build_endpoint_state()` 在写入 NVS/运行态前统一拒绝非法 URL scheme、CR/LF 文本和未显式允许的明文 HTTP，避免错误配置被标记为已配置。
 - 2026-06-08：新增 AI Memory Watch 固件侧 SoftAP 门户配置入口：`ap_portal_adapter` 增加 `POST /api/memory-watch/config` 与回调注册 API，JSON 只接收 `base_url/device_id/device_token/timeout_ms/allow_http`，由 `app_main` 注册桥接回调并交给 `memory_watch_service_save_endpoint_to_nvs()` 保存；portal 组件不依赖 `main/services`，响应不回显 token，日志仍不打印 token，也不接收 Hermes/API/MiMo key。
