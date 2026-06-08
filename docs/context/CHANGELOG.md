@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：补充上下文库小闭环收尾写入规则：小闭环默认更新 active plan；只有关键验证、协议、owner、安全边界、门禁或后续 agent 必须知道的结论才更新 `CHANGELOG.md`；`handoffs/current-task.md` 仅在交接、暂停、上下文压缩或用户要求记录当前状态时更新，失败路线/特殊证据写 `runs/`，稳定事实进 `knowledge/`。
 - 2026-06-08：补强 AI Memory Watch watch voice endpoint smoke 临时音频生命周期：`smoke_test.ps1` 默认 mock 未传 `AudioPath` 时仍创建 GUID dummy Ogg，但会在 `finally` 中只清理脚本自己生成的临时文件，显式 `-AudioPath` 不会被删除；新增脚本级 stub 测试覆盖默认清理与显式文件保留。当前 server pytest 40 项通过，`release_gate.ps1 -SkipDocker` 通过。
 - 2026-06-08：为 AI Memory Watch watch voice endpoint 公网私有路径门禁增加脚本级 stub 集成测试：新增 `server/watch_voice_endpoint/tests/test_private_exposure_scripts.py`，用临时 fake env 与本地 fake HTTP server 验证 `/health=200` 会让 `runtime_status.ps1` 标记 exposed、让 `acceptance_test.ps1` 返回 `private_path_unexpected_status`，403/404/410 会通过，且私有响应正文 sentinel 不出现在 stdout/stderr；当前 server pytest 37 项通过，`release_gate.ps1 -SkipDocker` 通过。
 - 2026-06-08：收紧 AI Memory Watch watch voice endpoint 公网私有路径负向门禁：`-AssertPrivateNotExposed` 从“非 200 即通过”升级为只接受 403/404/410，并新增 `$BaseUrl/v1/responses` 检查，避免 Hermes API 关键路径被公网反代但仅因未授权而漏检；输出仍只包含 path/status_code/allowed_status_codes/exposed/error，不保留响应 payload。当前 server pytest 34 项通过，`release_gate.ps1 -SkipDocker` 通过，本机探针可识别 `/health` 200 暴露而接受 `/v1/models`、`/v1/responses` 的 404。
