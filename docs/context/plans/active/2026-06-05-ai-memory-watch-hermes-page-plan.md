@@ -94,6 +94,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `smoke_test.ps1` 已支持 `-IncludeAuthFailure`，用无效 device token 验证 `/v1/watch/health` 返回 HTTP 403，不输出真实 token。
 - `server/watch_voice_endpoint/runtime_status.ps1` 可输出无密钥 JSON 状态总览，覆盖 env key presence、Docker 容器状态、watch endpoint `/health`、`/v1/watch/health`、Hermes `/health` 与 `/v1/models`。
 - `server/watch_voice_endpoint/acceptance_test.ps1` 可一键串起 runtime status、mock voice、cancel、无效 token 403、中文 Ogg Opus 生成和真实 MiMo ASR smoke，作为服务器侧版本迭代前验收门槛。
+- `server/watch_voice_endpoint/watch_contract.v1.json` 已作为 ESP32-S3 设备侧机器可读契约，固定 endpoint、鉴权、request 字段、response 7 字段、枚举、超时、幂等和安全边界；`tests/test_contract.py` 会把契约与 `app.py` 的 FastAPI 模型/限制做一致性检查。
 - 私有 `/health` 与 `runtime_status.ps1` 已增加非敏感请求指标：event/status/error 计数与最近一次请求摘要；最近请求只包含 `device_id/request_id/status/action/error_code/duration_ms/audio_bytes/asr_provider/completed_at`，不包含 ASR 文本、回复文本、音频内容或任何 key/token。
 - `smoke_test.ps1` 已支持 `-BaseUrl <https://watch.example.com>` 指向公网域名，并可用 `-SkipServiceHealth` 跳过私有 `/health`；这样 Caddy 只公开 `/v1/watch/*` 时仍能验证设备协议入口。
 - `runtime_status.ps1` 与 `acceptance_test.ps1` 也已支持 `-SkipServiceHealth`；公网只代理 `/v1/watch/*` 时可同时跳过 Docker、Hermes API 和私有 `/health` 检查。
@@ -386,6 +387,7 @@ done / timeout / error / canceled
 - `[x]` 增加 Docker Compose 本地可重复部署入口，并验证容器 healthcheck 为 healthy。
 - `[x]` 增加公网域名反向代理示例，固定只暴露 watch endpoint，不暴露 Hermes Dashboard 或 Hermes API Server。
 - `[x]` 增加可复现中文 Ogg Opus 样本生成脚本，稳定真实 ASR smoke test 输入。
+- `[x]` 增加 ESP32-S3 设备侧 V1 机器可读契约，并用 source test 锁定 response 字段、枚举、request 限制和超时预算。
 - `[ ]` 落地页面与 service skeleton。
 
 ## Decision Log
@@ -493,6 +495,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 负向鉴权 smoke 已验证：`smoke_test.ps1 -IncludeCancel -IncludeAuthFailure` 本机返回 `auth_failure_status_code=403`，同时正向 voice/cancel 仍通过。
 - 服务器侧 acceptance 已验证：`acceptance_test.ps1` 返回 `status=passed`，mock 与 real ASR smoke 均 `voice_status=done/action=memory_saved`，cancel 均 `canceled/no_action`，负向鉴权为 403，运行前后 `inflight_requests=0`，输出不含 ASR 文本、回复文本或任何 key/token。
 - 公网形态验收参数已本机模拟验证：`acceptance_test.ps1 -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr` 只依赖 `/v1/watch/*` 设备入口，返回 `status=passed` 且 `service_health_skipped=true`。
+- 设备 V1 契约一致性已验证：`tests/test_contract.py` 将 `watch_contract.v1.json` 的 7 字段响应、status/action 枚举、`request_id` 正则、最大音频大小、115 秒服务器预算和 `/v1/watch/*` 公网范围锁定到 `app.py`；server pytest 当前 13 项通过。
 
 期望看到的结果：
 

@@ -28,6 +28,8 @@ The Hermes API key is only configured on this server through `HERMES_API_KEY`; i
 
 ## Request Contract
 
+The machine-readable ESP32-facing V1 contract lives in [watch_contract.v1.json](watch_contract.v1.json). Keep it in sync with `app.py`; `tests/test_contract.py` locks the response fields, enums, request limits, and timeout budget against the FastAPI model.
+
 `request_id` must be 1-96 ASCII characters using only letters, numbers, `.`, `_`, `:`, or `-`.
 
 For V1, normal bad watch input such as an invalid `request_id`, an empty upload, or an audio body larger than `WATCH_MAX_AUDIO_BYTES` returns the same seven-field watch JSON with `status=error` and `error_code=asr_or_agent_error`. Device authentication failures still use HTTP 401/403.

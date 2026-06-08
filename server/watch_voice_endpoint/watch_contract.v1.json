@@ -1,0 +1,95 @@
+{
+  "version": "watch-v1",
+  "owner": "server/watch_voice_endpoint",
+  "description": "AI Memory Watch device-facing contract for ESP32-S3 firmware integration.",
+  "auth": {
+    "type": "bearer_device_token",
+    "header": "Authorization",
+    "format": "Bearer <device_token>",
+    "device_secret_scope": "ESP32 may store device_token only; Hermes API keys stay on the server."
+  },
+  "endpoints": {
+    "health": {
+      "method": "GET",
+      "path": "/v1/watch/health",
+      "query": ["device_id"],
+      "private_health_required": false
+    },
+    "voice_command": {
+      "method": "POST",
+      "path": "/v1/watch/voice-command",
+      "content_type": "multipart/form-data",
+      "audio_field": "audio",
+      "audio_format": "Ogg Opus"
+    },
+    "cancel": {
+      "method": "POST",
+      "path": "/v1/watch/request/{request_id}/cancel",
+      "content_type": "multipart/form-data"
+    }
+  },
+  "request": {
+    "request_id_pattern": "^[A-Za-z0-9._:-]{1,96}$",
+    "request_id_format": "<device_id>-<boot_id>-<seq>",
+    "boot_id_format": "32-bit random hex generated on boot",
+    "seq_format": "monotonic counter within one boot",
+    "max_audio_bytes": 6291456,
+    "voice_command_fields": [
+      "request_id",
+      "device_id",
+      "audio",
+      "clarification_id",
+      "battery_percent",
+      "charging",
+      "rssi",
+      "firmware_version",
+      "locale",
+      "timezone",
+      "source",
+      "ui_state"
+    ],
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai",
+    "source": "watch_hermes_page"
+  },
+  "response": {
+    "required": [
+      "request_id",
+      "status",
+      "action",
+      "asr_text",
+      "reply_text",
+      "clarification_id",
+      "error_code"
+    ],
+    "additional_properties": false,
+    "status_enum": ["done", "error", "timeout", "canceled"],
+    "action_enum": [
+      "memory_saved",
+      "reminder_created",
+      "question_answered",
+      "clarification_needed",
+      "no_action",
+      "error"
+    ],
+    "reply_max_chars": 80
+  },
+  "timeouts": {
+    "watch_wait_seconds": 120,
+    "server_request_timeout_seconds": 115,
+    "recording_max_seconds": 30,
+    "recording_min_seconds": 0.5
+  },
+  "idempotency": {
+    "key": "device_id + request_id",
+    "completed_retry": "return_cached_watch_json",
+    "inflight_retry": "wait_same_task",
+    "canceled_retry": "return_status_canceled_action_no_action",
+    "cancel_after_completion": "return_completed_result"
+  },
+  "security": {
+    "esp32_must_not_store": ["HERMES_API_KEY", "API_SERVER_KEY", "XIAOMI_API_KEY"],
+    "esp32_must_not_call": ["Hermes Dashboard", "Hermes API Server"],
+    "public_proxy_scope": "/v1/watch/*"
+  }
+}
