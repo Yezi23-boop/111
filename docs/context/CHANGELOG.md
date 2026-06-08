@@ -1,5 +1,6 @@
 # 上下文库变更记录
 
+- 2026-06-08：落地 AI Memory Watch 固件侧 `memory_watch_service` owner skeleton：新增独立 FreeRTOS command queue 与只读 snapshot，固定 `READY/RECORDING/UPLOADING/THINKING/DONE/TIMEOUT/ERROR/CANCELED` 等 V1 状态边界；`AUDIO_CODEC_OWNER_HERMES` 加入音频 owner 枚举，并由后台 Safety Monitor 识别为前台麦克风占用，不复用 `official_chat` 主线。
 - 2026-06-08：新增 AI Memory Watch `server/watch_voice_endpoint/watch_contract.v1.json` 作为 ESP32-S3 设备侧 V1 机器可读契约，固定 `/v1/watch/*` endpoint、device token 鉴权、request 字段、固定 7 字段响应、status/action 枚举、超时预算、幂等和安全边界；新增 `tests/test_contract.py` 将契约与 `app.py` 的 FastAPI 模型/限制做一致性校验，server pytest 当前 13 项通过。
 - 2026-06-08：补强 AI Memory Watch 公网验收脚本边界：`runtime_status.ps1` 与 `acceptance_test.ps1` 均支持 `-SkipServiceHealth`，在 Caddy 只公开 `/v1/watch/*` 时可跳过私有 `/health`、Docker 和 Hermes API 直查；本机已用 `-SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr` 验证只依赖设备入口的 mock/cancel/鉴权链路。
 - 2026-06-08：新增 AI Memory Watch `server/watch_voice_endpoint/acceptance_test.ps1`，将 runtime status、mock voice、cancel、无效 token 403、中文 Ogg Opus 生成与真实 MiMo ASR smoke 串为一键服务器侧验收；本机已验证返回 `status=passed`，输出摘要不包含 ASR 文本、回复文本、音频内容或任何 key/token。

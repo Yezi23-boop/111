@@ -142,6 +142,7 @@ static bool background_service_manager_input_owner_blocks_danger(
     case AUDIO_CODEC_OWNER_AUDIO_PLAYER:
     case AUDIO_CODEC_OWNER_AUDIO_RECORDER:
     case AUDIO_CODEC_OWNER_OFFICIAL_CHAT:
+    case AUDIO_CODEC_OWNER_HERMES:
     default:
         return true;
     }

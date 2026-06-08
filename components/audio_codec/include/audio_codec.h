@@ -43,6 +43,7 @@ extern "C"
         AUDIO_CODEC_OWNER_ALERT_PLAYER,         /**< P0 危险提醒播放链路。 */
         AUDIO_CODEC_OWNER_AUDIO_RECORDER,       /**< 前台本地录音链路。 */
         AUDIO_CODEC_OWNER_OFFICIAL_CHAT,        /**< 官方聊天/语音链路。 */
+        AUDIO_CODEC_OWNER_HERMES,               /**< AI Memory Watch / Hermes 语音链路。 */
     } audio_codec_owner_t;
 
     /** 音频独占会话只读快照。 */

@@ -47,6 +47,7 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("foreground_audio_active", source)
         self.assertIn("audio_codec_get_session_snapshot", source)
         self.assertIn("audio_codec_owner_to_text", source)
+        self.assertIn("AUDIO_CODEC_OWNER_HERMES", source)
         self.assertIn("resource_blocked_change: resource=mic", source)
         self.assertIn("background_target_change: danger_should_run=%d", source)
         self.assertIn("background_service_manager_resolve_danger_block_reason", source)

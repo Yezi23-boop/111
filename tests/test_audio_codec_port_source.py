@@ -91,10 +91,12 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         self.assertIn("audio_codec_owner_to_text", header)
         self.assertIn("AUDIO_CODEC_OWNER_ALERT_PLAYER", header)
         self.assertIn("AUDIO_CODEC_OWNER_AUDIO_RECORDER", header)
+        self.assertIn("AUDIO_CODEC_OWNER_HERMES", header)
         self.assertIn("s_lifecycle_ref_count", source)
         self.assertIn("s_input_session_owner", source)
         self.assertIn('return "audio_recorder";', source)
         self.assertIn('return "alert_player";', source)
+        self.assertIn('return "hermes";', source)
         self.assertIn("audio_codec_get_session_snapshot", source)
         self.assertIn("xSemaphoreCreateMutex", source)
 

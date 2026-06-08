@@ -22,6 +22,8 @@ set(service_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/services/official_chat_service.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_service.c
+
     ${CMAKE_CURRENT_LIST_DIR}/services/power_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/power_policy.c

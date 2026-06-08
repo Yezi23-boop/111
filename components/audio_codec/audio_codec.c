@@ -81,6 +81,8 @@ static const char *audio_codec_owner_name(audio_codec_owner_t owner)
         return "audio_recorder";
     case AUDIO_CODEC_OWNER_OFFICIAL_CHAT:
         return "official_chat";
+    case AUDIO_CODEC_OWNER_HERMES:
+        return "hermes";
     default:
         return "unknown";
     }
