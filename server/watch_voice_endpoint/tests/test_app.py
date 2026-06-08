@@ -22,6 +22,18 @@ WATCH_RESPONSE_KEYS = [
     "status",
 ]
 
+AUTH_FAILURE_CASES = [
+    ("missing_bearer", None, "watch-001", 401, "missing_bearer_token"),
+    ("wrong_token", "Bearer wrong-token", "watch-001", 403, "invalid_device_token"),
+    (
+        "unknown_device",
+        "Bearer test-token",
+        "watch-unknown",
+        403,
+        "device_not_allowed",
+    ),
+]
+
 
 @pytest.fixture()
 def watch_app(monkeypatch):
@@ -53,6 +65,39 @@ def watch_app(monkeypatch):
     module._request_error_counts.clear()
     module._last_request_summary.clear()
     return module
+
+
+async def _call_watch_endpoint(
+    client: httpx.AsyncClient,
+    endpoint: str,
+    device_id: str,
+    authorization: str | None,
+):
+    headers = {} if authorization is None else {"Authorization": authorization}
+    if endpoint == "health":
+        return await client.get(
+            "/v1/watch/health",
+            headers=headers,
+            params={"device_id": device_id},
+        )
+    if endpoint == "voice":
+        return await client.post(
+            "/v1/watch/voice-command",
+            headers=headers,
+            data={
+                "request_id": f"{device_id}-auth-0001",
+                "device_id": device_id,
+                "mock_asr_text": "记一下明天看电池日志",
+            },
+            files={"audio": ("command.ogg", b"OggS\x00\x01", "audio/ogg")},
+        )
+    if endpoint == "cancel":
+        return await client.post(
+            f"/v1/watch/request/{device_id}-auth-0001/cancel",
+            headers=headers,
+            data={"device_id": device_id},
+        )
+    raise AssertionError(f"unknown endpoint: {endpoint}")
 
 
 @pytest.mark.anyio
@@ -97,6 +142,39 @@ async def test_voice_command_rejects_unknown_device(watch_app):
         )
 
     assert response.status_code == 403
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("endpoint", ["health", "voice", "cancel"])
+@pytest.mark.parametrize(
+    "case_name,authorization,device_id,expected_status,expected_detail",
+    AUTH_FAILURE_CASES,
+)
+async def test_watch_endpoints_reject_auth_failures(
+    watch_app,
+    endpoint,
+    case_name,
+    authorization,
+    device_id,
+    expected_status,
+    expected_detail,
+):
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await _call_watch_endpoint(
+            client,
+            endpoint,
+            device_id,
+            authorization,
+        )
+
+    assert case_name
+    assert response.status_code == expected_status
+    assert response.json() == {"detail": expected_detail}
+    assert watch_app._request_event_counts["processed"] == 0
+    assert watch_app._request_event_counts["cache_hits"] == 0
+    assert watch_app._request_event_counts["inflight_waits"] == 0
+    assert watch_app._request_event_counts["canceled_hits"] == 0
 
 
 @pytest.mark.anyio

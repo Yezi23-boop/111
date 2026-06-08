@@ -92,6 +92,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `smoke_test.ps1` 已支持 `-IncludeCancel`，可在同一次 smoke 中额外验证 `POST /v1/watch/request/{request_id}/cancel` 返回固定 7 字段 `status=canceled/action=no_action`。
 - `smoke_test.ps1` 现在对 voice 与可选 cancel 响应执行“恰好 7 字段”校验，缺字段或多字段都会失败，防止 ESP32-S3 固定解析契约漂移。
 - `smoke_test.ps1` 已支持 `-IncludeAuthFailure`，用无效 device token 验证 `/v1/watch/health` 返回 HTTP 403，不输出真实 token。
+- 服务器 pytest 已补齐三端点鉴权负向矩阵：`missing bearer`、`wrong token`、`unknown device` 分别覆盖 `/v1/watch/health`、`/v1/watch/voice-command` 与 `/v1/watch/request/{request_id}/cancel`，并确认鉴权失败不会推进 request metrics。
 - `server/watch_voice_endpoint/runtime_status.ps1` 可输出无密钥 JSON 状态总览，覆盖 env key presence、Docker 容器状态、watch endpoint `/health`、`/v1/watch/health`、Hermes `/health` 与 `/v1/models`。
 - `server/watch_voice_endpoint/acceptance_test.ps1` 可一键串起 runtime status、mock voice、cancel、无效 token 403、中文 Ogg Opus 生成和真实 MiMo ASR smoke，作为服务器侧版本迭代前验收门槛。
 - `server/watch_voice_endpoint/watch_contract.v1.json` 已作为 ESP32-S3 设备侧机器可读契约，固定 endpoint、鉴权、request 字段、response 7 字段、枚举、超时、幂等和安全边界；`tests/test_contract.py` 会把契约与 `app.py` 的 FastAPI 模型/限制做一致性检查。
@@ -520,6 +521,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 固件侧 watch endpoint NVS 配置读取已完成 source/build 闭环：`tests/test_memory_watch_service_source.py` 覆盖 NVS namespace/key、缺失/不完整配置、`memory_watch_service_configure_endpoint()` 调用和不打印 `device_token`；memory watch 相关 source tests 39 项通过，`idf.py build` 通过，最新 app 分区约 4% free。
 - 固件侧 watch endpoint NVS 保存与 SoftAP portal 配置入口已完成 source/build 闭环：`tests/test_memory_watch_service_source.py`、AP portal 相关 source tests 与非阻塞启动 source tests 合计 68 项通过，context standard 校验 0 错 0 警，`idf.py build` 通过；最新 app 分区约 4% free。该入口可用于后续通过 SoftAP 门户写入 `base_url/device_id/device_token/timeout_ms/allow_http`，不需要重刷共享 NVS 分区。
 - 固件/服务器协议一致性与 SoftAP 配置入口硬化已完成 source/build 闭环：新增固件 source test 读取 `server/watch_voice_endpoint/watch_contract.v1.json` 并锁定 endpoint、字段、枚举、超时和安全边界；AP portal body 读取有限 timeout，service 写 NVS 前统一校验 URL 语义。当前固件相关 source tests 69 项通过，server pytest 14 项通过，context standard 校验 0 错 0 警，`idf.py build` 通过；最新 app 分区约 4% free。
+- 服务器侧全端点鉴权负向矩阵已完成 pytest 闭环：`missing bearer`、`wrong token`、`unknown device` 覆盖 health/voice/cancel 三个设备入口，鉴权失败不会推进 request metrics；server pytest 当前 23 项通过。
 
 期望看到的结果：
 
