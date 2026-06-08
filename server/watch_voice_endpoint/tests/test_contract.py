@@ -138,13 +138,16 @@ def test_public_domain_gate_checks_private_paths_without_dumping_private_payload
 
     assert "[switch]$AssertPrivateNotExposed" in runtime_source
     assert "Invoke-PrivateExposureCheck" in runtime_source
+    assert "AllowedStatusCodes = @(403, 404, 410)" in runtime_source
     assert '"$privateBaseUrl/health"' in runtime_source
     assert '"$privateBaseUrl/v1/models"' in runtime_source
+    assert '"$privateBaseUrl/v1/responses"' in runtime_source
     assert "status_code" in runtime_source
+    assert "allowed_status_codes" in runtime_source
     assert "exposed" in runtime_source
     assert "[switch]$AssertPrivateNotExposed" in acceptance_source
     assert "statusArgs.AssertPrivateNotExposed" in acceptance_source
-    assert "private_endpoint_exposed" in acceptance_source
+    assert "private_path_unexpected_status" in acceptance_source
     assert "private_exposure" in acceptance_source
     assert "Authorization" not in private_function
     assert "WATCH_DEVICE_TOKENS" not in private_function

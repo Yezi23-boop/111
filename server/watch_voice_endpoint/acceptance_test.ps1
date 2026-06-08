@@ -135,7 +135,7 @@ function Get-PreflightFailureReason {
     $reasons += "hermes_models_unavailable"
   }
   if ($AssertPrivateNotExposed -and (-not $Runtime.endpoints.private_exposure.ok)) {
-    $reasons += "private_endpoint_exposed"
+    $reasons += "private_path_unexpected_status"
   }
 
   if ($reasons.Count -eq 0) {
