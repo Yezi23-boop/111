@@ -19,6 +19,7 @@ extern "C"
 #include "ai_ui_controller.h"
 #include "clock_functions.h"  // 时钟功能模块
 #include "main_dropdown_controller.h"
+#include "memory_watch_controller.h"
 #include "wifi_management_controller.h"
 #include "ui_font_assets.h"
 #include "ui_chinese_fonts.h"

@@ -96,6 +96,10 @@ set(ui_runtime_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/main_dropdown_controller.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/memory_watch_controller.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/memory_watch_view.c
+
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/mini_games_controller.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/wifi_management_controller.c

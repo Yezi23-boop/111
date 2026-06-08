@@ -137,6 +137,10 @@ UI_REFRESH_POLICY_HEADER = UI_DIR / "ui_refresh_policy.h"
 UI_CUSTOM_HEADER = UI_CUSTOM_DIR / "custom.h"
 UI_MAIN_DROPDOWN_CONTROLLER_SOURCE = UI_CUSTOM_DIR / "main_dropdown_controller.c"
 UI_MAIN_DROPDOWN_CONTROLLER_HEADER = UI_CUSTOM_DIR / "main_dropdown_controller.h"
+UI_MEMORY_WATCH_CONTROLLER_SOURCE = UI_CUSTOM_DIR / "memory_watch_controller.c"
+UI_MEMORY_WATCH_CONTROLLER_HEADER = UI_CUSTOM_DIR / "memory_watch_controller.h"
+UI_MEMORY_WATCH_VIEW_SOURCE = UI_CUSTOM_DIR / "memory_watch_view.c"
+UI_MEMORY_WATCH_VIEW_HEADER = UI_CUSTOM_DIR / "memory_watch_view.h"
 UI_WIFI_MANAGEMENT_CONTROLLER_SOURCE = (
     UI_CUSTOM_DIR / "wifi_management_controller.c"
 )

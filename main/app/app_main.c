@@ -13,6 +13,7 @@
 #include "ui/lvgl_task.h"
 #include "hardware_init.h"
 #include "services/network_service.h"
+#include "services/memory_watch_service.h"
 #include "services/official_chat_service.h"
 #include "services/power_service.h"
 #include "services/power_policy.h"
@@ -176,6 +177,19 @@ static void start_deferred_services(void)
     else
     {
         ESP_LOGI(TAG, "boot_stage: official_chat_ready");
+    }
+
+    /*
+     * AI Memory Watch 只初始化 owner task。Hermes 地址、设备 token 和
+     * 录音上传都由独立页面/配置入口按用户意图触发，启动期不主动连服务器。
+     */
+    if (memory_watch_service_init() != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Memory watch service init failed");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "boot_stage: memory_watch_ready");
     }
 
     /*
