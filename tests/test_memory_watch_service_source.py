@@ -39,6 +39,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("allow_insecure_http", header)
         self.assertIn("esp_err_t memory_watch_service_init(void);", header)
         self.assertIn("memory_watch_service_configure_endpoint", header)
+        self.assertIn("memory_watch_service_save_endpoint_to_nvs", header)
         self.assertIn("memory_watch_service_check_health", header)
         self.assertIn("memory_watch_service_begin_recording", header)
         self.assertIn("memory_watch_service_send_recording", header)
@@ -129,6 +130,27 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("watch endpoint NVS config incomplete", source)
         self.assertNotIn('ESP_LOGI(TAG, "watch endpoint configured from NVS: token', source)
         self.assertNotIn("device_token=%s", source)
+
+    def test_service_saves_runtime_endpoint_config_to_nvs_without_secret_logs(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+        header = MEMORY_WATCH_SERVICE_HEADER.read_text(encoding="utf-8")
+        combined = source + "\n" + header
+
+        self.assertIn("memory_watch_service_save_endpoint_to_nvs", header)
+        self.assertIn("memory_watch_service_build_endpoint_state", source)
+        self.assertIn("nvs_open(kEndpointNvsNamespace, NVS_READWRITE", source)
+        self.assertIn("nvs_set_str(handle, kEndpointNvsBaseUrlKey", source)
+        self.assertIn("nvs_set_str(handle, kEndpointNvsDeviceIdKey", source)
+        self.assertIn("nvs_set_str(handle, kEndpointNvsDeviceTokenKey", source)
+        self.assertIn("nvs_set_u32(handle, kEndpointNvsTimeoutMsKey", source)
+        self.assertIn("nvs_set_u8(handle, kEndpointNvsAllowHttpKey", source)
+        self.assertIn("nvs_commit(handle)", source)
+        self.assertIn("watch endpoint config saved to NVS: device_id=%s", source)
+        self.assertIn("snapshot.request_active", source)
+        self.assertNotIn("device_token=%s", combined)
+        self.assertNotIn("HERMES_API_KEY", combined)
+        self.assertNotIn("API_SERVER_KEY", combined)
+        self.assertNotIn("XIAOMI_API_KEY", combined)
 
     def test_service_generates_contract_request_id_but_does_not_upload_in_owner(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")

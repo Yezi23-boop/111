@@ -157,6 +157,7 @@ POST /v1/watch/request/{request_id}/cancel
 - 三个 endpoint 都使用 `Authorization: Bearer <device_token>`。
 - V1 使用 `device_id + device_token allowlist`；开发期 token 写入 NVS 或本地配置，不硬编码进公开源码。
 - ESP32-S3 固件启动时会尝试从 NVS 命名空间 `memory_watch` 读取 `base_url`、`device_id`、`device_token`、可选 `timeout_ms` 和 `allow_http`；缺失或不完整时保持页面“未配置”，不阻塞启动，也不在日志打印 token。
+- 固件侧提供 `memory_watch_service_save_endpoint_to_nvs()` 作为 service-owned 配置保存入口，后续配网/调试入口可调用它写入同一组 NVS key 并即时应用运行期配置；不需要重刷共享 NVS 分区，也不允许记录 Hermes/API/MiMo key。
 - `/health` 只在进入 Hermes 页面时请求一次，不做持续轮询；失败显示 `Hermes · 不可用`。
 - `voice-command` 使用 `multipart/form-data`。
 

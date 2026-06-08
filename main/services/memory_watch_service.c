@@ -262,6 +262,44 @@ static esp_err_t memory_watch_service_copy_required_text(char *dst,
     return ESP_OK;
 }
 
+static esp_err_t memory_watch_service_build_endpoint_state(
+    const memory_watch_service_endpoint_config_t *config,
+    memory_watch_service_endpoint_state_t *out_state)
+{
+    if (config == NULL || out_state == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memory_watch_service_endpoint_state_t next_config = {0};
+    esp_err_t err = memory_watch_service_copy_required_text(
+        next_config.base_url, sizeof(next_config.base_url), config->base_url);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    err = memory_watch_service_copy_required_text(
+        next_config.device_id, sizeof(next_config.device_id),
+        config->device_id);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    err = memory_watch_service_copy_required_text(
+        next_config.device_token, sizeof(next_config.device_token),
+        config->device_token);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    next_config.timeout_ms = config->timeout_ms;
+    next_config.allow_insecure_http = config->allow_insecure_http;
+    next_config.configured = true;
+
+    *out_state = next_config;
+    return ESP_OK;
+}
+
 static esp_err_t memory_watch_service_read_nvs_text(nvs_handle_t handle,
                                                     const char *key,
                                                     char *dst,
@@ -1543,11 +1581,6 @@ esp_err_t memory_watch_service_init(void)
 esp_err_t memory_watch_service_configure_endpoint(
     const memory_watch_service_endpoint_config_t *config)
 {
-    if (config == NULL)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
     const memory_watch_service_snapshot_t snapshot =
         memory_watch_service_copy_snapshot();
     if (snapshot.request_active)
@@ -1556,29 +1589,12 @@ esp_err_t memory_watch_service_configure_endpoint(
     }
 
     memory_watch_service_endpoint_state_t next_config = {0};
-    esp_err_t err = memory_watch_service_copy_required_text(
-        next_config.base_url, sizeof(next_config.base_url), config->base_url);
+    esp_err_t err = memory_watch_service_build_endpoint_state(config,
+                                                              &next_config);
     if (err != ESP_OK)
     {
         return err;
     }
-    err = memory_watch_service_copy_required_text(
-        next_config.device_id, sizeof(next_config.device_id),
-        config->device_id);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-    err = memory_watch_service_copy_required_text(
-        next_config.device_token, sizeof(next_config.device_token),
-        config->device_token);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-    next_config.timeout_ms = config->timeout_ms;
-    next_config.allow_insecure_http = config->allow_insecure_http;
-    next_config.configured = true;
 
     portENTER_CRITICAL(&s_endpoint_lock);
     s_endpoint_config = next_config;
@@ -1586,6 +1602,76 @@ esp_err_t memory_watch_service_configure_endpoint(
 
     memory_watch_service_set_endpoint_snapshot(true, false);
     memory_watch_service_set_state(snapshot.state, ESP_OK);
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_save_endpoint_to_nvs(
+    const memory_watch_service_endpoint_config_t *config)
+{
+    const memory_watch_service_snapshot_t snapshot =
+        memory_watch_service_copy_snapshot();
+    if (snapshot.request_active)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memory_watch_service_endpoint_state_t next_config = {0};
+    esp_err_t err = memory_watch_service_build_endpoint_state(config,
+                                                              &next_config);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    nvs_handle_t handle = 0;
+    err = nvs_open(kEndpointNvsNamespace, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    err = nvs_set_str(handle, kEndpointNvsBaseUrlKey, next_config.base_url);
+    if (err == ESP_OK)
+    {
+        err = nvs_set_str(handle, kEndpointNvsDeviceIdKey,
+                          next_config.device_id);
+    }
+    if (err == ESP_OK)
+    {
+        err = nvs_set_str(handle, kEndpointNvsDeviceTokenKey,
+                          next_config.device_token);
+    }
+    if (err == ESP_OK)
+    {
+        err = nvs_set_u32(handle, kEndpointNvsTimeoutMsKey,
+                          next_config.timeout_ms);
+    }
+    if (err == ESP_OK)
+    {
+        err = nvs_set_u8(handle, kEndpointNvsAllowHttpKey,
+                         next_config.allow_insecure_http ? 1U : 0U);
+    }
+    if (err == ESP_OK)
+    {
+        err = nvs_commit(handle);
+    }
+    nvs_close(handle);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    portENTER_CRITICAL(&s_endpoint_lock);
+    s_endpoint_config = next_config;
+    portEXIT_CRITICAL(&s_endpoint_lock);
+
+    memory_watch_service_set_endpoint_snapshot(true, false);
+    memory_watch_service_set_state(snapshot.state, ESP_OK);
+    ESP_LOGI(TAG,
+             "watch endpoint config saved to NVS: device_id=%s allow_http=%u timeout_ms=%lu",
+             next_config.device_id,
+             (unsigned int)next_config.allow_insecure_http,
+             (unsigned long)next_config.timeout_ms);
     return ESP_OK;
 }
 

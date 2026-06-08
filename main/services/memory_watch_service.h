@@ -86,12 +86,25 @@ extern "C"
      * @brief 配置 watch endpoint。
      *
      * 该接口只复制运行期提供的配置，不持久化、不打印 token，也不触发网络请求。
-     * 如需保存配置，应由后续独立 NVS 配置入口负责。
      *
      * @param[in] config endpoint 配置，字符串不能为空。
      * @return `ESP_OK` 表示已复制配置。
      */
     esp_err_t memory_watch_service_configure_endpoint(
+        const memory_watch_service_endpoint_config_t *config);
+
+    /**
+     * @brief 保存 watch endpoint 配置到 NVS 并应用到运行期。
+     *
+     * 该接口只保存 ESP32-S3 到 watch endpoint 的 `device_token`，不保存
+     * Hermes API key、MiMo key 或 API Server key；日志也不得打印 token。
+     * 如当前已有未完成请求，为避免中途切换服务器配置，将返回
+     * `ESP_ERR_INVALID_STATE`。
+     *
+     * @param[in] config endpoint 配置，字符串不能为空。
+     * @return `ESP_OK` 表示已写入 NVS 并应用运行期配置。
+     */
+    esp_err_t memory_watch_service_save_endpoint_to_nvs(
         const memory_watch_service_endpoint_config_t *config);
 
     /**
