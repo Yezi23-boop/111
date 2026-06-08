@@ -169,10 +169,12 @@ For a public domain that only proxies `/v1/watch/*`, skip the private service he
 
 ```powershell
 .\smoke_test.ps1 -BaseUrl "https://watch.example.com" -SkipServiceHealth
-.\runtime_status.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth
-.\acceptance_test.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr
-.\release_gate.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr
+.\runtime_status.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth -AssertPrivateNotExposed
+.\acceptance_test.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr -AssertPrivateNotExposed
+.\release_gate.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr -AssertPrivateNotExposed
 ```
+
+`-AssertPrivateNotExposed` checks that public `$BaseUrl/health` and `$BaseUrl/v1/models` do not return HTTP 200. This catches an overly broad reverse proxy before the watch starts using the domain.
 
 Manual `docker run` is still useful for one-off isolation:
 

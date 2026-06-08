@@ -85,6 +85,10 @@ def test_release_gate_runs_pytest_and_acceptance_without_expanding_env_file():
     assert "Wait-ServiceReady" in source
     assert '"$BaseUrl/health"' in source
     assert "service_not_ready_after_rebuild" in source
+    assert "[switch]$AssertPrivateNotExposed" in source
+    assert "acceptanceArgs.AssertPrivateNotExposed" in source
+    assert "reason = $acceptance.reason" in source
+    assert "endpoint_errors = $acceptance.endpoint_errors" in source
     assert 'if ($status -ne "passed")' in source
     assert "exit 1" in source
     assert "docker compose config" not in source
@@ -122,3 +126,26 @@ def test_smoke_test_requires_semantic_success_by_default():
     assert "Assert-CancelSucceeded" in source
     assert 'Payload.status -ne "canceled"' in source
     assert 'Payload.action -ne "no_action"' in source
+
+
+def test_public_domain_gate_checks_private_paths_without_dumping_private_payloads():
+    root = Path(__file__).resolve().parents[1]
+    runtime_source = (root / "runtime_status.ps1").read_text(encoding="utf-8")
+    acceptance_source = (root / "acceptance_test.ps1").read_text(encoding="utf-8")
+    private_function = runtime_source.split("function Invoke-PrivateExposureCheck", 1)[1].split(
+        "function Get-ContainerStatus", 1
+    )[0]
+
+    assert "[switch]$AssertPrivateNotExposed" in runtime_source
+    assert "Invoke-PrivateExposureCheck" in runtime_source
+    assert '"$privateBaseUrl/health"' in runtime_source
+    assert '"$privateBaseUrl/v1/models"' in runtime_source
+    assert "status_code" in runtime_source
+    assert "exposed" in runtime_source
+    assert "[switch]$AssertPrivateNotExposed" in acceptance_source
+    assert "statusArgs.AssertPrivateNotExposed" in acceptance_source
+    assert "private_endpoint_exposed" in acceptance_source
+    assert "private_exposure" in acceptance_source
+    assert "Authorization" not in private_function
+    assert "WATCH_DEVICE_TOKENS" not in private_function
+    assert "payload" not in private_function

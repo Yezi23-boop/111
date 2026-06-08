@@ -8,7 +8,8 @@ param(
   [switch]$SkipDocker,
   [switch]$SkipHermesApi,
   [switch]$SkipServiceHealth,
-  [switch]$SkipRealAsr
+  [switch]$SkipRealAsr,
+  [switch]$AssertPrivateNotExposed
 )
 
 $ErrorActionPreference = "Stop"
@@ -92,6 +93,7 @@ function Select-RuntimeSummary {
     request_status_counts = $serviceHealth.request_status_counts
     auth_failures = $serviceHealth.auth_failures
     last_auth_failure = $serviceHealth.last_auth_failure
+    private_exposure = $Runtime.endpoints.private_exposure
   }
 }
 
@@ -103,6 +105,7 @@ function Select-EndpointErrors {
 
   return [pscustomobject]@{
     service_health = $Runtime.endpoints.service_health.error
+    private_exposure = $Runtime.endpoints.private_exposure
     watch_health = $Runtime.endpoints.watch_health.error
     hermes_health = $Runtime.endpoints.hermes_health.error
     hermes_models = $Runtime.endpoints.hermes_models.error
@@ -130,6 +133,9 @@ function Get-PreflightFailureReason {
   }
   if ((-not $SkipHermesApi) -and ($Runtime.endpoints.hermes_models.model_count -lt 1)) {
     $reasons += "hermes_models_unavailable"
+  }
+  if ($AssertPrivateNotExposed -and (-not $Runtime.endpoints.private_exposure.ok)) {
+    $reasons += "private_endpoint_exposed"
   }
 
   if ($reasons.Count -eq 0) {
@@ -173,6 +179,9 @@ if ($SkipHermesApi) {
 }
 if ($SkipServiceHealth) {
   $statusArgs.SkipServiceHealth = $true
+}
+if ($AssertPrivateNotExposed) {
+  $statusArgs.AssertPrivateNotExposed = $true
 }
 
 $smokeArgs = @{

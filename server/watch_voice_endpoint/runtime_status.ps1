@@ -6,7 +6,8 @@ param(
   [string]$DeviceId = "watch-001",
   [switch]$SkipDocker,
   [switch]$SkipHermesApi,
-  [switch]$SkipServiceHealth
+  [switch]$SkipServiceHealth,
+  [switch]$AssertPrivateNotExposed
 )
 
 $ErrorActionPreference = "Stop"
@@ -85,6 +86,34 @@ function Invoke-StatusGet {
   }
 }
 
+function Invoke-PrivateExposureCheck {
+  param(
+    [string]$Uri,
+    [string]$Path,
+    [int]$TimeoutSec = 10
+  )
+
+  try {
+    $response = Invoke-WebRequest -Uri $Uri -TimeoutSec $TimeoutSec -SkipHttpErrorCheck
+    $statusCode = [int]$response.StatusCode
+    return [pscustomobject]@{
+      path = $Path
+      ok = $statusCode -ne 200
+      exposed = $statusCode -eq 200
+      status_code = $statusCode
+      error = $null
+    }
+  } catch {
+    return [pscustomobject]@{
+      path = $Path
+      ok = $true
+      exposed = $false
+      status_code = $null
+      error = $_.Exception.Message
+    }
+  }
+}
+
 function Get-ContainerStatus {
   param([string]$Name)
 
@@ -149,6 +178,21 @@ if (-not $SkipServiceHealth) {
 }
 $watchHealth = Invoke-StatusGet -Uri "$BaseUrl/v1/watch/health?device_id=$DeviceId" -Headers $watchHeaders -TimeoutSec 10
 
+$privateExposureChecks = @()
+if ($AssertPrivateNotExposed) {
+  $privateBaseUrl = $BaseUrl.TrimEnd("/")
+  $privateExposureChecks = @(
+    Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/health" -Path "/health" -TimeoutSec 10
+    Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/v1/models" -Path "/v1/models" -TimeoutSec 10
+  )
+}
+$privateExposureOk = $null
+if ($AssertPrivateNotExposed) {
+  $privateExposureOk = -not [bool](
+    $privateExposureChecks | Where-Object { -not $_.ok } | Select-Object -First 1
+  )
+}
+
 $hermesHealth = $null
 $hermesModels = $null
 if (-not $SkipHermesApi) {
@@ -199,6 +243,11 @@ if ($hermesModels -and $hermesModels.ok -and $hermesModels.payload.data) {
       request_error_counts = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.request_error_counts } else { $null })
       last_request = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.last_request } else { $null })
       last_auth_failure = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.last_auth_failure } else { $null })
+    }
+    private_exposure = [pscustomobject]@{
+      checked = [bool]$AssertPrivateNotExposed
+      ok = $privateExposureOk
+      checks = $privateExposureChecks
     }
     watch_health = [pscustomobject]@{
       ok = $watchHealth.ok

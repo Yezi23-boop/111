@@ -103,6 +103,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - 私有 `/health` 与 `runtime_status.ps1` 已增加非敏感 auth 诊断：`auth_failures` 计数与 `last_auth_failure` 只记录 endpoint、device_id、status_code、reason 与 occurred_at，帮助 ESP32-S3 首连时区分 device_id/token 配置问题；不记录 Authorization header 或 bearer token。
 - `smoke_test.ps1` 已支持 `-BaseUrl <https://watch.example.com>` 指向公网域名，并可用 `-SkipServiceHealth` 跳过私有 `/health`；这样 Caddy 只公开 `/v1/watch/*` 时仍能验证设备协议入口。
 - `runtime_status.ps1` 与 `acceptance_test.ps1` 也已支持 `-SkipServiceHealth`；公网只代理 `/v1/watch/*` 时可同时跳过 Docker、Hermes API 和私有 `/health` 检查。
+- `runtime_status.ps1`、`acceptance_test.ps1` 与 `release_gate.ps1` 已支持 `-AssertPrivateNotExposed`；公网验收时会检查 `$BaseUrl/health` 和 `$BaseUrl/v1/models` 不返回 HTTP 200，避免 Caddy/反代配置过宽把私有状态面或 Hermes-like 路径暴露出去。
 - `server/watch_voice_endpoint/make_tts_sample.ps1` 可在 Windows 本机用中文 System.Speech voice + ffmpeg 生成可复现 Ogg Opus 测试样本；`smoke_test.ps1 -UseRealAsr` 现在要求显式传入 `AudioPath`，避免把 dummy Ogg 当真实语音测试。
 - voice endpoint 已增加 `WATCH_REQUEST_TIMEOUT_SECONDS` 端到端请求预算，当前常驻容器配置为 `115` 秒，小于 ESP32-S3 侧 120 秒等待窗口；ASR + Hermes 处理超过总预算时服务器先返回手表 V1 `status=timeout/error_code=server_timeout`。
 - voice endpoint 已补强 ESP32-S3 上传输入校验：`request_id` 只接受 1-96 位 ASCII 字母、数字、`.`、`_`、`:`、`-`，空音频和超长音频会在进入 ASR/Hermes 前返回手表 V1 固定 7 字段 JSON 错误，避免真实录音/重试异常掉进 ffmpeg 或 ASR 后才失败。
@@ -530,6 +531,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 服务器侧 release gate 已完成本地运行态闭环：`release_gate.ps1 -SkipDocker` 通过，输出包含 server pytest 31 项、Hermes text smoke、mock voice/cancel/auth failure、真实 MiMo ASR smoke 与 runtime counters；脚本输出只保留非敏感摘要。重建后的常驻 `ai-memory-watch-voice-endpoint` 容器为 `healthy`。
 - 服务器侧 smoke/release gate 输出安全与语义门槛已补强：`smoke_test.ps1` 默认不输出 ASR/回复正文，release gate 只展示 present/chars；默认 smoke 还会失败于 Hermes offline、voice error 或 cancel 非 `canceled/no_action`。当前 server pytest 33 项通过，`release_gate.ps1 -SkipDocker` 通过，mock 与真实 MiMo ASR smoke 均返回语义成功。
 - 服务器侧 auth 首连诊断与 release gate 重建等待已补强：`/health`、`runtime_status.ps1`、`acceptance_test.ps1`、`release_gate.ps1` 均能看到非敏感 auth failure 计数和最近失败摘要；`release_gate.ps1 -RebuildContainer` 会等待 `/health` ready 后再跑 acceptance，避免容器 `starting` 竞态误判。当前 server pytest 33 项通过，`release_gate.ps1 -RebuildContainer` 通过，重建后容器 `healthy`。
+- 服务器侧公网私有路径负向门禁已补强：`runtime_status.ps1 -AssertPrivateNotExposed` 只输出 path/status_code/exposed/error，不保留响应 payload；本机探针已确认它能检测到本地 `/health` 返回 200 的“私有路径暴露”形态，同时默认 `release_gate.ps1 -SkipDocker` 仍通过。当前 server pytest 34 项通过。
 
 期望看到的结果：
 

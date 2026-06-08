@@ -10,7 +10,8 @@ param(
   [switch]$SkipDocker,
   [switch]$SkipHermesApi,
   [switch]$SkipServiceHealth,
-  [switch]$SkipRealAsr
+  [switch]$SkipRealAsr,
+  [switch]$AssertPrivateNotExposed
 )
 
 $ErrorActionPreference = "Stop"
@@ -150,6 +151,9 @@ if (
   if ($SkipRealAsr) {
     $acceptanceArgs.SkipRealAsr = $true
   }
+  if ($AssertPrivateNotExposed) {
+    $acceptanceArgs.AssertPrivateNotExposed = $true
+  }
 
   $acceptanceOutput = & $acceptanceScript @acceptanceArgs 2>&1
   $acceptanceExitCode = $LASTEXITCODE
@@ -194,7 +198,9 @@ $summary = [pscustomobject]@{
       [pscustomobject]@{
         exit_code = $acceptanceExitCode
         status = $acceptance.status
+        reason = $acceptance.reason
         runtime_before = $acceptance.runtime_before
+        endpoint_errors = $acceptance.endpoint_errors
         hermes_text_smoke = $acceptance.hermes_text_smoke
         mock_smoke = $acceptance.mock_smoke
         real_asr_smoke = $acceptance.real_asr_smoke
