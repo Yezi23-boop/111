@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import importlib
 from pathlib import Path
@@ -22,6 +23,11 @@ def _field_annotation(model, field_name: str):
     if hasattr(model, "model_fields"):
         return model.model_fields[field_name].annotation
     return model.__fields__[field_name].outer_type_
+
+
+def _fastapi_default(callable_obj, parameter_name: str):
+    default = inspect.signature(callable_obj).parameters[parameter_name].default
+    return getattr(default, "default", default)
 
 
 def test_watch_contract_matches_response_model(watch_app):
@@ -49,3 +55,19 @@ def test_watch_contract_matches_request_limits(watch_app):
     assert contract["timeouts"]["server_request_timeout_seconds"] == watch_app.WATCH_REQUEST_TIMEOUT_SECONDS
     assert contract["timeouts"]["watch_wait_seconds"] > contract["timeouts"]["server_request_timeout_seconds"]
     assert contract["security"]["public_proxy_scope"] == "/v1/watch/*"
+
+
+def test_watch_contract_matches_voice_command_form_fields(watch_app):
+    contract_path = Path(__file__).resolve().parents[1] / "watch_contract.v1.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+
+    public_fields = set(contract["request"]["voice_command_fields"])
+    accepted_parameters = set(inspect.signature(watch_app.voice_command).parameters.keys())
+    dev_only_fields = {"mock_asr_text"}
+    transport_only_fields = {"authorization"}
+
+    assert public_fields <= accepted_parameters
+    assert accepted_parameters - public_fields - dev_only_fields - transport_only_fields == set()
+    assert _fastapi_default(watch_app.voice_command, "locale") == contract["request"]["locale"]
+    assert _fastapi_default(watch_app.voice_command, "timezone") == contract["request"]["timezone"]
+    assert _fastapi_default(watch_app.voice_command, "source") == contract["request"]["source"]
