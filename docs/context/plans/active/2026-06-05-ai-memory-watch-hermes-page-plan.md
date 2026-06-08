@@ -531,7 +531,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 服务器侧 release gate 已完成本地运行态闭环：`release_gate.ps1 -SkipDocker` 通过，输出包含 server pytest 31 项、Hermes text smoke、mock voice/cancel/auth failure、真实 MiMo ASR smoke 与 runtime counters；脚本输出只保留非敏感摘要。重建后的常驻 `ai-memory-watch-voice-endpoint` 容器为 `healthy`。
 - 服务器侧 smoke/release gate 输出安全与语义门槛已补强：`smoke_test.ps1` 默认不输出 ASR/回复正文，release gate 只展示 present/chars；默认 smoke 还会失败于 Hermes offline、voice error 或 cancel 非 `canceled/no_action`。当前 server pytest 33 项通过，`release_gate.ps1 -SkipDocker` 通过，mock 与真实 MiMo ASR smoke 均返回语义成功。
 - 服务器侧 auth 首连诊断与 release gate 重建等待已补强：`/health`、`runtime_status.ps1`、`acceptance_test.ps1`、`release_gate.ps1` 均能看到非敏感 auth failure 计数和最近失败摘要；`release_gate.ps1 -RebuildContainer` 会等待 `/health` ready 后再跑 acceptance，避免容器 `starting` 竞态误判。当前 server pytest 33 项通过，`release_gate.ps1 -RebuildContainer` 通过，重建后容器 `healthy`。
-- 服务器侧公网私有路径负向门禁已补强：`runtime_status.ps1 -AssertPrivateNotExposed` 只输出 path/status_code/allowed_status_codes/exposed/error，不保留响应 payload；本机探针已确认它能检测到本地 `/health` 返回 200 的“私有路径暴露”形态，同时 `/v1/models` 与 `/v1/responses` 在本机 watch endpoint 返回 404 并通过，默认 `release_gate.ps1 -SkipDocker` 仍通过。当前 server pytest 34 项通过。
+- 服务器侧公网私有路径负向门禁已补强并加入脚本级 stub 集成测试：`runtime_status.ps1 -AssertPrivateNotExposed` 只输出 path/status_code/allowed_status_codes/exposed/error，不保留响应 payload；`tests/test_private_exposure_scripts.py` 会启动本地 fake HTTP server 和 fake env，验证 `/health=200` 会让 runtime/acceptance 失败、403/404/410 会通过，且私有响应正文 sentinel 不出现在 stdout/stderr；默认 `release_gate.ps1 -SkipDocker` 仍通过。当前 server pytest 37 项通过。
 
 期望看到的结果：
 
