@@ -7,7 +7,9 @@ param(
   [switch]$UseRealAsr,
   [switch]$SkipServiceHealth,
   [switch]$IncludeCancel,
-  [switch]$IncludeAuthFailure
+  [switch]$IncludeAuthFailure,
+  [switch]$IncludeText,
+  [switch]$AllowErrorResponse
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,7 +116,51 @@ function Assert-WatchResponseFields {
   }
 }
 
+function Assert-WatchHealthReady {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Payload
+  )
+
+  if ($AllowErrorResponse) {
+    return
+  }
+  if ($Payload.status -ne "ok" -or $Payload.hermes_status -ne "online") {
+    throw "Watch health is not ready. status=$($Payload.status); hermes_status=$($Payload.hermes_status)"
+  }
+}
+
+function Assert-VoiceSucceeded {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Payload
+  )
+
+  if ($AllowErrorResponse) {
+    return
+  }
+  if ($Payload.status -ne "done" -or $Payload.action -eq "error") {
+    throw "Voice smoke did not complete. status=$($Payload.status); action=$($Payload.action); error_code=$($Payload.error_code)"
+  }
+}
+
+function Assert-CancelSucceeded {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Payload
+  )
+
+  if ($AllowErrorResponse) {
+    return
+  }
+  if ($Payload.status -ne "canceled" -or $Payload.action -ne "no_action") {
+    throw "Cancel smoke did not cancel. status=$($Payload.status); action=$($Payload.action); error_code=$($Payload.error_code)"
+  }
+}
+
+Assert-WatchHealthReady -Payload $watchHealth
 Assert-WatchResponseFields -Payload $voice -Label "voice"
+Assert-VoiceSucceeded -Payload $voice
 
 $cancel = $null
 if ($IncludeCancel) {
@@ -125,9 +171,10 @@ if ($IncludeCancel) {
     -Form @{ device_id = $DeviceId } `
     -TimeoutSec 15
   Assert-WatchResponseFields -Payload $cancel -Label "cancel"
+  Assert-CancelSucceeded -Payload $cancel
 }
 
-[pscustomobject]@{
+$summary = [pscustomobject]@{
   local_health = $localHealthStatus
   watch_health = $watchHealth.status
   hermes_status = $watchHealth.hermes_status
@@ -137,7 +184,16 @@ if ($IncludeCancel) {
   cancel_status = $(if ($cancel) { $cancel.status } else { $null })
   cancel_action = $(if ($cancel) { $cancel.action } else { $null })
   auth_failure_status_code = $authFailureStatusCode
-  asr_text = $voice.asr_text
-  reply_text = $voice.reply_text
+  asr_text_present = -not [string]::IsNullOrWhiteSpace($voice.asr_text)
+  reply_text_present = -not [string]::IsNullOrWhiteSpace($voice.reply_text)
+  asr_text_chars = $(if ($voice.asr_text) { $voice.asr_text.Length } else { 0 })
+  reply_text_chars = $(if ($voice.reply_text) { $voice.reply_text.Length } else { 0 })
   field_count = $fields.Count
-} | ConvertTo-Json -Depth 4
+}
+
+if ($IncludeText) {
+  $summary | Add-Member -NotePropertyName asr_text -NotePropertyValue $voice.asr_text
+  $summary | Add-Member -NotePropertyName reply_text -NotePropertyValue $voice.reply_text
+}
+
+$summary | ConvertTo-Json -Depth 4

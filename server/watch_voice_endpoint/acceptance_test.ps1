@@ -43,6 +43,10 @@ function Select-SmokeSummary {
     cancel_status = $Smoke.cancel_status
     cancel_action = $Smoke.cancel_action
     auth_failure_status_code = $Smoke.auth_failure_status_code
+    asr_text_present = $Smoke.asr_text_present
+    reply_text_present = $Smoke.reply_text_present
+    asr_text_chars = $Smoke.asr_text_chars
+    reply_text_chars = $Smoke.reply_text_chars
     field_count = $Smoke.field_count
   }
 }

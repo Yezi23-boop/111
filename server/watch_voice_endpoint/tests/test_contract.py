@@ -87,3 +87,35 @@ def test_release_gate_runs_pytest_and_acceptance_without_expanding_env_file():
     assert "docker compose config" not in source
     assert "WATCH_DEVICE_TOKENS" not in source
     assert "HERMES_API_KEY" not in source
+
+
+def test_smoke_test_redacts_transcript_text_by_default():
+    script_path = Path(__file__).resolve().parents[1] / "smoke_test.ps1"
+    source = script_path.read_text(encoding="utf-8")
+
+    assert "[switch]$IncludeText" in source
+    assert "asr_text_present" in source
+    assert "reply_text_present" in source
+    assert "asr_text_chars" in source
+    assert "reply_text_chars" in source
+    assert "if ($IncludeText)" in source
+    assert "Add-Member -NotePropertyName asr_text" in source
+    assert "Add-Member -NotePropertyName reply_text" in source
+    assert "asr_text = $voice.asr_text" not in source
+    assert "reply_text = $voice.reply_text" not in source
+
+
+def test_smoke_test_requires_semantic_success_by_default():
+    script_path = Path(__file__).resolve().parents[1] / "smoke_test.ps1"
+    source = script_path.read_text(encoding="utf-8")
+
+    assert "[switch]$AllowErrorResponse" in source
+    assert "Assert-WatchHealthReady" in source
+    assert 'Payload.status -ne "ok"' in source
+    assert 'Payload.hermes_status -ne "online"' in source
+    assert "Assert-VoiceSucceeded" in source
+    assert 'Payload.status -ne "done"' in source
+    assert 'Payload.action -eq "error"' in source
+    assert "Assert-CancelSucceeded" in source
+    assert 'Payload.status -ne "canceled"' in source
+    assert 'Payload.action -ne "no_action"' in source

@@ -126,7 +126,9 @@ Verify the full server-side path without printing tokens:
 `hermes_text_smoke.ps1` directly verifies Hermes API Server `/health`, `/v1/models`, and `/v1/responses` with `API_SERVER_KEY` loaded from `D:\Docker_data\hermes\data\.env`. It reports only non-secret status, model count, response status, and output length.
 
 The smoke script rejects missing or extra watch response fields, so both voice and optional cancel checks must return exactly the V1 seven-field JSON shape.
+It also fails by default unless watch health is `ok/online`, voice completes with `status=done`, and optional cancel returns `canceled/no_action`. Use `-AllowErrorResponse` only for deliberate failure-shape debugging.
 With `-IncludeAuthFailure`, it also verifies that an invalid device token is rejected with HTTP 403 without printing any token.
+By default, smoke output redacts `asr_text` and `reply_text`; it only reports whether text is present and the character counts. Use `-IncludeText` only for local manual debugging when the transcript and reply are safe to show.
 
 Inspect local runtime status without printing tokens:
 
@@ -153,7 +155,7 @@ Run the release gate before cutting or deploying a server-side iteration:
 .\release_gate.ps1 -RebuildContainer
 ```
 
-The release gate runs server pytest first, then the local acceptance loop. With `-RebuildContainer`, it rebuilds the persistent local Docker container before acceptance. The output is a non-secret JSON summary: test tail, runtime counters, smoke statuses, actions, and field counts only.
+The release gate runs server pytest first, then the local acceptance loop. With `-RebuildContainer`, it rebuilds the persistent local Docker container before acceptance. The output is a non-secret JSON summary: test tail, runtime counters, smoke statuses, actions, text-present flags, text lengths, and field counts only.
 
 Verify real ASR with an Ogg Opus sample:
 

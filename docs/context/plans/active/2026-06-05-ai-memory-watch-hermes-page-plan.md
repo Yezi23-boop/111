@@ -92,6 +92,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `smoke_test.ps1` 已支持 `-IncludeCancel`，可在同一次 smoke 中额外验证 `POST /v1/watch/request/{request_id}/cancel` 返回固定 7 字段 `status=canceled/action=no_action`。
 - `smoke_test.ps1` 现在对 voice 与可选 cancel 响应执行“恰好 7 字段”校验，缺字段或多字段都会失败，防止 ESP32-S3 固定解析契约漂移。
 - `smoke_test.ps1` 已支持 `-IncludeAuthFailure`，用无效 device token 验证 `/v1/watch/health` 返回 HTTP 403，不输出真实 token。
+- `smoke_test.ps1` 默认同时要求语义成功：watch health 必须 `status=ok/hermes_status=online`，voice 必须 `status=done` 且 action 不为 `error`，可选 cancel 必须 `status=canceled/action=no_action`；默认输出不再包含 `asr_text/reply_text` 正文，只保留 present 标志和字符数。
 - 服务器 pytest 已补齐三端点鉴权负向矩阵：`missing bearer`、`wrong token`、`unknown device` 分别覆盖 `/v1/watch/health`、`/v1/watch/voice-command` 与 `/v1/watch/request/{request_id}/cancel`，并确认鉴权失败不会推进 request metrics。
 - 服务器 pytest 已补齐关键失败映射矩阵：超大音频、ASR 异常、ASR 空文本、Hermes 5xx、Hermes 空回复、Hermes timeout 与 ffmpeg 转码失败都会返回手表 V1 固定 7 字段 JSON 或 `timeout/server_timeout`，并确认 runtime metrics 不包含 ASR 文本、回复文本、Authorization、token、音频内容或转码失败 detail。
 - `server/watch_voice_endpoint/runtime_status.ps1` 可输出无密钥 JSON 状态总览，覆盖 env key presence、Docker 容器状态、watch endpoint `/health`、`/v1/watch/health`、Hermes `/health` 与 `/v1/models`。
@@ -526,6 +527,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 服务器侧全端点鉴权负向矩阵已完成 pytest 闭环：`missing bearer`、`wrong token`、`unknown device` 覆盖 health/voice/cancel 三个设备入口，鉴权失败不会推进 request metrics；server pytest 当前 23 项通过。
 - 服务器侧失败映射矩阵已完成 pytest 闭环：超大音频、ASR 异常、ASR 空文本、Hermes 5xx、Hermes 空回复、Hermes timeout 与 ffmpeg 转码失败均保持手表 V1 固定 7 字段响应，错误/超时会更新非敏感 request metrics，最近请求摘要仍不包含 ASR 文本、回复文本、token、音频内容或转码失败 detail；server pytest 当前 30 项通过。
 - 服务器侧 release gate 已完成本地运行态闭环：`release_gate.ps1 -SkipDocker` 通过，输出包含 server pytest 31 项、Hermes text smoke、mock voice/cancel/auth failure、真实 MiMo ASR smoke 与 runtime counters；脚本输出只保留非敏感摘要。重建后的常驻 `ai-memory-watch-voice-endpoint` 容器为 `healthy`。
+- 服务器侧 smoke/release gate 输出安全与语义门槛已补强：`smoke_test.ps1` 默认不输出 ASR/回复正文，release gate 只展示 present/chars；默认 smoke 还会失败于 Hermes offline、voice error 或 cancel 非 `canceled/no_action`。当前 server pytest 33 项通过，`release_gate.ps1 -SkipDocker` 通过，mock 与真实 MiMo ASR smoke 均返回语义成功。
 
 期望看到的结果：
 
