@@ -81,8 +81,14 @@ _request_status_counts = {
     "timeout": 0,
     "canceled": 0,
 }
+_auth_failure_counts = {
+    "missing_bearer_token": 0,
+    "invalid_device_token": 0,
+    "device_not_allowed": 0,
+}
 _request_error_counts: dict[str, int] = {}
 _last_request_summary: dict[str, str | int | float | None] = {}
+_last_auth_failure_summary: dict[str, str | int] = {}
 _request_lock = asyncio.Lock()
 
 
@@ -99,16 +105,36 @@ def _device_tokens() -> dict[str, str]:
     return pairs
 
 
-def _require_device(device_id: str, authorization: str | None) -> None:
+def _raise_auth_failure(
+    endpoint: str,
+    device_id: str,
+    status_code: int,
+    reason: str,
+) -> None:
+    _auth_failure_counts[reason] = _auth_failure_counts.get(reason, 0) + 1
+    _last_auth_failure_summary.clear()
+    _last_auth_failure_summary.update(
+        {
+            "endpoint": endpoint,
+            "device_id": device_id,
+            "status_code": status_code,
+            "reason": reason,
+            "occurred_at": int(time.time()),
+        }
+    )
+    raise HTTPException(status_code=status_code, detail=reason)
+
+
+def _require_device(device_id: str, authorization: str | None, endpoint: str) -> None:
     tokens = _device_tokens()
     expected = tokens.get(device_id)
     if not expected:
-        raise HTTPException(status_code=403, detail="device_not_allowed")
+        _raise_auth_failure(endpoint, device_id, 403, "device_not_allowed")
     prefix = "Bearer "
     if not authorization or not authorization.startswith(prefix):
-        raise HTTPException(status_code=401, detail="missing_bearer_token")
+        _raise_auth_failure(endpoint, device_id, 401, "missing_bearer_token")
     if authorization[len(prefix) :] != expected:
-        raise HTTPException(status_code=403, detail="invalid_device_token")
+        _raise_auth_failure(endpoint, device_id, 403, "invalid_device_token")
 
 
 def _hermes_headers() -> dict[str, str]:
@@ -503,7 +529,7 @@ async def health(
     device_id: str = Query(...),
     authorization: str | None = Header(default=None),
 ) -> HealthResponse:
-    _require_device(device_id, authorization)
+    _require_device(device_id, authorization, "watch_health")
     try:
         async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
             response = await client.get(f"{HERMES_API_URL}/health")
@@ -530,7 +556,7 @@ async def voice_command(
     mock_asr_text: str | None = Form(default=None),
     authorization: str | None = Header(default=None),
 ) -> WatchResponse:
-    _require_device(device_id, authorization)
+    _require_device(device_id, authorization, "voice_command")
     del battery_percent, charging, rssi, firmware_version, locale, timezone, source, ui_state
     normalized_request_id = _normalize_request_id(request_id)
     if normalized_request_id is None:
@@ -590,7 +616,7 @@ async def cancel_request(
     device_id: str = Form(...),
     authorization: str | None = Header(default=None),
 ) -> WatchResponse:
-    _require_device(device_id, authorization)
+    _require_device(device_id, authorization, "cancel")
     normalized_request_id = _normalize_request_id(request_id)
     if normalized_request_id is None:
         response = _error_watch_response(INVALID_REQUEST_ID, "请求编号异常，请重新发送")
@@ -626,6 +652,10 @@ async def service_health() -> dict[str, object]:
         "canceled_requests": len(_canceled_requests),
         "request_events": dict(_request_event_counts),
         "request_status_counts": dict(_request_status_counts),
+        "auth_failures": dict(_auth_failure_counts),
         "request_error_counts": dict(_request_error_counts),
         "last_request": dict(_last_request_summary) if _last_request_summary else None,
+        "last_auth_failure": (
+            dict(_last_auth_failure_summary) if _last_auth_failure_summary else None
+        ),
     }

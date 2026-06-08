@@ -35,6 +35,11 @@ AUTH_FAILURE_CASES = [
         "device_not_allowed",
     ),
 ]
+ENDPOINT_AUTH_NAMES = {
+    "health": "watch_health",
+    "voice": "voice_command",
+    "cancel": "cancel",
+}
 
 
 @pytest.fixture()
@@ -64,8 +69,16 @@ def watch_app(monkeypatch):
             "canceled": 0,
         }
     )
+    module._auth_failure_counts.update(
+        {
+            "missing_bearer_token": 0,
+            "invalid_device_token": 0,
+            "device_not_allowed": 0,
+        }
+    )
     module._request_error_counts.clear()
     module._last_request_summary.clear()
+    module._last_auth_failure_summary.clear()
     return module
 
 
@@ -213,6 +226,7 @@ async def test_watch_endpoints_reject_auth_failures(
             device_id,
             authorization,
         )
+        health = await client.get("/health")
 
     assert case_name
     assert response.status_code == expected_status
@@ -221,6 +235,24 @@ async def test_watch_endpoints_reject_auth_failures(
     assert watch_app._request_event_counts["cache_hits"] == 0
     assert watch_app._request_event_counts["inflight_waits"] == 0
     assert watch_app._request_event_counts["canceled_hits"] == 0
+    assert watch_app._auth_failure_counts[expected_detail] == 1
+    last_auth_failure = watch_app._last_auth_failure_summary
+    assert last_auth_failure["endpoint"] == ENDPOINT_AUTH_NAMES[endpoint]
+    assert last_auth_failure["device_id"] == device_id
+    assert last_auth_failure["status_code"] == expected_status
+    assert last_auth_failure["reason"] == expected_detail
+    rendered = json.dumps(last_auth_failure, ensure_ascii=False)
+    assert "Bearer" not in rendered
+    assert "test-token" not in rendered
+    assert "wrong-token" not in rendered
+    assert health.status_code == 200
+    health_payload = health.json()
+    assert health_payload["auth_failures"][expected_detail] == 1
+    assert health_payload["last_auth_failure"] == last_auth_failure
+    rendered_health = json.dumps(health_payload, ensure_ascii=False)
+    assert "Bearer" not in rendered_health
+    assert "test-token" not in rendered_health
+    assert "wrong-token" not in rendered_health
 
 
 @pytest.mark.anyio

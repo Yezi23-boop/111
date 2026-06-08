@@ -136,7 +136,7 @@ Inspect local runtime status without printing tokens:
 .\runtime_status.ps1
 ```
 
-`/health` and `runtime_status.ps1` expose non-secret request metrics for debugging: event counters, response status counters, error-code counters, and the latest request summary with status, action, duration, and audio byte size. They do not include ASR text, reply text, audio contents, API keys, or bearer tokens.
+`/health` and `runtime_status.ps1` expose non-secret request metrics for debugging: event counters, response status counters, error-code counters, auth failure counters, and the latest request/auth-failure summaries with status, action, reason, duration, and audio byte size. They do not include ASR text, reply text, audio contents, API keys, Authorization headers, or bearer tokens.
 If Docker inspect is blocked by the current shell permissions, container status is reported as `inspect_unavailable`; use the endpoint checks in the same output as the authoritative service availability signal.
 
 Run the full local acceptance loop before server-side iteration commits:
@@ -155,7 +155,7 @@ Run the release gate before cutting or deploying a server-side iteration:
 .\release_gate.ps1 -RebuildContainer
 ```
 
-The release gate runs server pytest first, then the local acceptance loop. With `-RebuildContainer`, it rebuilds the persistent local Docker container before acceptance. The output is a non-secret JSON summary: test tail, runtime counters, smoke statuses, actions, text-present flags, text lengths, and field counts only.
+The release gate runs server pytest first, then the local acceptance loop. With `-RebuildContainer`, it rebuilds the persistent local Docker container and waits for private `/health` before acceptance. The output is a non-secret JSON summary: test tail, runtime counters, auth-failure counters, smoke statuses, actions, text-present flags, text lengths, and field counts only.
 
 Verify real ASR with an Ogg Opus sample:
 

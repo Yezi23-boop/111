@@ -82,6 +82,9 @@ def test_release_gate_runs_pytest_and_acceptance_without_expanding_env_file():
     assert "acceptance_test.ps1" in source
     assert "RebuildContainer" in source
     assert "docker compose -f $composeFile up -d --build" in source
+    assert "Wait-ServiceReady" in source
+    assert '"$BaseUrl/health"' in source
+    assert "service_not_ready_after_rebuild" in source
     assert 'if ($status -ne "passed")' in source
     assert "exit 1" in source
     assert "docker compose config" not in source
