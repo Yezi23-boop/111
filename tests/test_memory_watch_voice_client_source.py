@@ -1,8 +1,19 @@
+import json
 import unittest
 
 from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import MEMORY_WATCH_VOICE_CLIENT_HEADER
 from tests.main_paths import MEMORY_WATCH_VOICE_CLIENT_SOURCE
+from tests.main_paths import REPO_ROOT
+
+
+WATCH_CONTRACT_V1 = (
+    REPO_ROOT / "server" / "watch_voice_endpoint" / "watch_contract.v1.json"
+)
+
+
+def load_watch_contract_v1() -> dict:
+    return json.loads(WATCH_CONTRACT_V1.read_text(encoding="utf-8"))
 
 
 class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
@@ -123,6 +134,69 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
             "error",
         ]:
             self.assertIn(f'"{action}"', source)
+
+    def test_voice_client_matches_server_watch_contract_v1(self) -> None:
+        contract = load_watch_contract_v1()
+        header = MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8")
+        source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
+        combined = source + "\n" + header
+
+        endpoints = contract["endpoints"]
+        self.assertIn(f'"{endpoints["voice_command"]["path"]}"', source)
+        self.assertIn(
+            f'"{endpoints["health"]["path"]}?device_id="',
+            source,
+        )
+        cancel_prefix, cancel_suffix = endpoints["cancel"]["path"].split(
+            "{request_id}"
+        )
+        self.assertIn(f'"{cancel_prefix}"', source)
+        self.assertIn(f'"{cancel_suffix}"', source)
+        self.assertIn('"Content-Type: audio/ogg', source)
+
+        request = contract["request"]
+        self.assertIn(
+            f"MEMORY_WATCH_VOICE_CLIENT_REQUEST_ID_MAX_LEN "
+            f"{request['request_id_pattern'].split('{1,')[1].split('}')[0]}U",
+            header,
+        )
+        self.assertEqual(request["max_audio_bytes"], 6 * 1024 * 1024)
+        self.assertIn(
+            "#define MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES "
+            "(6U * 1024U * 1024U)",
+            header,
+        )
+        for field in request["voice_command_fields"]:
+            if field == "audio":
+                self.assertIn('name=\\"audio\\"', source)
+            else:
+                self.assertIn(f'"{field}"', source)
+        self.assertIn(request["locale"], source)
+        self.assertIn(request["timezone"], source)
+        self.assertIn(request["source"], source)
+
+        response = contract["response"]
+        self.assertIn(
+            f"cJSON_GetArraySize(root) != {len(response['required'])}",
+            source,
+        )
+        for field in response["required"]:
+            self.assertIn(f'root, "{field}"', source)
+        for status in response["status_enum"]:
+            self.assertIn(f'"{status}"', source)
+        for action in response["action_enum"]:
+            self.assertIn(f'"{action}"', source)
+
+        timeouts = contract["timeouts"]
+        self.assertIn(
+            f"MEMORY_WATCH_VOICE_CLIENT_DEFAULT_TIMEOUT_MS "
+            f"{timeouts['watch_wait_seconds'] * 1000}U",
+            header,
+        )
+        for forbidden in contract["security"]["esp32_must_not_store"]:
+            self.assertNotIn(forbidden, combined)
+        for forbidden in contract["security"]["esp32_must_not_call"]:
+            self.assertNotIn(forbidden, combined)
 
     def test_voice_client_streams_multipart_without_copying_audio_body(self) -> None:
         header = MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8")

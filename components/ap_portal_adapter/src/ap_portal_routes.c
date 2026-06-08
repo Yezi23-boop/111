@@ -27,6 +27,8 @@ extern const uint8_t prov_proto_bundle_js_start[] asm("_binary_prov_proto_bundle
 enum
 {
     kMemoryWatchConfigMaxBodyBytes = 768U,
+    /** @brief 限制半包请求反复超时次数，避免共享 HTTPD task 被单个客户端长期占住。 */
+    kMemoryWatchConfigMaxRecvTimeouts = 4U,
 };
 /** @brief 上层注册的 Memory Watch 配置保存回调。 */
 static ap_portal_memory_watch_config_cb_t s_memory_watch_config_callback = NULL;
@@ -114,12 +116,19 @@ static esp_err_t ap_portal_read_json_body(httpd_req_t *req, char *dst,
     }
 
     size_t received_total = 0;
+    uint32_t timeout_count = 0;
     while (received_total < content_len)
     {
         const int received = httpd_req_recv(
             req, dst + received_total, content_len - received_total);
         if (received == HTTPD_SOCK_ERR_TIMEOUT)
         {
+            ++timeout_count;
+            if (timeout_count >= kMemoryWatchConfigMaxRecvTimeouts)
+            {
+                dst[0] = '\0';
+                return ESP_ERR_TIMEOUT;
+            }
             continue;
         }
         if (received <= 0)
@@ -127,6 +136,7 @@ static esp_err_t ap_portal_read_json_body(httpd_req_t *req, char *dst,
             dst[0] = '\0';
             return ESP_FAIL;
         }
+        timeout_count = 0;
         received_total += (size_t)received;
     }
 
@@ -393,6 +403,11 @@ static esp_err_t ap_portal_memory_watch_config_handler(httpd_req_t *req)
     {
         return ap_portal_send_json_error(req, "413 Payload Too Large",
                                          "payload_too_large");
+    }
+    if (err == ESP_ERR_TIMEOUT)
+    {
+        return ap_portal_send_json_error(req, "408 Request Timeout",
+                                         "request_timeout");
     }
     if (err != ESP_OK)
     {

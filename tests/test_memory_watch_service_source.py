@@ -88,6 +88,12 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
 
         self.assertIn("memory_watch_service_endpoint_state_t", source)
         self.assertIn("memory_watch_service_copy_required_text", source)
+        self.assertIn("memory_watch_service_is_safe_endpoint_text", source)
+        self.assertIn("memory_watch_service_validate_endpoint_state", source)
+        self.assertIn('strncmp(state->base_url, "http://", 7)', source)
+        self.assertIn('strncmp(state->base_url, "https://", 8)', source)
+        self.assertIn("uses_http && !state->allow_insecure_http", source)
+        self.assertIn("*p == '\\r' || *p == '\\n'", source)
         self.assertIn("s_endpoint_config = next_config", source)
         self.assertIn("memory_watch_service_set_endpoint_snapshot(true, false)", source)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_CHECK_HEALTH", source)

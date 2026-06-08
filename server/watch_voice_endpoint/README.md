@@ -8,7 +8,7 @@ Flow:
 ESP32-S3 watch -> /v1/watch/voice-command -> Hermes /v1/responses -> watch JSON
 ```
 
-V1 keeps ASR mocked so the watch can first validate Ogg Opus upload, auth, timeout, cancel, and text rendering. Real ASR can replace the server-side transcription adapter later without changing the ESP32 protocol.
+V1 keeps ASR on the server side so the watch can validate Ogg Opus upload, auth, timeout, cancel, and text rendering without changing the ESP32 protocol. The adapter can run in fast mock mode or MiMo ASR mode through `WATCH_ASR_PROVIDER`.
 
 ## Endpoints
 

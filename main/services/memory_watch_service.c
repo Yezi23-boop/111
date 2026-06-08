@@ -262,6 +262,53 @@ static esp_err_t memory_watch_service_copy_required_text(char *dst,
     return ESP_OK;
 }
 
+static bool memory_watch_service_is_safe_endpoint_text(const char *text)
+{
+    if (text == NULL || text[0] == '\0')
+    {
+        return false;
+    }
+
+    for (const char *p = text; *p != '\0'; ++p)
+    {
+        if (*p == '\r' || *p == '\n')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief 校验所有 endpoint 配置入口共同遵守的 URL 与文本边界。
+ *
+ * 配置可能来自 SoftAP、NVS 或后续调试入口，因此校验放在 service owner 层，避免
+ * 某个入口漏检后把非法地址标记为已配置。
+ */
+static esp_err_t memory_watch_service_validate_endpoint_state(
+    const memory_watch_service_endpoint_state_t *state)
+{
+    if (state == NULL ||
+        !memory_watch_service_is_safe_endpoint_text(state->base_url) ||
+        !memory_watch_service_is_safe_endpoint_text(state->device_id) ||
+        !memory_watch_service_is_safe_endpoint_text(state->device_token))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const bool uses_http = strncmp(state->base_url, "http://", 7) == 0;
+    const bool uses_https = strncmp(state->base_url, "https://", 8) == 0;
+    if (!uses_http && !uses_https)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (uses_http && !state->allow_insecure_http)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
 static esp_err_t memory_watch_service_build_endpoint_state(
     const memory_watch_service_endpoint_config_t *config,
     memory_watch_service_endpoint_state_t *out_state)
@@ -295,6 +342,12 @@ static esp_err_t memory_watch_service_build_endpoint_state(
     next_config.timeout_ms = config->timeout_ms;
     next_config.allow_insecure_http = config->allow_insecure_http;
     next_config.configured = true;
+
+    err = memory_watch_service_validate_endpoint_state(&next_config);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
 
     *out_state = next_config;
     return ESP_OK;

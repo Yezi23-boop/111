@@ -400,6 +400,7 @@ done / timeout / error / canceled
 - `[x]` 补齐 ESP32-S3 侧 watch endpoint NVS 运行期配置读取：`memory_watch_service_init()` 启动时读取 `memory_watch/base_url/device_id/device_token/timeout_ms/allow_http`，有完整配置则调用 `memory_watch_service_configure_endpoint()`，缺配置时只保持未配置状态，不打印 device token。
 - `[x]` 补齐 ESP32-S3 侧 watch endpoint NVS 保存入口：`memory_watch_service_save_endpoint_to_nvs()` 校验并写入同一组 NVS key，`nvs_commit` 成功后即时应用运行期配置；只保存 watch device token，不保存 Hermes/API/MiMo key。
 - `[x]` 新增 SoftAP portal 开发/配网期配置入口：`POST /api/memory-watch/config` 由 `ap_portal_adapter` 解析 JSON 后通过 main 注册回调交给 `memory_watch_service_save_endpoint_to_nvs()`，portal 组件不反向依赖 `main/services`，响应不回显 token。
+- `[x]` 补强 SoftAP portal 配置入口安全边界：HTTP body 读取遇到反复 socket timeout 时有限退出并返回 408，避免共享 HTTPD task 被半包请求长期占住；`memory_watch_service_build_endpoint_state()` 在写 NVS/运行态前统一拒绝非法 URL scheme、CR/LF 文本和未显式允许的明文 HTTP。
 - `[ ]` 等用户回来提供热点后，用 ESP32-S3 实机 Wi-Fi 跑真实 `voice endpoint` 上传联调，确认音量、MIME、超时、错误和重试路径。
 
 ## Decision Log
@@ -518,6 +519,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 固件侧独立 Hermes 页面 skeleton 已完成 source/build 闭环：`tests/test_memory_watch_ui_source.py` 与 memory watch/AI/mini-games 相关 source tests 50 项通过，`git diff --check` 通过，`idf.py build` 通过；最新构建将 `memory_watch_view.c`、`memory_watch_controller.c` 和 `memory_watch_service_init()` 编入固件，app 分区当前约 4% free。
 - 固件侧 watch endpoint NVS 配置读取已完成 source/build 闭环：`tests/test_memory_watch_service_source.py` 覆盖 NVS namespace/key、缺失/不完整配置、`memory_watch_service_configure_endpoint()` 调用和不打印 `device_token`；memory watch 相关 source tests 39 项通过，`idf.py build` 通过，最新 app 分区约 4% free。
 - 固件侧 watch endpoint NVS 保存与 SoftAP portal 配置入口已完成 source/build 闭环：`tests/test_memory_watch_service_source.py`、AP portal 相关 source tests 与非阻塞启动 source tests 合计 68 项通过，context standard 校验 0 错 0 警，`idf.py build` 通过；最新 app 分区约 4% free。该入口可用于后续通过 SoftAP 门户写入 `base_url/device_id/device_token/timeout_ms/allow_http`，不需要重刷共享 NVS 分区。
+- 固件/服务器协议一致性与 SoftAP 配置入口硬化已完成 source/build 闭环：新增固件 source test 读取 `server/watch_voice_endpoint/watch_contract.v1.json` 并锁定 endpoint、字段、枚举、超时和安全边界；AP portal body 读取有限 timeout，service 写 NVS 前统一校验 URL 语义。当前固件相关 source tests 69 项通过，server pytest 14 项通过，context standard 校验 0 错 0 警，`idf.py build` 通过；最新 app 分区约 4% free。
 
 期望看到的结果：
 
