@@ -1,12 +1,53 @@
 #ifndef AP_PORTAL_ADAPTER_H
 #define AP_PORTAL_ADAPTER_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "esp_err.h"
 #include "esp_http_server.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define AP_PORTAL_MEMORY_WATCH_URL_MAX_BYTES 128
+#define AP_PORTAL_MEMORY_WATCH_DEVICE_ID_MAX_BYTES 32
+#define AP_PORTAL_MEMORY_WATCH_DEVICE_TOKEN_MAX_BYTES 128
+
+/**
+ * @brief AP 门户接收到的 AI Memory Watch endpoint 配置。
+ *
+ * 该结构只承载 ESP32-S3 到 watch endpoint 的设备级 token。Hermes API key、
+ * MiMo key 或 API Server key 不属于门户配置，也不得从该入口进入固件。
+ */
+typedef struct
+{
+    char base_url[AP_PORTAL_MEMORY_WATCH_URL_MAX_BYTES];                 /**< watch endpoint 基础地址。 */
+    char device_id[AP_PORTAL_MEMORY_WATCH_DEVICE_ID_MAX_BYTES];          /**< 设备 ID。 */
+    char device_token[AP_PORTAL_MEMORY_WATCH_DEVICE_TOKEN_MAX_BYTES];    /**< 设备 token，不得写日志。 */
+    uint32_t timeout_ms;                                                 /**< 语音请求等待预算；0 表示使用默认值。 */
+    bool allow_insecure_http;                                            /**< 开发期是否允许 HTTP 明文 endpoint。 */
+} ap_portal_memory_watch_config_t;
+
+/**
+ * @brief AI Memory Watch endpoint 配置保存回调。
+ *
+ * AP 门户只负责解析请求并调用该回调，具体保存到哪个 owner 由主程序注册决定，避免
+ * `ap_portal_adapter` 反向依赖 `main/services`。
+ */
+typedef esp_err_t (*ap_portal_memory_watch_config_cb_t)(
+    const ap_portal_memory_watch_config_t *config, void *user_ctx);
+
+/**
+ * @brief 注册 AI Memory Watch endpoint 配置保存回调。
+ *
+ * @param[in] callback 保存回调；传 `NULL` 表示禁用该门户配置入口。
+ * @param[in] user_ctx 透传给回调的用户上下文。
+ * @return `ESP_OK` 表示回调已更新。
+ */
+esp_err_t ap_portal_adapter_set_memory_watch_config_callback(
+    ap_portal_memory_watch_config_cb_t callback, void *user_ctx);
 
 /**
  * @brief 启动 AP 门户适配层的最小 HTTP 服务器。

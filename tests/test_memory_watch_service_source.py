@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import MEMORY_WATCH_SERVICE_HEADER
 from tests.main_paths import MEMORY_WATCH_SERVICE_SOURCE
@@ -245,6 +246,17 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
             "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_service.c",
             cmake,
         )
+
+    def test_app_main_registers_ap_portal_endpoint_config_callback(self) -> None:
+        source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include "ap_portal_adapter.h"', source)
+        self.assertIn("app_memory_watch_portal_config_cb", source)
+        self.assertIn("ap_portal_adapter_set_memory_watch_config_callback", source)
+        self.assertIn("memory_watch_service_save_endpoint_to_nvs", source)
+        self.assertNotIn("HERMES_API_KEY", source)
+        self.assertNotIn("API_SERVER_KEY", source)
+        self.assertNotIn("XIAOMI_API_KEY", source)
 
 
 if __name__ == "__main__":

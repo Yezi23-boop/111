@@ -158,6 +158,7 @@ POST /v1/watch/request/{request_id}/cancel
 - V1 使用 `device_id + device_token allowlist`；开发期 token 写入 NVS 或本地配置，不硬编码进公开源码。
 - ESP32-S3 固件启动时会尝试从 NVS 命名空间 `memory_watch` 读取 `base_url`、`device_id`、`device_token`、可选 `timeout_ms` 和 `allow_http`；缺失或不完整时保持页面“未配置”，不阻塞启动，也不在日志打印 token。
 - 固件侧提供 `memory_watch_service_save_endpoint_to_nvs()` 作为 service-owned 配置保存入口，后续配网/调试入口可调用它写入同一组 NVS key 并即时应用运行期配置；不需要重刷共享 NVS 分区，也不允许记录 Hermes/API/MiMo key。
+- SoftAP 门户提供开发/配网期 JSON 入口 `POST /api/memory-watch/config`，由 `ap_portal_adapter` 解析 `base_url/device_id/device_token/timeout_ms/allow_http` 后通过 main 注册的回调交给 `memory_watch_service_save_endpoint_to_nvs()`；portal 组件不 include `memory_watch_service`，也不在响应中回显 token。
 - `/health` 只在进入 Hermes 页面时请求一次，不做持续轮询；失败显示 `Hermes · 不可用`。
 - `voice-command` 使用 `multipart/form-data`。
 
@@ -397,6 +398,8 @@ done / timeout / error / canceled
 - `[x]` 补强 `memory_watch_service` 运行期接入边界：新增 watch endpoint 配置入口、`/v1/watch/health` 短超时检查、`endpoint_configured/hermes_online` 快照位，以及 `<device_id>-<boot_id>-<seq>` request_id 生成；device token 仍只由运行期配置/NVS 后续入口注入，源码不硬编码，owner task 仍不直接执行 120 秒 `voice-command` 上传。
 - `[x]` 落地独立 Hermes 页面 skeleton：占用当前未绑定的主菜单 `screen_main_option_8/user` 作为 `Hermes` 入口，新增 `memory_watch_controller.[ch]` 与 `memory_watch_view.[ch]`，页面按“按住说话 -> 松开发送 / 滑出取消”投递 `memory_watch_service` 命令；`lvgl_task` 只 init/poll controller，UI 只读快照，不直接执行 HTTP、ASR、录音或访问 `official_chat/ai_chat_view`。
 - `[x]` 补齐 ESP32-S3 侧 watch endpoint NVS 运行期配置读取：`memory_watch_service_init()` 启动时读取 `memory_watch/base_url/device_id/device_token/timeout_ms/allow_http`，有完整配置则调用 `memory_watch_service_configure_endpoint()`，缺配置时只保持未配置状态，不打印 device token。
+- `[x]` 补齐 ESP32-S3 侧 watch endpoint NVS 保存入口：`memory_watch_service_save_endpoint_to_nvs()` 校验并写入同一组 NVS key，`nvs_commit` 成功后即时应用运行期配置；只保存 watch device token，不保存 Hermes/API/MiMo key。
+- `[x]` 新增 SoftAP portal 开发/配网期配置入口：`POST /api/memory-watch/config` 由 `ap_portal_adapter` 解析 JSON 后通过 main 注册回调交给 `memory_watch_service_save_endpoint_to_nvs()`，portal 组件不反向依赖 `main/services`，响应不回显 token。
 - `[ ]` 等用户回来提供热点后，用 ESP32-S3 实机 Wi-Fi 跑真实 `voice endpoint` 上传联调，确认音量、MIME、超时、错误和重试路径。
 
 ## Decision Log
@@ -514,6 +517,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 固件侧 `memory_watch_service` 已接入独立 upload/cancel/health worker：owner task 只处理 command queue、状态快照、stop/cancel 意图和 worker result；upload worker 负责 `memory_watch_recorder_capture_ogg_opus()`、PSRAM 优先的 Ogg 缓冲和 `memory_watch_voice_client_post_voice_command()` 同步 HTTP；cancel waiting 走独立 cancel worker；页面进入时的 `/v1/watch/health` 短 HTTP 检查也走 health worker，避免任何 HTTP 阻塞 owner command queue。当前 source tests 31 项通过，`idf.py build` 通过，仍保留 app 分区 5% free 的既有警告。
 - 固件侧独立 Hermes 页面 skeleton 已完成 source/build 闭环：`tests/test_memory_watch_ui_source.py` 与 memory watch/AI/mini-games 相关 source tests 50 项通过，`git diff --check` 通过，`idf.py build` 通过；最新构建将 `memory_watch_view.c`、`memory_watch_controller.c` 和 `memory_watch_service_init()` 编入固件，app 分区当前约 4% free。
 - 固件侧 watch endpoint NVS 配置读取已完成 source/build 闭环：`tests/test_memory_watch_service_source.py` 覆盖 NVS namespace/key、缺失/不完整配置、`memory_watch_service_configure_endpoint()` 调用和不打印 `device_token`；memory watch 相关 source tests 39 项通过，`idf.py build` 通过，最新 app 分区约 4% free。
+- 固件侧 watch endpoint NVS 保存与 SoftAP portal 配置入口已完成 source/build 闭环：`tests/test_memory_watch_service_source.py`、AP portal 相关 source tests 与非阻塞启动 source tests 合计 68 项通过，context standard 校验 0 错 0 警，`idf.py build` 通过；最新 app 分区约 4% free。该入口可用于后续通过 SoftAP 门户写入 `base_url/device_id/device_token/timeout_ms/allow_http`，不需要重刷共享 NVS 分区。
 
 期望看到的结果：
 
@@ -536,6 +540,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 ## Next Step
 
 - 板端网络当前不可用，等待用户回来提供热点后再做 ESP32-S3 实机 Wi-Fi 上传和串口证据采集。
+- 联网前可先通过 SoftAP 门户 `POST /api/memory-watch/config` 写入 watch endpoint 配置；请求体不得包含 Hermes/API/MiMo key，响应也不会回显 device token。
 - 用 ESP32-S3 实机麦克风 Ogg Opus 样本验证 `WATCH_ASR_PROVIDER=mimo`，确认手表端实际 MIME、音量、时长、语言和错误路径。
 - 将本机 `127.0.0.1:8787` 联调入口按需要放到服务器域名后，例如反向代理到 `/v1/watch/*`，再增加 TLS 与公网访问控制。
 - 板端验证时重点确认 `memory_watch_service` upload worker 的录音取消延迟、Ogg Opus 实际大小、HTTPS 上传结果、2 分钟等待窗口和 late result 忽略路径。

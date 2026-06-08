@@ -1,12 +1,25 @@
 #ifndef AP_PORTAL_ROUTES_H
 #define AP_PORTAL_ROUTES_H
 
+#include "ap_portal_adapter.h"
 #include "esp_err.h"
 #include "esp_http_server.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief 设置 AI Memory Watch endpoint 配置保存回调。
+ *
+ * 该接口只在 `ap_portal_adapter` 内部使用，路由层不会直接依赖上层 service。
+ *
+ * @param[in] callback 保存回调；传 `NULL` 表示禁用配置入口。
+ * @param[in] user_ctx 透传给回调的上下文。
+ * @return `ESP_OK` 表示回调已更新。
+ */
+esp_err_t ap_portal_routes_set_memory_watch_config_callback(
+    ap_portal_memory_watch_config_cb_t callback, void *user_ctx);
 
 /**
  * @brief 向给定 HTTPD 注册 AP 门户最小路由。

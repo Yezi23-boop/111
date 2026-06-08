@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "ap_portal_adapter.h"
 #include "gui_guider.h"
 #include "events_init.h"
 #include "esp_timer.h"
@@ -25,6 +26,33 @@
 #include "services/startup_readiness.h"
 
 static const char *TAG = "MAIN";
+
+/**
+ * @brief AP 门户保存 AI Memory Watch endpoint 配置的桥接回调。
+ *
+ * `ap_portal_adapter` 只负责解析 SoftAP 门户请求；真正的 endpoint NVS
+ * 持久化仍由 `memory_watch_service` 这个 owner 完成，避免组件反向依赖
+ * `main/services`。该路径只处理 watch device token，不接收 Hermes/API/MiMo key。
+ */
+static esp_err_t app_memory_watch_portal_config_cb(
+    const ap_portal_memory_watch_config_t *portal_config, void *user_ctx)
+{
+    (void)user_ctx;
+
+    if (portal_config == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const memory_watch_service_endpoint_config_t service_config = {
+        .base_url = portal_config->base_url,
+        .device_id = portal_config->device_id,
+        .device_token = portal_config->device_token,
+        .timeout_ms = portal_config->timeout_ms,
+        .allow_insecure_http = portal_config->allow_insecure_http,
+    };
+    return memory_watch_service_save_endpoint_to_nvs(&service_config);
+}
 
 /*
  * 应用主入口说明：
@@ -160,6 +188,12 @@ static void start_deferred_services(void)
     // xTaskCreatePinnedToCore(time_and_weather, "time", 1024 * 4, NULL, 5, &lvgl_time_handle, 0);
 
     // BLE/AP/自动联网都由网络服务层统一调度，主入口不直接处理配网细节。
+    if (ap_portal_adapter_set_memory_watch_config_callback(
+            app_memory_watch_portal_config_cb, NULL) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Memory watch portal config callback register failed");
+    }
+
     if (network_service_start() != ESP_OK)
     {
         ESP_LOGE(TAG, "Background network service start failed");

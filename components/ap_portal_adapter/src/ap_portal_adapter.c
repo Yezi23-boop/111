@@ -236,6 +236,13 @@ static void ap_portal_adapter_restore_httpd_probe_logs(void)
     s_portal_httpd_logs_muted = false;
 }
 
+esp_err_t ap_portal_adapter_set_memory_watch_config_callback(
+    ap_portal_memory_watch_config_cb_t callback, void *user_ctx)
+{
+    return ap_portal_routes_set_memory_watch_config_callback(callback,
+                                                             user_ctx);
+}
+
 /**
  * @brief 启动 AP 门户适配层的最小 HTTP 服务器。
  *

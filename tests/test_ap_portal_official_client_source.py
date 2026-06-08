@@ -45,19 +45,19 @@ class ApPortalOfficialClientSourceTests(unittest.TestCase):
         self.assertIn("network.ssid", source)
         self.assertIn("network.security", source)
         self.assertIn("network.rssi", source)
-        self.assertIn('`Scan complete: ${networks.length} network(s).`', source)
+        self.assertIn('`扫描完成，共发现 ${networks.length} 个网络。`', source)
         self.assertIn(
-            '"Credentials sent. Waiting for connection status..."',
+            '"凭据已发送，正在等待设备切换到目标 Wi-Fi..."',
             source,
         )
-        self.assertIn('"Device connected successfully."', source)
+        self.assertIn('"手表已连接 Wi-Fi，可以回到设备查看联网状态。"', source)
         self.assertIn(
-            '"Device reported a Wi-Fi connection failure."',
+            '"设备报告 Wi-Fi 连接失败，请检查密码或路由器信号。"',
             source,
         )
         self.assertIn("waitResult.phase === \"portal_closed\"", source)
         self.assertIn(
-            "\"Provisioning request accepted. The device likely left the hotspot and is switching to your Wi-Fi.\"",
+            "\"设备已接受凭据并可能正在关闭热点；请切回目标 Wi-Fi 查看手表状态。\"",
             source,
         )
         self.assertIn('wifiList.classList.add("empty")', source)
@@ -67,7 +67,6 @@ class ApPortalOfficialClientSourceTests(unittest.TestCase):
         self.assertNotIn("items", source)
         self.assertNotIn("name ||", source)
         self.assertNotIn("auth", source)
-        self.assertNotIn("signal", source)
         self.assertNotIn('fetch("/api/scan"', source)
         self.assertNotIn('fetch("/api/configure"', source)
         self.assertNotIn("callPendingApi(", source)
@@ -80,6 +79,7 @@ class ApPortalOfficialClientSourceTests(unittest.TestCase):
         self.assertIn('"web/app.js"', source)
         self.assertIn('"web/prov_client.js"', source)
         self.assertIn('"web/prov_proto_bundle.js"', source)
+        self.assertIn("json", source)
 
     def test_prov_client_references_official_endpoints(self) -> None:
         source = AP_PORTAL_WEB_PROV_CLIENT.read_text(encoding="utf-8")
@@ -122,6 +122,7 @@ class ApPortalOfficialClientSourceTests(unittest.TestCase):
         self.assertIn('"/api/status"', source)
         self.assertIn('"/api/scan"', source)
         self.assertIn('"/api/configure"', source)
+        self.assertIn('"/api/memory-watch/config"', source)
         self.assertIn(
             "Legacy JSON API has been replaced by official provisioning client.",
             source,

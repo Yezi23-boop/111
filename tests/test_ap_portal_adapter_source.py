@@ -24,6 +24,10 @@ class ApPortalAdapterSourceTests(unittest.TestCase):
         self.assertIn("esp_err_t ap_portal_adapter_start(void);", header)
         self.assertIn("esp_err_t ap_portal_adapter_stop(void);", header)
         self.assertIn("httpd_handle_t ap_portal_adapter_get_httpd_handle(void);", header)
+        self.assertIn("ap_portal_memory_watch_config_t", header)
+        self.assertIn("ap_portal_memory_watch_config_cb_t", header)
+        self.assertIn("ap_portal_adapter_set_memory_watch_config_callback", header)
+        self.assertNotIn("memory_watch_service", header)
 
     def test_routes_source_contains_root_handler(self) -> None:
         header = AP_PORTAL_ROUTES_HEADER.read_text(encoding="utf-8")
