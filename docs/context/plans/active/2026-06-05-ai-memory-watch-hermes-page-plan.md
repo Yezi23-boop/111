@@ -389,6 +389,7 @@ done / timeout / error / canceled
 - `[x]` 增加可复现中文 Ogg Opus 样本生成脚本，稳定真实 ASR smoke test 输入。
 - `[x]` 增加 ESP32-S3 设备侧 V1 机器可读契约，并用 source test 锁定 response 字段、枚举、request 限制和超时预算。
 - `[x]` 落地 `memory_watch_service` owner skeleton 和 `AUDIO_CODEC_OWNER_HERMES`，先固定 FreeRTOS command queue、只读 snapshot、网络 ready 读取和不复用 `official_chat` 的边界。
+- `[x]` 落地独立 `memory_watch_ogg_opus_muxer`，将裸 Opus packet 封装为 Ogg Opus 容器；写回调失败后进入 fail-closed，避免半页写出后继续复用损坏流。
 - `[ ]` 落地独立 Hermes 页面 skeleton。
 
 ## Decision Log
@@ -522,5 +523,5 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 用 ESP32-S3 实机麦克风 Ogg Opus 样本验证 `WATCH_ASR_PROVIDER=mimo`，确认手表端实际 MIME、音量、时长、语言和错误路径。
 - 将本机 `127.0.0.1:8787` 联调入口按需要放到服务器域名后，例如反向代理到 `/v1/watch/*`，再增加 TLS 与公网访问控制。
 - 再写 `memory_watch_service` 的 public header 草案、source test 和页面 wireframe。
-- 继续把 `memory_watch_service` 从 skeleton 推进到真实录音/Ogg Opus/HTTP multipart 上传，但仍不复用 `official_chat` 主线。
+- 继续把 `memory_watch_service` 从 skeleton 推进到真实录音：在 service task 内申请 `AUDIO_CODEC_OWNER_HERMES` input session，接 Opus encoder、`memory_watch_ogg_opus_muxer` 和 HTTP multipart 上传，但仍不复用 `official_chat` 主线。
 - 固件侧只接 voice endpoint，不接 Hermes Dashboard，不保存 Hermes API key。

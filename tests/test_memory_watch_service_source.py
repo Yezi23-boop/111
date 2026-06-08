@@ -46,6 +46,8 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("portMUX_TYPE s_snapshot_lock", source)
         self.assertIn("memory_watch_service_copy_snapshot(", source)
         self.assertIn("memory_watch_service_handle_command(", source)
+        self.assertIn("memory_watch_service_can_begin_from_state(", source)
+        self.assertIn("before.request_active", source)
         self.assertIn("network_service_is_service_ready()", source)
         self.assertNotIn("static volatile", source)
 

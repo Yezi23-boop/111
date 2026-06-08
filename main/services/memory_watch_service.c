@@ -90,8 +90,41 @@ static void memory_watch_service_clear_clarification(void)
     portEXIT_CRITICAL(&s_snapshot_lock);
 }
 
+static bool memory_watch_service_can_begin_from_state(
+    memory_watch_service_state_t state)
+{
+    switch (state)
+    {
+    case MEMORY_WATCH_SERVICE_STATE_READY:
+    case MEMORY_WATCH_SERVICE_STATE_DONE:
+    case MEMORY_WATCH_SERVICE_STATE_TIMEOUT:
+    case MEMORY_WATCH_SERVICE_STATE_ERROR:
+    case MEMORY_WATCH_SERVICE_STATE_CANCELED:
+        return true;
+    case MEMORY_WATCH_SERVICE_STATE_NEEDS_CLARIFICATION:
+    case MEMORY_WATCH_SERVICE_STATE_WAITING_NETWORK:
+    case MEMORY_WATCH_SERVICE_STATE_RECORDING:
+    case MEMORY_WATCH_SERVICE_STATE_ENCODING:
+    case MEMORY_WATCH_SERVICE_STATE_UPLOADING:
+    case MEMORY_WATCH_SERVICE_STATE_THINKING:
+    default:
+        return false;
+    }
+}
+
 static void memory_watch_service_handle_begin_recording(void)
 {
+    const memory_watch_service_snapshot_t before =
+        memory_watch_service_copy_snapshot();
+    if (before.request_active ||
+        !memory_watch_service_can_begin_from_state(before.state))
+    {
+        memory_watch_service_set_state(before.state, ESP_ERR_INVALID_STATE);
+        ESP_LOGW(TAG, "recording blocked: request already active state=%s",
+                 memory_watch_service_state_to_string(before.state));
+        return;
+    }
+
     const bool network_ready = network_service_is_service_ready();
     memory_watch_service_set_network_ready(network_ready);
     if (!network_ready)

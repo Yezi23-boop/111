@@ -24,6 +24,8 @@ set(service_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_service.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_ogg_opus_muxer.c
+
     ${CMAKE_CURRENT_LIST_DIR}/services/power_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/power_policy.c
