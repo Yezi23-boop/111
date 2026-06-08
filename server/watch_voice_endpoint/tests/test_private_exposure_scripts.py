@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -23,7 +24,14 @@ def _powershell_executable() -> str:
     return executable
 
 
-def _run_script(script_name: str, *args: str) -> subprocess.CompletedProcess[str]:
+def _run_script(
+    script_name: str,
+    *args: str,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    run_env = os.environ.copy()
+    if env is not None:
+        run_env.update(env)
     return subprocess.run(
         [
             _powershell_executable(),
@@ -37,6 +45,7 @@ def _run_script(script_name: str, *args: str) -> subprocess.CompletedProcess[str
         cwd=ROOT,
         capture_output=True,
         text=True,
+        env=run_env,
         timeout=90,
     )
 
@@ -268,3 +277,52 @@ def test_acceptance_passes_when_public_private_paths_are_rejected(tmp_path: Path
     private_exposure = payload["runtime_before"]["private_exposure"]
     assert private_exposure["ok"] is True
     assert {item["status_code"] for item in private_exposure["checks"]} == {403, 404, 410}
+
+
+def test_smoke_test_removes_generated_dummy_audio(tmp_path: Path) -> None:
+    watch_env, _ = _write_fake_env_files(tmp_path)
+    temp_dir = tmp_path / "temp"
+    temp_dir.mkdir()
+
+    with _StubServer({}) as server:
+        result = _run_script(
+            "smoke_test.ps1",
+            "-BaseUrl",
+            server.base_url,
+            "-EnvFile",
+            str(watch_env),
+            "-SkipServiceHealth",
+            env={"TEMP": str(temp_dir), "TMP": str(temp_dir)},
+        )
+
+    assert result.returncode == 0, result.stderr
+    payload = _json_stdout(result)
+    assert payload["voice_status"] == "done"
+    assert list(temp_dir.glob("watch-smoke-test-*.opus")) == []
+
+
+def test_smoke_test_keeps_explicit_audio_path(tmp_path: Path) -> None:
+    watch_env, _ = _write_fake_env_files(tmp_path)
+    temp_dir = tmp_path / "temp"
+    temp_dir.mkdir()
+    audio_path = tmp_path / "provided.opus"
+    audio_path.write_bytes(b"OggS\x00\x01\x02\x03")
+
+    with _StubServer({}) as server:
+        result = _run_script(
+            "smoke_test.ps1",
+            "-BaseUrl",
+            server.base_url,
+            "-EnvFile",
+            str(watch_env),
+            "-AudioPath",
+            str(audio_path),
+            "-SkipServiceHealth",
+            env={"TEMP": str(temp_dir), "TMP": str(temp_dir)},
+        )
+
+    assert result.returncode == 0, result.stderr
+    payload = _json_stdout(result)
+    assert payload["voice_status"] == "done"
+    assert audio_path.exists()
+    assert list(temp_dir.glob("watch-smoke-test-*.opus")) == []

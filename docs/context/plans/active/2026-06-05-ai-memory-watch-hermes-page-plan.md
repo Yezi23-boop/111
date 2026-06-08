@@ -93,6 +93,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `smoke_test.ps1` 现在对 voice 与可选 cancel 响应执行“恰好 7 字段”校验，缺字段或多字段都会失败，防止 ESP32-S3 固定解析契约漂移。
 - `smoke_test.ps1` 已支持 `-IncludeAuthFailure`，用无效 device token 验证 `/v1/watch/health` 返回 HTTP 403，不输出真实 token。
 - `smoke_test.ps1` 默认同时要求语义成功：watch health 必须 `status=ok/hermes_status=online`，voice 必须 `status=done` 且 action 不为 `error`，可选 cancel 必须 `status=canceled/action=no_action`；默认输出不再包含 `asr_text/reply_text` 正文，只保留 present 标志和字符数。
+- `smoke_test.ps1` 默认 mock 未传 `AudioPath` 时会创建 GUID 命名 dummy Ogg，并在 `finally` 中只清理脚本自己生成的临时文件；显式 `-AudioPath` 的用户文件不会被删除。
 - 服务器 pytest 已补齐三端点鉴权负向矩阵：`missing bearer`、`wrong token`、`unknown device` 分别覆盖 `/v1/watch/health`、`/v1/watch/voice-command` 与 `/v1/watch/request/{request_id}/cancel`，并确认鉴权失败不会推进 request metrics。
 - 服务器 pytest 已补齐关键失败映射矩阵：超大音频、ASR 异常、ASR 空文本、Hermes 5xx、Hermes 空回复、Hermes timeout 与 ffmpeg 转码失败都会返回手表 V1 固定 7 字段 JSON 或 `timeout/server_timeout`，并确认 runtime metrics 不包含 ASR 文本、回复文本、Authorization、token、音频内容或转码失败 detail。
 - `server/watch_voice_endpoint/runtime_status.ps1` 可输出无密钥 JSON 状态总览，覆盖 env key presence、Docker 容器状态、watch endpoint `/health`、`/v1/watch/health`、Hermes `/health` 与 `/v1/models`。
@@ -532,6 +533,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 服务器侧 smoke/release gate 输出安全与语义门槛已补强：`smoke_test.ps1` 默认不输出 ASR/回复正文，release gate 只展示 present/chars；默认 smoke 还会失败于 Hermes offline、voice error 或 cancel 非 `canceled/no_action`。当前 server pytest 33 项通过，`release_gate.ps1 -SkipDocker` 通过，mock 与真实 MiMo ASR smoke 均返回语义成功。
 - 服务器侧 auth 首连诊断与 release gate 重建等待已补强：`/health`、`runtime_status.ps1`、`acceptance_test.ps1`、`release_gate.ps1` 均能看到非敏感 auth failure 计数和最近失败摘要；`release_gate.ps1 -RebuildContainer` 会等待 `/health` ready 后再跑 acceptance，避免容器 `starting` 竞态误判。当前 server pytest 33 项通过，`release_gate.ps1 -RebuildContainer` 通过，重建后容器 `healthy`。
 - 服务器侧公网私有路径负向门禁已补强并加入脚本级 stub 集成测试：`runtime_status.ps1 -AssertPrivateNotExposed` 只输出 path/status_code/allowed_status_codes/exposed/error，不保留响应 payload；`tests/test_private_exposure_scripts.py` 会启动本地 fake HTTP server 和 fake env，验证 `/health=200` 会让 runtime/acceptance 失败、403/404/410 会通过，且私有响应正文 sentinel 不出现在 stdout/stderr；默认 `release_gate.ps1 -SkipDocker` 仍通过。当前 server pytest 37 项通过。
+- 服务器侧 smoke 临时音频生命周期已补强：默认 mock smoke 创建的 dummy Ogg 会在 `finally` 中清理，显式 `-AudioPath` 不会被脚本删除；脚本级 stub 测试覆盖两种路径。当前 server pytest 40 项通过，`release_gate.ps1 -SkipDocker` 通过。
 
 期望看到的结果：
 

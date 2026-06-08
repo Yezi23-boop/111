@@ -128,6 +128,18 @@ def test_smoke_test_requires_semantic_success_by_default():
     assert 'Payload.action -ne "no_action"' in source
 
 
+def test_smoke_test_cleans_generated_dummy_audio_only():
+    script_path = Path(__file__).resolve().parents[1] / "smoke_test.ps1"
+    source = script_path.read_text(encoding="utf-8")
+
+    assert "$createdTempAudio = $null" in source
+    assert "$createdTempAudio = $tmpAudio" in source
+    assert "finally" in source
+    assert "Remove-Item -LiteralPath $createdTempAudio" in source
+    assert "Remove-Item -LiteralPath $AudioPath" not in source
+    assert "watch-smoke-test-" in source
+
+
 def test_public_domain_gate_checks_private_paths_without_dumping_private_payloads():
     root = Path(__file__).resolve().parents[1]
     runtime_source = (root / "runtime_status.ps1").read_text(encoding="utf-8")

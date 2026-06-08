@@ -129,6 +129,7 @@ The smoke script rejects missing or extra watch response fields, so both voice a
 It also fails by default unless watch health is `ok/online`, voice completes with `status=done`, and optional cancel returns `canceled/no_action`. Use `-AllowErrorResponse` only for deliberate failure-shape debugging.
 With `-IncludeAuthFailure`, it also verifies that an invalid device token is rejected with HTTP 403 without printing any token.
 By default, smoke output redacts `asr_text` and `reply_text`; it only reports whether text is present and the character counts. Use `-IncludeText` only for local manual debugging when the transcript and reply are safe to show.
+When no `AudioPath` is provided, the mock smoke creates a GUID-named dummy Ogg file under the process temp directory and removes only that generated file in cleanup. Explicit `-AudioPath` files are never deleted by the smoke script.
 
 Inspect local runtime status without printing tokens:
 
