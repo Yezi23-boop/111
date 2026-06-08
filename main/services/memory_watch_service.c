@@ -13,6 +13,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "network_service.h"
+#include "nvs.h"
 #include "power_policy.h"
 #include "services/memory_watch_recorder.h"
 #include "services/memory_watch_voice_client.h"
@@ -27,6 +28,12 @@ static const uint32_t kUploadWorkerStackWords = 6144;
 static const uint32_t kCancelWorkerStackWords = 3072;
 static const uint32_t kHealthWorkerStackWords = 3072;
 static const size_t kAudioBufferInitialBytes = 8192U;
+static const char *kEndpointNvsNamespace = "memory_watch";
+static const char *kEndpointNvsBaseUrlKey = "base_url";
+static const char *kEndpointNvsDeviceIdKey = "device_id";
+static const char *kEndpointNvsDeviceTokenKey = "device_token";
+static const char *kEndpointNvsTimeoutMsKey = "timeout_ms";
+static const char *kEndpointNvsAllowHttpKey = "allow_http";
 
 typedef enum
 {
@@ -253,6 +260,116 @@ static esp_err_t memory_watch_service_copy_required_text(char *dst,
 
     memcpy(dst, src, len + 1U);
     return ESP_OK;
+}
+
+static esp_err_t memory_watch_service_read_nvs_text(nvs_handle_t handle,
+                                                    const char *key,
+                                                    char *dst,
+                                                    size_t dst_len)
+{
+    if (key == NULL || dst == NULL || dst_len == 0U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t len = dst_len;
+    const esp_err_t err = nvs_get_str(handle, key, dst, &len);
+    if (err != ESP_OK)
+    {
+        dst[0] = '\0';
+        return err;
+    }
+    if (len == 0U || dst[0] == '\0')
+    {
+        dst[0] = '\0';
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief 从 NVS 读取 watch endpoint 运行期配置。
+ *
+ * 这里仅读取 ESP32-S3 到 voice endpoint 的 device token，不读取也不保存
+ * Hermes / MiMo / API Server key。缺失配置只让页面保持“未配置”，不阻塞启动。
+ */
+static esp_err_t memory_watch_service_load_endpoint_from_nvs(void)
+{
+    nvs_handle_t handle = 0;
+    esp_err_t err = nvs_open(kEndpointNvsNamespace, NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND)
+    {
+        memory_watch_service_set_endpoint_snapshot(false, false);
+        ESP_LOGI(TAG, "watch endpoint NVS config not found");
+        return ESP_OK;
+    }
+    if (err != ESP_OK)
+    {
+        memory_watch_service_set_endpoint_snapshot(false, false);
+        return err;
+    }
+
+    char base_url[MEMORY_WATCH_SERVICE_URL_MAX_BYTES] = {0};
+    char device_id[MEMORY_WATCH_SERVICE_DEVICE_ID_MAX_BYTES] = {0};
+    char device_token[MEMORY_WATCH_SERVICE_DEVICE_TOKEN_MAX_BYTES] = {0};
+
+    err = memory_watch_service_read_nvs_text(
+        handle, kEndpointNvsBaseUrlKey, base_url, sizeof(base_url));
+    if (err == ESP_OK)
+    {
+        err = memory_watch_service_read_nvs_text(
+            handle, kEndpointNvsDeviceIdKey, device_id, sizeof(device_id));
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_service_read_nvs_text(
+            handle, kEndpointNvsDeviceTokenKey, device_token,
+            sizeof(device_token));
+    }
+    if (err != ESP_OK)
+    {
+        nvs_close(handle);
+        memory_watch_service_set_endpoint_snapshot(false, false);
+        ESP_LOGW(TAG, "watch endpoint NVS config incomplete: %s",
+                 esp_err_to_name(err));
+        return ESP_OK;
+    }
+
+    uint32_t timeout_ms = 0;
+    err = nvs_get_u32(handle, kEndpointNvsTimeoutMsKey, &timeout_ms);
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND)
+    {
+        nvs_close(handle);
+        memory_watch_service_set_endpoint_snapshot(false, false);
+        return err;
+    }
+
+    uint8_t allow_http = 0;
+    err = nvs_get_u8(handle, kEndpointNvsAllowHttpKey, &allow_http);
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND)
+    {
+        nvs_close(handle);
+        memory_watch_service_set_endpoint_snapshot(false, false);
+        return err;
+    }
+    nvs_close(handle);
+
+    const memory_watch_service_endpoint_config_t config = {
+        .base_url = base_url,
+        .device_id = device_id,
+        .device_token = device_token,
+        .timeout_ms = timeout_ms,
+        .allow_insecure_http = allow_http != 0U,
+    };
+    err = memory_watch_service_configure_endpoint(&config);
+    if (err == ESP_OK)
+    {
+        ESP_LOGI(TAG,
+                 "watch endpoint configured from NVS: device_id=%s allow_http=%u timeout_ms=%lu",
+                 device_id, (unsigned int)(allow_http != 0U),
+                 (unsigned long)timeout_ms);
+    }
+    return err;
 }
 
 static void memory_watch_service_init_boot_id(void)
@@ -1350,6 +1467,14 @@ esp_err_t memory_watch_service_init(void)
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
+    }
+
+    const esp_err_t endpoint_err =
+        memory_watch_service_load_endpoint_from_nvs();
+    if (endpoint_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "watch endpoint NVS load failed: %s",
+                 esp_err_to_name(endpoint_err));
     }
 
     s_service_task_handle = xTaskCreateStatic(

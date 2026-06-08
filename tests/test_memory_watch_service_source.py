@@ -51,6 +51,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "network_service.h"', source)
+        self.assertIn('#include "nvs.h"', source)
         self.assertIn('#include "services/memory_watch_voice_client.h"', source)
         self.assertIn('#include "esp_random.h"', source)
         self.assertIn("xQueueCreateStatic(", source)
@@ -109,6 +110,25 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertNotIn("HERMES_API_KEY", combined)
         self.assertNotIn("API_SERVER_KEY", combined)
         self.assertNotIn("XIAOMI_API_KEY", combined)
+
+    def test_service_loads_runtime_endpoint_config_from_nvs_without_secret_logs(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('kEndpointNvsNamespace = "memory_watch"', source)
+        self.assertIn('kEndpointNvsBaseUrlKey = "base_url"', source)
+        self.assertIn('kEndpointNvsDeviceIdKey = "device_id"', source)
+        self.assertIn('kEndpointNvsDeviceTokenKey = "device_token"', source)
+        self.assertIn('kEndpointNvsAllowHttpKey = "allow_http"', source)
+        self.assertIn("nvs_open(kEndpointNvsNamespace, NVS_READONLY", source)
+        self.assertIn("nvs_get_str(handle, key, dst, &len)", source)
+        self.assertIn("nvs_get_u32(handle, kEndpointNvsTimeoutMsKey", source)
+        self.assertIn("nvs_get_u8(handle, kEndpointNvsAllowHttpKey", source)
+        self.assertIn("memory_watch_service_configure_endpoint(&config)", source)
+        self.assertIn("memory_watch_service_load_endpoint_from_nvs();", source)
+        self.assertIn("watch endpoint NVS config not found", source)
+        self.assertIn("watch endpoint NVS config incomplete", source)
+        self.assertNotIn('ESP_LOGI(TAG, "watch endpoint configured from NVS: token', source)
+        self.assertNotIn("device_token=%s", source)
 
     def test_service_generates_contract_request_id_but_does_not_upload_in_owner(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")

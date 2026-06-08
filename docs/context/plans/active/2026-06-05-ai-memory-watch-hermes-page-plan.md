@@ -156,6 +156,7 @@ POST /v1/watch/request/{request_id}/cancel
 
 - 三个 endpoint 都使用 `Authorization: Bearer <device_token>`。
 - V1 使用 `device_id + device_token allowlist`；开发期 token 写入 NVS 或本地配置，不硬编码进公开源码。
+- ESP32-S3 固件启动时会尝试从 NVS 命名空间 `memory_watch` 读取 `base_url`、`device_id`、`device_token`、可选 `timeout_ms` 和 `allow_http`；缺失或不完整时保持页面“未配置”，不阻塞启动，也不在日志打印 token。
 - `/health` 只在进入 Hermes 页面时请求一次，不做持续轮询；失败显示 `Hermes · 不可用`。
 - `voice-command` 使用 `multipart/form-data`。
 
@@ -394,6 +395,7 @@ done / timeout / error / canceled
 - `[x]` 落地 `memory_watch_voice_client` 窄模块，覆盖 `GET /v1/watch/health`、`POST /v1/watch/voice-command` 与 `POST /v1/watch/request/{request_id}/cancel` 三个设备入口；语音请求按 `watch_contract.v1.json` 流式写入 `multipart/form-data`，只使用运行期 `device_id/device_token/base_url`，默认拒绝明文 HTTP，固定 `locale=zh-CN`、`timezone=Asia/Shanghai`、`source=watch_hermes_page`；响应解析要求大小写敏感的固定字段、`status/action/hermes_status` 枚举合法且 `request_id/device_id` 匹配本次请求，health 只有 `status=ok/hermes_status=online` 才返回成功。已通过 source tests 与 `idf.py build`，尚未接入 service worker 或真机 Wi-Fi 上传。
 - `[x]` 补强 `memory_watch_service` 运行期接入边界：新增 watch endpoint 配置入口、`/v1/watch/health` 短超时检查、`endpoint_configured/hermes_online` 快照位，以及 `<device_id>-<boot_id>-<seq>` request_id 生成；device token 仍只由运行期配置/NVS 后续入口注入，源码不硬编码，owner task 仍不直接执行 120 秒 `voice-command` 上传。
 - `[x]` 落地独立 Hermes 页面 skeleton：占用当前未绑定的主菜单 `screen_main_option_8/user` 作为 `Hermes` 入口，新增 `memory_watch_controller.[ch]` 与 `memory_watch_view.[ch]`，页面按“按住说话 -> 松开发送 / 滑出取消”投递 `memory_watch_service` 命令；`lvgl_task` 只 init/poll controller，UI 只读快照，不直接执行 HTTP、ASR、录音或访问 `official_chat/ai_chat_view`。
+- `[x]` 补齐 ESP32-S3 侧 watch endpoint NVS 运行期配置读取：`memory_watch_service_init()` 启动时读取 `memory_watch/base_url/device_id/device_token/timeout_ms/allow_http`，有完整配置则调用 `memory_watch_service_configure_endpoint()`，缺配置时只保持未配置状态，不打印 device token。
 - `[ ]` 等用户回来提供热点后，用 ESP32-S3 实机 Wi-Fi 跑真实 `voice endpoint` 上传联调，确认音量、MIME、超时、错误和重试路径。
 
 ## Decision Log
@@ -434,6 +436,9 @@ done / timeout / error / canceled
 - 2026-06-08：
   - 决策：Hermes 页面入口先绑定 GUI Guider 已生成但未使用的 `screen_main_option_8/user`，由 `memory_watch_controller_init()` 在 custom 层加点击事件和文案，不改 generated 文件。
   - 原因：保持现有主菜单 generated 层可回退，避免为了一个独立功能入口重做 GUI Guider 导出；页面逻辑仍落在 hand-written controller/view，满足“不复用小智聊天页”的产品边界。
+- 2026-06-08：
+  - 决策：ESP32-S3 侧 voice endpoint 配置第一版从 NVS 读取，不把 device token 放进源码、sdkconfig 或日志。
+  - 原因：真机联调需要 `base_url/device_id/device_token` 才能让页面从“未配置”进入可用状态；NVS 让本地/量产配置和公开源码分离，也不会让 ESP32-S3 持有 Hermes API Server key。
 
 ## Validation and Acceptance
 
@@ -507,6 +512,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 设备 V1 契约一致性已验证：`tests/test_contract.py` 将 `watch_contract.v1.json` 的 7 字段响应、status/action 枚举、`request_id` 正则、最大音频大小、115 秒服务器预算和 `/v1/watch/*` 公网范围锁定到 `app.py`；server pytest 当前 13 项通过。
 - 固件侧 `memory_watch_service` 已接入独立 upload/cancel/health worker：owner task 只处理 command queue、状态快照、stop/cancel 意图和 worker result；upload worker 负责 `memory_watch_recorder_capture_ogg_opus()`、PSRAM 优先的 Ogg 缓冲和 `memory_watch_voice_client_post_voice_command()` 同步 HTTP；cancel waiting 走独立 cancel worker；页面进入时的 `/v1/watch/health` 短 HTTP 检查也走 health worker，避免任何 HTTP 阻塞 owner command queue。当前 source tests 31 项通过，`idf.py build` 通过，仍保留 app 分区 5% free 的既有警告。
 - 固件侧独立 Hermes 页面 skeleton 已完成 source/build 闭环：`tests/test_memory_watch_ui_source.py` 与 memory watch/AI/mini-games 相关 source tests 50 项通过，`git diff --check` 通过，`idf.py build` 通过；最新构建将 `memory_watch_view.c`、`memory_watch_controller.c` 和 `memory_watch_service_init()` 编入固件，app 分区当前约 4% free。
+- 固件侧 watch endpoint NVS 配置读取已完成 source/build 闭环：`tests/test_memory_watch_service_source.py` 覆盖 NVS namespace/key、缺失/不完整配置、`memory_watch_service_configure_endpoint()` 调用和不打印 `device_token`；memory watch 相关 source tests 39 项通过，`idf.py build` 通过，最新 app 分区约 4% free。
 
 期望看到的结果：
 
@@ -522,7 +528,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 
 ## Idempotence and Recovery
 
-- 如果中途中断，下次从本计划继续，优先做 ESP32-S3 实机 Wi-Fi/麦克风上传验证：当前 `memory_watch_service` recorder/upload worker 与独立 Hermes 页面 skeleton 均已完成 source/build 闭环，但尚未采集板端串口证据。
+- 如果中途中断，下次从本计划继续，优先做 ESP32-S3 实机 Wi-Fi/麦克风上传验证：当前 `memory_watch_service` recorder/upload worker、独立 Hermes 页面 skeleton 与 NVS endpoint 配置读取均已完成 source/build 闭环，但尚未采集板端串口证据。
 - 如果 `server/watch_voice_endpoint` 原型出错，回退时只停止/删除该服务或容器；不要改动 `hermes` Dashboard、MiMo 配置、`official_chat` 主线或 ESP32 UI。
 - 如果新页面方案失败，最小回退路径是只删除新增页面入口和新 service，不影响 `official_chat_service` 与现有 AI 页。
 
