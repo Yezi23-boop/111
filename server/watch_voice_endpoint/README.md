@@ -146,6 +146,15 @@ Run the full local acceptance loop before server-side iteration commits:
 This composes runtime status, direct Hermes text smoke, mock voice, cancel, invalid-token rejection, generated Chinese Ogg Opus, and real MiMo ASR smoke checks. Its summary omits ASR text, reply text, audio contents, API keys, and bearer tokens.
 If required endpoints are offline, it exits with `status=failed` and a non-secret preflight summary instead of a raw PowerShell REST stack trace.
 
+Run the release gate before cutting or deploying a server-side iteration:
+
+```powershell
+.\release_gate.ps1
+.\release_gate.ps1 -RebuildContainer
+```
+
+The release gate runs server pytest first, then the local acceptance loop. With `-RebuildContainer`, it rebuilds the persistent local Docker container before acceptance. The output is a non-secret JSON summary: test tail, runtime counters, smoke statuses, actions, and field counts only.
+
 Verify real ASR with an Ogg Opus sample:
 
 ```powershell
@@ -160,6 +169,7 @@ For a public domain that only proxies `/v1/watch/*`, skip the private service he
 .\smoke_test.ps1 -BaseUrl "https://watch.example.com" -SkipServiceHealth
 .\runtime_status.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth
 .\acceptance_test.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr
+.\release_gate.ps1 -BaseUrl "https://watch.example.com" -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr
 ```
 
 Manual `docker run` is still useful for one-off isolation:

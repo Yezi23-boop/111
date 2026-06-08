@@ -96,6 +96,7 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - 服务器 pytest 已补齐关键失败映射矩阵：超大音频、ASR 异常、ASR 空文本、Hermes 5xx、Hermes 空回复、Hermes timeout 与 ffmpeg 转码失败都会返回手表 V1 固定 7 字段 JSON 或 `timeout/server_timeout`，并确认 runtime metrics 不包含 ASR 文本、回复文本、Authorization、token、音频内容或转码失败 detail。
 - `server/watch_voice_endpoint/runtime_status.ps1` 可输出无密钥 JSON 状态总览，覆盖 env key presence、Docker 容器状态、watch endpoint `/health`、`/v1/watch/health`、Hermes `/health` 与 `/v1/models`。
 - `server/watch_voice_endpoint/acceptance_test.ps1` 可一键串起 runtime status、mock voice、cancel、无效 token 403、中文 Ogg Opus 生成和真实 MiMo ASR smoke，作为服务器侧版本迭代前验收门槛。
+- `server/watch_voice_endpoint/release_gate.ps1` 可作为服务器侧版本门禁入口：先跑 server pytest，再按参数跑 acceptance；可选 `-RebuildContainer` 先重建常驻容器，也支持公网只代理 `/v1/watch/*` 时跳过 Docker/Hermes/private health。输出为非敏感 JSON 摘要，不包含 ASR 文本、回复文本、音频内容、API key 或 bearer token。
 - `server/watch_voice_endpoint/watch_contract.v1.json` 已作为 ESP32-S3 设备侧机器可读契约，固定 endpoint、鉴权、request 字段、response 7 字段、枚举、超时、幂等和安全边界；`tests/test_contract.py` 会把契约与 `app.py` 的 FastAPI 模型/限制做一致性检查。
 - 私有 `/health` 与 `runtime_status.ps1` 已增加非敏感请求指标：event/status/error 计数与最近一次请求摘要；最近请求只包含 `device_id/request_id/status/action/error_code/duration_ms/audio_bytes/asr_provider/completed_at`，不包含 ASR 文本、回复文本、音频内容或任何 key/token。
 - `smoke_test.ps1` 已支持 `-BaseUrl <https://watch.example.com>` 指向公网域名，并可用 `-SkipServiceHealth` 跳过私有 `/health`；这样 Caddy 只公开 `/v1/watch/*` 时仍能验证设备协议入口。
@@ -524,6 +525,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 固件/服务器协议一致性与 SoftAP 配置入口硬化已完成 source/build 闭环：新增固件 source test 读取 `server/watch_voice_endpoint/watch_contract.v1.json` 并锁定 endpoint、字段、枚举、超时和安全边界；AP portal body 读取有限 timeout，service 写 NVS 前统一校验 URL 语义。当前固件相关 source tests 69 项通过，server pytest 14 项通过，context standard 校验 0 错 0 警，`idf.py build` 通过；最新 app 分区约 4% free。
 - 服务器侧全端点鉴权负向矩阵已完成 pytest 闭环：`missing bearer`、`wrong token`、`unknown device` 覆盖 health/voice/cancel 三个设备入口，鉴权失败不会推进 request metrics；server pytest 当前 23 项通过。
 - 服务器侧失败映射矩阵已完成 pytest 闭环：超大音频、ASR 异常、ASR 空文本、Hermes 5xx、Hermes 空回复、Hermes timeout 与 ffmpeg 转码失败均保持手表 V1 固定 7 字段响应，错误/超时会更新非敏感 request metrics，最近请求摘要仍不包含 ASR 文本、回复文本、token、音频内容或转码失败 detail；server pytest 当前 30 项通过。
+- 服务器侧 release gate 已完成本地运行态闭环：`release_gate.ps1 -SkipDocker` 通过，输出包含 server pytest 31 项、Hermes text smoke、mock voice/cancel/auth failure、真实 MiMo ASR smoke 与 runtime counters；脚本输出只保留非敏感摘要。重建后的常驻 `ai-memory-watch-voice-endpoint` 容器为 `healthy`。
 
 期望看到的结果：
 

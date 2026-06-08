@@ -71,3 +71,19 @@ def test_watch_contract_matches_voice_command_form_fields(watch_app):
     assert _fastapi_default(watch_app.voice_command, "locale") == contract["request"]["locale"]
     assert _fastapi_default(watch_app.voice_command, "timezone") == contract["request"]["timezone"]
     assert _fastapi_default(watch_app.voice_command, "source") == contract["request"]["source"]
+
+
+def test_release_gate_runs_pytest_and_acceptance_without_expanding_env_file():
+    script_path = Path(__file__).resolve().parents[1] / "release_gate.ps1"
+    source = script_path.read_text(encoding="utf-8")
+
+    assert "uv run --with-requirements" in source
+    assert "python -m pytest" in source
+    assert "acceptance_test.ps1" in source
+    assert "RebuildContainer" in source
+    assert "docker compose -f $composeFile up -d --build" in source
+    assert 'if ($status -ne "passed")' in source
+    assert "exit 1" in source
+    assert "docker compose config" not in source
+    assert "WATCH_DEVICE_TOKENS" not in source
+    assert "HERMES_API_KEY" not in source
