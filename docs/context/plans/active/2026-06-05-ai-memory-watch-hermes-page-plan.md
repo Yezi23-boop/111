@@ -392,6 +392,7 @@ done / timeout / error / canceled
 - `[x]` 落地独立 `memory_watch_ogg_opus_muxer`，将裸 Opus packet 封装为 Ogg Opus 容器；写回调失败后进入 fail-closed，避免半页写出后继续复用损坏流。
 - `[x]` 落地 `memory_watch_recorder` 窄模块，封装 Hermes 麦克风 owner session、后台 Safety Monitor 暂停、硬件 PCM 主麦通道选取、24 kHz -> 16 kHz mono 线性重采样、Opus 编码和 Ogg muxer 输出；尚未接 HTTP multipart 和实机手表语音样本。
 - `[x]` 落地 `memory_watch_voice_client` 窄模块，覆盖 `GET /v1/watch/health`、`POST /v1/watch/voice-command` 与 `POST /v1/watch/request/{request_id}/cancel` 三个设备入口；语音请求按 `watch_contract.v1.json` 流式写入 `multipart/form-data`，只使用运行期 `device_id/device_token/base_url`，默认拒绝明文 HTTP，固定 `locale=zh-CN`、`timezone=Asia/Shanghai`、`source=watch_hermes_page`；响应解析要求大小写敏感的固定字段、`status/action/hermes_status` 枚举合法且 `request_id/device_id` 匹配本次请求，health 只有 `status=ok/hermes_status=online` 才返回成功。已通过 source tests 与 `idf.py build`，尚未接入 service worker 或真机 Wi-Fi 上传。
+- `[x]` 补强 `memory_watch_service` 运行期接入边界：新增 watch endpoint 配置入口、`/v1/watch/health` 短超时检查、`endpoint_configured/hermes_online` 快照位，以及 `<device_id>-<boot_id>-<seq>` request_id 生成；device token 仍只由运行期配置/NVS 后续入口注入，源码不硬编码，owner task 仍不直接执行 120 秒 `voice-command` 上传。
 - `[ ]` 等用户回来提供热点后，用 ESP32-S3 实机 Wi-Fi 跑真实 `voice endpoint` 上传联调，确认音量、MIME、超时、错误和重试路径。
 - `[ ]` 落地独立 Hermes 页面 skeleton。
 
@@ -501,6 +502,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 服务器侧 acceptance 已验证：`acceptance_test.ps1` 返回 `status=passed`，mock 与 real ASR smoke 均 `voice_status=done/action=memory_saved`，cancel 均 `canceled/no_action`，负向鉴权为 403，运行前后 `inflight_requests=0`，输出不含 ASR 文本、回复文本或任何 key/token。
 - 公网形态验收参数已本机模拟验证：`acceptance_test.ps1 -SkipDocker -SkipHermesApi -SkipServiceHealth -SkipRealAsr` 只依赖 `/v1/watch/*` 设备入口，返回 `status=passed` 且 `service_health_skipped=true`。
 - 设备 V1 契约一致性已验证：`tests/test_contract.py` 将 `watch_contract.v1.json` 的 7 字段响应、status/action 枚举、`request_id` 正则、最大音频大小、115 秒服务器预算和 `/v1/watch/*` 公网范围锁定到 `app.py`；server pytest 当前 13 项通过。
+- 固件侧 `memory_watch_service` 运行期 endpoint 配置、health 检查和 request_id 生成已通过 source tests；`memory_watch_service` 源码仍不调用 `memory_watch_voice_client_post_voice_command()`，避免 120 秒 HTTP 阻塞 owner task command queue。memory_watch source tests 28 项通过，`idf.py build` 通过，当前仍保留 app 分区 5% free 的既有警告。
 
 期望看到的结果：
 
@@ -516,7 +518,7 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 
 ## Idempotence and Recovery
 
-- 如果中途中断，下次从本计划继续，先补 `memory_watch_service` command/snapshot 草案和 V1 source tests。
+- 如果中途中断，下次从本计划继续，优先补 `memory_watch_service` recorder/upload worker：owner task 只投递 job、消费结果和处理 cancel，worker 执行录音、Ogg Opus 缓冲和同步 HTTP。
 - 如果 `server/watch_voice_endpoint` 原型出错，回退时只停止/删除该服务或容器；不要改动 `hermes` Dashboard、MiMo 配置、`official_chat` 主线或 ESP32 UI。
 - 如果新页面方案失败，最小回退路径是只删除新增页面入口和新 service，不影响 `official_chat_service` 与现有 AI 页。
 

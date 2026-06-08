@@ -2,7 +2,7 @@
 id: project-profile
 tags: project, profile, entrypoint, architecture, network, ui
 summary: 面向 agent 首读的仓库画像，压缩记录正式启动链路、当前真实 owner、已退场旧链路和最重要的上下文入口。
-last_reviewed: 2026-05-05
+last_reviewed: 2026-06-08
 memory_type: semantic
 scope: repo
 owners: AGENTS.md, docs/context/knowledge/project/project-profile.md
@@ -39,6 +39,7 @@ evidence_level: observed
 - 联网/配网：`components/network_manager`、`components/network_provisioning_adapter`、`components/ap_portal_adapter`、`components/wifi_control`、`main/services/network_service.c`
 - 电源：`components/axp2101`、`main/app/board_power.c`、`main/services/power_service.c`
 - 危险识别：`components/espdl_inference`、`main/features/danger_detection`
+- AI Memory Watch / Hermes：`main/services/memory_watch_service.c`、`main/services/memory_watch_voice_client.c`、`main/services/memory_watch_recorder.c`、`server/watch_voice_endpoint`；固件侧只面向 watch endpoint 和 device token，不直连 Hermes Dashboard、Hermes API Server 或 MiMo API。
 - 运行时骨架：`docs/context/knowledge/project/runtime-owner-contract.md` 是后续新增功能、跨模块改动、低功耗、OTA、后台能力和资源仲裁的 owner 合同；默认不新增大而全 `ResourceManager`、`resource_policy`、`session_router` 或默认 `ui_manager`。
 
 ## 当前已退场或不要再当正式主线的旧链路

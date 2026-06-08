@@ -2,7 +2,7 @@
 id: ai-memory-watch-product-positioning
 tags: project, product, ai-memory-watch, hermes, voice, watch, positioning
 summary: 固定 ESP32-S3 手表接入 Hermes 个人 AI 大脑时的产品定位、核心闭环、V1 功能边界和端云分工。
-last_reviewed: 2026-06-05
+last_reviewed: 2026-06-08
 memory_type: project_knowledge
 scope: repo
 owners: docs/context/knowledge/project/ai-memory-watch-product-positioning.md
@@ -80,8 +80,8 @@ ESP32-S3 的消费级价值不是智能算力，而是：
 UI
   -> 只表达开始录音、取消、查看状态等用户意图。
 
-voice_client_service
-  -> 若后续新增，应作为窄 service 维护语音会话、上传、接收回复和连接状态。
+memory_watch_service / memory_watch_voice_client
+  -> `memory_watch_service` 维护页面命令、状态快照、endpoint 在线状态和请求 ID；`memory_watch_voice_client` 作为窄 HTTP client 上传语音、检查 health 和 cancel。
 
 audio_codec
   -> 继续作为麦克风 input session 和喇叭 output session owner。

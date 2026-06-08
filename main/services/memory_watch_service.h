@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -13,6 +14,10 @@ extern "C"
 
 #define MEMORY_WATCH_SERVICE_ID_MAX_BYTES 64
 #define MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES 128
+#define MEMORY_WATCH_SERVICE_URL_MAX_BYTES 128
+#define MEMORY_WATCH_SERVICE_DEVICE_ID_MAX_BYTES 32
+#define MEMORY_WATCH_SERVICE_DEVICE_TOKEN_MAX_BYTES 128
+#define MEMORY_WATCH_SERVICE_HEALTH_TIMEOUT_MS 5000U
 
     /**
      * @brief AI Memory Watch 服务状态。
@@ -45,6 +50,8 @@ extern "C"
     {
         memory_watch_service_state_t state; /**< 当前服务状态。 */
         bool network_ready;                 /**< 最近一次观测到的网络 service ready。 */
+        bool endpoint_configured;           /**< 是否已有运行期 watch endpoint 配置。 */
+        bool hermes_online;                 /**< 最近一次 `/v1/watch/health` 是否确认 Hermes 在线。 */
         bool request_active;                /**< 是否有未收敛的 active request。 */
         bool clarification_active;          /**< 是否正在回答 Hermes 追问。 */
         esp_err_t last_error;               /**< 最近一次服务层错误。 */
@@ -55,10 +62,47 @@ extern "C"
     } memory_watch_service_snapshot_t;
 
     /**
+     * @brief AI Memory Watch watch endpoint 运行期配置。
+     *
+     * `device_token` 只用于 ESP32-S3 到 watch endpoint 的设备鉴权。Hermes
+     * API key、MiMo key 或 API Server key 不属于本结构，也不得写入固件源码。
+     */
+    typedef struct
+    {
+        const char *base_url;     /**< watch endpoint 基础地址，例如 `https://watch.example.com`。 */
+        const char *device_id;    /**< 设备 ID，例如 `watch-001`。 */
+        const char *device_token; /**< 运行期配置/NVS 提供的设备 token。 */
+        uint32_t timeout_ms;      /**< 语音请求等待预算；0 使用 voice client 默认值。 */
+        bool allow_insecure_http; /**< 仅本地开发联调允许明文 HTTP。 */
+    } memory_watch_service_endpoint_config_t;
+
+    /**
      * @brief 初始化 AI Memory Watch owner task。
      * @return `ESP_OK` 表示已初始化或本次初始化成功。
      */
     esp_err_t memory_watch_service_init(void);
+
+    /**
+     * @brief 配置 watch endpoint。
+     *
+     * 该接口只复制运行期提供的配置，不持久化、不打印 token，也不触发网络请求。
+     * 如需保存配置，应由后续独立 NVS 配置入口负责。
+     *
+     * @param[in] config endpoint 配置，字符串不能为空。
+     * @return `ESP_OK` 表示已复制配置。
+     */
+    esp_err_t memory_watch_service_configure_endpoint(
+        const memory_watch_service_endpoint_config_t *config);
+
+    /**
+     * @brief 请求 owner task 检查 `/v1/watch/health`。
+     *
+     * UI 进入 Hermes 页面时可投递一次该命令；实际 HTTP GET 在 service task
+     * 中执行，且 health 请求使用短超时，不阻塞 LVGL 刷新路径。
+     *
+     * @return `ESP_OK` 表示命令已投递到 owner task。
+     */
+    esp_err_t memory_watch_service_check_health(void);
 
     /**
      * @brief 用户按住语音按钮，开始一次录音意图。
