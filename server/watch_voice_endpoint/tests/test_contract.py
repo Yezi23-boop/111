@@ -164,3 +164,21 @@ def test_public_domain_gate_checks_private_paths_without_dumping_private_payload
     assert "Authorization" not in private_function
     assert "WATCH_DEVICE_TOKENS" not in private_function
     assert "payload" not in private_function
+
+
+def test_cloudflared_connector_script_uses_token_file_not_token_argument():
+    script_path = (
+        Path(__file__).resolve().parents[1]
+        / "deploy"
+        / "start_cloudflared_connector.ps1"
+    )
+    source = script_path.read_text(encoding="utf-8")
+
+    assert r"D:\Docker_data\hermes\cloudflared_tunnel_token.txt" in source
+    assert "TUNNEL_TOKEN_FILE" in source
+    assert "token_file_inside_repo" in source
+    assert "token_value_printed = $false" in source
+    assert "docker run -d" in source
+    assert "--token " not in source
+    assert "TUNNEL_TOKEN=" not in source
+    assert "docker logs" not in source

@@ -204,3 +204,27 @@ Hermes Dashboard  :9119
 ```
 
 The ESP32 should only know the public watch endpoint URL and its `device_token`; it must not know `HERMES_API_KEY` or call the Hermes Dashboard.
+
+## Cloudflare Tunnel
+
+For local Docker Desktop or private-server testing, run `cloudflared` on the same machine as the watch endpoint. Keep it in a separate container so the connector token does not get baked into the watch endpoint image.
+
+The current `watch.934000.xyz` tunnel route should point only to `/v1/watch/*` and forward to the host-side watch endpoint:
+
+```text
+watch.934000.xyz /v1/watch/* -> http://host.docker.internal:8787
+```
+
+Store the Cloudflare Tunnel token outside the repository, for example:
+
+```text
+D:\Docker_data\hermes\cloudflared_tunnel_token.txt
+```
+
+Then start the connector without putting the token in the Docker command line:
+
+```powershell
+.\deploy\start_cloudflared_connector.ps1 -Pull
+```
+
+The script mounts the token file read-only and passes `TUNNEL_TOKEN_FILE` to `cloudflared`. This relies on `cloudflared` 2025.4.0 or later, which supports tunnel token files. It refuses token files inside the repo and prints only non-secret status fields.
