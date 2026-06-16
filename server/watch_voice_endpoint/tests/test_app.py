@@ -38,6 +38,7 @@ AUTH_FAILURE_CASES = [
 ENDPOINT_AUTH_NAMES = {
     "health": "watch_health",
     "voice": "voice_command",
+    "text": "text_command",
     "cancel": "cancel",
 }
 
@@ -106,6 +107,16 @@ async def _call_watch_endpoint(
             },
             files={"audio": ("command.ogg", b"OggS\x00\x01", "audio/ogg")},
         )
+    if endpoint == "text":
+        return await client.post(
+            "/v1/watch/text-command",
+            headers=headers,
+            data={
+                "request_id": f"{device_id}-auth-0001",
+                "device_id": device_id,
+                "text": "记一下明天看电池日志",
+            },
+        )
     if endpoint == "cancel":
         return await client.post(
             f"/v1/watch/request/{device_id}-auth-0001/cancel",
@@ -130,6 +141,22 @@ async def _post_voice_command(
             "mock_asr_text": mock_asr_text,
         },
         files={"audio": ("command.ogg", audio_bytes, "audio/ogg")},
+    )
+
+
+async def _post_text_command(
+    client: httpx.AsyncClient,
+    request_id: str,
+    text: str = "记一下明天看电池日志",
+):
+    return await client.post(
+        "/v1/watch/text-command",
+        headers={"Authorization": "Bearer test-token"},
+        data={
+            "request_id": request_id,
+            "device_id": "watch-001",
+            "text": text,
+        },
     )
 
 
@@ -190,6 +217,31 @@ async def test_voice_command_returns_watch_json(watch_app, monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_text_command_returns_watch_json(watch_app, monkeypatch):
+    async def fake_call_hermes(device_id: str, asr_text: str, clarification_id: str | None) -> str:
+        assert device_id == "watch-001"
+        assert asr_text == "记一下明天看电池日志"
+        assert clarification_id is None
+        return "已记录：明天看电池日志。"
+
+    monkeypatch.setattr(watch_app, "_call_hermes", fake_call_hermes)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await _post_text_command(client, "watch-001-text-0001")
+
+    assert response.status_code == 200
+    payload = response.json()
+    _assert_watch_payload_shape(payload)
+    assert payload["request_id"] == "watch-001-text-0001"
+    assert payload["status"] == "done"
+    assert payload["action"] == "memory_saved"
+    assert payload["asr_text"] == "记一下明天看电池日志"
+    assert payload["reply_text"] == "已记录：明天看电池日志。"
+    last_request = _assert_last_request_keeps_sensitive_text_out(watch_app)
+    assert last_request["audio_bytes"] == 0
+
+
+@pytest.mark.anyio
 async def test_voice_command_rejects_unknown_device(watch_app):
     transport = httpx.ASGITransport(app=watch_app.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -204,7 +256,7 @@ async def test_voice_command_rejects_unknown_device(watch_app):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("endpoint", ["health", "voice", "cancel"])
+@pytest.mark.parametrize("endpoint", ["health", "voice", "text", "cancel"])
 @pytest.mark.parametrize(
     "case_name,authorization,device_id,expected_status,expected_detail",
     AUTH_FAILURE_CASES,
@@ -276,6 +328,62 @@ async def test_voice_command_returns_watch_json_for_invalid_request_id(watch_app
     assert payload["request_id"] == "invalid-request"
     assert payload["status"] == "error"
     assert payload["action"] == "error"
+    assert payload["error_code"] == "asr_or_agent_error"
+
+
+@pytest.mark.anyio
+async def test_text_command_returns_watch_json_for_invalid_request_id(watch_app):
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await _post_text_command(client, "bad request id")
+
+    assert response.status_code == 200
+    payload = response.json()
+    _assert_watch_payload_shape(payload)
+    assert payload["request_id"] == "invalid-request"
+    assert payload["status"] == "error"
+    assert payload["action"] == "error"
+    assert payload["error_code"] == "asr_or_agent_error"
+
+
+@pytest.mark.anyio
+async def test_text_command_returns_watch_json_for_empty_text(watch_app, monkeypatch):
+    async def fail_if_called(device_id, asr_text, clarification_id):
+        raise AssertionError("Hermes should not run for empty text")
+
+    monkeypatch.setattr(watch_app, "_call_hermes", fail_if_called)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await _post_text_command(client, "watch-001-empty-text", text="  ")
+
+    assert response.status_code == 200
+    payload = response.json()
+    _assert_watch_payload_shape(payload)
+    assert payload["request_id"] == "watch-001-empty-text"
+    assert payload["status"] == "error"
+    assert payload["action"] == "error"
+    assert payload["reply_text"] == "没有收到文本，请重新发送"
+    assert payload["error_code"] == "asr_or_agent_error"
+
+
+@pytest.mark.anyio
+async def test_text_command_returns_watch_json_for_oversized_text(watch_app, monkeypatch):
+    async def fail_if_called(device_id, asr_text, clarification_id):
+        raise AssertionError("Hermes should not run for oversized text")
+
+    monkeypatch.setattr(watch_app, "_call_hermes", fail_if_called)
+    monkeypatch.setattr(watch_app, "MAX_TEXT_CHARS", 4)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await _post_text_command(client, "watch-001-large-text", text="明天看日志")
+
+    assert response.status_code == 200
+    payload = response.json()
+    _assert_watch_payload_shape(payload)
+    assert payload["request_id"] == "watch-001-large-text"
+    assert payload["status"] == "error"
+    assert payload["action"] == "error"
+    assert payload["reply_text"] == "文本太长，请发短一点"
     assert payload["error_code"] == "asr_or_agent_error"
 
 
@@ -559,6 +667,35 @@ async def test_voice_command_reuses_completed_request_result(watch_app, monkeypa
                 "mock_asr_text": "这是重复请求，不应重新处理",
             },
             files={"audio": ("command.ogg", b"OggS\x00\x02", "audio/ogg")},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls == 1
+    assert second.json() == first.json()
+
+
+@pytest.mark.anyio
+async def test_text_command_reuses_completed_request_result(watch_app, monkeypatch):
+    calls = 0
+
+    async def fake_call_hermes(device_id: str, asr_text: str, clarification_id: str | None) -> str:
+        nonlocal calls
+        calls += 1
+        return "已记录：明天看电池日志。"
+
+    monkeypatch.setattr(watch_app, "_call_hermes", fake_call_hermes)
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await _post_text_command(
+            client,
+            "watch-001-text-idem-0001",
+            text="记一下明天看电池日志",
+        )
+        second = await _post_text_command(
+            client,
+            "watch-001-text-idem-0001",
+            text="这是重复请求，不应重新处理",
         )
 
     assert first.status_code == 200

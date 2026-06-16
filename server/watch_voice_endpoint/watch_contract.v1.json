@@ -22,6 +22,12 @@
       "audio_field": "audio",
       "audio_format": "Ogg Opus"
     },
+    "text_command": {
+      "method": "POST",
+      "path": "/v1/watch/text-command",
+      "content_type": "multipart/form-data",
+      "text_field": "text"
+    },
     "cancel": {
       "method": "POST",
       "path": "/v1/watch/request/{request_id}/cancel",
@@ -34,10 +40,25 @@
     "boot_id_format": "32-bit random hex generated on boot",
     "seq_format": "monotonic counter within one boot",
     "max_audio_bytes": 6291456,
+    "max_text_chars": 240,
     "voice_command_fields": [
       "request_id",
       "device_id",
       "audio",
+      "clarification_id",
+      "battery_percent",
+      "charging",
+      "rssi",
+      "firmware_version",
+      "locale",
+      "timezone",
+      "source",
+      "ui_state"
+    ],
+    "text_command_fields": [
+      "request_id",
+      "device_id",
+      "text",
       "clarification_id",
       "battery_percent",
       "charging",

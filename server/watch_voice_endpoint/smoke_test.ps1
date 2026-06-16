@@ -3,11 +3,13 @@ param(
   [string]$EnvFile = "D:\Docker_data\hermes\watch_voice_endpoint.env",
   [string]$DeviceId = "watch-001",
   [string]$MockAsrText = "记一下明天看电池日志",
+  [string]$TextCommand = "记一下明天看电池日志",
   [string]$AudioPath = "",
   [switch]$UseRealAsr,
   [switch]$SkipServiceHealth,
   [switch]$IncludeCancel,
   [switch]$IncludeAuthFailure,
+  [switch]$IncludeTextCommand,
   [switch]$IncludeText,
   [switch]$AllowErrorResponse
 )
@@ -165,6 +167,26 @@ try {
   Assert-WatchResponseFields -Payload $voice -Label "voice"
   Assert-VoiceSucceeded -Payload $voice
 
+  $textResponse = $null
+  if ($IncludeTextCommand) {
+    $textForm = @{
+      request_id = "text-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+      device_id = $DeviceId
+      text = $TextCommand
+      locale = "zh-CN"
+      timezone = "Asia/Shanghai"
+      source = "watch_hermes_page"
+      ui_state = "ready"
+    }
+    $textResponse = Invoke-RestMethod -Uri "$BaseUrl/v1/watch/text-command" `
+      -Method Post `
+      -Headers $headers `
+      -Form $textForm `
+      -TimeoutSec 130
+    Assert-WatchResponseFields -Payload $textResponse -Label "text"
+    Assert-VoiceSucceeded -Payload $textResponse
+  }
+
   $cancel = $null
   if ($IncludeCancel) {
     $cancelRequestId = "cancel-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
@@ -184,6 +206,8 @@ try {
     asr_mode = $(if ($UseRealAsr) { "real" } else { "mock" })
     voice_status = $voice.status
     voice_action = $voice.action
+    text_status = $(if ($textResponse) { $textResponse.status } else { $null })
+    text_action = $(if ($textResponse) { $textResponse.action } else { $null })
     cancel_status = $(if ($cancel) { $cancel.status } else { $null })
     cancel_action = $(if ($cancel) { $cancel.action } else { $null })
     auth_failure_status_code = $authFailureStatusCode
@@ -191,12 +215,17 @@ try {
     reply_text_present = -not [string]::IsNullOrWhiteSpace($voice.reply_text)
     asr_text_chars = $(if ($voice.asr_text) { $voice.asr_text.Length } else { 0 })
     reply_text_chars = $(if ($voice.reply_text) { $voice.reply_text.Length } else { 0 })
+    text_reply_present = $(if ($textResponse) { -not [string]::IsNullOrWhiteSpace($textResponse.reply_text) } else { $null })
+    text_reply_chars = $(if ($textResponse -and $textResponse.reply_text) { $textResponse.reply_text.Length } else { $null })
     field_count = $fields.Count
   }
 
   if ($IncludeText) {
     $summary | Add-Member -NotePropertyName asr_text -NotePropertyValue $voice.asr_text
     $summary | Add-Member -NotePropertyName reply_text -NotePropertyValue $voice.reply_text
+    if ($textResponse) {
+      $summary | Add-Member -NotePropertyName text_reply_text -NotePropertyValue $textResponse.reply_text
+    }
   }
 
   $summary | ConvertTo-Json -Depth 4

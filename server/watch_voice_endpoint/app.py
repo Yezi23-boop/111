@@ -29,13 +29,14 @@ MIMO_ASR_LANGUAGE = os.getenv("MIMO_ASR_LANGUAGE", "auto")
 MIMO_ASR_TIMEOUT_SECONDS = float(os.getenv("MIMO_ASR_TIMEOUT_SECONDS", "60"))
 MIMO_ASR_TRANSCODE_TIMEOUT_SECONDS = float(os.getenv("MIMO_ASR_TRANSCODE_TIMEOUT_SECONDS", "20"))
 MAX_AUDIO_BYTES = int(os.getenv("WATCH_MAX_AUDIO_BYTES", str(6 * 1024 * 1024)))
+MAX_TEXT_CHARS = int(os.getenv("WATCH_MAX_TEXT_CHARS", "240"))
 REPLY_MAX_CHARS = int(os.getenv("WATCH_REPLY_MAX_CHARS", "80"))
 MIMO_ASR_DIRECT_MIME_TYPES = {"audio/wav", "audio/mp3", "audio/mpeg"}
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,96}$")
 INVALID_REQUEST_ID = "invalid-request"
 
 WATCH_INSTRUCTIONS = (
-    "你是 AI Memory Watch 的 Hermes 大脑。输入来自 ESP32-S3 手表短语音转写。"
+    "你是 AI Memory Watch 的 Hermes 大脑。输入来自 ESP32-S3 手表短语音转写或手表文本。"
     "优先判断用户是在记录记忆、创建提醒、提问，还是执行工具动作。"
     "回复必须适合小屏显示，尽量不超过 80 个中文字。"
     "如果需要追问，一次只问一个问题。"
@@ -65,7 +66,7 @@ class HealthResponse(BaseModel):
     device_id: str
 
 
-app = FastAPI(title="AI Memory Watch Voice Endpoint", version="0.1.0")
+app = FastAPI(title="AI Memory Watch Endpoint", version="0.1.0")
 _canceled_requests: set[tuple[str, str]] = set()
 _completed_requests: dict[tuple[str, str], WatchResponse] = {}
 _inflight_requests: dict[tuple[str, str], asyncio.Task[WatchResponse]] = {}
@@ -475,6 +476,53 @@ async def _process_voice_command_inner(
     )
 
 
+async def _process_text_command_inner(
+    request_id: str,
+    device_id: str,
+    text: str,
+    clarification_id: str | None,
+) -> WatchResponse:
+    key = (device_id, request_id)
+    if key in _canceled_requests:
+        return _canceled_watch_response(request_id, text)
+
+    try:
+        reply_text = await _call_hermes(device_id, text, clarification_id)
+    except httpx.TimeoutException:
+        return _timeout_watch_response(request_id, text)
+    except Exception:
+        return WatchResponse(
+            request_id=request_id,
+            status="error",
+            action="error",
+            asr_text=text,
+            reply_text="没有处理成功，请再发送一次",
+            error_code="asr_or_agent_error",
+        )
+    if not reply_text:
+        return WatchResponse(
+            request_id=request_id,
+            status="error",
+            action="error",
+            asr_text=text,
+            reply_text="没有处理成功，请再发送一次",
+            error_code="asr_or_agent_error",
+        )
+
+    if key in _canceled_requests:
+        return _canceled_watch_response(request_id, text)
+
+    return WatchResponse(
+        request_id=request_id,
+        status="done",
+        action=_infer_action(text, reply_text),
+        asr_text=text,
+        reply_text=reply_text[:REPLY_MAX_CHARS],
+        clarification_id=None,
+        error_code=None,
+    )
+
+
 async def _process_voice_command(
     request_id: str,
     device_id: str,
@@ -499,6 +547,28 @@ async def _process_voice_command(
     except asyncio.TimeoutError:
         response = _timeout_watch_response(request_id)
     return _record_request_result(device_id, request_id, response, started_at, len(audio_bytes))
+
+
+async def _process_text_command(
+    request_id: str,
+    device_id: str,
+    text: str,
+    clarification_id: str | None,
+) -> WatchResponse:
+    started_at = time.monotonic()
+    try:
+        response = await asyncio.wait_for(
+            _process_text_command_inner(
+                request_id=request_id,
+                device_id=device_id,
+                text=text,
+                clarification_id=clarification_id,
+            ),
+            timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        response = _timeout_watch_response(request_id, text)
+    return _record_request_result(device_id, request_id, response, started_at, 0)
 
 
 async def _await_request_task(
@@ -607,6 +677,65 @@ async def voice_command(
                 )
             )
             _inflight_requests[key] = task
+    return await _await_request_task(key, task)
+
+
+@app.post("/v1/watch/text-command", response_model=WatchResponse)
+async def text_command(
+    request_id: str = Form(...),
+    device_id: str = Form(...),
+    text: str = Form(...),
+    clarification_id: str | None = Form(default=None),
+    battery_percent: int | None = Form(default=None),
+    charging: bool | None = Form(default=None),
+    rssi: int | None = Form(default=None),
+    firmware_version: str | None = Form(default=None),
+    locale: str = Form("zh-CN"),
+    timezone: str = Form("Asia/Shanghai"),
+    source: str = Form("watch_hermes_page"),
+    ui_state: str = Form("ready"),
+    authorization: str | None = Header(default=None),
+) -> WatchResponse:
+    _require_device(device_id, authorization, "text_command")
+    del battery_percent, charging, rssi, firmware_version, locale, timezone, source, ui_state
+    normalized_request_id = _normalize_request_id(request_id)
+    if normalized_request_id is None:
+        response = _error_watch_response(INVALID_REQUEST_ID, "请求编号异常，请重新发送")
+        return _record_request_result(device_id, INVALID_REQUEST_ID, response, time.monotonic(), 0)
+    request_id = normalized_request_id
+
+    normalized_text = text.strip()
+    if not normalized_text:
+        response = _error_watch_response(request_id, "没有收到文本，请重新发送")
+        return _record_request_result(device_id, request_id, response, time.monotonic(), 0)
+    if len(normalized_text) > MAX_TEXT_CHARS:
+        response = _error_watch_response(request_id, "文本太长，请发短一点")
+        return _record_request_result(device_id, request_id, response, time.monotonic(), 0)
+
+    key = (device_id, request_id)
+    should_count_inflight_wait = False
+    async with _request_lock:
+        if key in _completed_requests:
+            _record_request_event("cache_hits")
+            return _completed_requests[key]
+        if key in _canceled_requests:
+            _record_request_event("canceled_hits")
+            return _canceled_watch_response(request_id)
+        task = _inflight_requests.get(key)
+        if task is None:
+            task = asyncio.create_task(
+                _process_text_command(
+                    request_id=request_id,
+                    device_id=device_id,
+                    text=normalized_text,
+                    clarification_id=clarification_id,
+                )
+            )
+            _inflight_requests[key] = task
+        else:
+            should_count_inflight_wait = True
+    if should_count_inflight_wait:
+        _record_request_event("inflight_waits")
     return await _await_request_task(key, task)
 
 

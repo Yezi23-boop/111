@@ -144,6 +144,20 @@ class _StubServer:
                         },
                     )
                     return
+                if path == "/v1/watch/text-command":
+                    self._send_json(
+                        200,
+                        {
+                            "request_id": "stub-text",
+                            "status": "done",
+                            "action": "memory_saved",
+                            "asr_text": "stub text",
+                            "reply_text": "stub text reply",
+                            "clarification_id": None,
+                            "error_code": None,
+                        },
+                    )
+                    return
                 if path.startswith("/v1/watch/request/") and path.endswith("/cancel"):
                     self._send_json(
                         200,

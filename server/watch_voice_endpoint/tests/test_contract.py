@@ -52,6 +52,7 @@ def test_watch_contract_matches_request_limits(watch_app):
 
     assert contract["request"]["request_id_pattern"] == watch_app.REQUEST_ID_PATTERN.pattern
     assert contract["request"]["max_audio_bytes"] == watch_app.MAX_AUDIO_BYTES
+    assert contract["request"]["max_text_chars"] == watch_app.MAX_TEXT_CHARS
     assert contract["timeouts"]["server_request_timeout_seconds"] == watch_app.WATCH_REQUEST_TIMEOUT_SECONDS
     assert contract["timeouts"]["watch_wait_seconds"] > contract["timeouts"]["server_request_timeout_seconds"]
     assert contract["security"]["public_proxy_scope"] == "/v1/watch/*"
@@ -71,6 +72,21 @@ def test_watch_contract_matches_voice_command_form_fields(watch_app):
     assert _fastapi_default(watch_app.voice_command, "locale") == contract["request"]["locale"]
     assert _fastapi_default(watch_app.voice_command, "timezone") == contract["request"]["timezone"]
     assert _fastapi_default(watch_app.voice_command, "source") == contract["request"]["source"]
+
+
+def test_watch_contract_matches_text_command_form_fields(watch_app):
+    contract_path = Path(__file__).resolve().parents[1] / "watch_contract.v1.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+
+    public_fields = set(contract["request"]["text_command_fields"])
+    accepted_parameters = set(inspect.signature(watch_app.text_command).parameters.keys())
+    transport_only_fields = {"authorization"}
+
+    assert public_fields <= accepted_parameters
+    assert accepted_parameters - public_fields - transport_only_fields == set()
+    assert _fastapi_default(watch_app.text_command, "locale") == contract["request"]["locale"]
+    assert _fastapi_default(watch_app.text_command, "timezone") == contract["request"]["timezone"]
+    assert _fastapi_default(watch_app.text_command, "source") == contract["request"]["source"]
 
 
 def test_release_gate_runs_pytest_and_acceptance_without_expanding_env_file():

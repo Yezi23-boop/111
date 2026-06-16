@@ -41,6 +41,8 @@ function Select-SmokeSummary {
     asr_mode = $Smoke.asr_mode
     voice_status = $Smoke.voice_status
     voice_action = $Smoke.voice_action
+    text_status = $Smoke.text_status
+    text_action = $Smoke.text_action
     cancel_status = $Smoke.cancel_status
     cancel_action = $Smoke.cancel_action
     auth_failure_status_code = $Smoke.auth_failure_status_code
@@ -48,6 +50,8 @@ function Select-SmokeSummary {
     reply_text_present = $Smoke.reply_text_present
     asr_text_chars = $Smoke.asr_text_chars
     reply_text_chars = $Smoke.reply_text_chars
+    text_reply_present = $Smoke.text_reply_present
+    text_reply_chars = $Smoke.text_reply_chars
     field_count = $Smoke.field_count
   }
 }
@@ -189,8 +193,10 @@ $smokeArgs = @{
   EnvFile = $EnvFile
   DeviceId = $DeviceId
   MockAsrText = $SampleText
+  TextCommand = $SampleText
   IncludeCancel = $true
   IncludeAuthFailure = $true
+  IncludeTextCommand = $true
 }
 if ($SkipServiceHealth) {
   $smokeArgs.SkipServiceHealth = $true
