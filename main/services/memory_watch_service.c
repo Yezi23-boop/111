@@ -9,6 +9,7 @@
 #include "esp_random.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
 #include "freertos/portmacro.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -18,15 +19,39 @@
 #include "services/memory_watch_recorder.h"
 #include "services/memory_watch_voice_client.h"
 
+#ifndef CONFIG_MEMORY_WATCH_DEFAULT_BASE_URL
+#define CONFIG_MEMORY_WATCH_DEFAULT_BASE_URL ""
+#endif
+
+#ifndef CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_ID
+#define CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_ID ""
+#endif
+
+#ifndef CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_TOKEN
+#define CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_TOKEN ""
+#endif
+
+#ifndef CONFIG_MEMORY_WATCH_DEFAULT_TIMEOUT_MS
+#define CONFIG_MEMORY_WATCH_DEFAULT_TIMEOUT_MS 0
+#endif
+
+#ifndef CONFIG_MEMORY_WATCH_DEFAULT_ALLOW_HTTP
+#define CONFIG_MEMORY_WATCH_DEFAULT_ALLOW_HTTP 0
+#endif
+
+#ifndef CONFIG_MEMORY_WATCH_BOOT_TEXT
+#define CONFIG_MEMORY_WATCH_BOOT_TEXT ""
+#endif
+
 static const char *TAG = "memory_watch";
 static const UBaseType_t kCommandQueueLength = 8;
 static const UBaseType_t kWorkerQueueLength = 1;
 static const UBaseType_t kCancelQueueLength = 1;
 static const UBaseType_t kHealthQueueLength = 1;
-static const uint32_t kTaskStackWords = 2048;
-static const uint32_t kUploadWorkerStackWords = 6144;
+static const uint32_t kTaskStackWords = 6144;
+static const uint32_t kUploadWorkerStackWords = 24576;
 static const uint32_t kCancelWorkerStackWords = 3072;
-static const uint32_t kHealthWorkerStackWords = 3072;
+static const uint32_t kHealthWorkerStackWords = 6144;
 static const size_t kAudioBufferInitialBytes = 8192U;
 static const char *kEndpointNvsNamespace = "memory_watch";
 static const char *kEndpointNvsBaseUrlKey = "base_url";
@@ -40,6 +65,7 @@ typedef enum
     MEMORY_WATCH_SERVICE_CMD_BEGIN_RECORDING = 0,
     MEMORY_WATCH_SERVICE_CMD_CHECK_HEALTH,
     MEMORY_WATCH_SERVICE_CMD_SEND_RECORDING,
+    MEMORY_WATCH_SERVICE_CMD_SEND_TEXT,
     MEMORY_WATCH_SERVICE_CMD_CANCEL_RECORDING,
     MEMORY_WATCH_SERVICE_CMD_CANCEL_WAITING,
     MEMORY_WATCH_SERVICE_CMD_CANCEL_CLARIFICATION,
@@ -71,6 +97,8 @@ typedef struct
     memory_watch_service_client_config_snapshot_t client_config;
     char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
     char clarification_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+    char text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];
+    bool text_command;
 } memory_watch_service_upload_job_t;
 
 typedef struct
@@ -112,6 +140,7 @@ typedef struct
     memory_watch_service_health_result_t health_result;
     memory_watch_service_worker_result_t worker_result;
     char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+    char text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];
 } memory_watch_service_cmd_t;
 
 static TaskHandle_t s_service_task_handle = NULL;
@@ -134,14 +163,15 @@ static uint8_t s_cancel_worker_queue_storage[
     1 * sizeof(memory_watch_service_cancel_job_t)];
 static uint8_t s_health_worker_queue_storage[
     1 * sizeof(memory_watch_service_health_job_t)];
+static memory_watch_service_cmd_t s_service_task_command;
+static memory_watch_service_upload_job_t s_upload_worker_job;
+static memory_watch_service_worker_result_t s_upload_worker_result;
 static StaticTask_t s_service_task_buffer;
-static StaticTask_t s_upload_worker_task_buffer;
 static StaticTask_t s_cancel_worker_task_buffer;
 static StaticTask_t s_health_worker_task_buffer;
-static StackType_t s_service_task_stack[2048];
-static StackType_t s_upload_worker_task_stack[6144];
+static StackType_t s_service_task_stack[6144];
 static StackType_t s_cancel_worker_task_stack[3072];
-static StackType_t s_health_worker_task_stack[3072];
+static StackType_t s_health_worker_task_stack[6144];
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_endpoint_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_worker_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -162,6 +192,17 @@ static bool s_record_discard_requested = false;
 static bool s_wait_cancel_requested = false;
 static bool s_upload_worker_busy = false;
 static char s_wait_canceled_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+#if CONFIG_MEMORY_WATCH_BOOT_TEXT_SMOKE
+static bool s_boot_text_sent = false;
+#endif
+
+static void memory_watch_service_log_upload_stack(const char *stage)
+{
+    const UBaseType_t high_water_words = uxTaskGetStackHighWaterMark(NULL);
+    ESP_LOGI(TAG, "mw_upload stack: stage=%s high_water_words=%u",
+             stage != NULL ? stage : "unknown",
+             (unsigned int)high_water_words);
+}
 
 /**
  * @brief 复制当前快照。
@@ -233,6 +274,29 @@ static void memory_watch_service_copy_text(char *dst, size_t dst_len,
         ++index;
     }
     dst[index] = '\0';
+}
+
+static bool memory_watch_service_is_safe_user_text(const char *text)
+{
+    if (text == NULL || text[0] == '\0')
+    {
+        return false;
+    }
+
+    size_t len = 0;
+    for (const char *p = text; *p != '\0'; ++p)
+    {
+        if (*p == '\r' || *p == '\n')
+        {
+            return false;
+        }
+        ++len;
+        if (len >= MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 static esp_err_t memory_watch_service_copy_required_text(char *dst,
@@ -379,6 +443,61 @@ static esp_err_t memory_watch_service_read_nvs_text(nvs_handle_t handle,
 }
 
 /**
+ * @brief 加载 Kconfig 默认 endpoint 兜底配置。
+ *
+ * NVS 配置优先级更高；该路径只用于还没通过 SoftAP 写入 NVS 时的
+ * 开发/出厂默认值。`device_token` 只代表 watch endpoint 的设备 token，
+ * 不得放入 Hermes、MiMo、Cloudflare 或 API Server key。
+ */
+static esp_err_t memory_watch_service_load_kconfig_endpoint_default(void)
+{
+#if CONFIG_MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    if (CONFIG_MEMORY_WATCH_DEFAULT_BASE_URL[0] == '\0' ||
+        CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_ID[0] == '\0' ||
+        CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_TOKEN[0] == '\0')
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    const memory_watch_service_endpoint_config_t config = {
+        .base_url = CONFIG_MEMORY_WATCH_DEFAULT_BASE_URL,
+        .device_id = CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_ID,
+        .device_token = CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_TOKEN,
+        .timeout_ms = (uint32_t)CONFIG_MEMORY_WATCH_DEFAULT_TIMEOUT_MS,
+        .allow_insecure_http =
+            (CONFIG_MEMORY_WATCH_DEFAULT_ALLOW_HTTP != 0),
+    };
+    const esp_err_t err = memory_watch_service_configure_endpoint(&config);
+    if (err == ESP_OK)
+    {
+        ESP_LOGW(TAG,
+                 "watch endpoint configured from Kconfig default: device_id=%s allow_http=%u timeout_ms=%lu",
+                 CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_ID,
+                 (unsigned int)(CONFIG_MEMORY_WATCH_DEFAULT_ALLOW_HTTP != 0),
+                 (unsigned long)CONFIG_MEMORY_WATCH_DEFAULT_TIMEOUT_MS);
+    }
+    return err;
+#else
+    return ESP_ERR_NOT_FOUND;
+#endif
+}
+
+static bool memory_watch_service_try_kconfig_endpoint_default(void)
+{
+    const esp_err_t err = memory_watch_service_load_kconfig_endpoint_default();
+    if (err == ESP_OK)
+    {
+        return true;
+    }
+    if (err != ESP_ERR_NOT_FOUND)
+    {
+        ESP_LOGW(TAG, "watch endpoint Kconfig default rejected: %s",
+                 esp_err_to_name(err));
+    }
+    return false;
+}
+
+/**
  * @brief 从 NVS 读取 watch endpoint 运行期配置。
  *
  * 这里仅读取 ESP32-S3 到 voice endpoint 的 device token，不读取也不保存
@@ -390,6 +509,10 @@ static esp_err_t memory_watch_service_load_endpoint_from_nvs(void)
     esp_err_t err = nvs_open(kEndpointNvsNamespace, NVS_READONLY, &handle);
     if (err == ESP_ERR_NVS_NOT_FOUND)
     {
+        if (memory_watch_service_try_kconfig_endpoint_default())
+        {
+            return ESP_OK;
+        }
         memory_watch_service_set_endpoint_snapshot(false, false);
         ESP_LOGI(TAG, "watch endpoint NVS config not found");
         return ESP_OK;
@@ -420,6 +543,10 @@ static esp_err_t memory_watch_service_load_endpoint_from_nvs(void)
     if (err != ESP_OK)
     {
         nvs_close(handle);
+        if (memory_watch_service_try_kconfig_endpoint_default())
+        {
+            return ESP_OK;
+        }
         memory_watch_service_set_endpoint_snapshot(false, false);
         ESP_LOGW(TAG, "watch endpoint NVS config incomplete: %s",
                  esp_err_to_name(err));
@@ -536,6 +663,19 @@ static esp_err_t memory_watch_service_copy_client_config(
     out_config->client_config.allow_insecure_http =
         endpoint_config.allow_insecure_http;
     return ESP_OK;
+}
+
+static void memory_watch_service_rebind_client_config(
+    memory_watch_service_client_config_snapshot_t *config)
+{
+    if (config == NULL)
+    {
+        return;
+    }
+
+    config->client_config.base_url = config->base_url;
+    config->client_config.device_id = config->device_id;
+    config->client_config.device_token = config->device_token;
 }
 
 static void memory_watch_service_set_request_id(const char *request_id)
@@ -700,14 +840,9 @@ static bool memory_watch_service_is_upload_worker_busy(void)
     return busy;
 }
 
-static void *memory_watch_service_alloc(size_t len)
+static void *memory_watch_service_alloc_audio_psram(size_t len)
 {
-    void *ptr = heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (ptr == NULL)
-    {
-        ptr = heap_caps_malloc(len, MALLOC_CAP_8BIT);
-    }
-    return ptr;
+    return heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 static void memory_watch_service_free(void *ptr)
@@ -763,9 +898,12 @@ static esp_err_t memory_watch_service_audio_buffer_reserve(
         }
     }
 
-    uint8_t *next_data = (uint8_t *)memory_watch_service_alloc(next_capacity);
+    uint8_t *next_data =
+        (uint8_t *)memory_watch_service_alloc_audio_psram(next_capacity);
     if (next_data == NULL)
     {
+        ESP_LOGW(TAG, "audio buffer PSRAM allocation failed: bytes=%u",
+                 (unsigned int)next_capacity);
         return ESP_ERR_NO_MEM;
     }
     if (buffer->data != NULL && buffer->len > 0U)
@@ -898,6 +1036,24 @@ static void memory_watch_service_fill_power_fields(
     request->charging = (budget.flags & POWER_POLICY_FLAG_CHARGING) != 0U;
 }
 
+static void memory_watch_service_fill_text_power_fields(
+    memory_watch_voice_client_text_request_t *request)
+{
+    if (request == NULL)
+    {
+        return;
+    }
+
+    const power_policy_budget_t budget = power_policy_get_budget();
+    if (budget.battery_data_valid && budget.battery_percent <= 100U)
+    {
+        request->has_battery_percent = true;
+        request->battery_percent = (int)budget.battery_percent;
+    }
+    request->has_charging = true;
+    request->charging = (budget.flags & POWER_POLICY_FLAG_CHARGING) != 0U;
+}
+
 static void memory_watch_service_clear_clarification(void)
 {
     portENTER_CRITICAL(&s_snapshot_lock);
@@ -930,7 +1086,7 @@ static bool memory_watch_service_can_begin_from_state(
 
 static esp_err_t memory_watch_service_start_upload_job(
     const memory_watch_service_client_config_snapshot_t *client_config,
-    const char *request_id)
+    const char *request_id, const char *text)
 {
     if (s_upload_worker_queue == NULL || client_config == NULL ||
         request_id == NULL)
@@ -941,10 +1097,16 @@ static esp_err_t memory_watch_service_start_upload_job(
     memory_watch_service_upload_job_t job = {
         .client_config = *client_config,
     };
+    memory_watch_service_rebind_client_config(&job.client_config);
     memory_watch_service_copy_text(job.request_id, sizeof(job.request_id),
                                    request_id);
     memory_watch_service_copy_current_clarification(
         job.clarification_id, sizeof(job.clarification_id));
+    if (text != NULL && text[0] != '\0')
+    {
+        memory_watch_service_copy_text(job.text, sizeof(job.text), text);
+        job.text_command = true;
+    }
 
     memory_watch_service_set_upload_worker_busy(true);
     if (xQueueSend(s_upload_worker_queue, &job, 0) != pdTRUE)
@@ -968,6 +1130,7 @@ static esp_err_t memory_watch_service_start_cancel_job(
     memory_watch_service_cancel_job_t job = {
         .client_config = *client_config,
     };
+    memory_watch_service_rebind_client_config(&job.client_config);
     memory_watch_service_copy_text(job.request_id, sizeof(job.request_id),
                                    request_id);
     if (xQueueSend(s_cancel_worker_queue, &job, 0) != pdTRUE)
@@ -988,6 +1151,7 @@ static esp_err_t memory_watch_service_start_health_job(
     memory_watch_service_health_job_t job = {
         .client_config = *client_config,
     };
+    memory_watch_service_rebind_client_config(&job.client_config);
     job.client_config.client_config.timeout_ms =
         MEMORY_WATCH_SERVICE_HEALTH_TIMEOUT_MS;
     if (xQueueSend(s_health_worker_queue, &job, 0) != pdTRUE)
@@ -1055,12 +1219,94 @@ static void memory_watch_service_handle_begin_recording(void)
     memory_watch_service_reset_worker_flags();
     memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_RECORDING,
                                    ESP_OK);
-    err = memory_watch_service_start_upload_job(&client_config, request_id);
+    err = memory_watch_service_start_upload_job(&client_config, request_id,
+                                                NULL);
     if (err != ESP_OK)
     {
         memory_watch_service_set_request_active(false);
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
     }
+}
+
+static void memory_watch_service_handle_send_text(const char *text)
+{
+    if (!memory_watch_service_is_safe_user_text(text))
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_INVALID_ARG);
+        ESP_LOGW(TAG, "text command blocked: invalid text");
+        return;
+    }
+
+    const memory_watch_service_snapshot_t before =
+        memory_watch_service_copy_snapshot();
+    if (before.request_active ||
+        !memory_watch_service_can_begin_from_state(before.state))
+    {
+        memory_watch_service_set_state(before.state, ESP_ERR_INVALID_STATE);
+        ESP_LOGW(TAG, "text command blocked: request already active state=%s",
+                 memory_watch_service_state_to_string(before.state));
+        return;
+    }
+
+    memory_watch_service_client_config_snapshot_t client_config;
+    esp_err_t err = memory_watch_service_copy_client_config(&client_config);
+    if (err != ESP_OK)
+    {
+        memory_watch_service_set_endpoint_snapshot(false, false);
+        memory_watch_service_set_request_active(false);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
+        ESP_LOGW(TAG, "text command blocked: watch endpoint is not configured");
+        return;
+    }
+
+    const bool network_ready = network_service_is_service_ready();
+    memory_watch_service_set_network_ready(network_ready);
+    if (!network_ready)
+    {
+        memory_watch_service_set_state(
+            MEMORY_WATCH_SERVICE_STATE_WAITING_NETWORK,
+            ESP_ERR_INVALID_STATE);
+        memory_watch_service_set_request_active(false);
+        ESP_LOGW(TAG, "text command blocked: network service is not ready");
+        return;
+    }
+    if (memory_watch_service_is_upload_worker_busy())
+    {
+        memory_watch_service_set_state(before.state, ESP_ERR_INVALID_STATE);
+        ESP_LOGW(TAG, "text command blocked: upload worker is still busy");
+        return;
+    }
+
+    char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+    err = memory_watch_service_make_request_id(
+        client_config.client_config.device_id, request_id,
+        sizeof(request_id));
+    if (err != ESP_OK)
+    {
+        memory_watch_service_set_request_active(false);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
+        return;
+    }
+
+    memory_watch_service_set_request_id(request_id);
+    portENTER_CRITICAL(&s_snapshot_lock);
+    memory_watch_service_copy_text(s_snapshot.asr_text,
+                                   sizeof(s_snapshot.asr_text), text);
+    portEXIT_CRITICAL(&s_snapshot_lock);
+    memory_watch_service_set_request_active(true);
+    memory_watch_service_reset_worker_flags();
+    err = memory_watch_service_start_upload_job(&client_config, request_id,
+                                                text);
+    if (err != ESP_OK)
+    {
+        memory_watch_service_set_request_active(false);
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
+        return;
+    }
+
+    memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_UPLOADING,
+                                   ESP_OK);
 }
 
 static void memory_watch_service_handle_check_health(void)
@@ -1212,6 +1458,19 @@ static void memory_watch_service_handle_health_done(
         result->hermes_online ? MEMORY_WATCH_SERVICE_STATE_READY
                               : MEMORY_WATCH_SERVICE_STATE_ERROR,
         result->error);
+    ESP_LOGI(TAG, "watch endpoint health result: hermes_online=%u err=%s",
+             (unsigned int)result->hermes_online,
+             esp_err_to_name(result->error));
+#if CONFIG_MEMORY_WATCH_BOOT_TEXT_SMOKE
+    if (!s_boot_text_sent &&
+        CONFIG_MEMORY_WATCH_BOOT_TEXT[0] != '\0')
+    {
+        s_boot_text_sent = true;
+        ESP_LOGW(TAG, "Kconfig boot text smoke started after health result");
+        memory_watch_service_handle_send_text(
+            CONFIG_MEMORY_WATCH_BOOT_TEXT);
+    }
+#endif
 }
 
 static memory_watch_service_state_t
@@ -1280,6 +1539,16 @@ static void memory_watch_service_handle_worker_done(
     if (result->has_response)
     {
         memory_watch_service_set_response_texts(&result->response);
+        ESP_LOGI(TAG,
+                 "watch request result: request_id=%s status=%s action=%s error_code=%s asr_chars=%u reply_chars=%u",
+                 result->response.request_id,
+                 result->response.status,
+                 result->response.action,
+                 result->response.error_code[0] != '\0'
+                     ? result->response.error_code
+                     : "none",
+                 (unsigned int)strlen(result->response.asr_text),
+                 (unsigned int)strlen(result->response.reply_text));
     }
 
     const memory_watch_service_state_t next_state =
@@ -1308,6 +1577,9 @@ static void memory_watch_service_handle_command(
         break;
     case MEMORY_WATCH_SERVICE_CMD_SEND_RECORDING:
         memory_watch_service_handle_send_recording();
+        break;
+    case MEMORY_WATCH_SERVICE_CMD_SEND_TEXT:
+        memory_watch_service_handle_send_text(command->text);
         break;
     case MEMORY_WATCH_SERVICE_CMD_CANCEL_RECORDING:
         memory_watch_service_handle_cancel_recording();
@@ -1341,65 +1613,100 @@ static void memory_watch_service_upload_worker_task(void *arg)
 
     while (1)
     {
-        memory_watch_service_upload_job_t job;
-        if (xQueueReceive(s_upload_worker_queue, &job, portMAX_DELAY) !=
-            pdTRUE)
+        if (xQueueReceive(s_upload_worker_queue, &s_upload_worker_job,
+                          portMAX_DELAY) != pdTRUE)
         {
             continue;
         }
 
-        memory_watch_service_worker_result_t result = {0};
-        memory_watch_service_copy_text(result.request_id,
-                                       sizeof(result.request_id),
-                                       job.request_id);
-        result.error = ESP_OK;
+        memory_watch_service_upload_job_t *job = &s_upload_worker_job;
+        memory_watch_service_worker_result_t *result =
+            &s_upload_worker_result;
+        memory_watch_service_rebind_client_config(&job->client_config);
+        memset(result, 0, sizeof(*result));
+        memory_watch_service_copy_text(result->request_id,
+                                       sizeof(result->request_id),
+                                       job->request_id);
+        result->error = ESP_OK;
+        memory_watch_service_log_upload_stack("job-received");
 
-        memory_watch_service_audio_buffer_t audio_buffer = {0};
-        memory_watch_recorder_result_t recorder_result = {0};
-        memory_watch_recorder_config_t recorder_config = {
-            .ogg_serial = esp_random(),
-            .write_cb = memory_watch_service_audio_write_cb,
-            .write_user_ctx = &audio_buffer,
-            .should_stop_cb = memory_watch_service_should_stop_recording,
-            .should_stop_user_ctx = NULL,
-            .should_abort_cb = memory_watch_service_should_abort_recording,
-            .should_abort_user_ctx = NULL,
-        };
-        result.error = memory_watch_recorder_capture_ogg_opus(
-            &recorder_config, &recorder_result);
-
-        const bool discard_requested =
-            memory_watch_service_is_record_discard_requested();
-        if (discard_requested)
+        if (job->text_command)
         {
-            result.cancel_requested = true;
-            result.error = ESP_OK;
-        }
-        else if (result.error == ESP_OK)
-        {
-            (void)memory_watch_service_post_upload_started(job.request_id);
+            (void)memory_watch_service_post_upload_started(job->request_id);
 
-            memory_watch_voice_client_request_t request = {
-                .request_id = job.request_id,
-                .audio = audio_buffer.data,
-                .audio_len = audio_buffer.len,
-                .clarification_id = job.clarification_id,
+            memory_watch_voice_client_text_request_t request = {
+                .request_id = job->request_id,
+                .text = job->text,
+                .clarification_id = job->clarification_id,
                 .firmware_version = memory_watch_service_firmware_version(),
                 .ui_state = memory_watch_service_state_to_string(
                     MEMORY_WATCH_SERVICE_STATE_THINKING),
             };
-            memory_watch_service_fill_power_fields(&request);
-            result.error = memory_watch_voice_client_post_voice_command(
-                &job.client_config.client_config, &request, &result.response);
-            result.has_response = result.error == ESP_OK;
-            result.cancel_requested =
+            memory_watch_service_fill_text_power_fields(&request);
+            result->error = memory_watch_voice_client_post_text_command(
+                &job->client_config.client_config, &request,
+                &result->response);
+            result->has_response = result->error == ESP_OK;
+            result->cancel_requested =
                 memory_watch_service_is_wait_cancel_requested() ||
-                memory_watch_service_is_wait_canceled_request(job.request_id);
+                memory_watch_service_is_wait_canceled_request(job->request_id);
+            memory_watch_service_log_upload_stack("text-http-done");
         }
+        else
+        {
+            memory_watch_service_audio_buffer_t audio_buffer = {0};
+            memory_watch_recorder_result_t recorder_result = {0};
+            memory_watch_recorder_config_t recorder_config = {
+                .ogg_serial = esp_random(),
+                .write_cb = memory_watch_service_audio_write_cb,
+                .write_user_ctx = &audio_buffer,
+                .should_stop_cb = memory_watch_service_should_stop_recording,
+                .should_stop_user_ctx = NULL,
+                .should_abort_cb = memory_watch_service_should_abort_recording,
+                .should_abort_user_ctx = NULL,
+            };
+            memory_watch_service_log_upload_stack("voice-record-start");
+            result->error = memory_watch_recorder_capture_ogg_opus(
+                &recorder_config, &recorder_result);
+            memory_watch_service_log_upload_stack("voice-record-done");
 
-        memory_watch_service_audio_buffer_free(&audio_buffer);
+            const bool discard_requested =
+                memory_watch_service_is_record_discard_requested();
+            if (discard_requested)
+            {
+                result->cancel_requested = true;
+                result->error = ESP_OK;
+            }
+            else if (result->error == ESP_OK)
+            {
+                (void)memory_watch_service_post_upload_started(job->request_id);
+
+                memory_watch_voice_client_request_t request = {
+                    .request_id = job->request_id,
+                    .audio = audio_buffer.data,
+                    .audio_len = audio_buffer.len,
+                    .clarification_id = job->clarification_id,
+                    .firmware_version =
+                        memory_watch_service_firmware_version(),
+                    .ui_state = memory_watch_service_state_to_string(
+                        MEMORY_WATCH_SERVICE_STATE_THINKING),
+                };
+                memory_watch_service_fill_power_fields(&request);
+                result->error = memory_watch_voice_client_post_voice_command(
+                    &job->client_config.client_config, &request,
+                    &result->response);
+                result->has_response = result->error == ESP_OK;
+                result->cancel_requested =
+                    memory_watch_service_is_wait_cancel_requested() ||
+                    memory_watch_service_is_wait_canceled_request(
+                        job->request_id);
+                memory_watch_service_log_upload_stack("voice-http-done");
+            }
+
+            memory_watch_service_audio_buffer_free(&audio_buffer);
+        }
         memory_watch_service_set_upload_worker_busy(false);
-        (void)memory_watch_service_post_worker_result(&result);
+        (void)memory_watch_service_post_worker_result(result);
     }
 }
 
@@ -1415,6 +1722,7 @@ static void memory_watch_service_health_worker_task(void *arg)
         {
             continue;
         }
+        memory_watch_service_rebind_client_config(&job.client_config);
 
         memory_watch_voice_client_health_t health = {0};
         const esp_err_t err = memory_watch_voice_client_get_health(
@@ -1439,6 +1747,7 @@ static void memory_watch_service_cancel_worker_task(void *arg)
         {
             continue;
         }
+        memory_watch_service_rebind_client_config(&job.client_config);
 
         memory_watch_voice_client_response_t response = {0};
         const esp_err_t err = memory_watch_voice_client_cancel_request(
@@ -1454,15 +1763,55 @@ static void memory_watch_service_cancel_worker_task(void *arg)
 static void memory_watch_service_task(void *arg)
 {
     (void)arg;
+#if CONFIG_MEMORY_WATCH_BOOT_HEALTH_CHECK
+    bool boot_health_done = false;
+    uint32_t boot_health_attempts = 0;
+#endif
 
     while (1)
     {
-        memory_watch_service_cmd_t command;
-        if (xQueueReceive(s_command_queue, &command, portMAX_DELAY) != pdTRUE)
+        TickType_t wait_ticks = portMAX_DELAY;
+#if CONFIG_MEMORY_WATCH_BOOT_HEALTH_CHECK
+        if (!boot_health_done)
+        {
+            wait_ticks = pdMS_TO_TICKS(1000U);
+        }
+#endif
+        if (xQueueReceive(s_command_queue, &s_service_task_command,
+                          wait_ticks) == pdTRUE)
+        {
+            memory_watch_service_handle_command(&s_service_task_command);
+            continue;
+        }
+
+#if CONFIG_MEMORY_WATCH_BOOT_HEALTH_CHECK
+        if (boot_health_done)
         {
             continue;
         }
-        memory_watch_service_handle_command(&command);
+
+        ++boot_health_attempts;
+        const memory_watch_service_snapshot_t snapshot =
+            memory_watch_service_copy_snapshot();
+        if (snapshot.endpoint_configured && !snapshot.request_active &&
+            network_service_is_service_ready())
+        {
+            ESP_LOGW(TAG, "Kconfig boot health check started");
+            memory_watch_service_handle_check_health();
+            boot_health_done = true;
+            continue;
+        }
+        if (boot_health_attempts >= 90U)
+        {
+            ESP_LOGW(TAG,
+                     "Kconfig boot health check skipped: endpoint=%u request=%u network=%u attempts=%lu",
+                     (unsigned int)snapshot.endpoint_configured,
+                     (unsigned int)snapshot.request_active,
+                     (unsigned int)network_service_is_service_ready(),
+                     (unsigned long)boot_health_attempts);
+            boot_health_done = true;
+        }
+#endif
     }
 }
 
@@ -1583,15 +1932,15 @@ esp_err_t memory_watch_service_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    s_upload_worker_task_handle = xTaskCreateStatic(
+    const BaseType_t upload_created = xTaskCreateWithCaps(
         memory_watch_service_upload_worker_task,
         "mw_upload",
         kUploadWorkerStackWords,
         NULL,
         4,
-        s_upload_worker_task_stack,
-        &s_upload_worker_task_buffer);
-    if (s_upload_worker_task_handle == NULL)
+        &s_upload_worker_task_handle,
+        MALLOC_CAP_SPIRAM);
+    if (upload_created != pdPASS)
     {
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);
@@ -1744,6 +2093,28 @@ esp_err_t memory_watch_service_send_recording(void)
 {
     return memory_watch_service_post_command(
         MEMORY_WATCH_SERVICE_CMD_SEND_RECORDING);
+}
+
+esp_err_t memory_watch_service_send_text(const char *text)
+{
+    if (s_command_queue == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!memory_watch_service_is_safe_user_text(text))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memory_watch_service_cmd_t command = {
+        .type = MEMORY_WATCH_SERVICE_CMD_SEND_TEXT,
+    };
+    memory_watch_service_copy_text(command.text, sizeof(command.text), text);
+    if (xQueueSend(s_command_queue, &command, 0) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
 }
 
 esp_err_t memory_watch_service_cancel_recording(void)

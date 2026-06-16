@@ -52,3 +52,83 @@ config OFFICIAL_CHAT_UDP_AUDIO_STALL_TIMEOUT_MS
         false mid-sentence stalls.
 
 endmenu
+
+menu "AI Memory Watch"
+
+config MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    bool "Enable default watch endpoint config"
+    default y
+    help
+        Provide a compile-time fallback endpoint for AI Memory Watch when NVS
+        does not contain a SoftAP-provisioned endpoint yet. NVS remains the
+        higher-priority runtime configuration source.
+
+config MEMORY_WATCH_DEFAULT_BASE_URL
+    string "Default watch endpoint base URL"
+    depends on MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    default "https://watch.934000.xyz"
+    help
+        Public watch endpoint base URL. The ESP32 only calls /v1/watch/*
+        under this endpoint; Hermes API Server and Dashboard must remain
+        server-side private services.
+
+config MEMORY_WATCH_DEFAULT_DEVICE_ID
+    string "Default watch device ID"
+    depends on MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    default "watch-001"
+    help
+        Device ID used by the watch endpoint to select the matching
+        device_token on the server.
+
+config MEMORY_WATCH_DEFAULT_DEVICE_TOKEN
+    string "Default watch device token"
+    depends on MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    default ""
+    help
+        Device token sent as Authorization: Bearer <device_token> to the watch
+        endpoint. This is only a watch device token; never put Hermes, MiMo,
+        Cloudflare, or API Server keys here. Leave empty for production images
+        that must be configured through SoftAP/NVS.
+
+config MEMORY_WATCH_DEFAULT_TIMEOUT_MS
+    int "Default watch request timeout (ms)"
+    depends on MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    default 120000
+    range 1000 300000
+    help
+        Maximum watch-side wait time for one voice/text request. Keep this
+        slightly above the server-side request budget so the server can return
+        a fixed V1 JSON timeout before the ESP32 gives up.
+
+config MEMORY_WATCH_DEFAULT_ALLOW_HTTP
+    bool "Allow default HTTP watch endpoint"
+    depends on MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    default n
+    help
+        Allow an http:// default endpoint. Keep disabled for the public V1
+        domain; enable only for local LAN development endpoints.
+
+config MEMORY_WATCH_BOOT_HEALTH_CHECK
+    bool "Run boot health check"
+    default y
+    depends on MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    help
+        After networking is ready, check /v1/watch/health once so the Hermes
+        page can show the initial online status during development.
+
+config MEMORY_WATCH_BOOT_TEXT_SMOKE
+    bool "Run boot text smoke"
+    default n
+    depends on MEMORY_WATCH_BOOT_HEALTH_CHECK
+    help
+        Send one development text command after a successful boot health check.
+        Keep disabled for V1 because it writes extra memory entries to Hermes.
+
+config MEMORY_WATCH_BOOT_TEXT
+    string "Boot text smoke content"
+    depends on MEMORY_WATCH_BOOT_TEXT_SMOKE
+    default "记一下 ESP32 文本链路实机测试"
+    help
+        Text used only when MEMORY_WATCH_BOOT_TEXT_SMOKE is enabled.
+
+endmenu

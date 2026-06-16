@@ -20,7 +20,7 @@ static const char *TAG = "espdl_feature";
 /**
  * @brief 生成与训练配置对齐的 Fbank 参数。
  *
- * 参数来源：configs/espdl/dstcn_small_espdl_edge_mix_teacher_1s.yml
+ * 参数来源：AudioClassification-Pytorch/configs/espdl/training/dstcn/dstcn_small_espdl_edge_mix_teacher_1s.yml
  *   preprocess_conf.method_args:
  *     sample_frequency: 16000, num_mel_bins: 40
  *     frame_length: 25.0, frame_shift: 10.0

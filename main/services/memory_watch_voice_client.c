@@ -13,6 +13,7 @@
 static const char *TAG = "memory_watch_http";
 
 static const char kVoiceCommandPath[] = "/v1/watch/voice-command";
+static const char kTextCommandPath[] = "/v1/watch/text-command";
 static const char kHealthPathPrefix[] = "/v1/watch/health?device_id=";
 static const char kCancelPathPrefix[] = "/v1/watch/request/";
 static const char kCancelPathSuffix[] = "/cancel";
@@ -160,6 +161,37 @@ static esp_err_t memory_watch_voice_client_validate_request(
         return ESP_ERR_INVALID_ARG;
     }
     if (!memory_watch_voice_client_is_safe_form_text(
+            request->clarification_id) ||
+        !memory_watch_voice_client_is_safe_form_text(
+            request->firmware_version) ||
+        !memory_watch_voice_client_is_safe_form_text(request->ui_state))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t memory_watch_voice_client_validate_text_request(
+    const memory_watch_voice_client_text_request_t *request)
+{
+    if (request == NULL || request->text == NULL ||
+        request->text[0] == '\0' ||
+        strlen(request->text) >= MEMORY_WATCH_VOICE_CLIENT_MAX_TEXT_BYTES ||
+        !memory_watch_voice_client_is_request_id_valid(request->request_id))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (request->has_battery_percent &&
+        (request->battery_percent < 0 || request->battery_percent > 100))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (request->has_rssi && (request->rssi < -127 || request->rssi > 0))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!memory_watch_voice_client_is_safe_form_text(request->text) ||
+        !memory_watch_voice_client_is_safe_form_text(
             request->clarification_id) ||
         !memory_watch_voice_client_is_safe_form_text(
             request->firmware_version) ||
@@ -428,6 +460,120 @@ static esp_err_t memory_watch_voice_client_compute_body_len(
     return ESP_OK;
 }
 
+static esp_err_t memory_watch_voice_client_compute_text_body_len(
+    const memory_watch_voice_client_config_t *config,
+    const memory_watch_voice_client_text_request_t *request,
+    const char *boundary,
+    size_t *out_body_len)
+{
+    char battery_text[12];
+    char charging_text[6];
+    char rssi_text[12];
+    const char *ui_state =
+        (request->ui_state != NULL && request->ui_state[0] != '\0')
+            ? request->ui_state
+            : kDefaultUiState;
+    const char *clarification_id =
+        request->clarification_id != NULL ? request->clarification_id : "";
+
+    size_t body_len = 0;
+    esp_err_t err = memory_watch_voice_client_add_text_part_len(
+        boundary, "request_id", request->request_id, &body_len);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "device_id", config->device_id, &body_len);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "text", request->text, &body_len);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "clarification_id", clarification_id, &body_len);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "locale", kLocaleZhCn, &body_len);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "timezone", kTimezoneShanghai, &body_len);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "source", kSourceWatchHermesPage, &body_len);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "ui_state", ui_state, &body_len);
+    }
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    if (request->has_battery_percent)
+    {
+        snprintf(battery_text, sizeof(battery_text), "%d",
+                 request->battery_percent);
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "battery_percent", battery_text, &body_len);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+    if (request->has_charging)
+    {
+        snprintf(charging_text, sizeof(charging_text), "%s",
+                 request->charging ? "true" : "false");
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "charging", charging_text, &body_len);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+    if (request->has_rssi)
+    {
+        snprintf(rssi_text, sizeof(rssi_text), "%d", request->rssi);
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "rssi", rssi_text, &body_len);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+    if (request->firmware_version != NULL &&
+        request->firmware_version[0] != '\0')
+    {
+        err = memory_watch_voice_client_add_text_part_len(
+            boundary, "firmware_version", request->firmware_version,
+            &body_len);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+
+    const size_t finish_len = memory_watch_voice_client_finish_len(boundary);
+    if (finish_len > SIZE_MAX - body_len)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    body_len += finish_len;
+
+    *out_body_len = body_len;
+    return ESP_OK;
+}
+
 static esp_err_t memory_watch_voice_client_write_cstr(
     esp_http_client_handle_t client, const char *text)
 {
@@ -602,6 +748,93 @@ static esp_err_t memory_watch_voice_client_write_body(
     {
         err = memory_watch_voice_client_write_audio_part(
             client, boundary, request->audio, request->audio_len);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_finish(client, boundary);
+    }
+    return err;
+}
+
+static esp_err_t memory_watch_voice_client_write_text_body(
+    esp_http_client_handle_t client,
+    const memory_watch_voice_client_config_t *config,
+    const memory_watch_voice_client_text_request_t *request,
+    const char *boundary)
+{
+    char battery_text[12];
+    char charging_text[6];
+    char rssi_text[12];
+    const char *ui_state =
+        (request->ui_state != NULL && request->ui_state[0] != '\0')
+            ? request->ui_state
+            : kDefaultUiState;
+    const char *clarification_id =
+        request->clarification_id != NULL ? request->clarification_id : "";
+
+    esp_err_t err = memory_watch_voice_client_write_text_part(
+        client, boundary, "request_id", request->request_id);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "device_id", config->device_id);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "text", request->text);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "clarification_id", clarification_id);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "locale", kLocaleZhCn);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "timezone", kTimezoneShanghai);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "source", kSourceWatchHermesPage);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "ui_state", ui_state);
+    }
+    if (err == ESP_OK && request->has_battery_percent)
+    {
+        snprintf(battery_text, sizeof(battery_text), "%d",
+                 request->battery_percent);
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "battery_percent", battery_text);
+    }
+    if (err == ESP_OK && request->has_charging)
+    {
+        snprintf(charging_text, sizeof(charging_text), "%s",
+                 request->charging ? "true" : "false");
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "charging", charging_text);
+    }
+    if (err == ESP_OK && request->has_rssi)
+    {
+        snprintf(rssi_text, sizeof(rssi_text), "%d", request->rssi);
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "rssi", rssi_text);
+    }
+    if (err == ESP_OK && request->firmware_version != NULL &&
+        request->firmware_version[0] != '\0')
+    {
+        err = memory_watch_voice_client_write_text_part(
+            client, boundary, "firmware_version",
+            request->firmware_version);
     }
     if (err == ESP_OK)
     {
@@ -1000,6 +1233,13 @@ typedef struct
     const char *device_id;
 } memory_watch_voice_client_cancel_body_t;
 
+typedef struct
+{
+    const char *boundary;
+    const memory_watch_voice_client_config_t *config;
+    const memory_watch_voice_client_text_request_t *request;
+} memory_watch_voice_client_text_body_t;
+
 static esp_err_t memory_watch_voice_client_write_cancel_body(
     esp_http_client_handle_t client, void *user_ctx)
 {
@@ -1012,6 +1252,15 @@ static esp_err_t memory_watch_voice_client_write_cancel_body(
         err = memory_watch_voice_client_write_finish(client, ctx->boundary);
     }
     return err;
+}
+
+static esp_err_t memory_watch_voice_client_write_text_command_body(
+    esp_http_client_handle_t client, void *user_ctx)
+{
+    const memory_watch_voice_client_text_body_t *ctx =
+        (const memory_watch_voice_client_text_body_t *)user_ctx;
+    return memory_watch_voice_client_write_text_body(
+        client, ctx->config, ctx->request, ctx->boundary);
 }
 
 esp_err_t memory_watch_voice_client_get_health(
@@ -1339,6 +1588,104 @@ esp_err_t memory_watch_voice_client_post_voice_command(
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "voice command failed: status=%d err=%s",
+                 out_response->http_status, esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t memory_watch_voice_client_post_text_command(
+    const memory_watch_voice_client_config_t *config,
+    const memory_watch_voice_client_text_request_t *request,
+    memory_watch_voice_client_response_t *out_response)
+{
+    if (out_response == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out_response, 0, sizeof(*out_response));
+
+    esp_err_t err = memory_watch_voice_client_validate_config(config);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_validate_text_request(request);
+    }
+    if (err == ESP_OK &&
+        !memory_watch_voice_client_request_id_matches_device(
+            request->request_id, config->device_id))
+    {
+        err = ESP_ERR_INVALID_ARG;
+    }
+    if (err != ESP_OK)
+    {
+        out_response->transport_error = err;
+        return err;
+    }
+
+    char boundary[sizeof(kBoundaryPrefix) +
+                  MEMORY_WATCH_VOICE_CLIENT_REQUEST_ID_MAX_LEN + 1U];
+    const int boundary_len = snprintf(boundary, sizeof(boundary), "%s%s",
+                                      kBoundaryPrefix, request->request_id);
+    if (boundary_len < 0 || (size_t)boundary_len >= sizeof(boundary))
+    {
+        out_response->transport_error = ESP_ERR_INVALID_SIZE;
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    size_t body_len = 0;
+    err = memory_watch_voice_client_compute_text_body_len(
+        config, request, boundary, &body_len);
+    if (err != ESP_OK)
+    {
+        out_response->transport_error = err;
+        return err;
+    }
+
+    char content_type[160];
+    const int content_type_len = snprintf(
+        content_type, sizeof(content_type),
+        "multipart/form-data; boundary=%s", boundary);
+    if (content_type_len < 0 ||
+        (size_t)content_type_len >= sizeof(content_type))
+    {
+        out_response->transport_error = ESP_ERR_INVALID_SIZE;
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char *response =
+        (char *)memory_watch_voice_client_alloc(kMaxResponseBytes + 1U);
+    if (response == NULL)
+    {
+        out_response->transport_error = ESP_ERR_NO_MEM;
+        return ESP_ERR_NO_MEM;
+    }
+
+    memory_watch_voice_client_text_body_t writer_ctx = {
+        .boundary = boundary,
+        .config = config,
+        .request = request,
+    };
+    size_t response_len = 0;
+    err = memory_watch_voice_client_perform_http_json(
+        config, kTextCommandPath, HTTP_METHOD_POST, content_type, body_len,
+        memory_watch_voice_client_write_text_command_body, &writer_ctx,
+        &out_response->http_status, response, kMaxResponseBytes + 1U,
+        &response_len);
+    if (err == ESP_OK && (out_response->http_status < 200 ||
+                          out_response->http_status >= 300))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_parse_response(
+            response, response_len, request->request_id, out_response);
+    }
+
+    memory_watch_voice_client_free(response);
+    out_response->transport_error = err;
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "text command failed: status=%d err=%s",
                  out_response->http_status, esp_err_to_name(err));
     }
     return err;

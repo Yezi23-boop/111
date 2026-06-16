@@ -27,11 +27,61 @@ typedef struct
 
 static lv_ui *s_ui = NULL;
 static memory_watch_view_t *s_view = NULL;
+static lv_timer_t *s_destroy_timer = NULL;
+static memory_watch_view_t *s_pending_destroy_view = NULL;
 static lv_obj_t *s_entry_label = NULL;
 static lv_obj_t *s_entry_subtitle = NULL;
 static memory_watch_render_cache_t s_render_cache = {0};
 
 static void memory_watch_controller_refresh(void);
+
+static void memory_watch_controller_flush_pending_destroy(void)
+{
+    if (s_destroy_timer != NULL)
+    {
+        lv_timer_delete(s_destroy_timer);
+        s_destroy_timer = NULL;
+    }
+
+    if (s_pending_destroy_view != NULL)
+    {
+        memory_watch_view_destroy(s_pending_destroy_view);
+        s_pending_destroy_view = NULL;
+    }
+}
+
+static void memory_watch_controller_destroy_view_cb(lv_timer_t *timer)
+{
+    if (timer != NULL)
+    {
+        lv_timer_delete(timer);
+    }
+    s_destroy_timer = NULL;
+
+    if (s_pending_destroy_view != NULL)
+    {
+        memory_watch_view_destroy(s_pending_destroy_view);
+        s_pending_destroy_view = NULL;
+    }
+}
+
+static void memory_watch_controller_schedule_view_destroy(void)
+{
+    if (s_view == NULL)
+    {
+        return;
+    }
+
+    memory_watch_view_t *view_to_destroy = s_view;
+    s_view = NULL;
+    s_render_cache.valid = false;
+
+    memory_watch_controller_flush_pending_destroy();
+
+    s_pending_destroy_view = view_to_destroy;
+    s_destroy_timer =
+        lv_timer_create(memory_watch_controller_destroy_view_cb, 350, NULL);
+}
 
 static void memory_watch_copy_text(char *dst, size_t dst_size,
                                    const char *src)
@@ -323,6 +373,7 @@ static void memory_watch_controller_back(void *user_data)
     s_render_cache.valid = false;
     lv_screen_load_anim(s_ui->screen_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0,
                         false);
+    memory_watch_controller_schedule_view_destroy();
 }
 
 static void memory_watch_controller_press_start(void *user_data)

@@ -21,6 +21,7 @@ extern "C"
 #define MEMORY_WATCH_VOICE_CLIENT_ERROR_MAX_BYTES 64U
 #define MEMORY_WATCH_VOICE_CLIENT_DEFAULT_TIMEOUT_MS 120000U
 #define MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES (6U * 1024U * 1024U)
+#define MEMORY_WATCH_VOICE_CLIENT_MAX_TEXT_BYTES 512U
 
     /**
      * @brief AI Memory Watch 设备侧 HTTP client 配置。
@@ -55,6 +56,27 @@ extern "C"
         const char *firmware_version; /**< 可选固件版本。 */
         const char *ui_state;         /**< 当前页面状态；NULL 时使用 `ready`。 */
     } memory_watch_voice_client_request_t;
+
+    /**
+     * @brief text-command 请求参数。
+     *
+     * 文本链路用于开发调试、后续手表侧候选文本输入和无麦克风路径；它仍只
+     * 面向 watch endpoint，不能绕过服务器直接调用私有大脑接口。
+     */
+    typedef struct
+    {
+        const char *request_id;       /**< `<device_id>-<boot_id>-<seq>`，最长 96 字符。 */
+        const char *text;             /**< 要发送给 Hermes 的 UTF-8 文本。 */
+        const char *clarification_id; /**< 可选追问 ID；无追问可传 NULL 或空字符串。 */
+        bool has_battery_percent;     /**< 是否上传电量百分比。 */
+        int battery_percent;          /**< 电量百分比，0..100。 */
+        bool has_charging;            /**< 是否上传充电状态。 */
+        bool charging;                /**< 当前是否充电。 */
+        bool has_rssi;                /**< 是否上传 Wi-Fi RSSI。 */
+        int rssi;                     /**< Wi-Fi RSSI，单位 dBm。 */
+        const char *firmware_version; /**< 可选固件版本。 */
+        const char *ui_state;         /**< 当前页面状态；NULL 时使用 `ready`。 */
+    } memory_watch_voice_client_text_request_t;
 
     /**
      * @brief watch endpoint 固定 7 字段响应。
@@ -114,6 +136,22 @@ extern "C"
     esp_err_t memory_watch_voice_client_post_voice_command(
         const memory_watch_voice_client_config_t *config,
         const memory_watch_voice_client_request_t *request,
+        memory_watch_voice_client_response_t *out_response);
+
+    /**
+     * @brief 发送一次文本请求并解析手表 V1 响应。
+     *
+     * 该函数同步执行 HTTP POST，只允许 service/worker task 调用；UI 只能向
+     * `memory_watch_service` 投递文本意图，不能在 LVGL 路径直接等待网络。
+     *
+     * @param[in] config HTTP client 配置。
+     * @param[in] request 文本请求参数。
+     * @param[out] out_response 固定 7 字段响应。
+     * @return `ESP_OK` 表示 HTTP 2xx 且响应契约解析成功。
+     */
+    esp_err_t memory_watch_voice_client_post_text_command(
+        const memory_watch_voice_client_config_t *config,
+        const memory_watch_voice_client_text_request_t *request,
         memory_watch_voice_client_response_t *out_response);
 
     /**

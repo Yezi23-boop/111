@@ -130,6 +130,17 @@ extern "C"
     esp_err_t memory_watch_service_send_recording(void);
 
     /**
+     * @brief 发送一条 UTF-8 文本给 watch endpoint。
+     *
+     * 文本发送复用 Memory Watch 的 owner task、request_id、cancel 和固定 7 字段
+     * 响应处理；实际 HTTP POST 在后台 worker task 中执行，UI 不得直接等待网络。
+     *
+     * @param[in] text 要发送的文本，不能为空，不能包含 CR/LF。
+     * @return `ESP_OK` 表示命令已投递到 owner task。
+     */
+    esp_err_t memory_watch_service_send_text(const char *text);
+
+    /**
      * @brief 用户滑出按钮或松手取消，丢弃当前录音。
      * @return `ESP_OK` 表示命令已投递到 owner task。
      */
