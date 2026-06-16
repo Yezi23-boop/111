@@ -394,3 +394,30 @@ sleep_permission=unchanged
 - wake cause 本地快照。
 - 恢复 UI/I2C/Wi-Fi/time。
 - timer-based Deep Sleep 另按 cold boot resume 计划推进，不和 Light Sleep 混做。
+
+## Progress
+
+- `[x]` system_time 启动摘要、SNTP drift、STANDBY 运行态省电和 Wi-Fi budget 消费已实现并板端验证。
+- `[x]` `LOW_BATTERY_WARN` V1 收敛为 flag/log，不做 UI 提示或 sleep 动作。
+- `[x]` 后续 sleep dry-run 已转入 `low-power-framework-execution-plan`。
+- `[ ]` 真实低电量、触摸退出 STANDBY 和真实 sleep 仍未在本计划闭环。
+
+## Decision Log
+
+- 决策：V1 不保留 `IDLE_DIM` 作为产品主状态，收敛为 `ACTIVE / STANDBY`。
+- 决策：低电量 V1 只发布 flag/log，不弹 UI、不禁止普通网络同步、不触发 sleep。
+- 决策：普通 STANDBY 不暂停 Safety Monitor，P0 危险提醒必须能唤醒 UI。
+
+## Validation and Acceptance
+
+- source tests、context standard、`idf.py build` 和 COM3 板端日志已完成。
+- 关键证据见 `docs/context/runs/2026-06-01-attempt-standby-power-time-v1-board-validation.md`。
+
+## Idempotence and Recovery
+
+- 若 STANDBY 恢复路径不稳定，先关闭 STANDBY 触发条件，保留 system_time 与 low-battery 可观测性。
+- 若低电量 UI 后续恢复，应作为 UI/alert owner 独立需求，不从 `power_policy` 直接弹 UI。
+
+## Next Step
+
+- 后续优先补手动触摸/按键退出 STANDBY 证据，再考虑真实低电量或 Automatic Light-sleep。

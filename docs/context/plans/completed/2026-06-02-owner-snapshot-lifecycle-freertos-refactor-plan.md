@@ -5,8 +5,12 @@ summary: 将当前仓库长期 owner 按 snapshot、生命周期和 FreeRTOS 通
 created: 2026-06-02
 updated: 2026-06-02
 last_reviewed: 2026-06-02
-status: completed
+status: active
+plan_status: completed
+memory_type: project_plan
+scope: repo
 owners: main/services/official_chat_service.c, main/services/network_service.c, main/services/power_service.c, main/services/background_service_manager.c, main/services/sleep_coordinator.c, docs/context/knowledge/project/owner-snapshot-lifecycle-freertos-contract.md
+triggers: owner snapshot, lifecycle, FreeRTOS, runtime owner, power_budget, resource release
 evidence_level: design
 ---
 

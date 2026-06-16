@@ -1,12 +1,17 @@
 ---
 id: attempt-2026-06-04-qmi8658c-int1-gpio21-schematic-board-evidence
 date: 2026-06-04
-status: completed
+status: active
 result: resolved_with_software_fallback
 summary: 视觉复核原理图并完成 COM3 确定性板测，确认当前样板 QMI INT1 到 GPIO21 物理通路浮空/开路；修复 Rev A CTRL9 握手，并为正式 service 增加 20 ms WoM 轮询降级。
 last_reviewed: 2026-06-04
+memory_type: episodic
 scope: repo
 owners: components/qmi8658c, main/app/board_imu.c, main/services/imu_service.c
+triggers: QMI8658C, INT1, GPIO21, STATUSINT, WoM, polling fallback, board evidence
+evidence_level: observed
+garden_status: keep-evidence
+garden_reviewed: 2026-06-07
 tags: attempt, qmi8658c, imu, schematic, wom, gpio21, interrupt, board-test, com3
 record_because: 该轮包含原理图稳定事实、COM3 板测证据和高复用的软硬件隔离顺序；后续若不记录，容易重复调抬腕阈值或误判 QMI 整体不可用。
 ---
@@ -41,7 +46,9 @@ record_because: 该轮包含原理图稳定事实、COM3 板测证据和高复�
 - 扩展诊断固件：同一时刻比较 `STATUSINT.INT1` 与 GPIO21，执行 GPIO21 内部下拉隔离，并在三次真实 WoM 事件中扫描安全候选 GPIO。
 - 正式 `imu_service` 增加启动期 INT1 通路检测；不一致时锁存故障、禁用浮空 ISR，并切换到 20 ms `STATUS1.WoM` 轮询。
 
-## 原理图观测
+## 观测
+
+### 原理图观测
 
 - `U5 QMI8658C`：
   - `VDD/VDDIO/CS -> VCC3V3`
@@ -55,7 +62,7 @@ record_because: 该轮包含原理图稳定事实、COM3 板测证据和高复�
 - QMI 原理图只显示一个 `C26 100nF` 去耦；手册推荐 VDD/VDDIO 对应的两个 `100nF`。
 - 原理图中 `SA0` 接地，同时标注地址 `0x6B`；该标注与 Rev0.6 手册地址描述不一致，当前硬件以实测地址为准。
 
-## 板级观测
+### 板级观测
 
 原始数据诊断日志：
 

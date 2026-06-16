@@ -1,55 +1,57 @@
 ---
 id: espdl-danger-model-plan-anchor
-tags: project, esp-dl, audio, danger-detection, model-plan, training
-summary: "固定 ESP-DL 危险声音模型计划的索引入口，指向训练仓库路线文档、版本矩阵、当前 active 模型和阈值策略，避免上下文检索丢失。"
-last_reviewed: 2026-05-04
+tags: project, esp-dl, audio, danger-detection, model-integration, deployment
+summary: "固定 ESP-DL 危险声音模型接入锚点：记录当前主工程 active 模型、部署边界、固件 owner，并指向训练仓库的模型版本与训练经验入口。"
+last_reviewed: 2026-06-10
 memory_type: semantic
 scope: repo
 owners: components/espdl_inference, main/features/danger_detection/danger_detection_service.c, main/ui/custom/danger_detection_controller.c
-triggers: espdl, danger, model, plan, anchor
-evidence_level: design
+triggers: espdl, danger, model, integration, active-model, registry
+evidence_level: observed
 ---
 
-# ESP-DL 危险声音模型计划索引锚点
+# ESP-DL 危险声音模型接入锚点
 
-本文是主工程上下文库里的固定入口。后续遇到“危险声音模型计划、训练计划、中文人声 hard negative、teacher-student、DS-CNN、阈值 0.90、ESP32-S3 部署”等问题时，优先从这里跳转到训练侧文档，避免只依赖聊天上下文。
+本文只记录主工程 `D:\esp32S3\111` 需要知道的接入边界。训练路线、数据清洗、teacher 审计、模型比较和样板验证经验已经迁到训练仓库，不再由当前 context run 文档承载。
 
-## 关键文档
+## 权威入口
 
-- 产品/系统架构草案：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-system-architecture.md`
-- 状态机与提醒策略草案：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-state-machine-and-notification-policy.md`
-- 参数与默认值建议表：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-parameter-defaults-table.md`
-- 当前固件实现映射：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-firmware-mapping.md`
-- 主训练路线：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl_danger_sound_roadmap.md`
-- 训练侧命令与导出说明：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl_training_side.md`
-- 模型版本矩阵：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl_model_versions\model-version-matrix-20260502.md`
-- 当前 active 模型版本：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl_model_versions\edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.md`
+- 训练经验索引：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl\runs\README.md`
+- 训练经验总览：`D:\esp32S3\AudioClassification-Pytorch\docs\espdl\runs\espdl_danger_training_experience_index.md`
+- 模型版本表：`D:\esp32S3\AudioClassification-Pytorch\models\espdl_registry\model_release_table.md`
+- 模型版本归档：`D:\esp32S3\AudioClassification-Pytorch\models\espdl_registry`
+- 迁移 scratch 证据：`D:\esp32S3\AudioClassification-Pytorch\artifacts\archive\migrated_from_111\scratch_20260610`
 - 主工程 ESP-DL 接入记录：`D:\esp32S3\111\docs\context\knowledge\project\espdl-audio-tdnn-port.md`
 
-## 当前必须记住的结论
+## 当前主工程事实
 
-- 固件当前 active 模型是 `edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511`。
-- 产品长期目标是“面向听障用户的危险提醒系统”，不是泛音频分类；用户最终拿到的是稳定提醒，不是类别名本身。
-- active 主线 danger 定义固定聚焦 `siren / horn / alarm`，扩展事件不得默认覆盖该边界。
-- 产品行为层应通过状态机与提醒策略完成误报吸收，单窗高风险不得直接等同于用户级危险提醒。
-- 参数管理上应区分“产品常量”“规则固定 / 数值可调”“可调默认值”和“用户配置项”，避免阈值、提醒节奏和产品边界混在一起漂移。
-- 当前固件已具备 `threshold -> 连续 confirm/clear -> hold -> 一次性告警` 的最小闭环；`Suspicious/Cooldown` 显式状态已在服务层发布，持续提醒和 vibration-first 提醒层仍未真正落地。
-- 主工程只跑单模型 V3.4 T90 sharp，不并行跑 V3.2/V3.3/V3.4，原因是 RAM 不够且双模型 ANY_DANGER 融合没有独立验证指标。
-- 输入是 16 kHz mono 音频，1 秒窗口，Fbank 40 bins，模型入口为 INT8。
-- 部署侧默认危险阈值是 `0.90`，并使用连续 2 个 danger 窗口确认、连续 non_danger 窗口和 hold/cooldown 清除，目标是降低人声和摩擦误报。
-- 训练本身没有固定阈值；阈值属于评估和部署后处理。但每个新 student 模型都必须报告 `threshold=0.90` 下的指标，并补充低一档阈值作为召回风险对照。
-- 新版本验收必须单独统计 hard negative 误报率，尤其是大声/高频中文人声、普通喊话、电视/短视频/直播人声、公开摩擦/刮擦声、音乐、children_playing、dog_bark、drilling。
-- 下一阶段模型路线是 V3.4：继续使用 DS-CNN-tiny INT8 student，先补公开数据中的大声/高频中文人声、手表佩戴相似摩擦声和危险正样本。纯中文人声、大声中文人声、喊话、电视/短视频/直播中文人声统一标为 `non_danger` hard negative；当前不做“救命/着火/报警”等中文语义危险识别。
-- V3.4 首轮中文人声数据源收窄为 `Common Voice 中文` 优先，`AISHELL-1` 少量补干净参考；暂不优先下载 `ST-CMDS` 和 `MagicData Mandarin`。
-- V3.4 active 主线只把 `siren / horn / alarm` 作为核心 danger。如果人声背景里同时有真实 `siren / horn / alarm`，不能因为有人声就标为 `non_danger`，应作为 danger 或混合正样本处理。
-- `glass_break / crash / impact` 只属于 `--danger_profile extended` challenger，除非用户明确扩大产品定义，否则不得进入默认 active 训练和上线口径。
+- 当前 active 模型：`edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.espdl`。
+- 主工程模型目录：`D:\esp32S3\111\components\espdl_inference\models`。
+- 当前 active danger 边界：`siren / horn / alarm`。
+- 扩展类边界：`gun_shot / glass_break / crash / impact` 只属于 challenger 或扩展实验，除非产品定义明确变更，否则不得默认进入 active 主线。
+- 输入口径：16 kHz mono、1 秒窗口、Fbank 40 bins、INT8 模型入口。
+- 部署侧默认阈值：`0.90`。
+- 当前最小后处理闭环：连续 2 个 danger 窗口确认，连续 non-danger 窗口清除，保留 hold/cooldown 抑制抖动与重复提醒。
 
-## 检索关键词
+## 固件 owner 边界
 
-危险声音识别，危险声音模型计划，模型训练计划，中文人声，大声高频中文人声，中文喊话，人声误报，手表摩擦，衣服摩擦，cloth rustling，fabric rubbing，scraping，hard negative speech zh，teacher-student，AST，PaSST，AudioClassification-Pytorch，ESP-DL，ESP32-S3，DS-CNN，DS-TCN-small，TDNN，Fbank，INT8，threshold 0.90，danger/non_danger，V3.4。
+- `components/espdl_inference` 负责 ESP-DL 模型加载、输入输出张量、推理封装和模型文件接入。
+- `danger_detection_service` 负责危险识别公共状态机、连续证据融合、hold/cooldown 和对外 snapshot。
+- `app_alert_manager` 负责提醒编排；危险检测服务不直接承担用户提醒 UI 编排。
+- `danger_detection_controller` 只负责页面展示和用户可见状态读取，不作为长期检测能力 owner。
 
-## 维护规则
+## 接入规则
 
-- 训练侧路线、数据策略、teacher/student 变化，优先更新 `espdl_danger_sound_roadmap.md`，再在本文同步一句“当前必须记住的结论”。
-- 固件 active 模型、阈值、防抖策略变化，优先更新 `espdl-audio-tdnn-port.md`，再在本文同步 active 状态。
-- 新增正式模型版本时，必须更新模型版本矩阵，并确认本文指向的“当前 active 模型版本”仍然正确。
+- 新 active 模型必须从 `models\espdl_registry` 中选择可追溯版本，不直接从 scratch 临时目录拷贝。
+- 晋升 active 前必须确认 `.espdl`、`export_meta.json`、样板 `Model::test()`、板端资源/耗时、类别顺序、阈值和后处理策略。
+- 多分类模型可以在样板工程验证部署侧多分类输出，但接入主工程前必须先明确 active danger 映射和用户提醒语义。
+- 若要把 `gun_shot / glass_break / crash / impact` 纳入主线，必须同步更新危险提醒系统架构、状态机、参数默认表和固件映射，不能只替换模型文件。
+- 当前仓库不再新增训练 run 文档；训练经验继续写入 `D:\esp32S3\AudioClassification-Pytorch\docs\espdl\runs`。
+
+## 相关主工程上下文
+
+- 产品/系统架构：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-system-architecture.md`
+- 状态机与提醒策略：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-state-machine-and-notification-policy.md`
+- 参数与默认值：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-parameter-defaults-table.md`
+- 当前固件实现映射：`D:\esp32S3\111\docs\context\knowledge\project\hearing-assist-danger-alert-firmware-mapping.md`
+- ESP-DL 接入记录：`D:\esp32S3\111\docs\context\knowledge\project\espdl-audio-tdnn-port.md`

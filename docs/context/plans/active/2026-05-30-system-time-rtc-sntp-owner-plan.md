@@ -207,3 +207,33 @@ official_ota: time ensure callback ok before HTTPS
   - `test_routes_expose_status_scan_and_configure_endpoints`
   - `test_ap_portal_app_uses_provisioning_client_entrypoint`
 - 已完成板端 SNTP 写 RTC 与物理断电重启闭环，证据见 `docs/context/runs/2026-06-01-attempt-system-time-rtc-power-cycle-validation.md`。
+
+## Progress
+
+- `[x]` RTC driver API、`components/system_time`、`system_time_service` 和 `official_chat` 时间回调迁移完成。
+- `[x]` 旧 `components/get_time` 已删除，天气时间读取已迁移。
+- `[x]` 定向 source tests、context standard、`idf.py build` 和板端 RTC/SNTP/断电保持证据已完成。
+- `[ ]` 全量 unittest discover 仍保留 AP Portal 旧预期失败，和本计划主线无直接关系。
+
+## Decision Log
+
+- 决策：ESP-IDF SNTP 与 `settimeofday()` 调用集中到 `components/system_time`。
+- 原因：避免 `official_chat`、天气和旧 `get_time` 各自成为时间 owner。
+- 决策：`official_chat` 通过回调索要有效时间，不反向依赖 `main/services`。
+- 原因：保持 component 边界，避免 TLS 前授时逻辑穿透层级。
+
+## Validation and Acceptance
+
+- 定向 source tests 通过。
+- `uv run python scripts/context/validate_context.py --level standard --q "system_time_service PCF85063ATL SNTP RTC official_chat get_time" --brief` 通过。
+- `idf.py build` 通过。
+- 板端证据见 `docs/context/runs/2026-06-01-attempt-system-time-rtc-power-cycle-validation.md`。
+
+## Idempotence and Recovery
+
+- 若后续中断，从 `system_time_service` 快照、`official_chat` 时间回调和天气读取入口三处检查 owner 边界。
+- 若 SNTP 或 RTC 写回回归，优先保留 `components/system_time` owner，不恢复旧 `get_time`。
+
+## Next Step
+
+- 后续若要提升 RTC 走时质量，单独做长时间 drift 观测，不在本计划内继续扩展 owner。

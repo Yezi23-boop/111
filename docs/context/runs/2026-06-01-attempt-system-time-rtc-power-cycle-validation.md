@@ -5,8 +5,11 @@ status: active
 result: success
 summary: 上板验证 system_time 的 RTC bootstrap、SNTP 写回 RTC，以及真实断电重启后的 RTC 保持。
 last_reviewed: 2026-06-01
+memory_type: episodic
 scope: repo
 owners: components/system_time, main/services/system_time_service.c, components/pcf85063atl
+triggers: system_time, RTC bootstrap, SNTP writeback, PCF85063ATL, power cycle, board validation
+evidence_level: observed
 tags: attempt, system-time, rtc, pcf85063atl, sntp, board-validation, power-cycle
 record_because: 首次用 COM3 上板日志闭环 system_time owner 的 RTC bootstrap、SNTP writeback 和断电后 RTC 保持。
 ---
@@ -86,7 +89,7 @@ system_time_srv: rtc bootstrap done
 - 网络 ready 后 SNTP 同步成立，并写回 RTC：`rtc_writeback=1`。
 - 经一次物理断电重启观察，RTC 时间保持成立，且重启后能继续作为系统时间来源。
 
-## 风险与后续
+## 未验证风险
 
 - 这次验证证明“有电池/RTC 备份供电条件下”的保持，不等价于证明拔掉所有 RTC backup 能保持；后者本来就不应保持。
 - 阶段 B Wi-Fi 首次 auth 后断开，日志窗口内未再次进入 `SERVICE_READY`，但这不影响 RTC 断电保持结论；SNTP 写回已经在阶段 A 验证。

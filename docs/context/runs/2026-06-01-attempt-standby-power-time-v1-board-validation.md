@@ -1,12 +1,15 @@
 ---
 id: attempt-2026-06-01-standby-power-time-v1-board-validation
 date: 2026-06-01
-status: completed
+status: active
 result: partial
 summary: 子代理复查 P0/P1 修复后，上板验证 STANDBY 第一版、system_time 启动摘要、SNTP 写回和 Wi-Fi 预算消费；低电量真实触发与触摸退出 STANDBY 未在无人条件下验证。
 last_reviewed: 2026-06-01
+memory_type: episodic
 scope: repo
 owners: main/ui/ui_refresh_policy.c, main/services/power_policy.c, main/services/network_service.c, main/services/system_time_service.c
+triggers: STANDBY, power_policy, system_time, Wi-Fi power save, low battery warning, board validation
+evidence_level: observed
 tags: attempt, standby, low-power, power-policy, system-time, board-validation
 record_because: 首次用无人 app-flash-monitor 观察 30 秒无交互进入运行态 STANDBY、渐进变暗和 Wi-Fi power save 预算消费。
 ---
@@ -41,6 +44,12 @@ high reasoning 子代理复查后提出三点：
 - P0：首次 P0 危险提醒如果发生在 `STANDBY` 下，需要先唤醒 UI 再展示提醒。已修复为 `APP_ALERT_SEVERITY_DANGER` raise 时立即通知 UI activity。
 - P1：`LOW_BATTERY_WARN` 第一版是“可见提示”，不应顺手禁止普通网络同步或 UI 高刷。已修复为只发布 `low_battery_warn` 与提示事实，不附带网络/UI 预算降级。
 - P2：`network_service` 已进入云端探测函数时，当前不会中途打断探测，只会在下一轮循环消费 STANDBY 预算。该项记录为后续优化，不阻塞本轮第一版。
+
+## 操作
+
+- 执行 `scripts/board/agent_serial_monitor.ps1` 的 `app-flash-monitor` 验证路径，采集 190 秒窗口日志。
+- 根据 high reasoning 子代理复查结论先修复 P0/P1，再重新上板采集 STANDBY、system_time 与 Wi-Fi budget 证据。
+- 复测时修正 `agent_serial_monitor.ps1` 的 app-flash 观察窗口语义，避免把大 app 刷写时间误计入启动观察窗口。
 
 ## 观测
 
@@ -91,7 +100,7 @@ fatal.watchdog=0
 - 屏幕亮度从 99% 逐步降到 0%，符合“面板逐渐变暗、不进入 CO5300 sleep-in”的第一版约束。
 - 采集窗口内未发现 panic、Guru、NO_MEM、watchdog。
 
-## 未验证项
+## 未验证风险
 
 - `LOW_BATTERY_WARN` 真机触发未验证：当前供电和电池状态为 `soc=100`，只能由 source tests 证明路径和 owner 边界。
 - 触摸/按键退出 `STANDBY` 未在无人验证中执行；当前 source tests 和代码路径证明 `ui_refresh_policy_notify_activity()` 可退出，但缺少板端触摸日志证据。

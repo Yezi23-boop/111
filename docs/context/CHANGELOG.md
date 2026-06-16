@@ -1,5 +1,8 @@
 # 上下文库变更记录
 
+- 2026-06-10：迁移 ESP-DL 危险声音训练经验到 `D:\esp32S3\AudioClassification-Pytorch\docs\espdl\runs`；当前仓库 context 只保留模型接入锚点、active 模型、部署边界和固件 owner，模型版本以 `D:\esp32S3\AudioClassification-Pytorch\models\espdl_registry\model_release_table.md` 为准。
+- 2026-06-10：修正 ESP-DL danger run 文档的 scratch 迁移路径：`docs/context/runs` 中 13 个 V61-V79、V42b/V60、audio probe 与样板验证记录的旧 `D:\esp32S3\111\scratch` 绝对路径已统一指向 `D:\esp32S3\AudioClassification-Pytorch\artifacts\archive\migrated_from_111\scratch_20260610`；本次只修正文档证据路径，不恢复已清理特征、不移动模型数据、不接入主工程。
+- 2026-06-09：打通 AI Memory Watch 文本通讯实机链路：server/watch_voice_endpoint 新增 `POST /v1/watch/text-command`，沿用 device token 鉴权、request 幂等和手表 V1 固定 7 字段 JSON；ESP32-S3 新增 `memory_watch_service_send_text()` / `memory_watch_voice_client_post_text_command()`，文本路径走 upload worker 但不占用 recorder/mic。验证通过：server pytest `50 passed`、memory watch source tests `45 passed`、`idf.py build`、`release_gate.ps1 -RebuildContainer -SkipRealAsr`、公网 `smoke_test.ps1 -BaseUrl https://watch.934000.xyz -SkipServiceHealth -IncludeTextCommand`，以及 COM3 开机文本 smoke 返回 `status=done/action=memory_saved`；实机曾触发 `mw_upload` 栈溢出，已将 upload worker stack 提升到 `12288` words。真实麦克风 Ogg Opus 按住说话上传仍待后续验证。
 - 2026-06-09：打通 AI Memory Watch Cloudflare Tunnel 公网脚本联调：删除旧 `sub2api.934000.xyz` 路线，固定 `watch.934000.xyz` 只代理 `/v1/watch/*` 到 `host.docker.internal:8787`；`ai-memory-watch-cloudflared` 已以仓库外 token 文件 + `TUNNEL_TOKEN_FILE` 独立容器运行，Tunnel 为 `healthy`，Docker args/env/log/docs 不含 token 明文。公网 runtime gate 已确认 `/v1/watch/health` 可用且 `/health`、`/v1/models`、`/v1/responses` 未公开，公网 mock 与真实 MiMo ASR multipart Ogg Opus smoke 均返回固定 7 字段 JSON。ESP32-S3 已自动联网但 NVS endpoint 配置仍缺失，PC 侧访问板端 `192.168.41.11` 超时，等待用户回来通过同网可达或 SoftAP 写入配置。
 - 2026-06-08：补充上下文库小闭环收尾写入规则：小闭环默认更新 active plan；只有关键验证、协议、owner、安全边界、门禁或后续 agent 必须知道的结论才更新 `CHANGELOG.md`；`handoffs/current-task.md` 仅在交接、暂停、上下文压缩或用户要求记录当前状态时更新，失败路线/特殊证据写 `runs/`，稳定事实进 `knowledge/`。
 - 2026-06-08：补强 AI Memory Watch watch voice endpoint smoke 临时音频生命周期：`smoke_test.ps1` 默认 mock 未传 `AudioPath` 时仍创建 GUID dummy Ogg，但会在 `finally` 中只清理脚本自己生成的临时文件，显式 `-AudioPath` 不会被删除；新增脚本级 stub 测试覆盖默认清理与显式文件保留。当前 server pytest 40 项通过，`release_gate.ps1 -SkipDocker` 通过。
@@ -43,6 +46,9 @@
 - 2026-06-08：为 AI Memory Watch watch voice endpoint 增加可配置 MiMo ASR adapter 骨架：默认继续 `WATCH_ASR_PROVIDER=mock`，切换为 `mimo` 时按 MiMo 官方 ASR 文档调用 `mimo-v2.5-asr` 的 OpenAI-compatible `/chat/completions`，把音频准备为 base64 `input_audio` data URI，再将转写文本交给 Hermes `/v1/responses`；当前 source test 锁定请求格式，本机 Hermes API Server `/openapi.json` 返回 404，真实音频样本端到端验证留待后续。
 - 2026-06-08：将 AI Memory Watch watch voice endpoint 从临时 smoke test 推进到 Docker Desktop 常驻联调入口：新增 `server/watch_voice_endpoint/smoke_test.ps1`，并以 `ai-memory-watch-voice-endpoint` 容器绑定本机 `127.0.0.1:8787`，读取仓库外 `D:\Docker_data\hermes\watch_voice_endpoint.env` 中的 Hermes API key 与设备 token；验证 `/v1/watch/health` 返回 Hermes online，`/v1/watch/voice-command` 经 Hermes `/v1/responses` 返回 `status=done/action=memory_saved` 和手表 V1 固定 7 字段 JSON。
 - 2026-06-08：闭环 AI Memory Watch / Hermes 服务器链路第一版：在 `D:\Docker_data\hermes\data\.env` 中启用 Hermes API Server（密钥不入仓库），验证 `8642` 的 `/health`、`/v1/models` 与 `/v1/responses` 可用，中文手表记忆请求能经 Hermes + MiMo 同步返回最终文本；新增 `server/watch_voice_endpoint` 原型，用 FastAPI 接收 Ogg Opus multipart、校验 `device_id + device_token`、开发期 mock ASR、调用 Hermes `/v1/responses` 并返回手表 V1 固定 7 字段 JSON，单元测试与 Docker smoke test 均通过。
+- 2026-06-07：清理 `docs/context` 历史 garden 警告：补齐旧 runs/plans 的 `memory_type/scope/triggers/evidence_level/status` 与推荐章节，修正失效 owner 路径，复查过期知识卡，并将已审查的 superseded / promotion 候选标记为 `garden_status`；`garden.py --summary-json` 与 full 级 context 校验均达到 warning/candidate 清零。
+- 2026-06-07：补充大问题错误与路线选择沉淀规则：`log_attempt.py` 新增 `error-signature` 与 `route-choice` 长期记录理由，`INDEX.agent.md`、`context-memory-policy.md`、`context-garden-policy.md`、attempt 模板和 `AGENTS.md` 明确阻塞性错误、跨 owner 排查、曾经尝试/放弃/选定的路线在形成可复用判断或下一步边界后可考虑写入 `runs/attempt`，但仍避免记录一次性小问题。
+- 2026-06-07：优化 `docs/context/INDEX.agent.md` 为 200 行内低 token 路由入口：新增 10 秒决策树、runs 命中输出合同、权威冲突规则、核心/领域路由表和 memory writes 表，并补充 IMU / AI Memory Watch-Hermes 当前主线入口；默认路径仍固定为 `project-profile.md -> validate_context.py --level light --brief -> 必要原文`。
 - 2026-06-06：将后台 Safety Monitor 默认用户意图改为开启：`background_service_manager` 冷启动默认 `danger_enabled_by_user=true`，但仍等待 UI 首帧 ready，并继续按 power budget、前台音频/麦克风 owner 仲裁后再启动 ESP-DL 危险识别 runtime；危险识别页只负责展示和临时开关，不直接拥有模型生命周期。
 - 2026-06-05：将主工程危险识别 active ESP-DL 单模型切到 `edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511`，运行阈值固定为 `0.90`，服务层继续使用连续 2 个 danger 窗口确认、3 个 non-danger 窗口清除、2 秒 hold 和 3 秒 cooldown；旧 V3.2/V3.3 模型仅作为回退资产保留，不参与当前固件嵌入和运行。
 - 2026-06-05：扩展 `plans/active/2026-06-05-ai-memory-watch-hermes-page-plan.md` 为 V1 功能与通信规格：固定 Hermes 独立入口、触摸按住说话/滑出取消、Ogg Opus + HTTP multipart 一次性上传、服务器侧 ASR/Hermes 处理、120 秒同步等待、cancel endpoint、`device_id + token` 鉴权、`device_id + boot_id + seq` request_id、澄清会话 `clarification_id`、只显示文本不做 TTS/震动/离线缓存/主动推送，以及 `AUDIO_CODEC_OWNER_HERMES` 的麦克风 session 边界。
@@ -162,7 +168,6 @@
 - 2026-05-12：新增 `plans/completed/2026-05-12-danger-detection-state-machine-framework-plan.md`，将危险识别下一步框架完善收敛为服务层显式状态机计划；同步开始落地 `risk_state`，把 `OFF / MONITORING / SUSPICIOUS / ALERTING / COOLDOWN` 从隐式计数逻辑提升为 `danger_detection_service` 对外快照语义，并补 `deployment_profile_id / danger_class_profile` 只读策略 profile，固定当前 `siren / horn / alarm` 主线和后处理参数口径；复查时修正 `COOLDOWN` 分支顺序，确保冷却期只累计证据、不重复触发强提醒，并将专页红色危险态改为跟随 `risk_state == ALERTING`。
 - 2026-05-12：补充规划/框架类任务强制路由：`AGENTS.md` 明确当用户提到规划、框架、整体方案、路线、架构、先搭起来、按之前方案或上下文库已有方案时，必须先运行 `validate_context.py --level light --brief`，优先打开命中的规划/架构文档并总结目标、owner、边界和禁止项，再决定代码落点；`INDEX.agent.md` 同步增加低 token 入口提醒，禁止直接从当前代码现状反推产品框架。
 - 2026-05-11：本轮 biweekly garden 复核确认 `context` 路由与 `gui-guider` host preview 的稳定结论已被现有卡覆盖；`project-profile.md` 进一步明确普通任务只把 `query.py / pack_context.py` 视为实现细节或高级调试路径，`context-memory-policy.md` 补充“同主题已有稳定卡时优先原卡增量更新，避免重复造卡”的晋升边界。
-- 2026-05-08：补记危险声音 `V3.4-core` 本地 hard negative 候选训练闭环：训练仓库新增 core source/teacher/filter/mixed/train/eval 证据，active danger 继续限定 `siren / horn / alarm`，`glass_break / crash / impact` 未进入本轮 active 口径；PC 侧 `DSCNNTiny` 在 `threshold=0.80/0.85` 下 `recall=0.950617`、`precision=1.0`、`FPR=0.0`，但仍标记为 `candidate_not_active`，因为尚未导出 `.espdl` 和板端验证。
 - 2026-05-08：补充 hearing-assist / danger reminder 仓库约束：`AGENTS.md` 新增专项短规则，要求命中该产品线任务时先对齐系统架构卡、状态机卡、参数表和固件映射卡，并固定 active danger 只认 `siren / horn / alarm`；`agent-operational-rules.md` 同步补充详细执行口径，明确 `espdl_model_runner / espdl_audio_runtime`、`danger_detection_service`、`app_alert_manager / danger_detection_controller` 的责任边界，以及“后台系统级提醒优先于专页功能”的默认方向。
 - 2026-05-08：新增 `scripts/context/test_memory_flow.py` 作为 Agent Context Memory 闭环自检脚本，覆盖首读触发入口、attempt 写入门槛与 schema、`--force` 旁路可审计、runs 检索、light brief 不落盘、context index 新鲜度、garden summary 和 query golden 回归；同步在 `docs/context/README.md` 暴露该命令。
 - 2026-05-08：修复经验总结元数据契约：`log_attempt.py` 生成的 attempt frontmatter 改为 `status: active` 表示生命周期、`result: success|partial|failed|...` 表示尝试结果；同步更新 `attempt-template.md`、`runs/README.md`，并修正 GUI Guider host preview 两张新卡的无效 owner/status。
@@ -210,7 +215,6 @@
 - 2026-05-04：将仓库根目录 `CLAUDE.md` 行为准则完整内联到 `AGENTS.md`，并明确其为本仓库 agent 规则的最高优先级，避免后续会话只拿到 `AGENTS.md` 摘要却漏掉完整行为约束。
 - 2026-05-04：新增 `hearing-assist-danger-alert-system-architecture` 产品/系统架构草案，正式把危险识别能力定义为“面向听障用户的手表端危险提醒系统”，并固定系统分层、主线 `siren/horn/alarm` danger 边界、非目标和长期演进路线；同时在 `espdl-danger-model-plan-anchor` 与 `knowledge-map` 中挂接该文档，避免后续讨论继续被当前模型/特征实现绑死。
 - 2026-05-03：补记 `DS-TCN-small` 当前导出图的算子/热点分析：核心节点已全部落到 `ESPDL_S3_INT8`，`BatchNormalization` 已折叠为 `1x1 Conv`，当前结构已基本踩中 `Conv2D + DepthwiseConv2D` 的 ESP32-S3 高效路径，但仍保留 `FLOAT input -> QuantizeLinear` 入口与残差重标定开销，后续若继续优化应优先尝试纯 INT8 输入和更纯 DS-CNN 路线。
-- 2026-05-02：补记危险声音 teacher-student 新进展：mixed 数据集上的 `DS-TCN-small` challenger 已完成训练、INT8 导出和 ESP32-S3 样板工程板测，确认其 `FLOAT NCHW input + INT8 output` `.espdl` 需要板端 runtime 同时兼容旧 TDNN 的 `INT8 NHWC` 路径；实测 `FPR=0.00`、推理约 `63.5ms`，已成为比 mixed TDNN 更优的当前部署候选。
 - 2026-04-25：修复微信小程序官方 BLE 配网客户端两处真机联调风险：官方 protocomm BLE 路线新增 `wx.setBLEMTU()` 协商和 payload 上限保护，避免把 protobuf 请求按旧 JSON 方式拆坏；BLE 扫描默认收敛到官方/旧版配网服务并降低无关广播日志噪声，保留“显示全部”作为调试入口。
 - 2026-04-25：修复 BLE presence / 官方 provisioning 分离后的三个框架回归点：`ble_presence_is_active()` 改为按真实 advertising 状态返回，`network_manager` 在收到 provisioning 新凭据后恢复 STA 自动重连，并把 getter 的 BLE presence 启停副作用收窄为只读刷新；同时更新配网相关知识卡，统一当前“Wi-Fi 管理页显式点击 BLE Provision / AP Web Fallback”的入口语义。
 - 2026-04-24：为 SoftAP 门户新增 Captive Portal 自动弹页壳层基线，补记其真实 owner 在 `ap_portal_adapter` 而不是官方 `network_provisioning`：当前通过 `HTTPD_404_NOT_FOUND -> /`、DNS 劫持到 `WIFI_AP_DEF` 与 DHCP Option 114 共同提供系统自动弹页能力，并新增 `softap-captive-portal-auto-popup` 知识卡固定该边界。
@@ -387,49 +391,12 @@
 - 2026-04-25：分离主界面蓝牙总开关与 Wi-Fi 管理页 BLE 配网入口；`network_manager_set_ble_enabled()` 和 latest 失败自动路径都不再自动启动小程序配网，新增显式 `network_manager_start_ble_provisioning()` / `network_manager_start_softap_provisioning()`，允许 Wi-Fi 连接与 BLE enabled 并存。
 - 2026-05-03：补充嵌入式 C/C++ 编码约束，明确单次调用且缺乏独立语义的小函数默认内联，避免为形式上的面向对象或解耦引入一层转发 wrapper、空洞 getter/setter 和无信息增量接口。
 - 2026-04-25：新增 `components/ble_presence` 普通 BLE 可发现广播；主界面 Bluetooth 开关打开后广播 `ESP32S3-723C` 供扫描发现，Wi-Fi 管理页 `BLE Provision` 启动前会先停止 presence 并独占官方 BLE provisioning，同时 provisioning handler 改为保留 BLE 控制器资源以便后续恢复普通广播。
-- 2026-04-29：固化 AudioClassification-Pytorch 到 ESP32-S3 esp-dl 的 TDNN + Fbank 首版链路；导出侧采用等价 2D wrapper 避免 ESP-PPQ 1D BatchNorm 风险，部署样板已通过官方 `espressif/esp-dl` component manager 构建。
-- 2026-04-29：补齐 AudioClassification-Pytorch ESP-DL 样板的 Fbank 对齐工具；PC 侧可导出参考 `[298,40]` Fbank，板端样板可串口输出同格式 `FBANK,...` CSV，用于后续真机逐元素误差闭环。
-- 2026-04-29：AudioClassification-Pytorch ESP-DL 样板在模型加载后新增 `get_memory_info()` 串口日志，按 `fbs_model / variable / parameter / parameter_copy / others / total` 输出 internal RAM、PSRAM 与 flash，占用判断从估算切换为板端实测。
-- 2026-04-29：AudioClassification-Pytorch 导出脚本新增 `local_resource_estimate` 和可选资源门禁，用 `.espdl` 文件大小与 `.info` tensor 形状在训练/导出阶段粗筛过大的 ESP-DL 音频模型。
-- 2026-04-29：明确 AudioClassification-Pytorch ESP-DL 资源策略：首版默认只记录 `local_resource_estimate`，不启用硬门禁；只有试更大模型时才用导出门禁，最终 RAM 仍以板端 `get_memory_info()` 为准。
-- 2026-04-29：将 AudioClassification-Pytorch ESP-DL 离线样板的 `sdkconfig.defaults`/分区表对齐当前主工程板级基线：CPU 240MHz、32MB flash、Octal PSRAM 80MHz、8MB factory app 与 `assets/model/audio` 数据分区，并已重新构建通过。
-- 2026-04-29：修复 AudioClassification-Pytorch ESP-DL 离线样板默认全量 Fbank CSV 输出导致 `task_wdt` 的问题；默认关闭 dump，并在手动 dump 路径每 4 帧让出 CPU。
-- 2026-04-30：修正 AudioClassification-Pytorch ESP-DL 离线样板的输入 shape 校验与 Tensor 包装；导出侧 NCHW `[1,1,298,40]` 在板端运行时按 NHWC `[1,298,40,1]` 暴露。
-- 2026-04-30：实机烧录并 monitor 验证 AudioClassification-Pytorch ESP-DL 离线样板；模型成功加载和推理，首版 `get_memory_info()` 实测总占用为 internal 5,892 B、PSRAM 263,112 B、flash 197,760 B。
-- 2026-04-30：完成 AudioClassification-Pytorch ESP-DL 样板 Fbank 逐元素对齐；改用 LCG 宽带参考 PCM 后真机实测 `max_abs_error=4.72e-05`、`mean_abs_error=1.70e-06`，并将默认固件恢复为关闭 Fbank dump。
-- 2026-04-30：使用 `C:\Users\ye\Desktop\stdio\esp32_siren\1-31482-A-42.wav` 做 AudioClassification-Pytorch ESP-DL 真实音频端到端冒烟；PC 与板端 top1 均为 `children_playing(2)`，板端置信度 `0.6401`，说明链路可用但该样本不能证明 siren 精度。
-- 2026-05-01：修正 AudioClassification-Pytorch ESP-DL 导出校准顺序为按类别轮询，并用 `calib_steps=320` 重导出；4 条真实样本板端批测中 `gun_shot/siren` 与 PC 侧同向，`car_horn` 仍混淆为 `gun_shot`。
-- 2026-05-01：完成 AudioClassification-Pytorch 9 类 no_gunshot 训练实验；最终 `channels=512/embd_dim=192/dropout=0.25/label_smoothing=0.08` 的 TDNN best 测试准确率 `0.9241`，但 `.espdl` 增至约 2.35MB，板端替换前需重新实测 RAM/耗时。
 - 2026-05-01：完成更适合部署的 9 类 no_gunshot 256-channel 正则化 TDNN；测试准确率 `0.9185`，`.espdl` `647,744` 字节，真机实测 ESP-DL 占用 internal 5,892 B、PSRAM 788,296 B、flash 647,728 B，单次离线整窗推理约 2.86 秒。
 - 2026-05-01：完成 9 类 no_gunshot 192-channel 正则化 TDNN 轻量验证；测试准确率 `0.9141`，`.espdl` `387,904` 字节，真机实测 ESP-DL 占用 internal 5,892 B、PSRAM 490,856 B、flash 387,888 B，单次离线整窗推理约 1.51 秒。
-- 2026-05-02：新增 AudioClassification-Pytorch `docs/espdl_danger_sound_roadmap.md`，将后续路线固定为 no_gunshot 危险声音识别，优先做 `danger/non_danger` 二分类与 DS-CNN + Fbank，而不是继续发散到通用 UrbanSound8K 多分类。
-- 2026-05-02：固化 AudioClassification-Pytorch danger/non_danger TDNN-192 二分类结果；best accuracy `0.97433`，阈值 `0.20` 时 danger_recall `0.947761`，`.espdl` `387232` B，真机 PSRAM `490152` B，推理约 `1519 ms`，并记录外部 siren/car_horn 漏报风险。
-- 2026-05-02：将 AudioClassification-Pytorch 危险声音路线切到用户确认的真实 edge 1 秒数据；TDNN-192 edge 二分类阈值 `0.20` 时 accuracy `0.954198`、danger_recall `0.950617`，真机按官方 ESP-DL INT8 输入/输出 exponent 路径跑通，PSRAM `405352` B，推理约 `464 ms`。
-- 2026-05-02：按官方 `espdl-operator` 流程为 AudioClassification-Pytorch ESP-DL 样板增加 `Model::test()` 启动自检；真机 test vector 日志 `Test Pass!`，用于确认 `.espdl` 量化图与导出结果一致。
-- 2026-05-02：复查 AudioClassification-Pytorch edge 样板中 siren 置信度偏低原因；`siren_220.wav` 在 PyTorch 与 ESP-DL 板端均为低 danger 概率边界难例，siren 测试集整体均值约 `0.935`，问题不属于量化漂移。
-- 2026-05-02：将 AudioClassification-Pytorch ESP-DL 样板嵌入 siren 演示样本替换为 `siren_diverse_027.wav`；真机复测 `sample_02_edge_siren` 的 `danger_prob=0.9511`，用于避免边界难例误导演示结论。
 - 2026-05-02：用当前 edge 1 秒二分类模型反测 UrbanSound8K，映射 `car_horn/siren -> danger` 并排除 `gun_shot`；全量 8358 条 PC 侧评估 accuracy `0.691792`、danger_recall `0.712813`、false_positive_rate `0.312286`，说明跨域泛化不足。
-- 2026-05-02：冻结当前 AudioClassification-Pytorch 可用模型版本为 `edge_danger_tdnn192_fbank1s_int8_v20260502`，记录 active `.espdl`、checkpoint、配置、板端资源和演示样本 SHA256；后续实验不得覆盖该 locked baseline。
-- 2026-05-02：覆盖 AudioClassification-Pytorch `docs/espdl_danger_sound_roadmap.md` 为 teacher-student 危险声训练路线；YAMNet/PANNs/AudioSet 作为离线 teacher 做窗口级标注和难例筛选，ESP32-S3 只部署 INT8 student。
-- 2026-05-02：复查并加固 AudioClassification-Pytorch teacher-student 路线；新增数据门禁、teacher 门禁、训练门禁和替换 active 模型门禁，避免公开数据脏标签或 teacher 错误直接污染训练。
-- 2026-05-02：更新 AudioClassification-Pytorch 危险声音后续方案为 `AST + PaSST` 离线 teacher、`TDNN-192` locked baseline、`DS-TCN-small INT8` challenger；要求 DS-TCN 用 Conv2D temporal dilation 表达，避免真实 Conv1D 带来的 ESP-DL 转换风险。
-- 2026-05-02：开始执行 AudioClassification-Pytorch teacher-student 第一阶段；安装 AST/PaSST teacher 依赖，新增 window manifest、UrbanSound8K source manifest 和 review sample 导出工具，并完成 edge/UrbanSound8K 小样本 CUDA 冒烟与 review_index 产物。
-- 2026-05-02：按用户要求进一步减少公开音频人工参与；新增 `filter_teacher_manifest.py` 强过滤公开数据，将 UrbanSound8K smoke 人工复核从 16 条压到 3 条，并只保留 filtered review_index 作为人工入口。
-- 2026-05-02：将 AudioClassification-Pytorch teacher 过滤默认策略改为零人工 `--manual_policy reject`；manual_review 候选默认自动丢弃，UrbanSound8K smoke 人工复核降为 0 条。
-- 2026-05-02：完成 AudioClassification-Pytorch 零人工 mixed TDNN-192 首轮训练与 ESP-DL INT8 导出；UrbanSound8K 50/类筛出 `auto_train=234/manual_review=0`，edge-only 阈值 `0.35` 指标为 accuracy `0.969466`、danger_recall `0.975309`、FPR `0.04`，`.espdl` `379216` B，版本登记为 `edge_mix_teacher_tdnn192_fbank1s_int8_v20260502` 但暂不切 active。
-- 2026-05-02：将 AudioClassification-Pytorch mixed TDNN-192 候选临时烧录到 ESP32-S3 样板验证；`Model::test()` 通过，实测 total internal `5892` B、PSRAM `405352` B、flash `379200` B，Fbank 约 `33.12 ms`、推理约 `464.63 ms`，三条 edge 嵌入样本均判对。
-- 2026-05-02：新增 AudioClassification-Pytorch `V3.1 lightaug` 实验版本；固定 DS-TCN-small 和 mixed teacher 数据，只把训练增强改为 `speed=0 + volume±4dB + 轻SpecAugment`，edge-only 阈值 `0.35` 提升到 danger_recall `0.987654`、FPR `0.02`，导出 `.espdl` `69920` B，但样板 flash 因主机未枚举 ESP32-S3 串口设备而阻断，当前仅记录为待补板测的 recall 导向实验版本。
-- 2026-05-03：补完 AudioClassification-Pytorch `V3.1 lightaug` 样板工程板测闭环；COM3 恢复枚举后 flash/串口抓日志成功，`Model::test()` 通过，实测 total internal `10768` B、PSRAM `258344` B、flash `69904` B，Fbank 约 `33.20 ms`、推理约 `63.20 ms`，三条 edge 嵌入样本均判对，当前应视为“样板工程已验证的 recall 候选”。
-- 2026-05-03：完成 AudioClassification-Pytorch `DS-TCN-small` 纯 INT8 输入导出优化；新增导出检查脚本并把 `.espdl` 入口从 `FLOAT` 收紧为 `INT8 [1,98,40,1], exponent=-3`，样板工程 flash/monitor 通过，实测 total internal `10192` B、PSRAM `261488` B、flash `56640` B，推理约 `61.52 ms`，新版本登记为 `edge_mix_teacher_dstcn_small_1s_int8input_v20260503`。
-- 2026-05-03：完成 AudioClassification-Pytorch `DS-CNN-tiny` 纯卷积 challenger；版本 `edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503` 已样板板测通过，实测 total internal `5644` B、PSRAM `137416` B、flash `22368` B，推理约 `61.77 ms`，结论是明显省内存和模型体积，但不明显快过 V3.2。
 - 2026-05-03：主工程音频 codec 层新增生命周期引用计数与 input/output owner session；ESP-DL 实时运行时和旧 traffic 实时推理均改为先申请录音 input session、退出后释放，避免 stop 时误拆全局 audio_codec。
 - 2026-05-03：主工程危险识别 ESP-DL 路线从 V3.2/V3.3 双模型并行改为单 active V3.3 DS-CNN-tiny；不再编译 dual runner 或嵌入 V3.2 模型，UI 入口默认启动 ESP-DL 单模型，并在 service 层增加连续窗口确认与 hold 防抖。
 - 2026-05-03：针对人声触发危险误报，将主工程 active DS-CNN-tiny V3.3 的 danger 阈值从 `0.40` 收紧到 `0.80`；后续需用真实人声、喇叭和警笛样本重新扫现场阈值。
-- 2026-05-03：固化危险声音训练/评估阈值策略：训练本身无阈值，但后续 student 版本验收必须默认报告 `0.80` 阈值指标，并单独统计人声等 hard negative 误报率。
-- 2026-05-04：新增主工程上下文锚点 `espdl-danger-model-plan-anchor.md`，固定危险声音模型计划、训练仓库文档、active V3.3 DS-CNN-tiny、V3.4 中文人声 hard negative 和 `0.80` 阈值策略的检索入口。
-- 2026-05-04：固化 V3.4 public hard negative 训练计划：中文人声收窄为大声/高频/喊话误报压制，优先 Common Voice 中文和少量 AISHELL-1，公开摩擦/衣物/刮擦先近似手表佩戴误触，同时补充 siren/horn/alarm/glass/crash 正样本。
-- 2026-05-04：训练仓库新增 `make_v34_public_teacher_sources.py`，并扩展 teacher/filter 规则支持 V3.4 大声中文人声、公开摩擦/刮擦、glass/crash/alarm 正样本和零人工 hard negative 自动吸收。
-- 2026-05-04：完成 V3.4 UrbanSound8K public smoke；45 条公开窗口经 AST/PaSST/student 打分和零人工过滤后 `auto_train=30/manual_review=0`，其中保留 `car_horn=3`、`siren=5` 和多类 hard negative。
 - 2026-05-04：完成本地 ESC-50 接入 V3.4 challenger；347 条公开样本自动入训，edge-only `threshold=0.85` 达到 `recall=0.950617/FPR=0`，但 `car_horn` 高阈值仍不稳，暂不替换 active。
 - 2026-05-04：固化危险类边界：active 主线只把 `siren/horn/alarm` 作为核心 danger；`glass_break/crash/impact` 仅属于 `--danger_profile extended` challenger，不进入默认 active 训练和上线口径。
 - 2026-05-04：将 `CLAUDE.md` 的通用行为准则并入 `AGENTS.md`，补充“先思考、简单优先、手术式修改、目标驱动执行”四类协作规则。
@@ -443,8 +410,5 @@
 - 2026-05-04：简化“状态发布与 UI 读取原则”在 `AGENTS.md` 中的表述，保留核心分层和禁止项，并同步收紧详细规则卡措辞。
 - 2026-05-04：进一步将 `AGENTS.md` 中“状态发布与 UI 读取原则”压缩为 3 条红线版，详细展开继续保留在项目规则卡中。
 - 2026-05-04：将 `CLAUDE.md` 行为准则提升为 `AGENTS.md` 内最高优先级规则，并在优先级说明与章节标题中显式标注。
-- 2026-05-11：AudioClassification-Pytorch 新增模型登记目录 `models/espdl_registry/board_verified` 与 `in_progress`；冻结已上板 DS-CNN-tiny V3.3 为回退锚点，并将 T90 sharp 结构/训练参数优化候选记录为 `candidate_not_active`，PC 侧 `threshold=0.90` 达到 danger_recall `0.962963`、FPR `0.0`。
-- 2026-05-11：AudioClassification-Pytorch 模型登记扩展为完整发布管理：`board_verified` 统一登记 6 个历史实测版本，`in_progress` 登记 2 个未上板候选，并新增 `models/espdl_registry/model_release_table.md` 作为后续回退、对比和晋升门禁总表。
-- 2026-05-11：AudioClassification-Pytorch 模型总表和 registry version json 拆分 `eval_threshold` 与 `runtime_threshold`，明确 V3.3 历史评估阈值 `0.40` 不等于当前主工程实际运行阈值 `0.80`。
 - 2026-06-01：收敛 `sleep_coordinator` 的 Light Sleep 入口，移除 `uart_wait_tx_done()` 前置等待，避免当前 console 形态下的 UART driver error 干扰测试；板端已能进入 `light_test_enter`，但 USB 串口环境下仍未稳定捕获 `light_test_woke`，后续需要更可靠的唤醒观测链路。
 - 2026-05-12：从 `实验-LVGLv7模型-flush对比` 分支仅提取 `traffic_inference` 的 Edge Impulse `manual_v7_1s` 模型文件，当前编译模型切到 deploy version 7，同时继续复用 `manual_v5/edge-impulse-sdk`，避免合入旧实验分支的大范围结构回退。

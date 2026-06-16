@@ -13,6 +13,16 @@ status: active
 
 # 2048 小游戏执行计划
 
+## Purpose / Big Picture
+
+- 目标：用 2048 做小游戏能力的第一条 vertical slice，验证主屏入口、纯规则模块、LVGL 前台页、触摸滑动和物理按键桥接。
+- 目标态：小游戏只作为前台 UI 功能运行，不引入后台 service、不占用网络/音频/危险识别资源。
+
+## Scope / Non-Goals
+
+- Scope：2048 规则模块、Game 入口、LVGL controller、触摸滑动、短按暂停/继续、长按退出和 source/build/板端启动验证。
+- Non-goal：不做小游戏列表、其它游戏、音效、联网、持久化、底层显示/触摸或 `sdkconfig` 改动。
+
 ## Problem Statement
 
 - 当前主屏已有 `Game` 图标位，但还没有绑定实际入口；用户希望先把小游戏能力落成可执行计划，再开始代码实现。

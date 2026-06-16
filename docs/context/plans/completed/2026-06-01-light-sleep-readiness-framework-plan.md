@@ -10,6 +10,8 @@ owners: main/services/power_policy.c, main/services/wakeup_evidence_service.c, m
 triggers: Light Sleep, Deep Sleep, STANDBY, internal RTC timer, RTC_INT, AXP_IRQ, PCF85063ATL, wakeup_evidence, power_policy, sleep_coordinator, low power framework, 低功耗框架, 睡眠就绪
 evidence_level: design
 superseded_by: docs/context/plans/active/2026-06-01-low-power-framework-execution-plan.md
+garden_status: keep-history
+garden_reviewed: 2026-06-07
 ---
 
 # Light Sleep Readiness 框架计划

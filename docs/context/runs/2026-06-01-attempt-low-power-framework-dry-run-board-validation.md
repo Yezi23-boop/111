@@ -1,19 +1,22 @@
 ---
 id: attempt-2026-06-01-low-power-framework-dry-run-board-validation
 date: 2026-06-01
-status: completed
+status: active
 result: partial
 summary: 上板验证低功耗框架 Phase 1/3：power_budget 在 ACTIVE/STANDBY 下发布 sleep 字段，sleep_coordinator 默认 DRY_RUN，STANDBY 后 LIGHT_ALLOWED 但不进入真实 sleep。
 last_reviewed: 2026-06-01
+memory_type: episodic
 scope: repo
 owners: main/services/power_policy.c, main/services/sleep_coordinator.c, main/services/network_service.c, main/ui/ui_refresh_policy.c
+triggers: low-power framework, power_budget, sleep_coordinator, STANDBY, LIGHT_ALLOWED, dry-run, board validation
+evidence_level: observed
 tags: attempt, low-power, power-budget, sleep-coordinator, standby, dry-run, board-validation
 record_because: 首次上板验证 low-power-framework-execution-plan 的 power_budget 与 sleep_coordinator dry-run 链路。
 ---
 
 # Low Power Framework Dry-run Board Validation
 
-## Background
+## 背景
 
 本轮按 `docs/context/plans/active/2026-06-01-low-power-framework-execution-plan.md` 执行 Phase 1 和 Phase 3 的板端证据采集。目标是确认：
 
@@ -21,7 +24,7 @@ record_because: 首次上板验证 low-power-framework-execution-plan 的 power_
 - `sleep_coordinator` 默认只做 `DRY_RUN`，不进入真实 `Light Sleep / Deep Sleep`。
 - `STANDBY` 后预算可以表达 `LIGHT_ALLOWED`，但真实 sleep 仍被测试模式挡住。
 
-## Environment
+## 环境
 
 - Board: ESP32-S3 watch project board on `COM3`
 - Command: `scripts/board/agent_serial_monitor.ps1 -Port COM3 -Action app-flash-monitor -DurationSeconds 240 -Tag low-power-framework-dry-run-retry`
@@ -30,7 +33,13 @@ record_because: 首次上板验证 low-power-framework-execution-plan 的 power_
 
 第一次 75 秒窗口在 app 写入约 79% 时到时，状态为 `no_boot_seen`。这是采集窗口覆盖了大 app 刷写耗时，不是固件启动崩溃；随后改用 240 秒窗口完成 `app-flash-monitor`。
 
-## Observations
+## 操作
+
+- 执行 `scripts/board/agent_serial_monitor.ps1 -Port COM3 -Action app-flash-monitor -DurationSeconds 240 -Tag low-power-framework-dry-run-retry`。
+- 对 `board_logs/2026-06-01-18-56-59-low-power-framework-dry-run-retry.log` 和对应 summary 做人工证据核对。
+- 重点检查 `power_budget_change`、`sleep_coordinator`、`network_service`、`ui_refresh_policy` 与 fatal 计数。
+
+## 观测
 
 启动后首先进入 ACTIVE 预算：
 
@@ -77,7 +86,7 @@ wakeup_evidence: light_sleep_test_skipped: disabled_for_usb_console_safety
 
 本轮摘要中 `fatal` 计数为 0，未观察到 `Guru / panic / abort / NO_MEM / watchdog / flash checksum mismatch`。
 
-## Conclusion
+## 结论
 
 本轮已完成低功耗框架 Phase 1/3 的板端 dry-run 证据：
 
@@ -88,7 +97,7 @@ wakeup_evidence: light_sleep_test_skipped: disabled_for_usb_console_safety
 
 该结论仍是 partial：只证明默认安全固件和 dry-run 链路成立，不证明真实 Light Sleep / Deep Sleep 唤醒恢复。
 
-## Unverified
+## 未验证风险
 
 - 真实 `LOW_BATTERY_WARN` 板端触发；当前板端日志为 `soc=100`、`low_battery=0`。
 - 显式 `LIGHT_TEST / DEEP_TEST`。

@@ -7,7 +7,7 @@ garden_status: keep-evidence
 garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
-owners: main/ui/agent_preview, C:/Users/ye/.codex/skills/gui-guider-lvgl-preview
+owners: main/ui/agent_preview
 triggers: gui-guider-lvgl-preview, agent_preview, apple watch preview, host runner, pc_sim fallback, LVGL预览, Agent画UI
 evidence_level: observed
 status: active

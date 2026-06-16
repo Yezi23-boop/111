@@ -601,8 +601,8 @@ git commit -m "功能: 完成微信小程序 BLE 配网页与状态联调"
 ### Task 8: 做完整闭环验证并准备后续增强
 
 **Files:**
-- Modify: `D:\esp32S3\111\docs\superpowers\specs\2026-04-02-ble-provisioning-wechat-miniapp-design.md`
-- Modify: `D:\esp32S3\111\docs\superpowers\plans\2026-04-02-ble-provisioning-and-wechat-miniapp.md`
+- Modify: `D:\esp32S3\111\docs\design\specs\2026-04-02-ble-provisioning-wechat-miniapp-design.md`
+- Modify: `D:\esp32S3\111\docs\design\plans\2026-04-02-ble-provisioning-and-wechat-miniapp.md`
 
 - [ ] **Step 1: 固件闭环验证**
 
@@ -632,6 +632,6 @@ git commit -m "功能: 完成微信小程序 BLE 配网页与状态联调"
 - [ ] **Step 4: 提交**
 
 ```bash
-git add docs/superpowers/specs/2026-04-02-ble-provisioning-wechat-miniapp-design.md docs/superpowers/plans/2026-04-02-ble-provisioning-and-wechat-miniapp.md
+git add docs/design/specs/2026-04-02-ble-provisioning-wechat-miniapp-design.md docs/design/plans/2026-04-02-ble-provisioning-and-wechat-miniapp.md
 git commit -m "文档: 完成 BLE 配网项目计划收尾"
 ```

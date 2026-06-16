@@ -12,7 +12,7 @@
 
 ## 关联规格
 
-- Spec: `docs/superpowers/specs/2026-04-17-wifi-management-ui-design.md`
+- Spec: `docs/design/specs/2026-04-17-wifi-management-ui-design.md`
 
 ## 本轮范围锁定
 
@@ -908,4 +908,4 @@ git commit -m "build: 验证 WiFi 管理 UI 改动可编译"
 3. 最后做 Chunk 3，避免页面先做出来但没有真实动作可接。
 4. 文档和验证放在最后统一收口，但不要跳过。
 
-Plan complete and saved to `docs/superpowers/plans/2026-04-17-wifi-management-ui-implementation.md`. Ready to execute?
+Plan complete and saved to `docs/design/plans/2026-04-17-wifi-management-ui-implementation.md`. Ready to execute?

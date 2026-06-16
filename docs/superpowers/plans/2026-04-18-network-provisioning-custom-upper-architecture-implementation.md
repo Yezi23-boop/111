@@ -12,7 +12,7 @@
 
 ## 关联规格
 
-- Spec: `docs/superpowers/specs/2026-04-18-network-provisioning-custom-upper-architecture-design.md`
+- Spec: `docs/design/specs/2026-04-18-network-provisioning-custom-upper-architecture-design.md`
 - Architecture card: `docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md`
 
 ## 本轮范围锁定
@@ -828,4 +828,4 @@ git commit -m "refactor: 用官方 provisioning 底座替换旧 wifi_provision"
 
 ## 执行移交
 
-Plan complete and saved to `docs/superpowers/plans/2026-04-18-network-provisioning-custom-upper-architecture-implementation.md`. Ready to execute?
+Plan complete and saved to `docs/design/plans/2026-04-18-network-provisioning-custom-upper-architecture-implementation.md`. Ready to execute?

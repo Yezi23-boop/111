@@ -38,7 +38,7 @@ triggers: wifi, provisioning, softap
 evidence_level: observed | inferred | design
 status: active | stale | superseded | retired | deprecated | archived
 superseded_by: docs/context/knowledge/project/current-card.md
-record_reasons: repeat-risk, evidence, owner-architecture
+record_reasons: repeat-risk, error-signature, route-choice, evidence, owner-architecture
 ```
 
 `status` 与 `superseded_by` 用于清理和降权：普通查询默认优先 `active` 当前事实，历史、退场、废弃或被替代的卡只在用户明确查历史/归档/迁移时回到前排。
@@ -103,6 +103,13 @@ uv run python scripts/context/log_attempt.py --title "wifi 管理页二次进入
 
 ```bash
 uv run python scripts/context/log_attempt.py --title "wifi 管理页二次进入崩溃排查" --record-because repeat-risk --record-because evidence --status partial --changed main/ui/wifi_management_controller.c --tried "复用前检查 lv_obj_is_valid" --avoid "不要只清空局部按钮指针而保留 screen 缓存" --evidence "monitor: LoadProhibited in lv_style_get_prop" --next "补 LV_EVENT_DELETE 清缓存后复测"
+```
+
+大问题错误或路线选择记录可使用：
+
+```bash
+--record-because error-signature --record-because evidence
+--record-because route-choice --record-because evidence
 ```
 
 园艺检查：

@@ -5,8 +5,11 @@ status: active
 result: partial
 summary: 首次接入 PCF85063ATL countdown timer 与 wakeup_evidence_service，用运行态日志闭环 RTC_INT(GPIO39) 和 AXP2101 IRQ bank，暂不进入 ESP sleep。
 last_reviewed: 2026-05-16
+memory_type: episodic
 scope: repo
 owners: components/pcf85063atl, main/services/wakeup_evidence_service.c, main/app/app_main.c
+triggers: RTC_INT, GPIO39, PCF85063ATL, AXP2101 IRQ, wakeup_evidence, Light Sleep, PMIC wake evidence
+evidence_level: observed
 tags: attempt, power, wakeup, rtc, pmic, pcf85063atl, axp2101
 record_because: 首次把 RTC_INT(GPIO39) 与 AXP2101 IRQ bank 做成可上板验证的运行态证据闭环，后续 sleep 唤醒实现会依赖这轮日志口径。
 ---

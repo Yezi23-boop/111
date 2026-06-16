@@ -2,7 +2,7 @@
 id: esp32-s3-watch-power-checklist
 tags: esp32-s3, power, sleep, battery, wearable
 summary: ESP32-S3 智能手表待机功耗优化检查清单。
-last_reviewed: 2026-03-07
+last_reviewed: 2026-06-07
 memory_type: procedural
 scope: board
 owners: components/axp2101, main/services/power_service.c, main/ui/ui_refresh_policy.c

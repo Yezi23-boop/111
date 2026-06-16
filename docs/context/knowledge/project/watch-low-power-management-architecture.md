@@ -9,6 +9,9 @@ owners: components/axp2101, main/app/board_power.c, main/services/power_service.
 triggers: watch, low, power, management, architecture
 evidence_level: design
 status: superseded
+superseded_by: docs/context/knowledge/project/low-power-framework-architecture.md
+garden_status: keep-history
+garden_reviewed: 2026-06-07
 ---
 
 # 手表项目低功耗管理架构

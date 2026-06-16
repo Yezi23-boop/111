@@ -2,7 +2,7 @@
 id: esp32-s3-lvgl-porting-baseline
 tags: esp32-s3, esp-idf, lvgl, display, touch
 summary: ESP32-S3 在 ESP-IDF 下集成 LVGL 显示与触摸的基础点亮流程。
-last_reviewed: 2026-03-07
+last_reviewed: 2026-06-07
 memory_type: semantic
 scope: board
 owners: components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/ui/lvgl_task.c

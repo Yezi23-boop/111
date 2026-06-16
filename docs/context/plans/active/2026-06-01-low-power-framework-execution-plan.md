@@ -14,7 +14,7 @@ supersedes: docs/context/plans/completed/2026-06-01-light-sleep-readiness-framew
 
 # 低功耗总框架执行计划
 
-## Purpose
+## Purpose / Big Picture
 
 本计划按 `docs/context/knowledge/project/low-power-framework-architecture.md` 重新整理后续执行顺序。核心不是新增“大电源管理器”，也不是把 `Light Sleep` 立刻接入产品自动策略，而是先把下面这条链路做成可观察、可测试、可回退：
 
@@ -359,3 +359,34 @@ idf.py -p COM3 app-flash
 - `docs/context/knowledge/project/rtc-pmic-wakeup-evidence-loop.md`
 - `docs/context/knowledge/project/runtime-owner-contract.md`
 - `docs/context/plans/active/2026-06-01-power-time-visible-status-plan.md`
+
+## Scope / Non-Goals
+
+- Scope：以 `power_budget` 为中心，整理 STANDBY、owner budget 消费、`sleep_coordinator` dry-run 和后续 Automatic Light-sleep 路线。
+- Non-goal：不新增中心化资源管理器，不恢复手动 sleep harness，不在正常固件中调用真实 ESP sleep API。
+
+## Progress
+
+- `[x]` Phase 0/1/3/4 已完成，`power_budget`、`sleep_coordinator` dry-run 和手动 Light Sleep 测试撤回已落地。
+- `[x]` COM3 板端 dry-run 证据已记录到 `docs/context/runs/2026-06-01-attempt-low-power-framework-dry-run-board-validation.md`。
+- `[ ]` Automatic Light-sleep 和 Deep Sleep 仍为后续单独计划。
+
+## Decision Log
+
+- 决策：V1 低功耗主线使用 `power_budget + owner 消费`，不做大 manager 或 runtime lease。
+- 决策：`sleep_coordinator` 当前只做 dry-run，不保留手动 Light/Deep Sleep 测试 API。
+- 决策：Wi-Fi 保持连接低功耗后续走 ESP-IDF Modem-sleep + Automatic Light-sleep。
+
+## Validation and Acceptance
+
+- context standard、相关 source tests、`idf.py build` 与 COM3 dry-run 日志已完成。
+- 验收重点是 owner 不越权、budget 可解释、正常固件不进入真实 ESP sleep。
+
+## Idempotence and Recovery
+
+- 若后续低功耗实验导致串口/下载不稳定，先恢复 dry-run 安全固件。
+- 每个 owner 的 budget 消费应能单独回退，不影响 `power_policy` snapshot。
+
+## Next Step
+
+- 后续新开 Automatic Light-sleep 计划，先审查 PM lock、tickless idle、Wi-Fi power save 和串口观测风险。

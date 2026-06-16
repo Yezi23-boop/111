@@ -5,7 +5,7 @@ summary: 记录 gui-guider-lvgl-preview 的稳定定位：先用 host/pc_sim 预
 last_reviewed: 2026-05-08
 memory_type: framework
 scope: repo
-owners: main/ui/agent_preview, main/ui/generated, main/ui/custom, C:/Users/ye/.codex/skills/gui-guider-lvgl-preview
+owners: main/ui/agent_preview, main/ui/generated, main/ui/custom
 triggers: gui-guider-lvgl-preview, agent画ui, agent_preview, pc_sim, host preview, LVGL预览, UI草图, 子页面, 卡片区, 弹层, 状态区, 设置区
 evidence_level: observed
 status: active

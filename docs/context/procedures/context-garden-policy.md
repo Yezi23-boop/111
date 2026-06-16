@@ -2,7 +2,7 @@
 id: context-garden-policy
 tags: context, garden, curator, stale, promotion, archive
 summary: 上下文库清理与沉淀流程：只保存高复用规划、决策、试错、项目知识和框架，先标记和降权，再晋升稳定知识，最后归档或删除废弃卡。
-last_reviewed: 2026-05-05
+last_reviewed: 2026-06-07
 memory_type: procedural
 scope: repo
 owners: docs/context, scripts/context/garden.py, scripts/context/query.py
@@ -37,6 +37,7 @@ status: active
 
 - 后续 agent 很可能重复同一路径。
 - 失败代价高，重新试错会浪费明显时间。
+- 出现非平凡错误签名，并且已经形成可复用判断或下一轮排查边界。
 - 影响 owner、架构边界、项目框架、长期约束或用户规划。
 - 有关键证据，例如真机日志、构建结果、错误码、性能数据或明确复现步骤。
 - 当前任务需要跨会话接手。
@@ -48,6 +49,20 @@ status: active
 完成一个可提交的小闭环后，默认先更新对应 `plans/active/` 里的进度、验证状态和下一步。只有涉及关键验证、协议、owner、安全边界、门禁，或后续 agent 必须知道的结论，才同步更新 `CHANGELOG.md`；不要把 `CHANGELOG.md` 当作普通命令流水账。
 
 `handoffs/current-task.md` 只在交接、暂停、上下文压缩，或用户明确要求“记录当前状态/执行到哪”时更新。失败路线、特殊证据、可复用排查结论写入 `runs/`；稳定事实、长期 owner 或架构边界再进入 `knowledge/`。
+
+## 大问题错误与路线选择
+
+错误类沉淀主要面向大问题，仍要避免记录一次性小问题。适用范围包括阻塞构建/链接、panic/Guru、watchdog、断言、`ESP_ERR_*`、`NO_MEM`、串口/板测异常、硬件通信失败、context 检索/校验失败。
+
+满足以下任一条件时，可考虑写 `runs/attempt`：
+
+- 错误有稳定签名、错误码、日志片段或复现命令。
+- 本轮已经证伪过一条路线，后续 agent 容易重复。
+- 错误跨 owner、跨任务、跨硬件状态，或定位成本明显高于普通小修。
+- 当前只得到 partial 结论，需要下一轮接手继续补证据。
+- 本轮做过路线选择：选择继续、放弃、回退或换 owner，并且这个取舍后续可能被重新讨论。
+
+相关 attempt 至少记录：错误原文或路线问题、触发条件、相关 owner/文件、已尝试动作、不要重复的路径、当前可信判断和下一步证据。
 
 ## 生命周期字段
 
@@ -77,7 +92,7 @@ garden_reviewed: YYYY-MM-DD
 
 ## 晋升梯子
 
-1. 有复用价值的动作、失败、日志和验证先写 `runs/attempt`，并用 `record_reasons` 说明长期记录理由。
+1. 有复用价值的动作、失败、大问题错误签名、路线选择、日志和验证先写 `runs/attempt`，并用 `record_reasons` 说明长期记录理由。
 2. 同类问题重复出现，或一次结果已成为稳定 owner/边界，再写 `knowledge/`。
 3. 可复用的操作步骤、排障顺序、检查清单，写 `procedures/`。
 4. 影响架构路线或长期兼容边界，写 `knowledge/project/` 稳定边界卡，并在正文记录取舍原因和替代方案。
