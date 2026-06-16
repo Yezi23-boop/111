@@ -4,6 +4,7 @@ import pathlib
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAIN_DIR = REPO_ROOT / "main"
 MAIN_CMAKE = MAIN_DIR / "CMakeLists.txt"
+MAIN_KCONFIG = MAIN_DIR / "Kconfig.projbuild"
 
 APP_DIR = MAIN_DIR / "app"
 SERVICES_DIR = MAIN_DIR / "services"

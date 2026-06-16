@@ -57,6 +57,22 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         self.assertIn("void memory_watch_controller_open(void);", header)
         self.assertIn("void memory_watch_controller_poll_ui(void);", header)
 
+    def test_controller_destroys_view_after_leaving_hermes_page(self) -> None:
+        source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("s_destroy_timer", source)
+        self.assertIn("s_pending_destroy_view", source)
+        self.assertIn("memory_watch_controller_schedule_view_destroy", source)
+        self.assertIn("memory_watch_controller_destroy_view_cb", source)
+        self.assertIn("memory_watch_view_destroy(s_pending_destroy_view)", source)
+        self.assertIn("lv_timer_create(memory_watch_controller_destroy_view_cb", source)
+
+        back_section = source.split(
+            "static void memory_watch_controller_back"
+        )[1].split("static void memory_watch_controller_press_start", 1)[0]
+        self.assertIn("lv_screen_load_anim", back_section)
+        self.assertIn("memory_watch_controller_schedule_view_destroy();", back_section)
+
     def test_view_implements_hold_release_and_slide_cancel_callbacks(self) -> None:
         source = UI_MEMORY_WATCH_VIEW_SOURCE.read_text(encoding="utf-8")
         header = UI_MEMORY_WATCH_VIEW_HEADER.read_text(encoding="utf-8")

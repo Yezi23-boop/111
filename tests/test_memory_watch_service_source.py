@@ -2,6 +2,7 @@ import unittest
 
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import MAIN_CMAKE
+from tests.main_paths import MAIN_KCONFIG
 from tests.main_paths import MEMORY_WATCH_SERVICE_HEADER
 from tests.main_paths import MEMORY_WATCH_SERVICE_SOURCE
 
@@ -44,6 +45,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_service_check_health", header)
         self.assertIn("memory_watch_service_begin_recording", header)
         self.assertIn("memory_watch_service_send_recording", header)
+        self.assertIn("memory_watch_service_send_text", header)
         self.assertIn("memory_watch_service_cancel_recording", header)
         self.assertIn("memory_watch_service_cancel_waiting", header)
         self.assertIn("memory_watch_service_cancel_clarification", header)
@@ -60,12 +62,18 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("xQueueSend(", source)
         self.assertIn("xQueueReceive(", source)
         self.assertIn("xTaskCreateStatic(", source)
+        self.assertIn('#include "freertos/idf_additions.h"', source)
+        self.assertIn("kUploadWorkerStackWords = 24576", source)
+        self.assertIn("xTaskCreateWithCaps(", source)
+        self.assertIn("MALLOC_CAP_SPIRAM", source)
+        self.assertNotIn("s_upload_worker_task_stack", source)
         self.assertIn("s_upload_worker_queue", source)
         self.assertIn("s_cancel_worker_queue", source)
         self.assertIn("s_health_worker_queue", source)
         self.assertIn("memory_watch_service_upload_worker_task", source)
         self.assertIn("memory_watch_service_cancel_worker_task", source)
         self.assertIn("memory_watch_service_health_worker_task", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CMD_SEND_TEXT", source)
         self.assertIn("portMUX_TYPE s_snapshot_lock", source)
         self.assertIn("portMUX_TYPE s_endpoint_lock", source)
         self.assertIn("portMUX_TYPE s_worker_lock", source)
@@ -86,6 +94,15 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         header = MEMORY_WATCH_SERVICE_HEADER.read_text(encoding="utf-8")
         combined = source + "\n" + header
 
+        self.assertIn("CONFIG_MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED", source)
+        self.assertIn("CONFIG_MEMORY_WATCH_DEFAULT_BASE_URL", source)
+        self.assertIn("CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_ID", source)
+        self.assertIn("CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_TOKEN", source)
+        self.assertIn("CONFIG_MEMORY_WATCH_DEFAULT_TIMEOUT_MS", source)
+        self.assertIn("CONFIG_MEMORY_WATCH_DEFAULT_ALLOW_HTTP", source)
+        self.assertIn("memory_watch_service_load_kconfig_endpoint_default", source)
+        self.assertNotIn("memory_watch_dev_endpoint_local.h", source)
+        self.assertNotIn("MEMORY_WATCH_DEV_ENDPOINT", source)
         self.assertIn("memory_watch_service_endpoint_state_t", source)
         self.assertIn("memory_watch_service_copy_required_text", source)
         self.assertIn("memory_watch_service_is_safe_endpoint_text", source)
@@ -177,12 +194,21 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_service_health_worker_task", source)
         self.assertIn("memory_watch_recorder_capture_ogg_opus", source)
         self.assertIn("memory_watch_voice_client_post_voice_command", source)
+        self.assertIn("memory_watch_voice_client_post_text_command", source)
         self.assertIn("memory_watch_voice_client_get_health", source)
         self.assertIn("memory_watch_service_audio_write_cb", source)
         self.assertIn("memory_watch_service_should_abort_recording", source)
         self.assertIn(".should_abort_cb = memory_watch_service_should_abort_recording", source)
         self.assertIn("MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES", source)
         self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
+        self.assertIn("memory_watch_service_alloc_audio_psram", source)
+
+        audio_alloc_section = source.split(
+            "static void *memory_watch_service_alloc_audio_psram"
+        )[1].split("static void memory_watch_service_free", 1)[0]
+        self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", audio_alloc_section)
+        self.assertNotIn("MALLOC_CAP_INTERNAL", audio_alloc_section)
+        self.assertNotIn("heap_caps_malloc(len, MALLOC_CAP_8BIT)", audio_alloc_section)
 
         send_section = source.split(
             "static void memory_watch_service_handle_send_recording"
@@ -195,6 +221,53 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
             "static void memory_watch_service_health_worker_task"
         )[1].split("static void memory_watch_service_cancel_worker_task")[0]
         self.assertIn("memory_watch_voice_client_get_health", health_worker_section)
+
+    def test_service_rebinds_worker_client_config_after_queue_copy(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_service_rebind_client_config", source)
+        self.assertIn("config->client_config.base_url = config->base_url", source)
+        self.assertIn("config->client_config.device_id = config->device_id", source)
+        self.assertIn(
+            "config->client_config.device_token = config->device_token", source
+        )
+
+        for function_name in (
+            "memory_watch_service_start_upload_job",
+            "memory_watch_service_start_cancel_job",
+            "memory_watch_service_start_health_job",
+        ):
+            section = source.split(f"static esp_err_t {function_name}")[1].split(
+                "if (xQueueSend", 1
+            )[0]
+            self.assertIn(
+                "memory_watch_service_rebind_client_config(&job.client_config)",
+                section,
+            )
+
+        upload_worker_section = source.split(
+            "static void memory_watch_service_upload_worker_task"
+        )[1].split("static void memory_watch_service_health_worker_task")[0]
+        self.assertIn(
+            "memory_watch_service_rebind_client_config(&job->client_config)",
+            upload_worker_section,
+        )
+
+        health_worker_section = source.split(
+            "static void memory_watch_service_health_worker_task"
+        )[1].split("static void memory_watch_service_cancel_worker_task")[0]
+        self.assertIn(
+            "memory_watch_service_rebind_client_config(&job.client_config)",
+            health_worker_section,
+        )
+
+        cancel_worker_section = source.split(
+            "static void memory_watch_service_cancel_worker_task"
+        )[1].split("static void memory_watch_service_task")[0]
+        self.assertIn(
+            "memory_watch_service_rebind_client_config(&job.client_config)",
+            cancel_worker_section,
+        )
 
     def test_service_splits_cancel_paths_and_ignores_late_results(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
@@ -233,7 +306,60 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
             "static void memory_watch_service_upload_worker_task"
         )[1].split("static void memory_watch_service_health_worker_task")[0]
         self.assertIn("memory_watch_service_set_upload_worker_busy(false)", upload_worker_section)
-        self.assertIn("memory_watch_service_is_wait_canceled_request(job.request_id)", upload_worker_section)
+        self.assertIn("memory_watch_service_is_wait_canceled_request(job->request_id)", upload_worker_section)
+        self.assertIn("s_upload_worker_job", upload_worker_section)
+        self.assertIn("s_upload_worker_result", source)
+        self.assertNotIn("memory_watch_service_upload_job_t job;", upload_worker_section)
+        self.assertNotIn("memory_watch_service_worker_result_t result", upload_worker_section)
+
+    def test_service_sends_text_via_worker_without_recorder(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+        header = MEMORY_WATCH_SERVICE_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_service_send_text", header)
+        self.assertIn("MEMORY_WATCH_SERVICE_CMD_SEND_TEXT", source)
+        self.assertIn("memory_watch_service_is_safe_user_text", source)
+        self.assertIn("memory_watch_service_handle_send_text", source)
+        self.assertIn("job.text_command", source)
+        self.assertIn("memory_watch_voice_client_text_request_t", source)
+        self.assertIn("memory_watch_voice_client_post_text_command", source)
+        self.assertIn("CONFIG_MEMORY_WATCH_BOOT_TEXT_SMOKE", source)
+        self.assertIn("Kconfig boot text smoke started", source)
+
+        text_handler_section = source.split(
+            "static void memory_watch_service_handle_send_text"
+        )[1].split("static void memory_watch_service_handle_check_health")[0]
+        self.assertIn("memory_watch_service_start_upload_job", text_handler_section)
+        self.assertNotIn("memory_watch_recorder_capture_ogg_opus", text_handler_section)
+        self.assertNotIn("memory_watch_voice_client_post_text_command", text_handler_section)
+
+        upload_worker_section = source.split(
+            "if (job->text_command)"
+        )[1].split("else", 1)[0]
+        self.assertIn("memory_watch_voice_client_post_text_command", upload_worker_section)
+        self.assertNotIn("memory_watch_recorder_capture_ogg_opus", upload_worker_section)
+
+    def test_main_kconfig_exposes_memory_watch_defaults_without_secret_value(self) -> None:
+        kconfig = MAIN_KCONFIG.read_text(encoding="utf-8")
+
+        self.assertIn('menu "AI Memory Watch"', kconfig)
+        self.assertIn("config MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED", kconfig)
+        self.assertIn("default y", kconfig)
+        self.assertIn("config MEMORY_WATCH_DEFAULT_BASE_URL", kconfig)
+        self.assertIn('default "https://watch.934000.xyz"', kconfig)
+        self.assertIn("config MEMORY_WATCH_DEFAULT_DEVICE_ID", kconfig)
+        self.assertIn('default "watch-001"', kconfig)
+        self.assertIn("config MEMORY_WATCH_DEFAULT_DEVICE_TOKEN", kconfig)
+        self.assertIn('default ""', kconfig)
+        self.assertIn("config MEMORY_WATCH_DEFAULT_TIMEOUT_MS", kconfig)
+        self.assertIn("default 120000", kconfig)
+        self.assertIn("config MEMORY_WATCH_DEFAULT_ALLOW_HTTP", kconfig)
+        self.assertIn("default n", kconfig)
+        self.assertIn("config MEMORY_WATCH_BOOT_HEALTH_CHECK", kconfig)
+        self.assertIn("config MEMORY_WATCH_BOOT_TEXT_SMOKE", kconfig)
+        self.assertNotIn("WATCH_DEVICE_TOKENS", kconfig)
+        self.assertNotIn("MIMO_ASR_API_KEY", kconfig)
+        self.assertNotIn("HERMES_API_KEY", kconfig)
 
     def test_service_keeps_official_chat_and_ui_boundaries(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")

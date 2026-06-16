@@ -31,6 +31,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("allow_insecure_http", header)
         self.assertIn("MEMORY_WATCH_VOICE_CLIENT_DEFAULT_TIMEOUT_MS 120000U", header)
         self.assertIn("MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES", header)
+        self.assertIn("MEMORY_WATCH_VOICE_CLIENT_MAX_TEXT_BYTES", header)
         self.assertIn("memory_watch_voice_client_request_t", header)
         self.assertIn("request_id", header)
         self.assertIn("const uint8_t *audio", header)
@@ -39,6 +40,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("has_charging", header)
         self.assertIn("has_rssi", header)
         self.assertIn("memory_watch_voice_client_response_t", header)
+        self.assertIn("memory_watch_voice_client_text_request_t", header)
         self.assertIn("asr_text", header)
         self.assertIn("reply_text", header)
         self.assertIn("clarification_id", header)
@@ -47,6 +49,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("hermes_status", header)
         self.assertIn("memory_watch_voice_client_get_health", header)
         self.assertIn("memory_watch_voice_client_post_voice_command", header)
+        self.assertIn("memory_watch_voice_client_post_text_command", header)
         self.assertIn("memory_watch_voice_client_cancel_request", header)
 
     def test_voice_client_posts_contract_multipart_fields(self) -> None:
@@ -56,6 +59,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn('#include "esp_crt_bundle.h"', source)
         self.assertIn('#include "cJSON.h"', source)
         self.assertIn('"/v1/watch/voice-command"', source)
+        self.assertIn('"/v1/watch/text-command"', source)
         self.assertIn('"multipart/form-data; boundary=%s"', source)
         self.assertIn('"Authorization"', source)
         self.assertIn('"Bearer "', source)
@@ -77,6 +81,22 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("zh-CN", source)
         self.assertIn("Asia/Shanghai", source)
         self.assertIn("watch_hermes_page", source)
+
+    def test_voice_client_posts_text_command_contract_fields(self) -> None:
+        source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
+        header = MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_voice_client_text_request_t", header)
+        self.assertIn("const char *text", header)
+        self.assertIn("memory_watch_voice_client_validate_text_request", source)
+        self.assertIn("MEMORY_WATCH_VOICE_CLIENT_MAX_TEXT_BYTES", source)
+        self.assertIn("memory_watch_voice_client_compute_text_body_len", source)
+        self.assertIn("memory_watch_voice_client_write_text_body", source)
+        self.assertIn("memory_watch_voice_client_write_text_command_body", source)
+        self.assertIn("memory_watch_voice_client_post_text_command", source)
+        self.assertIn('"/v1/watch/text-command"', source)
+        self.assertIn('"text"', source)
+        self.assertIn("memory_watch_voice_client_perform_http_json", source)
 
     def test_voice_client_supports_health_and_cancel_contract(self) -> None:
         source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
@@ -143,6 +163,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
 
         endpoints = contract["endpoints"]
         self.assertIn(f'"{endpoints["voice_command"]["path"]}"', source)
+        self.assertIn(f'"{endpoints["text_command"]["path"]}"', source)
         self.assertIn(
             f'"{endpoints["health"]["path"]}?device_id="',
             source,
@@ -174,6 +195,13 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn(request["locale"], source)
         self.assertIn(request["timezone"], source)
         self.assertIn(request["source"], source)
+        self.assertIn(
+            f"#define MEMORY_WATCH_VOICE_CLIENT_MAX_TEXT_BYTES "
+            f"{request['max_text_chars'] * 2 + 32}U",
+            header,
+        )
+        for field in request["text_command_fields"]:
+            self.assertIn(f'"{field}"', source)
 
         response = contract["response"]
         self.assertIn(
