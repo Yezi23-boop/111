@@ -18,6 +18,8 @@ SLUG_RE = re.compile(r"[^a-z0-9]+")
 RECORD_REASONS = (
     "repeat-risk",
     "high-cost",
+    "error-signature",
+    "route-choice",
     "owner-architecture",
     "evidence",
     "handoff",
@@ -165,7 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help=(
             "长期记录理由，可重复。只有满足重复风险、失败代价、owner/架构影响、"
-            "关键证据、交接、规划/决策、项目知识或框架约束时才应写入 runs。"
+            "大问题错误签名、路线选择、关键证据、交接、规划/决策、项目知识或框架约束时才应写入 runs。"
         ),
     )
     parser.add_argument(

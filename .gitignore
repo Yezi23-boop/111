@@ -27,6 +27,9 @@ tmp/
 *.temp
 *.log
 
+# 本机 ESP32-S3 / AI Memory Watch 开发期密钥配置
+main/services/memory_watch_dev_endpoint_local.h
+
 # Python 缓存文件
 __pycache__/
 *.py[cod]

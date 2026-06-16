@@ -1,12 +1,11 @@
 <INSTRUCTIONS>
 ## 规则优先级与作用域
 
-1. `CLAUDE.md` 内联行为准则是本仓库本地 agent 规则的最高优先级。
-2. 默认启用本文件基础规则与“当前仓库规则（上下文库）”。
-3. 仅当满足“当前项目专项规则触发条件”时，才启用当前项目专项规则。
-4. 其余仓库规则冲突时，优先遵循：最小可运行改动 + 可验证 + 可回退。
+1. 默认启用本文件基础规则与“当前仓库规则（上下文库）”。
+2. 仅当满足“当前项目专项规则触发条件”时，才启用当前项目专项规则。
+3. 其余仓库规则冲突时，优先遵循：最小可运行改动 + 可验证 + 可回退。
 
-## CLAUDE.md（最高优先级，已内联）
+## CLAUDE.md（最高优先级）
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
@@ -88,7 +87,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 新增或重构相关代码时，默认用简短说明解释选择该 `FreeRTOS` 原语的原因、它解决的并发问题，以及对应的操作系统概念，帮助用户把代码和 `FreeRTOS` 学习对应起来。
 - 只有确认 `export.ps1` 可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作；修改过 `sdkconfig` 时必须先 `idf.py fullclean` 再 `idf.py build`。
 - 常规 C/C++ 代码、UI 逻辑或业务 service 改动在 `idf.py build` 通过后，默认使用 `idf.py -p <PORT> app-flash`；不得把 `idf.py flash` 作为默认烧录命令，因为它会按 `build/flasher_args.json` 写入多个分区。
-- 如需串口验证，优先 `app-flash` 后再限时采集 `monitor` / 串口日志，避免默认 `idf.py flash monitor`。
+- 如需串口验证，优先 `app-flash` 后再限时采集 `monitor` / 串口日志，避免默认 `idf.py flash monitor``monitor` 窗口一分钟
 - 修改 `GPIO` / `I2C` / `SPI` / `UART` / `I2S` / `LCD` / `Touch` / `Wi-Fi` / `BLE` 前，必须先确认引脚定义、初始化顺序、时钟或带宽约束，以及错误恢复路径。
 - 测试 `Light Sleep` / `Deep Sleep` / 外部唤醒源前，必须先写清楚唤醒源、观测口、兜底唤醒和恢复步骤；测试代码默认关闭，禁止随开机自动进入 sleep。依赖 USB 串口/JTAG 观测时，不得把测试结果当作可靠闭环，应优先准备外部 UART 日志或手动 BOOT/RST 恢复路径。
 - 不要在没有证据的情况下删除已有 `reset`、`delay`、power-on sequence 或初始化命令序列。
@@ -102,6 +101,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 非简单任务默认用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`，避免重复尝试并只生成低 token brief。
 - 新增功能、跨模块改动、后台能力、低功耗、OTA、音频/网络/危险识别协作类任务，默认先按 `docs/context/knowledge/project/runtime-owner-contract.md` 判断启动阶段、资源 owner、调用方向和禁止加层边界。
 - 出现可复用知识、流程、决策、attempt 或交接状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
+- 遇到大问题错误或路线选择时，若本轮形成了可复用判断、证伪路径、取舍原因或下一步边界，可考虑写入 `docs/context/runs/`；大问题错误使用 `error-signature`，路线选择/放弃使用 `route-choice`，必要时补 `evidence`。
 - 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
 
 ## 规划/框架类任务强制路由
@@ -122,7 +122,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码，适用于显示/UI、触摸输入、音频播放、Wi-Fi 配网、板级驱动、模块拆分和架构建议任务。
 
-- 新增或修改代码应优先满足模块化、分层、单一职责、明确接口边界和可验证错误路径。
+- 新增或修改代码应优先满足模块化、分层、单一职责、明确接口边界和可验证错误路径，避免过多的防御性代码和不必要的代码。
 - 后续新增功能、跨文件改动和重构默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；详细边界见 `docs/context/knowledge/project/layering-boundary-map.md`。
 - 运行时骨架默认按 `docs/context/knowledge/project/runtime-owner-contract.md` 执行：不新增大而全 `ResourceManager`、`resource_policy`、`session_router` 或默认 `ui_manager`；新能力优先落到现有 owner，必要时新增窄 service/session。
 - 板级事实默认由 `main/app/board_*` 或现有 board owner 持有：GPIO/中断线、I2C 地址、片选、传感器安装轴向、板级阈值和硬件变体配置不得长期散落在 service 或 driver 流程中。

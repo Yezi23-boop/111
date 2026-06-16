@@ -70,6 +70,8 @@ SUCCESS_HINTS = (
 PROMOTION_RECORD_REASONS = {
     "repeat-risk",
     "high-cost",
+    "error-signature",
+    "route-choice",
     "owner-architecture",
     "evidence",
     "handoff",
