@@ -2,7 +2,7 @@
 id: context-garden-policy
 tags: context, garden, curator, stale, promotion, archive
 summary: 上下文库清理与沉淀流程：只保存高复用规划、决策、试错、项目知识和框架，先标记和降权，再晋升稳定知识，最后归档或删除废弃卡。
-last_reviewed: 2026-06-07
+last_reviewed: 2026-06-18
 memory_type: procedural
 scope: repo
 owners: docs/context, scripts/context/garden.py, scripts/context/query.py
@@ -48,7 +48,9 @@ status: active
 
 完成一个可提交的小闭环后，默认先更新对应 `plans/active/` 里的进度、验证状态和下一步。只有涉及关键验证、协议、owner、安全边界、门禁，或后续 agent 必须知道的结论，才同步更新 `CHANGELOG.md`；不要把 `CHANGELOG.md` 当作普通命令流水账。
 
-`handoffs/current-task.md` 只在交接、暂停、上下文压缩，或用户明确要求“记录当前状态/执行到哪”时更新。失败路线、特殊证据、可复用排查结论写入 `runs/`；稳定事实、长期 owner 或架构边界再进入 `knowledge/`。
+`handoffs/current-task.md` 是当前任务接力页，不是历史总账；允许它不频繁更新，但不允许它过期到误导下一位 agent。除交接、暂停、上下文压缩，或用户明确要求“记录当前状态/执行到哪”外，只要新证据导致该文件里的“未验证/已验证、阻塞/已解除、active/completed、当前下一步”发生反转，就必须更新。正文只保留当前真实状态、下一步、阻塞/风险和不要再相信的旧信息；不得写真实 key/token，也不要复述 `CHANGELOG.md` 的完整历史。
+
+失败路线、特殊证据、可复用排查结论写入 `runs/`；稳定事实、长期 owner 或架构边界再进入 `knowledge/`。
 
 ## 大问题错误与路线选择
 

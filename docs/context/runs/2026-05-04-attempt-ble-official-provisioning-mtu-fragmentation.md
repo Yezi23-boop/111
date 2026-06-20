@@ -10,6 +10,7 @@ scope: task
 owners: C:/Users/ye/Desktop/eps32_ble, docs/context/knowledge/project/wechat-miniapp-official-ble-provisioning.md, docs/context/knowledge/project/ble-provisioning-miniapp-write-fragmentation.md
 triggers: BLE provisioning MTU protobuf prov-scan fragmentation
 evidence_level: observed
+route_area: "BLE miniapp provisioning evidence"
 ---
 
 # Attempt Log: ble-official-provisioning-mtu-fragmentation

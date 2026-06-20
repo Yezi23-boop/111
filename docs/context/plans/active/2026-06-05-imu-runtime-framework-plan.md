@@ -9,6 +9,7 @@ status: active
 owners: components/qmi8658c, main/app/board_imu.c, main/services/imu_service.c, components/imu_motion
 triggers: IMU framework, imu runtime, qmi8658c, board_imu, imu_service, imu_motion, raw_motion, raise-wrist framework
 evidence_level: design
+route_area: "IMU / motion framework"
 ---
 
 # IMU 运行框架计划

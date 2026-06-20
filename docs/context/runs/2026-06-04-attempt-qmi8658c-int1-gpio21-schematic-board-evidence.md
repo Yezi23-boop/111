@@ -14,6 +14,7 @@ garden_status: keep-evidence
 garden_reviewed: 2026-06-07
 tags: attempt, qmi8658c, imu, schematic, wom, gpio21, interrupt, board-test, com3
 record_because: 该轮包含原理图稳定事实、COM3 板测证据和高复用的软硬件隔离顺序；后续若不记录，容易重复调抬腕阈值或误判 QMI 整体不可用。
+route_area: "QMI8658C board evidence"
 ---
 
 # QMI8658C INT1(GPIO21) 原理图与板级证据探索

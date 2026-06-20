@@ -1,19 +1,27 @@
 ---
 id: 2026-06-05-ai-memory-watch-hermes-page-plan
-tags: plan, active, ai-memory-watch, hermes, voice, text, ui, official-chat, owner
-summary: 将 AI Memory Watch 作为独立 Hermes 功能页面推进，固定 V1 触摸录音、Ogg Opus 一次性 HTTP 上传、文本命令、服务器侧 ASR/Hermes 处理和当前 owner 边界。
+tags: plan, archived, ai-memory-watch, hermes, voice, text, ui, official-chat, owner
+summary: AI Memory Watch / Hermes V1 主闭环完成归档，固定独立页面、真实麦克风 Ogg Opus 上传、MiMo ASR、Hermes 回复、SoftAP/NVS 配置和当前 owner 边界。
 created: 2026-06-05
-last_updated: 2026-06-09
-last_reviewed: 2026-06-05
-status: active
+last_updated: 2026-06-20
+last_reviewed: 2026-06-20
+status: archived
 memory_type: project_plan
 scope: repo
-owners: docs/context/plans/active/2026-06-05-ai-memory-watch-hermes-page-plan.md, docs/context/knowledge/project/ai-memory-watch-product-positioning.md
+owners: docs/context/plans/completed/2026-06-05-ai-memory-watch-hermes-page-plan.md, docs/context/knowledge/project/ai-memory-watch-product-positioning.md
 triggers: AI Memory Watch, Hermes, memory_watch_service, voice_client_service, Ogg Opus, voice-command, text-command, 独立页面
 evidence_level: design
+route_area: "AI Memory Watch / Hermes"
 ---
 
 # AI Memory Watch / Hermes 独立页面计划
+
+## Archive Summary
+
+- 归档日期：2026-06-20。
+- 完成口径：V1 主技术闭环已经完成，ESP32-S3 真机麦克风 Ogg Opus 上传经公网 watch endpoint、MiMo ASR 和 Hermes 返回手表 V1 固定 7 字段 JSON；文本命令、公网 Tunnel、服务器 release gate、独立 Hermes 页面、NVS/SoftAP 配置入口、Kconfig 开发默认项、`mw_upload` PSRAM 栈修复和 queue copy rebind 均已有证据。
+- 归档边界：V1 不再继续加后台通知、TTS、历史列表或长任务推送；后续只做 hardening、密钥卫生、异常路径体验和 V2 通知箱设计。
+- 安全口径：真实 device token 可在开发机本地 `sdkconfig` 或 NVS 中用于联调，但不得提交；Hermes API key、MiMo key、Cloudflare token 仍只留服务器侧或仓库外配置。
 
 ## Purpose / Big Picture
 
@@ -122,7 +130,10 @@ Ogg Opus -> ASR -> Hermes 文本请求 -> 短文本响应
 - `smoke_test.ps1 -IncludeTextCommand`、`acceptance_test.ps1` 与 `release_gate.ps1` 已覆盖公网/本机文本命令；最新 server pytest 为 `50 passed`，`release_gate.ps1 -RebuildContainer -SkipRealAsr` 通过，公网 `smoke_test.ps1 -BaseUrl https://watch.934000.xyz -SkipServiceHealth -IncludeTextCommand` 返回 `text_status=done/text_action=memory_saved`。
 - ESP32-S3 固件侧新增 `memory_watch_service_send_text()` 与 `memory_watch_voice_client_post_text_command()`；文本命令经 owner queue 投递到 upload worker，不占用 recorder/mic 路径，仍复用 120 秒 HTTPS 等待、Bear token、固定 7 字段 JSON 解析和非敏感结果日志。
 - 为了快速完成实机闭环，当前本地开发配置通过被 `.gitignore` 忽略的 `main/services/memory_watch_dev_endpoint_local.h` 写死公网 `base_url`、`device_id`、device token 与开机文本 smoke；该文件不得提交，不记录 token。
-- COM3 实机文本链路已通过：`agent_serial_monitor.ps1` 记录 `watch endpoint health result: hermes_online=1 err=ESP_OK`，随后 `watch request result: ... status=done action=memory_saved error_code=none asr_chars=40 reply_chars=10`；日志文件为 `D:\esp32S3\111\board_logs\2026-06-09-15-19-53-hermes-text-command-smoke-stackfix.log`。本轮同时修复实机 `mw_upload` 栈溢出，将 upload worker stack 提升到 `12288` words。
+- COM3 实机文本链路已通过：`agent_serial_monitor.ps1` 记录 `watch endpoint health result: hermes_online=1 err=ESP_OK`，随后 `watch request result: ... status=done action=memory_saved error_code=none asr_chars=40 reply_chars=10`；日志文件为 `D:\esp32S3\111\board_logs\2026-06-09-15-19-53-hermes-text-command-smoke-stackfix.log`。
+- COM3 实机麦克风 Ogg Opus 链路已通过：手表按住说话真实录音上传到公网 `watch.934000.xyz`，服务器侧完成 MiMo ASR -> Hermes -> 手表 V1 固定 7 字段 JSON；串口证据包含 `mw_upload stack: stage=voice-record-done high_water_words=3248`、`mw_upload stack: stage=voice-http-done high_water_words=3248` 与 `watch request result: ... status=done action=memory_saved error_code=none asr_chars=9 reply_chars=36`。服务器 `/health` 最近请求摘要同步显示 `status=done/action=memory_saved/audio_bytes=6329/asr_provider=mimo/duration_ms=4744`，不包含 ASR 文本、回复文本或 token。
+- 本轮修复 `mw_upload` 实机栈问题：upload worker 栈改为 PSRAM 分配并提升到 `24576` words，同时将大 `job/result` 对象移出任务栈；真机 high-water mark 约 `3248` words，未再触发 stack overflow/panic。
+- 本轮修复 queue copy 后指针悬空风险：`memory_watch_service_*_job_t` 通过 FreeRTOS queue 复制后，内部 `client_config.base_url/device_id/device_token` 指针必须重新绑定到同一份 job 结构体内的字符数组；upload、health、cancel worker 均执行 rebind，避免队列复制后仍指向发送端临时栈对象。
 - Webhook platform 当前未启用；V1 不优先走 webhook，因为手表侧需要同步等待最终文本结果。
 
 因此本计划的服务器链路已从纯 mock 推进为：
@@ -436,7 +447,10 @@ done / timeout / error / canceled
 - `[x]` 补齐 ESP32-S3 侧 watch endpoint NVS 保存入口：`memory_watch_service_save_endpoint_to_nvs()` 校验并写入同一组 NVS key，`nvs_commit` 成功后即时应用运行期配置；只保存 watch device token，不保存 Hermes/API/MiMo key。
 - `[x]` 新增 SoftAP portal 开发/配网期配置入口：`POST /api/memory-watch/config` 由 `ap_portal_adapter` 解析 JSON 后通过 main 注册回调交给 `memory_watch_service_save_endpoint_to_nvs()`，portal 组件不反向依赖 `main/services`，响应不回显 token。
 - `[x]` 补强 SoftAP portal 配置入口安全边界：HTTP body 读取遇到反复 socket timeout 时有限退出并返回 408，避免共享 HTTPD task 被半包请求长期占住；`memory_watch_service_build_endpoint_state()` 在写 NVS/运行态前统一拒绝非法 URL scheme、CR/LF 文本和未显式允许的明文 HTTP。
-- `[ ]` 等用户回来提供热点后，用 ESP32-S3 实机 Wi-Fi 跑真实 `voice endpoint` 上传联调，确认音量、MIME、超时、错误和重试路径。
+- `[x]` 修复 `mw_upload` 实机栈溢出：upload worker 栈迁移到 PSRAM 并提升到 `24576` words，大 `job/result` 对象移出任务栈，真机 high-water mark 已观测约 `3248` words。
+- `[x]` 修复 FreeRTOS queue 复制 job 后的内部指针 rebind：upload/health/cancel worker 收到 job 后重新绑定 `client_config` 指针到 job 内部字符数组，避免指向发送端临时栈对象。
+- `[x]` 完成 ESP32-S3 实机麦克风 Ogg Opus 端到端验证：真实录音上传公网 watch endpoint，经 MiMo ASR、Hermes 返回手表 V1 固定 7 字段 JSON，串口与服务器 `/health` 均有非敏感成功证据。
+- `[x]` 完成 endpoint/token 配置收敛的 V1 路径：正式入口支持 SoftAP/NVS 写入，开发入口支持 Kconfig 默认项；真实 device token 可放本机 `sdkconfig` 或 NVS 联调，但不得提交。
 
 ## Decision Log
 
@@ -479,6 +493,9 @@ done / timeout / error / canceled
 - 2026-06-08：
   - 决策：ESP32-S3 侧 voice endpoint 配置第一版从 NVS 读取，不把 device token 放进源码、sdkconfig 或日志。
   - 原因：真机联调需要 `base_url/device_id/device_token` 才能让页面从“未配置”进入可用状态；NVS 让本地/量产配置和公开源码分离，也不会让 ESP32-S3 持有 Hermes API Server key。
+- 2026-06-17：
+  - 决策：`memory_watch_service` 的 upload worker 使用 PSRAM task stack，并把较大的 worker job/result 存储从任务栈移走；FreeRTOS queue 复制 job 后，worker 必须 rebind `client_config` 内部指针。
+  - 原因：真机麦克风上传暴露了 `mw_upload` 栈压力；同时 job 结构体被 queue 按值复制，内部指针如果继续指向发送端结构体，会在 worker 执行时变成悬空或错误别名。该修复让录音、HTTP 上传和 cancel/health worker 的 owner 边界更稳定。
 
 ## Validation and Acceptance
 
@@ -563,9 +580,10 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 - 服务器侧公网私有路径负向门禁已补强并加入脚本级 stub 集成测试：`runtime_status.ps1 -AssertPrivateNotExposed` 只输出 path/status_code/allowed_status_codes/exposed/error，不保留响应 payload；`tests/test_private_exposure_scripts.py` 会启动本地 fake HTTP server 和 fake env，验证 `/health=200` 会让 runtime/acceptance 失败、403/404/410 会通过，且私有响应正文 sentinel 不出现在 stdout/stderr；默认 `release_gate.ps1 -SkipDocker` 仍通过。当前 server pytest 37 项通过。
 - 服务器侧 smoke 临时音频生命周期已补强：默认 mock smoke 创建的 dummy Ogg 会在 `finally` 中清理，显式 `-AudioPath` 不会被脚本删除；脚本级 stub 测试覆盖两种路径。当前 server pytest 40 项通过，`release_gate.ps1 -SkipDocker` 通过。
 - 2026-06-09 公网联调脚本闭环已通过：`runtime_status.ps1 -BaseUrl https://watch.934000.xyz -SkipDocker -SkipHermesApi -SkipServiceHealth -AssertPrivateNotExposed` 返回 watch health `ok/hermes_status=online`，并确认公网 `/health`、`/v1/models`、`/v1/responses` 均为 404 未暴露；公网 `smoke_test.ps1 -BaseUrl https://watch.934000.xyz -SkipServiceHealth` mock 上传返回 `voice_status=done/action=memory_saved/field_count=7`；公网 `make_tts_sample.ps1 -> smoke_test.ps1 -UseRealAsr -AudioPath <generated.ogg>` 返回 `asr_mode=real/voice_status=done/action=memory_saved/field_count=7`。COM3 串口验证当前固件仍为 `111` 主应用，自动连接 Wi-Fi `li` 并拿到 `192.168.41.11`，`memory_watch_ready` 已出现，但 `watch endpoint NVS config not found`；PC 侧对 `192.168.41.11` ping/HTTP 探测超时，当前无法无人工通过门户写入 NVS，后续需用户回来进入同网可达/SoftAP 配置后写入 `https://watch.934000.xyz` 的 watch endpoint 配置。
-- 2026-06-09 文本通讯链路已完成 server/source/build/release gate/公网/实机闭环：`POST /v1/watch/text-command` 通过同一鉴权、幂等和固定 7 字段契约；server pytest `50 passed`，memory watch source tests `45 passed`，`idf.py build` 通过，`release_gate.ps1 -RebuildContainer -SkipRealAsr` 通过，公网 `-IncludeTextCommand` smoke 通过，COM3 开机文本 smoke 通过并返回 `status=done/action=memory_saved`。当前仍未验证手表麦克风按住说话的真实 Ogg Opus 上传。
+- 2026-06-09 文本通讯链路已完成 server/source/build/release gate/公网/实机闭环：`POST /v1/watch/text-command` 通过同一鉴权、幂等和固定 7 字段契约；server pytest `50 passed`，memory watch source tests `45 passed`，`idf.py build` 通过，`release_gate.ps1 -RebuildContainer -SkipRealAsr` 通过，公网 `-IncludeTextCommand` smoke 通过，COM3 开机文本 smoke 通过并返回 `status=done/action=memory_saved`；当时仍未验证手表麦克风按住说话的真实 Ogg Opus 上传。
 - 2026-06-10 音频大块内存边界已收紧：`memory_watch_service` 的 Ogg Opus 聚合 buffer 只允许 `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`，PSRAM 分配失败时返回 `ESP_ERR_NO_MEM`，不再 fallback 到内部 RAM；recorder 内部 PCM/Opus 小帧工作区仍保留 internal RAM，避免影响 I2S/编码实时路径。
 - 2026-06-10 Hermes 页面退出已释放 UI view：`memory_watch_controller_back()` 切回主菜单后通过 `lv_timer` 延迟 350 ms 销毁 `memory_watch_view_t`，避免切屏动画期间删除 active screen；该闭环只释放 LVGL 页面对象，不销毁 `memory_watch_service` 常驻 task。
+- 2026-06-17 实机麦克风语音链路已完成端到端闭环：`mw_upload` 栈迁移到 PSRAM 后，COM3 串口可见录音完成与 HTTP 完成阶段 high-water mark 均约 `3248` words，随后返回 `status=done/action=memory_saved/error_code=none/asr_chars=9/reply_chars=36`；服务器 `/health` 最近请求摘要显示真实 Ogg Opus 音频 `audio_bytes=6329`、`asr_provider=mimo`、`duration_ms=4744`。本轮同时修复 FreeRTOS queue copy 后 `client_config` 指针 rebind，避免 worker job 内部指针指向发送端临时结构体。
 
 期望看到的结果：
 
@@ -581,16 +599,17 @@ docker run --name ai-memory-watch-voice-endpoint-asr-test -p 127.0.0.1:8790:8787
 
 ## Idempotence and Recovery
 
-- 如果中途中断，下次从本计划继续，优先做 ESP32-S3 实机麦克风上传验证：当前公网 watch endpoint、文本命令、独立 Hermes 页面 skeleton、NVS endpoint 配置读取/保存均已完成 source/build 闭环，且文本命令已有 COM3 串口实机证据。
+- 本计划已归档。后续若继续 V1 hardening，不应重新打开本计划；应新建短计划或 run 记录异常路径验证、密钥轮换或发布检查。
 - 如果 `server/watch_voice_endpoint` 原型出错，回退时只停止/删除该服务或容器；不要改动 `hermes` Dashboard、MiMo 配置、`official_chat` 主线或 ESP32 UI。
 - 如果新页面方案失败，最小回退路径是只删除新增页面入口和新 service，不影响 `official_chat_service` 与现有 AI 页。
 
-## Next Step
+## Post-V1 Hardening
 
-- 保留 `.gitignore` 覆盖的本地开发 endpoint header 只用于短期真机 smoke；后续若要量产/演示，改回通过 SoftAP 门户 `POST /api/memory-watch/config` 或安全配置流程写入 NVS。
-- 用 ESP32-S3 实机麦克风 Ogg Opus 样本验证 `WATCH_ASR_PROVIDER=mimo`，确认手表端实际 MIME、音量、时长、语言和错误路径；这一步才代表语音链路完成。
+- 开发阶段允许真实 watch device token 放在本机 `sdkconfig` 或 NVS 中；提交前必须确认 `sdkconfig`、文档和日志不包含真实 token。
+- 发布或演示前建议轮换一次 watch device token，并用 SoftAP/NVS 或本机未提交配置重新写入。
 - 公网域名当前已使用 Cloudflare Tunnel 暴露 `https://watch.934000.xyz/v1/watch/*`；继续保持 `/health`、`/v1/models`、`/v1/responses` 不公开。
-- 板端验证时重点确认 `memory_watch_service` upload worker 的录音取消延迟、Ogg Opus 实际大小、HTTPS 上传结果、2 分钟等待窗口和 late result 忽略路径。
+- 后续板端验证重点转为异常路径：录音取消延迟、短音频、长音频、HTTPS 超时、2 分钟等待窗口、late result 忽略、配置缺失/错误 token 的 UI 提示。
+- V2 应另起计划推进后台任务完成通知、服务器通知箱和低功耗短轮询。
 
 ## V2 Candidate: Background Task Completion Notifications
 

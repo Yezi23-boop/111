@@ -40,6 +40,14 @@ typedef esp_err_t (*ap_portal_memory_watch_config_cb_t)(
     const ap_portal_memory_watch_config_t *config, void *user_ctx);
 
 /**
+ * @brief AI Memory Watch endpoint 配置状态查询回调。
+ *
+ * 返回 `true` 表示当前运行态或 NVS 已有完整 watch endpoint 配置。
+ * 只返回布尔值，不返回配置内容。
+ */
+typedef bool (*ap_portal_memory_watch_configured_cb_t)(void *user_ctx);
+
+/**
  * @brief 注册 AI Memory Watch endpoint 配置保存回调。
  *
  * @param[in] callback 保存回调；传 `NULL` 表示禁用该门户配置入口。
@@ -48,6 +56,19 @@ typedef esp_err_t (*ap_portal_memory_watch_config_cb_t)(
  */
 esp_err_t ap_portal_adapter_set_memory_watch_config_callback(
     ap_portal_memory_watch_config_cb_t callback, void *user_ctx);
+
+/**
+ * @brief 注册 AI Memory Watch endpoint 配置状态查询回调。
+ *
+ * 供 `/api/status` 查询 `memory_watch_endpoint_configured` 布尔字段。
+ * 该回调只返回布尔值，不返回配置内容。
+ *
+ * @param[in] callback 查询回调；传 `NULL` 表示禁用查询。
+ * @param[in] user_ctx 透传给回调的用户上下文。
+ * @return `ESP_OK` 表示回调已更新。
+ */
+esp_err_t ap_portal_adapter_set_memory_watch_configured_callback(
+    ap_portal_memory_watch_configured_cb_t callback, void *user_ctx);
 
 /**
  * @brief 启动 AP 门户适配层的最小 HTTP 服务器。

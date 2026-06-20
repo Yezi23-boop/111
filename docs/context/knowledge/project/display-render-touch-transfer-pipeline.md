@@ -8,6 +8,7 @@ scope: repo
 owners: components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/ui/lvgl_task.c
 triggers: display, render, touch, transfer, pipeline
 evidence_level: observed
+route_area: "Display and touch"
 ---
 
 # 显示渲染、传输与触摸输入链路

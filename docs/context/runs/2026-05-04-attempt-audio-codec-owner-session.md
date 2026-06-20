@@ -8,6 +8,7 @@ scope: task
 owners: components/audio_codec/audio_codec.c, components/audio_codec/include/audio_codec.h, components/espdl_inference/espdl_audio_runtime.cpp, components/traffic_inference/traffic_inference_realtime.cc, tests/test_audio_codec_port_source.py
 triggers: audio_codec owner session input output lifecycle stop teardown
 evidence_level: observed
+route_area: "Audio sessions"
 ---
 
 # Attempt Log: audio-codec-owner-session

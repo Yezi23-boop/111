@@ -240,7 +240,14 @@ esp_err_t ap_portal_adapter_set_memory_watch_config_callback(
     ap_portal_memory_watch_config_cb_t callback, void *user_ctx)
 {
     return ap_portal_routes_set_memory_watch_config_callback(callback,
-                                                             user_ctx);
+                                                              user_ctx);
+}
+
+esp_err_t ap_portal_adapter_set_memory_watch_configured_callback(
+    ap_portal_memory_watch_configured_cb_t callback, void *user_ctx)
+{
+    return ap_portal_routes_set_memory_watch_configured_callback(callback,
+                                                                  user_ctx);
 }
 
 /**

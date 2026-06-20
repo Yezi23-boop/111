@@ -10,6 +10,7 @@ scope: task
 owners: components/ap_portal_adapter/src/ap_portal_adapter.c, components/ap_portal_adapter/src/ap_portal_routes.c, components/captive_portal_dns/src/captive_portal_dns.c, components/network_manager/src/network_manager.c, docs/context/knowledge/project/softap-captive-portal-auto-popup.md
 triggers: SoftAP captive portal prov-session prov-config auto popup
 evidence_level: observed
+route_area: "SoftAP portal evidence"
 ---
 
 # Attempt Log: softap-captive-portal-official-provisioning

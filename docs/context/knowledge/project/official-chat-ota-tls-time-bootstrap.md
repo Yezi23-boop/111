@@ -8,6 +8,7 @@ scope: repo
 owners: main/services/official_chat_service.c, main/services/network_service.c, components/official_chat
 triggers: official, chat, ota, tls, time, bootstrap, 时间, 授时, 迁移
 evidence_level: observed
+route_area: "Official Chat"
 ---
 
 # official_chat OTA TLS 首次授时约束

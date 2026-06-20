@@ -2147,6 +2147,13 @@ esp_err_t memory_watch_service_get_snapshot(
     return ESP_OK;
 }
 
+bool memory_watch_service_is_endpoint_configured(void)
+{
+    const memory_watch_service_snapshot_t snapshot =
+        memory_watch_service_copy_snapshot();
+    return snapshot.endpoint_configured;
+}
+
 const char *memory_watch_service_state_to_string(
     memory_watch_service_state_t state)
 {

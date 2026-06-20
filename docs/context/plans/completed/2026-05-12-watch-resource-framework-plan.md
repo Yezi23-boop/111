@@ -2,7 +2,7 @@
 id: watch-resource-framework-plan-20260512
 tags: plan, watch, resource-management, power-policy, background, audio, display, network, sensor, haptic, maintenance
 summary: ESP32-S3 手表资源框架 Phase 1 完成归档，固定稳定契约、复杂度护栏、资源 owner 和状态预算表。
-status: active
+status: archived
 last_reviewed: 2026-05-15
 memory_type: project_plan
 scope: repo

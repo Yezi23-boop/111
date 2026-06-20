@@ -2,7 +2,7 @@
 id: apple-watch-like-boot-flow-plan-20260512
 tags: plan, watch, startup, boot-flow, apple-watch-like, power-policy, background-service, danger-detection
 summary: Apple Watch 风格开机启动流程 Phase 1 完成归档，固定 UI-first、会话授权、后台预算和 ui_first_frame_ready gate 的阶段化启动模型。
-status: active
+status: archived
 last_reviewed: 2026-05-15
 memory_type: project_plan
 scope: repo

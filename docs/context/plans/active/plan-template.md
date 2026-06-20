@@ -12,44 +12,44 @@ evidence_level: design
 
 # 计划模板
 
-## Purpose / Big Picture
+## 目标与全局
 
 - 任务目标：
 - 为什么现在做：
 - 完成后用户会看到什么变化：
 
-## Scope / Non-Goals
+## 范围与非目标
 
 - 本轮明确要做：
 - 本轮明确不做：
 
-## Progress
+## 进度
 
 - `[ ]` 待开始
 - `[ ]` 进行中
 - `[ ]` 已完成
 
-## Decision Log
+## 决策记录
 
 - 日期：
 - 决策：
 - 原因：
 
-## Surprises & Discoveries
+## 意外与发现
 
 - 记录本轮新发现的真实边界、异常现象或与原假设不符的证据。
 
-## Validation and Acceptance
+## 验证与验收
 
 - 计划运行的验证命令：
 - 期望看到的结果：
 - 当前实际结果：
 
-## Idempotence and Recovery
+## 幂等与恢复
 
 - 如果中途中断，下次从哪里继续：
-- 如果本轮方案失败，最小回退路径是什么：
+- 如果验证失败，怎么回退：
 
-## Next Step
+## 下一步
 
 - 下一步最小动作：

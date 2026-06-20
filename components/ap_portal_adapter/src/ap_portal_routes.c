@@ -34,6 +34,10 @@ enum
 static ap_portal_memory_watch_config_cb_t s_memory_watch_config_callback = NULL;
 /** @brief 透传给 Memory Watch 配置保存回调的用户上下文。 */
 static void *s_memory_watch_config_user_ctx = NULL;
+/** @brief 上层注册的 Memory Watch 配置状态查询回调。 */
+static ap_portal_memory_watch_configured_cb_t s_memory_watch_configured_callback = NULL;
+/** @brief 透传给 Memory Watch 配置状态查询回调的用户上下文。 */
+static void *s_memory_watch_configured_user_ctx = NULL;
 /** @brief 保护配置回调指针，避免 HTTPD task 读取到半更新状态。 */
 static portMUX_TYPE s_memory_watch_config_lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -89,6 +93,22 @@ static bool ap_portal_get_memory_watch_config_callback(
     portENTER_CRITICAL(&s_memory_watch_config_lock);
     *out_callback = s_memory_watch_config_callback;
     *out_user_ctx = s_memory_watch_config_user_ctx;
+    portEXIT_CRITICAL(&s_memory_watch_config_lock);
+
+    return *out_callback != NULL;
+}
+
+static bool ap_portal_get_memory_watch_configured_callback(
+    ap_portal_memory_watch_configured_cb_t *out_callback, void **out_user_ctx)
+{
+    if (out_callback == NULL || out_user_ctx == NULL)
+    {
+        return false;
+    }
+
+    portENTER_CRITICAL(&s_memory_watch_config_lock);
+    *out_callback = s_memory_watch_configured_callback;
+    *out_user_ctx = s_memory_watch_configured_user_ctx;
     portEXIT_CRITICAL(&s_memory_watch_config_lock);
 
     return *out_callback != NULL;
@@ -334,7 +354,16 @@ static esp_err_t ap_portal_status_handler(httpd_req_t *req)
     void *user_ctx = NULL;
     const bool memory_watch_supported =
         ap_portal_get_memory_watch_config_callback(&callback, &user_ctx);
-    char status_json[192] = {0};
+
+    ap_portal_memory_watch_configured_cb_t configured_cb = NULL;
+    void *configured_ctx = NULL;
+    const bool has_configured_cb =
+        ap_portal_get_memory_watch_configured_callback(&configured_cb,
+                                                       &configured_ctx);
+    const bool endpoint_configured =
+        has_configured_cb && configured_cb(configured_ctx);
+
+    char status_json[256] = {0};
 
     (void)snprintf(status_json, sizeof(status_json),
                    "{"
@@ -343,9 +372,11 @@ static esp_err_t ap_portal_status_handler(httpd_req_t *req)
                    "\"api_version\":\"v1\","
                    "\"scan_supported\":false,"
                    "\"configure_supported\":false,"
-                   "\"memory_watch_config_supported\":%s"
+                   "\"memory_watch_config_supported\":%s,"
+                   "\"memory_watch_endpoint_configured\":%s"
                    "}",
-                   memory_watch_supported ? "true" : "false");
+                   memory_watch_supported ? "true" : "false",
+                   endpoint_configured ? "true" : "false");
     return ap_portal_send_text(req, "application/json; charset=utf-8",
                                status_json);
 }
@@ -494,6 +525,17 @@ esp_err_t ap_portal_routes_set_memory_watch_config_callback(
     portENTER_CRITICAL(&s_memory_watch_config_lock);
     s_memory_watch_config_callback = callback;
     s_memory_watch_config_user_ctx = user_ctx;
+    portEXIT_CRITICAL(&s_memory_watch_config_lock);
+
+    return ESP_OK;
+}
+
+esp_err_t ap_portal_routes_set_memory_watch_configured_callback(
+    ap_portal_memory_watch_configured_cb_t callback, void *user_ctx)
+{
+    portENTER_CRITICAL(&s_memory_watch_config_lock);
+    s_memory_watch_configured_callback = callback;
+    s_memory_watch_configured_user_ctx = user_ctx;
     portEXIT_CRITICAL(&s_memory_watch_config_lock);
 
     return ESP_OK;

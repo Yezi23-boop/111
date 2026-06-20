@@ -54,6 +54,18 @@ static esp_err_t app_memory_watch_portal_config_cb(
     return memory_watch_service_save_endpoint_to_nvs(&service_config);
 }
 
+/**
+ * @brief AP 门户查询 AI Memory Watch endpoint 是否已配置的桥接回调。
+ *
+ * 只返回布尔状态，不返回配置内容；`/api/status` 用它填充
+ * `memory_watch_endpoint_configured` 字段。
+ */
+static bool app_memory_watch_portal_configured_cb(void *user_ctx)
+{
+    (void)user_ctx;
+    return memory_watch_service_is_endpoint_configured();
+}
+
 /*
  * 应用主入口说明：
  * - `app_main()` 只负责系统级启动编排，不承载长期业务循环；
@@ -192,6 +204,13 @@ static void start_deferred_services(void)
             app_memory_watch_portal_config_cb, NULL) != ESP_OK)
     {
         ESP_LOGW(TAG, "Memory watch portal config callback register failed");
+    }
+
+    if (ap_portal_adapter_set_memory_watch_configured_callback(
+            app_memory_watch_portal_configured_cb, NULL) != ESP_OK)
+    {
+        ESP_LOGW(TAG,
+                 "Memory watch portal configured callback register failed");
     }
 
     if (network_service_start() != ESP_OK)

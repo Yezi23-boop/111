@@ -18,139 +18,100 @@ const currentStepText = document.getElementById("current-step-text");
 const scanStep = document.getElementById("scan-step");
 const sendStep = document.getElementById("send-step");
 
+const hermesToggle = document.getElementById("hermes-toggle");
+const hermesForm = document.getElementById("hermes-form");
+const hermesStatus = document.getElementById("hermes-status");
+const hermesBaseUrl = document.getElementById("hermes-base-url");
+const hermesDeviceId = document.getElementById("hermes-device-id");
+const hermesDeviceToken = document.getElementById("hermes-device-token");
+const hermesAllowHttp = document.getElementById("hermes-allow-http");
+const hermesSaveBtn = document.getElementById("hermes-save-btn");
+const toggleTokenBtn = document.getElementById("toggle-token-btn");
+
 let selectedNetworkButton = null;
 
-/**
- * @brief 更新当前配网阶段，让用户知道下一步该做什么。
- * @param {string} message 当前状态文案。
- */
 function setCurrentStep(message) {
     currentStepText.textContent = message;
 }
 
-/**
- * @brief 更新页面反馈横幅。
- * @param {"info"|"warning"|"error"|"success"} type 反馈类型。
- * @param {string} message 显示给用户的提示文本。
- */
 function setFeedback(type, message) {
     feedback.className = `feedback ${type}`;
     feedback.textContent = message;
 }
 
-/**
- * @brief 清空页面反馈横幅，避免旧结果干扰下一步操作。
- */
 function clearFeedback() {
     feedback.className = "feedback hidden";
     feedback.textContent = "";
 }
 
-/**
- * @brief 切换按钮忙碌态，防止同一轮 provisioning 请求被重复提交。
- * @param {boolean} isBusy 当前是否正在执行耗时操作。
- */
 function setBusyState(isBusy) {
     scanBtn.disabled = isBusy;
     refreshBtn.disabled = isBusy;
     configureBtn.disabled = isBusy;
 }
 
-/**
- * @brief 更新扫描能力徽标。
- * @param {boolean} isReady 当前是否支持官方扫描接口。
- */
 function setPortalCapability(isReady) {
-    scanCapability.textContent = isReady ? "可扫描" : "等待接口";
+    scanCapability.textContent = isReady ? "\u53ef\u626b\u63cf" : "\u7b49\u5f85\u63a5\u53e3";
     scanCapability.className = `capability-chip ${isReady ? "ready" : "pending"}`;
 }
 
-/**
- * @brief 渲染门户信息加载态。
- */
 function setPortalLoadingState() {
     apiDot.className = "status-dot";
-    apiText.textContent = "正在检测设备门户...";
-    apiNote.textContent = "请保持手机或电脑连接在手表热点下。";
-    setCurrentStep("正在检测设备门户");
+    apiText.textContent = "\u6b63\u5728\u68c0\u6d4b\u8bbe\u5907\u95e8\u6237...";
+    apiNote.textContent = "\u8bf7\u4fdd\u6301\u624b\u673a\u6216\u7535\u8111\u8fde\u63a5\u5728\u624b\u8868\u70ed\u70b9\u4e0b\u3002";
+    setCurrentStep("\u6b63\u5728\u68c0\u6d4b\u8bbe\u5907\u95e8\u6237");
     setPortalCapability(false);
     clearFeedback();
 }
 
-/**
- * @brief 渲染门户信息就绪态。
- * @param {{apiVersion: string, scanSupported: boolean}} info 门户信息。
- */
 function setPortalReadyState(info) {
     apiDot.className = "status-dot online";
-    apiText.textContent = "设备门户已连接";
-    apiNote.textContent = info.scanSupported ? "连接正常，可以扫描附近 Wi-Fi。" : "连接正常，可以手动输入网络名称。";
-    setCurrentStep(info.scanSupported ? "可以开始扫描 Wi-Fi" : "请手动输入网络名称");
+    apiText.textContent = "\u8bbe\u5907\u95e8\u6237\u5df2\u8fde\u63a5";
+    apiNote.textContent = info.scanSupported ? "\u8fde\u63a5\u6b63\u5e38\uff0c\u53ef\u4ee5\u626b\u63cf\u9644\u8fd1 Wi-Fi\u3002" : "\u8fde\u63a5\u6b63\u5e38\uff0c\u53ef\u4ee5\u624b\u52a8\u8f93\u5165\u7f51\u7edc\u540d\u79f0\u3002";
+    setCurrentStep(info.scanSupported ? "\u53ef\u4ee5\u5f00\u59cb\u626b\u63cf Wi-Fi" : "\u8bf7\u624b\u52a8\u8f93\u5165\u7f51\u7edc\u540d\u79f0");
     setPortalCapability(info.scanSupported);
 }
 
-/**
- * @brief 渲染门户信息错误态。
- * @param {string} message 要展示的错误信息。
- */
 function setPortalErrorState(message) {
     apiDot.className = "status-dot error";
-    apiText.textContent = "设备门户暂不可用";
-    apiNote.textContent = "请确认手机或电脑仍连接在设备热点下，然后刷新状态。";
-    setCurrentStep("请先连接设备热点");
+    apiText.textContent = "\u8bbe\u5907\u95e8\u6237\u6682\u4e0d\u53ef\u7528";
+    apiNote.textContent = "\u8bf7\u786e\u8ba4\u624b\u673a\u6216\u7535\u8111\u4ecd\u8fde\u63a5\u5728\u8bbe\u5907\u70ed\u70b9\u4e0b\uff0c\u7136\u540e\u5237\u65b0\u72b6\u6001\u3002";
+    setCurrentStep("\u8bf7\u5148\u8fde\u63a5\u8bbe\u5907\u70ed\u70b9");
     setPortalCapability(false);
-    setFeedback("error", `门户检测失败：${message}`);
+    setFeedback("error", `\u95e8\u6237\u68c0\u6d4b\u5931\u8d25\uff1a${message}`);
 }
 
-/**
- * @brief 根据 RSSI 返回面向用户的信号强度描述。
- * @param {number} rssi RSSI 信号强度，单位 dBm。
- * @returns {string} 中文信号强度描述。
- */
 function formatSignalStrength(rssi) {
     if (rssi >= -55) {
-        return "信号强";
+        return "\u4fe1\u53f7\u5f3a";
     }
 
     if (rssi >= -70) {
-        return "信号中";
+        return "\u4fe1\u53f7\u4e2d";
     }
 
-    return "信号弱";
+    return "\u4fe1\u53f7\u5f31";
 }
 
-/**
- * @brief 将底层安全类型转换成中文说明。
- * @param {string} security 底层返回的安全类型。
- * @returns {string} 中文安全类型。
- */
 function formatSecurity(security) {
     const lowerSecurity = String(security || "").toLowerCase();
 
     if (lowerSecurity.includes("open") || lowerSecurity.includes("none")) {
-        return "开放网络";
+        return "\u5f00\u653e\u7f51\u7edc";
     }
 
     if (lowerSecurity.includes("unknown")) {
-        return "加密未知";
+        return "\u52a0\u5bc6\u672a\u77e5";
     }
 
-    return "需要密码";
+    return "\u9700\u8981\u5bc6\u7801";
 }
 
-/**
- * @brief 清理 Wi-Fi 列表并重置选中状态。
- */
 function resetNetworkList() {
     selectedNetworkButton = null;
     wifiList.replaceChildren();
 }
 
-/**
- * @brief 渲染空 Wi-Fi 列表提示。
- * @param {string} title 空态标题。
- * @param {string} detail 空态说明。
- */
 function renderEmptyNetworkList(title, detail) {
     resetNetworkList();
     wifiList.classList.add("empty");
@@ -168,11 +129,6 @@ function renderEmptyNetworkList(title, detail) {
     wifiList.append(empty);
 }
 
-/**
- * @brief 创建单个 Wi-Fi 网络按钮。
- * @param {{ssid: string, security: string, rssi: number}} network 归一化后的网络信息。
- * @returns {HTMLButtonElement} 可点击选择的网络按钮。
- */
 function createNetworkButton(network) {
     const item = document.createElement("button");
     item.className = "wifi-item";
@@ -186,7 +142,7 @@ function createNetworkButton(network) {
 
     const meta = document.createElement("span");
     meta.className = "wifi-meta";
-    meta.textContent = `${formatSecurity(network.security)} · ${network.rssi} dBm`;
+    meta.textContent = `${formatSecurity(network.security)} \u00b7 ${network.rssi} dBm`;
 
     const signal = document.createElement("span");
     signal.className = "signal-pill";
@@ -205,37 +161,30 @@ function createNetworkButton(network) {
         ssidInput.value = network.ssid;
         passwordInput.focus();
         sendStep.classList.add("active");
-        setCurrentStep(`已选择 ${network.ssid}`);
-        setFeedback("info", `已选择「${network.ssid}」，请输入密码后发送到手表。`);
+        setCurrentStep(`\u5df2\u9009\u62e9 ${network.ssid}`);
+        setFeedback("info", `\u5df2\u9009\u62e9\u300c${network.ssid}\u300d\uff0c\u8bf7\u8f93\u5165\u5bc6\u7801\u540e\u53d1\u9001\u5230\u624b\u8868\u3002`);
     });
 
     return item;
 }
 
-/**
- * @brief 渲染稳定的 Wi-Fi 列表。
- * @param {{ssid: string, security: string, rssi: number}[]} networks 归一化后的网络列表。
- */
 function renderNetworkList(networks) {
     if (networks.length === 0) {
-        setCurrentStep("没有扫描到网络");
-        renderEmptyNetworkList("没有扫描到 Wi-Fi", "可以靠近路由器后再试，或直接手动输入 SSID。");
+        setCurrentStep("\u6ca1\u6709\u626b\u63cf\u5230\u7f51\u7edc");
+        renderEmptyNetworkList("\u6ca1\u6709\u626b\u63cf\u5230 Wi-Fi", "\u53ef\u4ee5\u9760\u8fd1\u8def\u7531\u5668\u540e\u518d\u8bd5\uff0c\u6216\u76f4\u63a5\u624b\u52a8\u8f93\u5165 SSID\u3002");
         return;
     }
 
     resetNetworkList();
     wifiList.classList.remove("empty");
     scanStep.classList.add("active");
-    setCurrentStep("请选择要连接的 Wi-Fi");
+    setCurrentStep("\u8bf7\u9009\u62e9\u8981\u8fde\u63a5\u7684 Wi-Fi");
 
     networks.forEach((network) => {
         wifiList.append(createNetworkButton(network));
     });
 }
 
-/**
- * @brief 刷新门户摘要信息。
- */
 async function refreshPortalInfo() {
     setBusyState(true);
     setPortalLoadingState();
@@ -253,17 +202,17 @@ async function refreshPortalInfo() {
 scanBtn.addEventListener("click", async () => {
     clearFeedback();
     setBusyState(true);
-    setCurrentStep("正在扫描附近 Wi-Fi");
-    renderEmptyNetworkList("正在扫描附近 Wi-Fi...", "扫描期间请保持浏览器连接在设备热点下。");
+    setCurrentStep("\u6b63\u5728\u626b\u63cf\u9644\u8fd1 Wi-Fi");
+    renderEmptyNetworkList("\u6b63\u5728\u626b\u63cf\u9644\u8fd1 Wi-Fi...", "\u626b\u63cf\u671f\u95f4\u8bf7\u4fdd\u6301\u6d4f\u89c8\u5668\u8fde\u63a5\u5728\u8bbe\u5907\u70ed\u70b9\u4e0b\u3002");
 
     try {
         const networks = await provClient.scanWifi();
         renderNetworkList(networks);
-        setFeedback("success", `扫描完成，共发现 ${networks.length} 个网络。`);
+        setFeedback("success", `\u626b\u63cf\u5b8c\u6210\uff0c\u5171\u53d1\u73b0 ${networks.length} \u4e2a\u7f51\u7edc\u3002`);
     } catch (error) {
-        setCurrentStep("扫描失败，可手动输入");
-        renderEmptyNetworkList("Wi-Fi 扫描失败", "当前仍可手动输入 SSID；如果多次失败，请刷新门户状态。");
-        setFeedback("error", `扫描失败：${error.message}`);
+        setCurrentStep("\u626b\u63cf\u5931\u8d25\uff0c\u53ef\u624b\u52a8\u8f93\u5165");
+        renderEmptyNetworkList("Wi-Fi \u626b\u63cf\u5931\u8d25", "\u5f53\u524d\u4ecd\u53ef\u624b\u52a8\u8f93\u5165 SSID\uff1b\u5982\u679c\u591a\u6b21\u5931\u8d25\uff0c\u8bf7\u5237\u65b0\u95e8\u6237\u72b6\u6001\u3002");
+        setFeedback("error", `\u626b\u63cf\u5931\u8d25\uff1a${error.message}`);
     } finally {
         setBusyState(false);
     }
@@ -276,8 +225,8 @@ refreshBtn.addEventListener("click", () => {
 togglePasswordBtn.addEventListener("click", () => {
     const shouldShowPassword = passwordInput.type === "password";
     passwordInput.type = shouldShowPassword ? "text" : "password";
-    togglePasswordBtn.textContent = shouldShowPassword ? "隐" : "显";
-    togglePasswordBtn.setAttribute("aria-label", shouldShowPassword ? "隐藏密码" : "显示密码");
+    togglePasswordBtn.textContent = shouldShowPassword ? "\u9690" : "\u663e";
+    togglePasswordBtn.setAttribute("aria-label", shouldShowPassword ? "\u9690\u85cf\u5bc6\u7801" : "\u663e\u793a\u5bc6\u7801");
 });
 
 configureBtn.addEventListener("click", async () => {
@@ -287,53 +236,160 @@ configureBtn.addEventListener("click", async () => {
     const password = passwordInput.value;
 
     if (!ssid) {
-        setCurrentStep("请先选择或输入 Wi-Fi");
-        setFeedback("warning", "请先输入或选择 Wi-Fi 名称。");
+        setCurrentStep("\u8bf7\u5148\u9009\u62e9\u6216\u8f93\u5165 Wi-Fi");
+        setFeedback("warning", "\u8bf7\u5148\u8f93\u5165\u6216\u9009\u62e9 Wi-Fi \u540d\u79f0\u3002");
         ssidInput.focus();
         return;
     }
 
     setBusyState(true);
     sendStep.classList.add("active");
-    setCurrentStep("正在发送 Wi-Fi 信息");
+    setCurrentStep("\u6b63\u5728\u53d1\u9001 Wi-Fi \u4fe1\u606f");
 
     try {
         await provClient.sendWifiConfig(ssid, password);
-        setCurrentStep("正在等待手表连接");
-        setFeedback("info", "凭据已发送，正在等待设备切换到目标 Wi-Fi...");
+        setCurrentStep("\u6b63\u5728\u7b49\u5f85\u624b\u8868\u8fde\u63a5");
+        setFeedback("info", "\u51ed\u636e\u5df2\u53d1\u9001\uff0c\u6b63\u5728\u7b49\u5f85\u8bbe\u5907\u5207\u6362\u5230\u76ee\u6807 Wi-Fi...");
 
         const waitResult = await provClient.waitForWifiConnection();
 
-        // 成功和失败是设备给出的明确终态，优先直接向用户说明最终结果。
         if (waitResult.phase === "connected") {
-            setCurrentStep("手表已连接 Wi-Fi");
-            setFeedback("success", "手表已连接 Wi-Fi，可以回到设备查看联网状态。");
+            setCurrentStep("\u624b\u8868\u5df2\u8fde\u63a5 Wi-Fi");
+            setFeedback("success", "\u624b\u8868\u5df2\u8fde\u63a5 Wi-Fi\uff0c\u53ef\u4ee5\u56de\u5230\u8bbe\u5907\u67e5\u770b\u8054\u7f51\u72b6\u6001\u3002");
             return;
         }
 
         if (waitResult.phase === "failed") {
-            setCurrentStep("Wi-Fi 连接失败");
-            setFeedback("error", "设备报告 Wi-Fi 连接失败，请检查密码或路由器信号。");
+            setCurrentStep("Wi-Fi \u8fde\u63a5\u5931\u8d25");
+            setFeedback("error", "\u8bbe\u5907\u62a5\u544a Wi-Fi \u8fde\u63a5\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u5bc6\u7801\u6216\u8def\u7531\u5668\u4fe1\u53f7\u3002");
             return;
         }
 
-        // SoftAP 成功后设备会主动关闭门户，浏览器看到的往往是网络断开而不是最终 HTTP 响应。
         if (waitResult.phase === "portal_closed") {
-            setCurrentStep("手表正在切换网络");
-            setFeedback("success", "设备已接受凭据并可能正在关闭热点；请切回目标 Wi-Fi 查看手表状态。");
+            setCurrentStep("\u624b\u8868\u6b63\u5728\u5207\u6362\u7f51\u7edc");
+            setFeedback("success", "\u8bbe\u5907\u5df2\u63a5\u53d7\u51ed\u636e\u5e76\u53ef\u80fd\u6b63\u5728\u5173\u95ed\u70ed\u70b9\uff1b\u8bf7\u5207\u56de\u76ee\u6807 Wi-Fi \u67e5\u770b\u624b\u8868\u72b6\u6001\u3002");
             return;
         }
 
-        // 仍处于 connecting/timeout 时，说明这轮轮询窗口内设备还没收敛到终态。
-        setCurrentStep("手表仍在连接中");
-        setFeedback("warning", "设备仍在连接中。稍等几秒后刷新状态，或检查路由器是否允许新设备接入。");
+        setCurrentStep("\u624b\u8868\u4ecd\u5728\u8fde\u63a5\u4e2d");
+        setFeedback("warning", "\u8bbe\u5907\u4ecd\u5728\u8fde\u63a5\u4e2d\u3002\u7a0d\u7b49\u51e0\u79d2\u540e\u5237\u65b0\u72b6\u6001\uff0c\u6216\u68c0\u67e5\u8def\u7531\u5668\u662f\u5426\u5141\u8bb8\u65b0\u8bbe\u5907\u63a5\u5165\u3002");
     } catch (error) {
-        setCurrentStep("发送失败，请重试");
-        setFeedback("error", `发送失败：${error.message}`);
+        setCurrentStep("\u53d1\u9001\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5");
+        setFeedback("error", `\u53d1\u9001\u5931\u8d25\uff1a${error.message}`);
     } finally {
         setBusyState(false);
     }
 });
 
-renderEmptyNetworkList("还没有扫描结果", "点击“扫描 Wi-Fi”获取附近网络，也可以直接手动输入。");
+renderEmptyNetworkList("\u8fd8\u6ca1\u6709\u626b\u63cf\u7ed3\u679c", "\u70b9\u51fb\u201c\u626b\u63cf Wi-Fi\u201d\u83b7\u53d6\u9644\u8fd1\u7f51\u7edc\uff0c\u4e5f\u53ef\u4ee5\u76f4\u63a5\u624b\u52a8\u8f93\u5165\u3002");
+
+hermesToggle.addEventListener("click", () => {
+    const isExpanded = hermesToggle.getAttribute("aria-expanded") === "true";
+    hermesToggle.setAttribute("aria-expanded", String(!isExpanded));
+    hermesForm.classList.toggle("collapsed");
+    hermesForm.setAttribute("aria-hidden", String(isExpanded));
+    hermesToggle.querySelector(".hermes-toggle-icon").textContent = isExpanded ? "\u25b8" : "\u25be";
+});
+
+toggleTokenBtn.addEventListener("click", () => {
+    const shouldShow = hermesDeviceToken.type === "password";
+    hermesDeviceToken.type = shouldShow ? "text" : "password";
+    toggleTokenBtn.textContent = shouldShow ? "\u9690" : "\u663e";
+    toggleTokenBtn.setAttribute("aria-label", shouldShow ? "\u9690\u85cf token" : "\u663e\u793a token");
+});
+
+function setHermesStatus(configured) {
+    hermesStatus.textContent = configured ? "\u5df2\u914d\u7f6e" : "\u672a\u914d\u7f6e";
+    hermesStatus.className = `hermes-status ${configured ? "configured" : ""}`;
+}
+
+function validateHermesBaseUrl(url) {
+    if (!url) {
+        return "Hermes \u5730\u5740\u4e0d\u80fd\u4e3a\u7a7a";
+    }
+    if (/\s/.test(url)) {
+        return "Hermes \u5730\u5740\u4e0d\u80fd\u5305\u542b\u7a7a\u683c";
+    }
+    if (!url.startsWith("https://") && !url.startsWith("http://")) {
+        return "Hermes \u5730\u5740\u5fc5\u987b\u4ee5 https:// \u6216 http:// \u5f00\u5934";
+    }
+    if (url.startsWith("http://") && !hermesAllowHttp.checked) {
+        return "\u9ed8\u8ba4\u4e0d\u5141\u8bb8 HTTP\uff1b\u8bf7\u52fe\u9009\u201c\u5141\u8bb8 HTTP \u660e\u6587\u201d\u6216\u4f7f\u7528 https://";
+    }
+    const forbidden = ["/v1/watch/health", "/v1/watch/voice-command", "/v1/watch/request"];
+    for (const path of forbidden) {
+        if (url.includes(path)) {
+            return `Hermes \u5730\u5740\u4e0d\u80fd\u5305\u542b ${path}`;
+        }
+    }
+    return null;
+}
+
+async function loadHermesConfigStatus() {
+    try {
+        const resp = await fetch("/api/status");
+        if (!resp.ok) {
+            return;
+        }
+        const data = await resp.json();
+        setHermesStatus(data.memory_watch_endpoint_configured === true);
+    } catch (_) {
+    }
+}
+
+hermesSaveBtn.addEventListener("click", async () => {
+    clearFeedback();
+
+    const baseUrl = hermesBaseUrl.value.trim();
+    const deviceId = hermesDeviceId.value.trim();
+    const deviceToken = hermesDeviceToken.value;
+
+    const urlError = validateHermesBaseUrl(baseUrl);
+    if (urlError) {
+        setFeedback("warning", urlError);
+        hermesBaseUrl.focus();
+        return;
+    }
+    if (!deviceId) {
+        setFeedback("warning", "\u8bbe\u5907 ID \u4e0d\u80fd\u4e3a\u7a7a\u3002");
+        hermesDeviceId.focus();
+        return;
+    }
+    if (!deviceToken) {
+        setFeedback("warning", "\u8bbe\u5907 Token \u4e0d\u80fd\u4e3a\u7a7a\u3002");
+        hermesDeviceToken.focus();
+        return;
+    }
+
+    hermesSaveBtn.disabled = true;
+
+    try {
+        const resp = await fetch("/api/memory-watch/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                base_url: baseUrl,
+                device_id: deviceId,
+                device_token: deviceToken,
+                timeout_ms: 120000,
+                allow_http: hermesAllowHttp.checked,
+            }),
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+
+        hermesDeviceToken.value = "";
+        setHermesStatus(true);
+        setFeedback("success", "Hermes \u914d\u7f6e\u5df2\u4fdd\u5b58\u3002\u8054\u7f51\u540e\u624b\u8868\u4f1a\u81ea\u52a8\u68c0\u6d4b\u5728\u7ebf\u72b6\u6001\u3002");
+    } catch (error) {
+        setFeedback("error", `\u4fdd\u5b58\u5931\u8d25\uff1a${error.message}`);
+    } finally {
+        hermesSaveBtn.disabled = false;
+    }
+});
+
+loadHermesConfigStatus();
 refreshPortalInfo();

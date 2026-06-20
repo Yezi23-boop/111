@@ -1,15 +1,14 @@
 <INSTRUCTIONS>
 ## 规则优先级与作用域
 
-1. 默认启用本文件基础规则与“当前仓库规则（上下文库）”。
-2. 仅当满足“当前项目专项规则触发条件”时，才启用当前项目专项规则。
-3. 其余仓库规则冲突时，优先遵循：最小可运行改动 + 可验证 + 可回退。
+1. “本地最高优先级行为准则”特指下方 `Think Before Coding`、`Simplicity First`、`Surgical Changes`、`Goal-Driven Execution` 四节正文；这四节是本仓库本地 agent 规则中的最高优先级，优先于本文件后续所有仓库规则。
+2. 默认启用本文件基础规则与“当前仓库规则（上下文库）”。
+3. 仅当满足“当前项目专项规则触发条件”时，才启用当前项目专项规则。
+4. 其余仓库规则冲突时，优先遵循：最小可运行改动 + 可验证 + 可回退。
 
-## CLAUDE.md（最高优先级）
+## 本地最高优先级行为准则
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
-
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+下方 `Think Before Coding`、`Simplicity First`、`Surgical Changes`、`Goal-Driven Execution` 四节正文优先于本文件后续所有仓库规则；当后续规则与这四节冲突时，优先选择更简单、更小、更可验证、影响范围更窄的方案。
 
 ## 1. Think Before Coding
 
@@ -67,6 +66,10 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+**活跃计划同步规则：不要在未更新活跃计划的情况下结束计划内任务。**
+如果你正在执行的任务属于 `docs/context/plans/active/` 中的某个活跃项目计划，在宣布任务或代码修改完成之前，你**必须**使用工具更新该计划的“进度 (Progress)”部分（例如，将 `[ ]` 勾选为 `[x]`）。严禁在不更新活文档的情况下为计划内任务修改代码。
+*（注意：对于不属于活跃计划的琐碎任务、简单 Bug 修复或日常沟通，此规则不适用，你也不需要做任何明确声明。）*
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
@@ -98,9 +101,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 将 `docs/context` 作为项目长期上下文库，但默认低 token 使用：
 
 - 首读只看 `docs/context/INDEX.agent.md` 与 `docs/context/knowledge/project/project-profile.md`；不要默认全量打开 `README.md`、`knowledge-map.md`、`repo-overview.md` 或 `knowledge/**`。
-- 非简单任务默认用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`，避免重复尝试并只生成低 token brief。
+- 非简单任务默认用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`，避免重复尝试并只生成低 token brief。（**降级策略**：如果 Python 脚本执行失败，必须立即改用 `grep_search` 工具直接搜索 `docs/context/` 目录，严禁因此放弃查阅上下文）。
 - 新增功能、跨模块改动、后台能力、低功耗、OTA、音频/网络/危险识别协作类任务，默认先按 `docs/context/knowledge/project/runtime-owner-contract.md` 判断启动阶段、资源 owner、调用方向和禁止加层边界。
 - 出现可复用知识、流程、决策、attempt 或交接状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
+- `docs/context/handoffs/current-task.md` 是当前任务接力页，不是历史总账。它可以不频繁更新，但不允许过期到误导下一步；当“未验证/阻塞/active plan/下一步”等状态被新证据反转，或交接、暂停、上下文压缩、用户要求记录当前状态时，必须更新该文件。内容只写当前真实状态、下一步、阻塞/风险和不要再相信的旧信息，不写真实 key/token，不重复 `CHANGELOG.md`。
 - 遇到大问题错误或路线选择时，若本轮形成了可复用判断、证伪路径、取舍原因或下一步边界，可考虑写入 `docs/context/runs/`；大问题错误使用 `error-signature`，路线选择/放弃使用 `route-choice`，必要时补 `evidence`。
 - 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
 
@@ -120,18 +124,18 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 嵌入式 C/C++ 代码生成默认规范
 
-本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码，适用于显示/UI、触摸输入、音频播放、Wi-Fi 配网、板级驱动、模块拆分和架构建议任务。
+本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码。
 
-- 新增或修改代码应优先满足模块化、分层、单一职责、明确接口边界和可验证错误路径，避免过多的防御性代码和不必要的代码。
-- 后续新增功能、跨文件改动和重构默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；详细边界见 `docs/context/knowledge/project/layering-boundary-map.md`。
-- 运行时骨架默认按 `docs/context/knowledge/project/runtime-owner-contract.md` 执行：不新增大而全 `ResourceManager`、`resource_policy`、`session_router` 或默认 `ui_manager`；新能力优先落到现有 owner，必要时新增窄 service/session。
-- 板级事实默认由 `main/app/board_*` 或现有 board owner 持有：GPIO/中断线、I2C 地址、片选、传感器安装轴向、板级阈值和硬件变体配置不得长期散落在 service 或 driver 流程中。
-- 临时 diagnostic/probe 可直接使用已确认板级常量；一旦能力接入长期 service/session 或主启动链路，必须把这些常量收敛到 board 配置接口，并用 source test 锁定 service 只消费 board 配置、driver 只消费芯片协议/寄存器。
-- 新增或修改代码默认按 Google Code Style 靠拢，但不因引入新规则而大面积重排无关旧代码。
-- 资源受限路径优先使用静态分配或受控分配，避免在高频路径中频繁申请和释放内存。
-- 输入、状态、长度、返回值、超时和降级路径必须显式处理，不能静默失败。
-- 算法或 AI 相关实现默认拆分为预处理、推理、后处理和模型配置模块，避免把阈值、量化参数和业务逻辑混写。
-- 涉及新增模块、跨文件改动或明显重构时，输出代码前，应先给出文件划分方案和模块职责说明；若发现明显的高耦合、大函数、深层嵌套或不安全路径，应先重构方案再输出。
+- 新增或修改代码优先满足分层清晰、单一职责、接口明确、错误路径可验证；避免超出当前需求的抽象、配置项、兼容层和防御式包装。
+- 默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；新能力优先落到现有 owner，必要时新增窄 service/session，不新增大而全管理器。
+- 跨任务命令、状态、等待和资源仲裁优先使用 FreeRTOS 原语：queue、task notification、event group、mutex/critical section；避免裸 `volatile`、临时轮询或自造 flag 协议。
+- 板级事实由 `main/app/board_*` 或现有 board owner 持有；GPIO、总线地址、片选、传感器轴向、硬件阈值不得长期散落在 service 或 driver 中。
+- 资源受限路径优先静态分配或受控分配；区分 task stack、internal RAM、PSRAM、DMA-capable memory 和长期缓存，不把大对象默认放到任务栈。
+- 必要的输入、返回值和超时要检查；不要为假设场景堆叠复杂兜底、重试、状态机或包装层。
+- 新增协议字段、NVS key、状态枚举、owner 边界或跨端契约时，优先补 source test、契约测试或文档检查。
+- 算法或 AI 相关实现默认拆分为预处理、推理、后处理和模型配置，避免把阈值、量化参数、模型 I/O 和业务逻辑混写。
+- 代码风格向 Google Code Style 靠拢，但不为新规则大面积重排无关旧代码。
+- 新增模块、跨 owner 改动或明显重构前，先给出简短文件划分和模块职责；窄 bugfix 或局部补测试不需要额外扩写方案。
 - 详细条款见 `docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md`。
 
 ## 状态发布与 UI 读取原则（默认生效）

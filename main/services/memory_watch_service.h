@@ -167,6 +167,15 @@ extern "C"
         memory_watch_service_snapshot_t *out_snapshot);
 
     /**
+     * @brief 查询当前 watch endpoint 是否已配置。
+     *
+     * 只返回布尔状态，不返回配置内容；供 `/api/status` 等只读入口使用。
+     *
+     * @return `true` 表示当前运行态或 NVS 已有完整 watch endpoint 配置。
+     */
+    bool memory_watch_service_is_endpoint_configured(void);
+
+    /**
      * @brief 获取状态字符串。
      * @param[in] state 服务状态。
      * @return 静态字符串。

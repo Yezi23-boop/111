@@ -93,8 +93,50 @@
 
                 <button id="configure-btn" class="secondary-btn" type="button">
                     <span class="btn-icon" aria-hidden="true">✓</span>
-                    发送到手表
+                    连接 Wi-Fi
                 </button>
+            </section>
+
+            <section class="hermes-section" aria-labelledby="hermes-title">
+                <button id="hermes-toggle" class="hermes-toggle" type="button" aria-expanded="false" aria-controls="hermes-form">
+                    <span class="hermes-toggle-icon" aria-hidden="true">▸</span>
+                    <span>
+                        <strong id="hermes-title">AI Memory Watch</strong>
+                        <span id="hermes-status" class="hermes-status">未配置</span>
+                    </span>
+                </button>
+
+                <div id="hermes-form" class="hermes-form collapsed" aria-hidden="true">
+                    <div class="field">
+                        <label for="hermes-base-url">Hermes 地址</label>
+                        <input id="hermes-base-url" name="hermes-base-url" type="url" placeholder="https://watch.934000.xyz" value="https://watch.934000.xyz" autocomplete="off">
+                    </div>
+
+                    <div class="field">
+                        <label for="hermes-device-id">设备 ID</label>
+                        <input id="hermes-device-id" name="hermes-device-id" type="text" placeholder="watch-001" value="watch-001" autocomplete="off">
+                    </div>
+
+                    <div class="field">
+                        <label for="hermes-device-token">设备 Token</label>
+                        <div class="password-wrap">
+                            <input id="hermes-device-token" name="hermes-device-token" type="password" placeholder="输入 watch endpoint 设备 token" autocomplete="off">
+                            <button id="toggle-token-btn" class="icon-btn" type="button" aria-label="显示 token">显</button>
+                        </div>
+                    </div>
+
+                    <div class="hermes-options">
+                        <label class="checkbox-label">
+                            <input id="hermes-allow-http" name="hermes-allow-http" type="checkbox">
+                            <span>允许 HTTP 明文（仅限本地开发）</span>
+                        </label>
+                    </div>
+
+                    <button id="hermes-save-btn" class="secondary-btn hermes-save-btn" type="button">
+                        <span class="btn-icon" aria-hidden="true">✓</span>
+                        保存 Hermes 配置
+                    </button>
+                </div>
             </section>
 
             <section id="feedback" class="feedback hidden" aria-live="polite"></section>

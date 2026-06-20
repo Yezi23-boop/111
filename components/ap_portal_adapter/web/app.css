@@ -517,6 +517,94 @@ button:disabled {
     display: none;
 }
 
+.hermes-section {
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    overflow: hidden;
+}
+
+.hermes-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 15px;
+    border: 0;
+    border-radius: 0;
+    min-height: auto;
+    text-align: left;
+    color: var(--ink);
+    background: transparent;
+    cursor: pointer;
+}
+
+.hermes-toggle:hover {
+    background: var(--panel-soft);
+}
+
+.hermes-toggle-icon {
+    flex: 0 0 auto;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.hermes-toggle span {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.hermes-toggle strong {
+    font-size: 15px;
+}
+
+.hermes-status {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    color: var(--muted);
+    background: var(--accent-soft);
+}
+
+.hermes-status.configured {
+    color: var(--success);
+    background: var(--success-soft);
+}
+
+.hermes-form {
+    padding: 0 15px 15px;
+    border-top: 1px solid var(--line);
+}
+
+.hermes-form.collapsed {
+    display: none;
+}
+
+.hermes-options {
+    margin-top: 12px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+}
+
+.hermes-save-btn {
+    margin-top: 15px;
+}
+
 @media (max-width: 480px) {
     .portal-shell {
         padding: 12px;

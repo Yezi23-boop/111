@@ -8,6 +8,7 @@ scope: component
 owners: components/axp2101, main/app/board_power.c, main/services/power_service.c
 triggers: axp2101, board_power, power_service, owner, snapshot
 evidence_level: observed
+route_area: "Power / PMIC"
 ---
 
 # AXP2101 电源组件实现落点

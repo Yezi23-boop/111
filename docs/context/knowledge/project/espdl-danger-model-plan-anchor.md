@@ -8,6 +8,7 @@ scope: repo
 owners: components/espdl_inference, main/features/danger_detection/danger_detection_service.c, main/ui/custom/danger_detection_controller.c
 triggers: espdl, danger, model, integration, active-model, registry
 evidence_level: observed
+route_area: "ESP-DL danger model"
 ---
 
 # ESP-DL 危险声音模型接入锚点

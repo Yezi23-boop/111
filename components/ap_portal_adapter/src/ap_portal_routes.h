@@ -22,6 +22,19 @@ esp_err_t ap_portal_routes_set_memory_watch_config_callback(
     ap_portal_memory_watch_config_cb_t callback, void *user_ctx);
 
 /**
+ * @brief 设置 AI Memory Watch endpoint 配置状态查询回调。
+ *
+ * 供 `/api/status` 查询 `memory_watch_endpoint_configured` 布尔字段。
+ * 该回调只返回布尔值，不返回配置内容。
+ *
+ * @param[in] callback 查询回调；传 `NULL` 表示禁用查询。
+ * @param[in] user_ctx 透传给回调的上下文。
+ * @return `ESP_OK` 表示回调已更新。
+ */
+esp_err_t ap_portal_routes_set_memory_watch_configured_callback(
+    ap_portal_memory_watch_configured_cb_t callback, void *user_ctx);
+
+/**
  * @brief 向给定 HTTPD 注册 AP 门户最小路由。
  *
  * 当前阶段只注册根路径和 `favicon.ico`，用于先打通“自定义页面 + 官方 SoftAP provisioning

@@ -134,6 +134,24 @@ def validate_file(path: Path, docs_root: Path, seen_ids: dict[str, str]) -> tupl
     if "# " not in body:
         warnings.append(f"{rel_path}: 未检测到一级标题（建议添加）")
 
+    if meta.get("memory_type") == "project_plan" and str(meta.get("status")).strip() == "active":
+        if "\n## Progress" not in f"\n{body}" and "\n## 进度" not in f"\n{body}":
+            errors.append(f"{rel_path}: 活跃计划书必须包含精确的 `## 进度` (或 `## Progress`) 二级标题")
+        
+        progress_idx = body.find("## 进度")
+        if progress_idx == -1:
+            progress_idx = body.find("## Progress")
+            
+        if progress_idx != -1:
+            next_heading_idx = body.find("\n## ", progress_idx + 11)
+            progress_content = body[progress_idx:] if next_heading_idx == -1 else body[progress_idx:next_heading_idx]
+            
+            unchecked_pattern = re.compile(r"\[ \]|`\[ \]`|\[/\]|`\[/\]`")
+            checked_pattern = re.compile(r"\[x\]|`\[x\]`", re.IGNORECASE)
+            
+            if unchecked_pattern.search(progress_content) is None and checked_pattern.search(progress_content) is not None:
+                errors.append(f"{rel_path}: 进度已全部打勾，请将该计划归档（移至 completed 目录，并将 status 改为 archived）")
+
     return errors, warnings
 
 

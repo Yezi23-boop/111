@@ -9,6 +9,7 @@ owners: main/ui/agent_preview, main/ui/generated, main/ui/custom
 triggers: gui-guider-lvgl-preview, agent画ui, agent_preview, pc_sim, host preview, LVGL预览, UI草图, 子页面, 卡片区, 弹层, 状态区, 设置区
 evidence_level: observed
 status: active
+route_area: "GUI Guider / LVGL preview"
 ---
 
 # GUI Guider / LVGL Host Preview 工作流

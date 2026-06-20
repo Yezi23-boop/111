@@ -1,11 +1,11 @@
 ---
 id: owner-snapshot-lifecycle-freertos-refactor-plan
-tags: plan, active, freertos, owner, snapshot, lifecycle, resource-management
+tags: plan, archived, freertos, owner, snapshot, lifecycle, resource-management
 summary: 将当前仓库长期 owner 按 snapshot、生命周期和 FreeRTOS 通信方式逐步整理；V1 不引入 runtime lease，不做中心化资源管理。
 created: 2026-06-02
 updated: 2026-06-02
 last_reviewed: 2026-06-02
-status: active
+status: archived
 plan_status: completed
 memory_type: project_plan
 scope: repo

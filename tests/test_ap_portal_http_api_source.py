@@ -15,6 +15,7 @@ class ApPortalHttpApiSourceTests(unittest.TestCase):
         self.assertIn('\\"scan_supported\\":false', source)
         self.assertIn('\\"configure_supported\\":false', source)
         self.assertIn('\\"memory_watch_config_supported\\":%s', source)
+        self.assertIn('\\"memory_watch_endpoint_configured\\":%s', source)
         self.assertIn('\\"error\\":\\"legacy_api_removed\\"', source)
         self.assertIn("410 Gone", source)
         self.assertIn("ap_portal_memory_watch_config_handler", source)

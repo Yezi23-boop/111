@@ -9,6 +9,7 @@ owners: main/services/power_policy.c, main/services/background_service_manager.c
 triggers: low power framework, power_policy, standby, sleep_coordinator, power_budget, 低功耗框架
 evidence_level: design
 status: active
+route_area: "Low power framework"
 ---
 
 # 低功耗总框架架构

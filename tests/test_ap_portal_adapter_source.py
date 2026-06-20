@@ -27,6 +27,8 @@ class ApPortalAdapterSourceTests(unittest.TestCase):
         self.assertIn("ap_portal_memory_watch_config_t", header)
         self.assertIn("ap_portal_memory_watch_config_cb_t", header)
         self.assertIn("ap_portal_adapter_set_memory_watch_config_callback", header)
+        self.assertIn("ap_portal_memory_watch_configured_cb_t", header)
+        self.assertIn("ap_portal_adapter_set_memory_watch_configured_callback", header)
         self.assertNotIn("memory_watch_service", header)
 
     def test_routes_source_contains_root_handler(self) -> None:

@@ -1,85 +1,74 @@
 ---
 id: context-current-task
-tags: context, handoff, current-task
-summary: 记录 AI Memory Watch / Hermes 真实接入链路、Cloudflare Tunnel 公网联调验证状态、ESP32 NVS 待办和下一步。
-last_reviewed: 2026-06-09
+tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive
+summary: 记录 AI Memory Watch / Hermes V1 已完成归档后的当前状态、剩余 hardening 风险和 V2 下一步。
+last_reviewed: 2026-06-20
 memory_type: task
 scope: task
 owners: docs/context/handoffs
-triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, cloudflare, tunnel
-evidence_level: design
+triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive
+evidence_level: observed
 ---
 
 # AI Memory Watch / Hermes 当前任务交接
 
 ## 目标
 
-- 长期推进 `AI Memory Watch / Hermes` 真实接入链路，直到服务器侧可稳定联调并可进行版本迭代。
-- 当前主链路为：`ESP32-S3 手表 -> watch voice endpoint -> Hermes API Server /v1/responses -> MiMo/Hermes 回复 -> 手表 V1 JSON`。
-- 当前先不做需要用户手动操作的真机“按住说话”测试，优先用服务器侧脚本模拟手表 multipart Ogg Opus 上传，打通公网 watch endpoint 验收。
+- 当前目标已从“打通 V1 主链路”切换为“V1 收尾归档 + hardening + V2 通知箱设计”。
+- V1 主链路已完成：`ESP32-S3 真机麦克风 -> Ogg Opus -> watch endpoint -> MiMo ASR -> Hermes -> 手表 V1 固定 7 字段 JSON`。
+- 不要再相信旧 handoff 里“真机按住说话未验证”“板端缺 endpoint 配置导致无法验证”的状态；这些已经被 2026-06-17 之后的证据反转。
 
 ## 当前状态
 
 - 当前分支：`codex/ai-memory-watch-hermes-api`。
-- Hermes API Server 已启用，并已验证 `/health`、`/v1/models`、`/v1/responses`。
-- `watch voice endpoint` 已实现三端点，常驻容器 `ai-memory-watch-voice-endpoint` 当前为 `healthy`，绑定 `127.0.0.1:8787`。
-- Cloudflare 已收敛到 `watch.934000.xyz`：CNAME 指向 Tunnel `8900f692-6507-432a-b811-62b66ce6c44c`，ingress 只代理 `/v1/watch/* -> http://host.docker.internal:8787`，fallback 为 `http_status:404`。
-- Tunnel 当前为 `healthy`，`ai-memory-watch-cloudflared` 独立容器已启动；token 文件位于仓库外 `D:\Docker_data\hermes\cloudflared_tunnel_token.txt`，容器只通过只读挂载和 `TUNNEL_TOKEN_FILE` 使用 token，Docker args 不含 token。
-- ESP32-S3 已刷回当前 `111` 主应用并自动连上 Wi-Fi，串口已出现 `network_service_ready`、`official_chat_ready`、`memory_watch_ready`；板端仍缺 watch endpoint NVS 配置。
-- 公网服务器侧链路已通过脚本验收：`https://watch.934000.xyz/v1/watch/health` 可用，公网 runtime gate、mock smoke 与真实 MiMo ASR smoke 均通过。
+- 主计划 `2026-06-05-ai-memory-watch-hermes-page-plan.md` 已从 `plans/active/` 移到 `docs/context/plans/completed/`，状态为 `archived`。
+- SoftAP/NVS 配置计划 `2026-06-17-ai-memory-watch-softap-nvs-config-plan.md` 已在 `docs/context/plans/completed/` 归档。
+- Hermes API Server、watch voice endpoint、Cloudflare Tunnel、公网 `watch.934000.xyz/v1/watch/*`、文本命令和真实麦克风语音链路均已有成功证据。
+- 开发阶段允许本机 `sdkconfig` 或 NVS 持有 watch device token 进行联调；提交前必须确认 `sdkconfig`、文档、日志和 diff 不包含真实 token。
 
 ## Progress
 
-- Hermes Docker 已部署，Dashboard 仅本地 `127.0.0.1:9119` 可用；Dashboard 不是 ESP32-S3 设备接口。
-- Hermes API Server 已在仓库外 `.env` 中启用，`8642` 已映射到宿主机；API key 不进入仓库或固件。
-- `server/watch_voice_endpoint` 已实现 `GET /v1/watch/health`、`POST /v1/watch/voice-command`、`POST /v1/watch/request/{request_id}/cancel`。
-- MiMo ASR 真实链路已跑通：`Ogg Opus -> ffmpeg 转 16 kHz mono WAV -> MiMo ASR -> Hermes /v1/responses -> 手表 V1 固定 7 字段 JSON`。
-- watch endpoint 已支持 mock ASR、MiMo ASR、request 幂等、cancel、115 秒服务器请求预算、输入校验、运行态指标、auth 诊断和公网私有路径门禁。
-- `release_gate.ps1` 已作为服务器侧版本门禁，最近一次通过包含 server pytest `40 passed`、Hermes text smoke、mock voice、real MiMo ASR、cancel 与 invalid token 403。
-- 新增 `server/watch_voice_endpoint/deploy/start_cloudflared_connector.ps1`：默认读取仓库外 `D:\Docker_data\hermes\cloudflared_tunnel_token.txt`，用只读挂载和 `TUNNEL_TOKEN_FILE` 启动独立 `cloudflared` 容器，避免 token 进入 Docker command args、仓库或日志。
-- 本机脚本模拟手表已通过：mock ASR smoke 返回 `voice_status=done/action=memory_saved/field_count=7`；`make_tts_sample.ps1 -> smoke_test.ps1 -UseRealAsr` 返回 `asr_mode=real/voice_status=done/action=memory_saved/field_count=7`。
-- 公网脚本模拟手表已通过：mock multipart Ogg Opus 上传返回 `voice_status=done/action=memory_saved/field_count=7`，真实 MiMo ASR 上传返回 `asr_mode=real/voice_status=done/action=memory_saved/field_count=7`。
+- V1 独立 Hermes 页面已落地，不复用 `official_chat`。
+- V1 服务器侧 watch endpoint 已支持 health、voice-command、text-command、cancel、request 幂等、auth 诊断、运行态指标、115 秒服务器预算和公网私有路径门禁。
+- V1 固件侧已支持 `memory_watch_service` owner task、upload/health/cancel worker、Ogg Opus recorder、voice client、text command、NVS 配置读取/保存、SoftAP 配置入口和 Kconfig 开发默认项。
+- `mw_upload` 实机栈问题已修复：upload worker 栈迁移到 PSRAM 并提升到 `24576` words，大 `job/result` 对象移出任务栈。
+- FreeRTOS queue copy 后的 `client_config` 指针 rebind 已修复：upload/health/cancel worker 收到 job 后重新绑定指针到 job 内部字符数组。
+- COM3 真机麦克风链路已成功：串口 high-water mark 约 `3248` words，返回 `status=done/action=memory_saved/error_code=none`；服务器 `/health` 最近请求摘要显示真实 Ogg Opus、`asr_provider=mimo` 和成功耗时，不包含正文或 token。
 
 ## Decision Log
 
-- V1 不使用 webhook，因为手表侧需要同步等待最终文本结果。
+- V1 到此停止加功能；后台通知、TTS、历史列表、长任务主动反馈都放到 V2。
 - ESP32-S3 只调用 watch endpoint，不直接调用 Hermes Dashboard、Hermes API Server 或 MiMo API。
-- Hermes/MiMo/API key 只保留在服务器或仓库外 env；ESP32 固件只保存 watch endpoint 的 `device_id/device_token/base_url`。
+- Hermes/MiMo/API key 只保留在服务器或仓库外 env；ESP32 固件最多保存 watch endpoint 的 `device_id/device_token/base_url`。
 - 公网第一版只允许代理 `/v1/watch/*`；Hermes `8642` 和 Dashboard `9119` 保持私有。
-- Cloudflare connector 与 watch endpoint 部署在同一台 Docker Desktop 机器，但保持独立容器，避免把 Tunnel token 烘进 watch endpoint 镜像。
-- `docs/context/CHANGELOG.md` 当前有无关脏改动；如需追加本任务 changelog，只暂存本任务新增行。
+- 开发阶段可把 watch device token 放本机 `sdkconfig`，但不得提交；正式/演示前建议轮换 token。
 
 ## 已验证
 
-- `docker ps`：`hermes` 正常运行，`ai-memory-watch-voice-endpoint` 为 `healthy`。
-- Hermes API Server：`GET /health`、`GET /v1/models`、`POST /v1/responses` 已用中文手表记忆请求验证成功。
-- watch endpoint：mock smoke、cancel smoke、invalid-token 403、real MiMo ASR smoke 均已通过。
-- server pytest 最近通过数：`41 passed`。
-- `.\server\watch_voice_endpoint\release_gate.ps1 -SkipDocker` 最近通过；输出不包含真实 key/token、ASR 正文或回复正文。
-- `uv run python scripts/context/validate_context.py --level standard --q "AI Memory Watch Cloudflare Tunnel public endpoint" --brief` 已通过，context 检查 0 错误 0 警告。
-- Cloudflare 只读复查：Tunnel 名称 `ai-memory-watch`、状态 `healthy`、连接数 `1`；DNS `watch.934000.xyz CNAME -> 8900f692-6507-432a-b811-62b66ce6c44c.cfargotunnel.com` 且 proxied。
-- `start_cloudflared_connector.ps1 -Pull` 已启动 `ai-memory-watch-cloudflared`；安全复查确认容器无端口映射，env 只有 `TUNNEL_TOKEN_FILE` 路径，Docker args 不含 token，token 文件长度只用于存在性确认且不打印内容。
-- `runtime_status.ps1 -BaseUrl https://watch.934000.xyz -SkipDocker -SkipHermesApi -SkipServiceHealth -AssertPrivateNotExposed` 已通过：watch health `ok/hermes_status=online`，公网 `/health`、`/v1/models`、`/v1/responses` 均为 404 未暴露。
-- `smoke_test.ps1 -BaseUrl https://watch.934000.xyz -SkipServiceHealth` 已通过 mock ASR；`make_tts_sample.ps1 -> smoke_test.ps1 -UseRealAsr -AudioPath <generated.ogg>` 已通过真实 MiMo ASR，二者均返回固定 7 字段 JSON。
+- 服务器 release gate、mock/real ASR smoke、cancel、invalid-token 403、Cloudflare 私有路径门禁均已通过过。
+- 公网 `https://watch.934000.xyz/v1/watch/health` 可用，公网 `/health`、`/v1/models`、`/v1/responses` 不公开。
+- 真机文本命令和真机麦克风 Ogg Opus 端到端链路均已成功。
+- context 校验在最近文档更新中多次通过；V1 归档后仍需再跑一次 standard 校验。
 
 ## 当前风险
 
-- ESP32-S3 已联网但缺 NVS endpoint 配置，真机 `按住说话 -> Ogg Opus 上传 -> 120 秒内返回固定 7 字段` 仍未验证。
-- PC 侧对板端 `192.168.41.11` ping 与 HTTP 探测超时，无法在用户休息期间无人工通过 SoftAP/门户写入 NVS；等待用户回来后进入同网可达或 SoftAP 配置。
-- 真实用户语音样本、弱网重试、长耗时 agent 工具执行、token 首次配置体验仍待真机场景复测。
-- 工作区有大量已有未提交 context 相关改动，不要回滚或混入 AI Memory Watch 提交。
+- 工作区有大量已有未提交改动，且 `sdkconfig` 现在可能含开发期 watch device token；不要误提交。
+- `docs/context/handoffs/current-task.md` 是当前接力页，不是历史总账；历史细节看 changelog 和 completed plan。
+- V1 hardening 仍可补异常路径验证：短音频、长音频、取消等待、token 错误、Hermes 离线、HTTPS 超时、late result 忽略。
+- app 分区余量曾接近 4%，后续新增 V2 功能前要继续关注二进制体积。
 
 ## 下一步
 
-- 继续保持 `ai-memory-watch-cloudflared` 与 `ai-memory-watch-voice-endpoint` 常驻，后续改动后先跑公网 runtime gate 与 smoke，确认 Tunnel、私有路径门禁和 7 字段 JSON 未回退。
-- 每次 server 改动后运行：`uv run --with-requirements server/watch_voice_endpoint/requirements.txt python -m pytest server/watch_voice_endpoint/tests -q`。
-- 需要运行态验证时运行：`.\server\watch_voice_endpoint\release_gate.ps1 -SkipDocker`；涉及容器构建时运行 `.\server\watch_voice_endpoint\release_gate.ps1 -RebuildContainer`。
-- ESP32 侧下一步是在不泄露 token 的前提下写入 NVS：`base_url=https://watch.934000.xyz`、`device_id=watch-001`、`device_token=<watch device token>`、`timeout_ms=120000`、`allow_http=false`；若需要用户操作 SoftAP，则等用户回来再做真机按住说话测试。
+- 跑 V1 归档后的 context 校验：`uv run python scripts/context/validate_context.py --level standard --q "AI Memory Watch Hermes V1 archived" --brief`。
+- 提交前检查密钥卫生：`sdkconfig`、`memory_watch_dev_endpoint_local.h`、日志和文档都不能带真实 token/key。
+- 如果做最终 V1 smoke：先 `idf.py fullclean && idf.py build`，再 `idf.py -p COM3 app-flash`，验证 health online 和一次真机按住说话成功。
+- 新建 V2 计划时，从“服务器通知箱 + 手表低功耗短轮询 + 完成反馈 UI”开始，不要重开 V1 主计划。
 
 ## 证据入口
 
-- 相关计划：`docs/context/plans/active/2026-06-05-ai-memory-watch-hermes-page-plan.md`
+- V1 主计划归档：`docs/context/plans/completed/2026-06-05-ai-memory-watch-hermes-page-plan.md`
+- SoftAP/NVS 计划归档：`docs/context/plans/completed/2026-06-17-ai-memory-watch-softap-nvs-config-plan.md`
 - 服务器目录：`server/watch_voice_endpoint/`
 - 机器可读契约：`server/watch_voice_endpoint/watch_contract.v1.json`
 - 产品定位：`docs/context/knowledge/project/ai-memory-watch-product-positioning.md`
-- 仓库画像：`docs/context/knowledge/project/project-profile.md`
+- 变更记录：`docs/context/CHANGELOG.md`

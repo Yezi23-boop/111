@@ -1,8 +1,8 @@
 ---
 id: safety-monitor-background-completion-plan-20260525
-tags: plan, active, watch, safety-monitor, danger-detection, background-service, resource-management, esp-dl
+tags: plan, archived, watch, safety-monitor, danger-detection, background-service, resource-management, esp-dl
 summary: 完整危险识别后台服务目标计划书，固定 Safety Monitor 后台能力的目标态、owner 分工、差距、实现阶段、subagent 复查和验收闭环。
-status: active
+status: archived
 last_reviewed: 2026-05-25
 memory_type: project_plan
 scope: repo
