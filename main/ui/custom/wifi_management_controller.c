@@ -6,6 +6,9 @@
 #include "esp_log.h"
 #include "network_manager.h"
 
+LV_FONT_DECLARE(lv_font_montserrat_lxgw_lv_font_wifi_subset_16_16_4);
+LV_FONT_DECLARE(lv_font_montserrat_lxgw_lv_font_wifi_subset_24_24_4);
+
 static const char *TAG = "wifi_mgmt_ui";
 static const uint32_t kStatusRefreshMs = 300U;
 static const lv_coord_t kWifiBackButtonX = 286;
@@ -220,18 +223,45 @@ static lv_obj_t *wifi_management_controller_create_action_button(
 {
     lv_obj_t *button = lv_btn_create(parent);
     lv_obj_set_pos(button, x, y);
-    lv_obj_set_size(button, 320, 52);
-    lv_obj_set_style_radius(button, 18, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x1f6feb),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(button, LV_OPA_COVER,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_size(button, 340, 56);
+    lv_obj_set_style_radius(button, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
+    
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x1c1c1e), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(button, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x2c2c2e), LV_PART_MAIN | LV_STATE_PRESSED);
 
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_center(label);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_lxgw_lv_font_wifi_subset_16_16_4, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 20, 0);
+    return button;
+}
+
+static lv_obj_t *wifi_management_controller_create_bento_button(
+    lv_obj_t *parent, const char *title, const char *subtitle, lv_coord_t x, lv_coord_t y)
+{
+    lv_obj_t *button = lv_btn_create(parent);
+    lv_obj_set_pos(button, x, y);
+    lv_obj_set_size(button, 166, 80);
+    lv_obj_set_style_radius(button, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
+    
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x1c1c1e), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(button, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x2c2c2e), LV_PART_MAIN | LV_STATE_PRESSED);
+
+    lv_obj_t *title_lbl = lv_label_create(button);
+    lv_label_set_text(title_lbl, title);
+    lv_obj_set_style_text_color(title_lbl, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_lxgw_lv_font_wifi_subset_16_16_4, LV_PART_MAIN);
+    lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, 8, 12);
+
+    lv_obj_t *sub_lbl = lv_label_create(button);
+    lv_label_set_text(sub_lbl, subtitle);
+    lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0x8E8E93), LV_PART_MAIN);
+    lv_obj_set_style_text_font(sub_lbl, &lv_font_montserrat_lxgw_lv_font_wifi_subset_16_16_4, LV_PART_MAIN);
+    lv_obj_align(sub_lbl, LV_ALIGN_BOTTOM_LEFT, 8, -12);
+
     return button;
 }
 
@@ -347,7 +377,7 @@ static void wifi_management_controller_show_inline_message(
         return;
     }
 
-    lv_label_set_text(s_status_title, title != NULL ? title : "Notice");
+    lv_label_set_text(s_status_title, title != NULL ? title : "错误");
     lv_label_set_text(s_status_detail, detail != NULL ? detail : "");
 }
 
@@ -372,8 +402,8 @@ static void wifi_management_controller_refresh(void)
 
     if (!wifi_management_controller_get_status(&status))
     {
-        lv_label_set_text(s_status_title, "Error");
-        lv_label_set_text(s_status_detail, "Network manager status unavailable");
+        lv_label_set_text(s_status_title, "错误");
+        lv_label_set_text(s_status_detail, "当前通道错误");
         return;
     }
 
@@ -381,68 +411,85 @@ static void wifi_management_controller_refresh(void)
 
     if (status.ble_active && status.wifi_connected)
     {
-        lv_label_set_text(s_status_title, "Connected + BLE");
+        lv_label_set_text(s_status_title, "已连接 + 配网中");
+        lv_obj_set_style_text_color(s_status_title, lv_color_hex(0x32D74B), LV_PART_MAIN);
         if (status.ip[0] != '\0')
         {
-            snprintf(detail, sizeof(detail), "IP: %s, BLE provisioning active",
-                     status.ip);
+            snprintf(detail, sizeof(detail), "IP: %s, 蓝牙活跃中", status.ip);
         }
         else
         {
-            snprintf(detail, sizeof(detail), "BLE provisioning active");
+            snprintf(detail, sizeof(detail), "蓝牙活跃中");
         }
     }
     else if (status.ble_active)
     {
-        lv_label_set_text(s_status_title, "BLE Provisioning");
-        snprintf(detail, sizeof(detail), "Open the WeChat mini program");
+        lv_label_set_text(s_status_title, "蓝牙配网");
+        lv_obj_set_style_text_color(s_status_title, lv_color_hex(0x0A84FF), LV_PART_MAIN);
+        snprintf(detail, sizeof(detail), "请打开微信小程序");
     }
     else if (status.wifi_connected)
     {
-        lv_label_set_text(s_status_title, "Connected");
+        lv_label_set_text(s_status_title, "已连接");
+        lv_obj_set_style_text_color(s_status_title, lv_color_hex(0x32D74B), LV_PART_MAIN);
         if (status.ip[0] != '\0')
         {
             snprintf(detail, sizeof(detail), "IP: %s", status.ip);
         }
         else
         {
-            snprintf(detail, sizeof(detail), "Wi-Fi connected");
+            snprintf(detail, sizeof(detail), "Wi-Fi 已连接");
         }
     }
     else if (status.state == NETWORK_MANAGER_STATE_CONNECTING_LATEST)
     {
-        lv_label_set_text(s_status_title, "Connecting");
-        snprintf(detail, sizeof(detail), "Trying the latest saved Wi-Fi");
+        lv_label_set_text(s_status_title, "连接中");
+        lv_obj_set_style_text_color(s_status_title, lv_color_hex(0x0A84FF), LV_PART_MAIN);
+        snprintf(detail, sizeof(detail), "正在尝试保存的 Wi-Fi");
     }
-    else if (status.state == NETWORK_MANAGER_STATE_PROVISIONING_BLE)
+    else if (status.state == NETWORK_MANAGER_STATE_PROVISIONING_BLE ||
+             status.state == NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP)
     {
-        lv_label_set_text(s_status_title, "Provisioning");
-        snprintf(detail, sizeof(detail), "Current transport: BLE");
-    }
-    else if (status.state == NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP)
-    {
-        lv_label_set_text(s_status_title, "Provisioning");
-        snprintf(detail, sizeof(detail), "Current transport: SoftAP");
+        lv_label_set_text(s_status_title, "配网中");
+        lv_obj_set_style_text_color(s_status_title, lv_color_hex(0x0A84FF), LV_PART_MAIN);
+        snprintf(detail, sizeof(detail), "当前通道: %s", 
+                 status.state == NETWORK_MANAGER_STATE_PROVISIONING_BLE ? "蓝牙" : "AP");
     }
     else if (status.state == NETWORK_MANAGER_STATE_DISCONNECTED_BY_USER)
     {
-        lv_label_set_text(s_status_title, "Disconnected");
-        snprintf(detail, sizeof(detail), "Auto reconnect is paused");
+        lv_label_set_text(s_status_title, "未连接");
+        lv_obj_set_style_text_color(s_status_title, lv_color_hex(0x8E8E93), LV_PART_MAIN);
+        snprintf(detail, sizeof(detail), "已暂停自动重连");
     }
     else if (status.state == NETWORK_MANAGER_STATE_ERROR)
     {
-        lv_label_set_text(s_status_title, "Error");
-        snprintf(detail, sizeof(detail),
-                 "Tap BLE Provision or AP Web Fallback");
+        lv_label_set_text(s_status_title, "连接失败");
+        lv_obj_set_style_text_color(s_status_title, lv_color_hex(0xFF453A), LV_PART_MAIN);
+        snprintf(detail, sizeof(detail), "请重新配网");
     }
     else
     {
-        lv_label_set_text(s_status_title, "Offline");
-        snprintf(detail, sizeof(detail),
-                 "Tap BLE Provision or AP Web Fallback");
+        lv_label_set_text(s_status_title, "未连接");
+        lv_obj_set_style_text_color(s_status_title, lv_color_hex(0x8E8E93), LV_PART_MAIN);
+        snprintf(detail, sizeof(detail), "请在下方添加网络");
     }
 
     lv_label_set_text(s_status_detail, detail);
+
+    // Dynamic visibility based on connection state
+    if (s_retry_saved_btn != NULL && s_disconnect_btn != NULL)
+    {
+        if (status.wifi_connected || status.state == NETWORK_MANAGER_STATE_CONNECTING_LATEST)
+        {
+            lv_obj_add_flag(s_retry_saved_btn, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(s_disconnect_btn, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_clear_flag(s_retry_saved_btn, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_disconnect_btn, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 
 /**
@@ -461,72 +508,53 @@ static void wifi_management_controller_ensure_screen_created(void)
     wifi_management_controller_reset_screen_refs();
 
     s_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x0f172a),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(s_screen, wifi_management_screen_delete_event_cb,
-                        LV_EVENT_DELETE, NULL);
+    // True OLED Black background
+    lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(s_screen, wifi_management_screen_delete_event_cb, LV_EVENT_DELETE, NULL);
 
     lv_obj_t *title = lv_label_create(s_screen);
-    lv_label_set_text(title, "Wi-Fi Manager");
-    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(title, &lv_font_montserratMedium_27,
-                               LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(title, "Wi-Fi");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_pos(title, 24, 20);
 
     lv_obj_t *back_btn = lv_btn_create(s_screen);
-    lv_obj_set_size(back_btn, kWifiBackButtonWidth, kWifiBackButtonHeight);
-    lv_obj_set_pos(back_btn, kWifiBackButtonX, kWifiBackButtonY);
-    lv_obj_set_style_radius(back_btn, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(back_btn, wifi_management_back_event_cb,
-                        LV_EVENT_CLICKED, NULL);
-    lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "Back");
-    lv_obj_center(back_label);
-
+    lv_obj_set_size(back_btn, 80, 48);
+    lv_obj_set_pos(back_btn, 300, 10);
+    lv_obj_set_style_radius(back_btn, 24, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(back_btn, lv_color_hex(0x1c1c1e), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(back_btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(back_btn, wifi_management_back_event_cb, LV_EVENT_CLICKED, NULL);
+    
     s_status_title = lv_label_create(s_screen);
-    lv_label_set_text(s_status_title, "Offline");
-    lv_obj_set_pos(s_status_title, 24, 86);
-    lv_obj_set_style_text_color(s_status_title, lv_color_hex(0xffffff),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_status_title, &lv_font_montserratMedium_27,
-                               LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(s_status_title, "未连接");
+    lv_obj_set_style_text_color(s_status_title, lv_color_hex(0x8E8E93), LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_status_title, &lv_font_montserrat_lxgw_lv_font_wifi_subset_24_24_4, LV_PART_MAIN);
+    lv_obj_set_pos(s_status_title, 24, 60);
 
     s_status_detail = lv_label_create(s_screen);
-    lv_obj_set_size(s_status_detail, 360, 42);
-    lv_obj_set_pos(s_status_detail, 24, 124);
+    lv_obj_set_width(s_status_detail, 320);
     lv_label_set_long_mode(s_status_detail, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(s_status_detail, lv_color_hex(0xcbd5e1),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(s_status_detail, lv_color_hex(0x8E8E93), LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_status_detail, &lv_font_montserrat_lxgw_lv_font_wifi_subset_16_16_4, LV_PART_MAIN);
+    lv_obj_set_pos(s_status_detail, 24, 88);
 
-    lv_obj_t *action_title = lv_label_create(s_screen);
-    lv_label_set_text(action_title, "Actions");
-    lv_obj_set_pos(action_title, 24, 182);
-    lv_obj_set_style_text_color(action_title, lv_color_hex(0x93c5fd),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
+    s_ble_provision_btn = wifi_management_controller_create_bento_button(s_screen, "小程序配网", "蓝牙通道", 24, 282);
+    lv_obj_add_event_cb(s_ble_provision_btn, wifi_management_ble_provision_event_cb, LV_EVENT_CLICKED, NULL);
 
-    s_retry_saved_btn = wifi_management_controller_create_action_button(
-        s_screen, "Use Saved Wi-Fi", 24, 214);
-    lv_obj_add_event_cb(s_retry_saved_btn, wifi_management_retry_saved_event_cb,
-                        LV_EVENT_CLICKED, NULL);
+    s_softap_provision_btn = wifi_management_controller_create_bento_button(s_screen, "网页配网", "AP 热点", 198, 282);
+    lv_obj_add_event_cb(s_softap_provision_btn, wifi_management_softap_provision_event_cb, LV_EVENT_CLICKED, NULL);
 
-    s_disconnect_btn = wifi_management_controller_create_action_button(
-        s_screen, "Disconnect", 24, 276);
-    lv_obj_add_event_cb(s_disconnect_btn, wifi_management_disconnect_event_cb,
-                        LV_EVENT_CLICKED, NULL);
+    s_retry_saved_btn = wifi_management_controller_create_action_button(s_screen, "重试已保存网络", 24, 370);
+    lv_obj_add_event_cb(s_retry_saved_btn, wifi_management_retry_saved_event_cb, LV_EVENT_CLICKED, NULL);
 
-    s_ble_provision_btn = wifi_management_controller_create_action_button(
-        s_screen, "BLE Provision", 24, 338);
-    lv_obj_add_event_cb(s_ble_provision_btn, wifi_management_ble_provision_event_cb,
-                        LV_EVENT_CLICKED, NULL);
+    s_disconnect_btn = wifi_management_controller_create_action_button(s_screen, "断开连接", 24, 434);
+    lv_obj_add_event_cb(s_disconnect_btn, wifi_management_disconnect_event_cb, LV_EVENT_CLICKED, NULL);
 
-    s_softap_provision_btn = wifi_management_controller_create_action_button(
-        s_screen, "AP Web Fallback", 24, 400);
-    lv_obj_add_event_cb(s_softap_provision_btn,
-                        wifi_management_softap_provision_event_cb,
-                        LV_EVENT_CLICKED, NULL);
+    lv_obj_t *disconnect_label = lv_obj_get_child(s_disconnect_btn, 0);
+    if(disconnect_label != NULL) {
+        lv_obj_set_style_text_color(disconnect_label, lv_color_hex(0xFF453A), LV_PART_MAIN);
+    }
 
     if (s_status_timer == NULL)
     {

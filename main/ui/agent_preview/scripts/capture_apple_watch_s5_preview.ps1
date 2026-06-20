@@ -24,6 +24,9 @@ public static class User32Capture {
 
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 }
 "@
 
@@ -43,10 +46,15 @@ if (-not (Test-Path $outDir)) {
 $proc = Start-Process -FilePath $ExePath -PassThru
 try {
     $deadline = (Get-Date).AddSeconds(12)
+    $hwnd = [IntPtr]::Zero
     do {
         Start-Sleep -Milliseconds 250
         $proc.Refresh()
         $hwnd = $proc.MainWindowHandle
+        if ($hwnd -eq [IntPtr]::Zero) {
+            # Fallback: Find window by title
+            $hwnd = [User32Capture]::FindWindow($null, "Agent Preview - Apple Watch S5 Style")
+        }
     } while ($hwnd -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline)
 
     if ($hwnd -eq [IntPtr]::Zero) {
