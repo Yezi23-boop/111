@@ -29,8 +29,6 @@ static lv_ui *s_ui = NULL;
 static memory_watch_view_t *s_view = NULL;
 static lv_timer_t *s_destroy_timer = NULL;
 static memory_watch_view_t *s_pending_destroy_view = NULL;
-static lv_obj_t *s_entry_label = NULL;
-static lv_obj_t *s_entry_subtitle = NULL;
 static memory_watch_render_cache_t s_render_cache = {0};
 
 static void memory_watch_controller_refresh(void);
@@ -416,58 +414,6 @@ static void memory_watch_controller_cancel_clarification(void *user_data)
     memory_watch_controller_refresh();
 }
 
-static void memory_watch_controller_entry_event(lv_event_t *e)
-{
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED)
-    {
-        memory_watch_controller_open();
-    }
-}
-
-static void memory_watch_controller_bind_entry(lv_ui *ui)
-{
-    if (ui == NULL || ui->screen_main_option_8 == NULL)
-    {
-        return;
-    }
-
-    lv_obj_add_flag(ui->screen_main_option_8, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_color(ui->screen_main_option_8, lv_color_hex(0x0f766e),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_color(ui->screen_main_option_8,
-                                  lv_color_hex(0x0d9488),
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(ui->screen_main_option_8,
-                        memory_watch_controller_entry_event,
-                        LV_EVENT_CLICKED, NULL);
-
-    if (ui->screen_main_user != NULL)
-    {
-        lv_obj_add_event_cb(ui->screen_main_user,
-                            memory_watch_controller_entry_event,
-                            LV_EVENT_CLICKED, NULL);
-    }
-
-    s_entry_label = lv_label_create(ui->screen_main_option_8);
-    lv_label_set_text(s_entry_label, "Hermes");
-    lv_obj_set_pos(s_entry_label, 96, 18);
-    lv_obj_set_style_text_color(s_entry_label, lv_color_hex(0xffffff),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_entry_label, &lv_font_montserratMedium_27,
-                               LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_clear_flag(s_entry_label, LV_OBJ_FLAG_CLICKABLE);
-
-    s_entry_subtitle = lv_label_create(ui->screen_main_option_8);
-    lv_label_set_text(s_entry_subtitle, "记忆手表");
-    lv_obj_set_pos(s_entry_subtitle, 98, 52);
-    lv_obj_set_style_text_color(s_entry_subtitle, lv_color_hex(0xccfbf1),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(
-        s_entry_subtitle, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
-        LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_clear_flag(s_entry_subtitle, LV_OBJ_FLAG_CLICKABLE);
-}
-
 static bool memory_watch_controller_is_foreground(void)
 {
     return s_view != NULL &&
@@ -548,7 +494,6 @@ static void memory_watch_controller_refresh(void)
 void memory_watch_controller_init(lv_ui *ui)
 {
     s_ui = ui;
-    memory_watch_controller_bind_entry(ui);
 }
 
 void memory_watch_controller_open(void)

@@ -90,7 +90,7 @@ route_area: "Hearing assist / danger alerts"
 
 | 参数名 | 设计定义 | 当前归属 / 文件 | 当前状态 | 当前代码行为 | 主要差距 / 下一步 |
 | --- | --- | --- | --- | --- | --- |
-| `feature_enabled` | 控制危险提醒功能是否整体开启 | `danger_detection_controller.c` + `background_service_manager.c` | 已实现（默认开启、非持久化） | 固件启动后默认 `danger_enabled_by_user=true`，后台 manager 等 UI 首帧 ready 后按 power budget 和麦克风 owner 运行 Safety Monitor；危险识别页提供 `安全监听` 开关用于临时关闭或重新开启 | 后续若需要重启后保持用户选择，再单独接 NVS 持久化 |
+| `feature_enabled` | 控制危险提醒功能是否整体开启 | `danger_detection_controller.c` + `background_service_manager.c` | 已实现（默认关闭、非持久化） | 固件启动后默认 `danger_enabled_by_user=false`，后台 manager 默认不运行 Safety Monitor；用户在危险识别页开启 `安全监听` 开关后，才按 power budget 和麦克风 owner 运行 | 后续若需要重启后保持用户选择，再单独接 NVS 持久化 |
 | `runtime_ready_required` | 运行时未就绪时不得进入监听 | `danger_detection_service.c` / `espdl_audio_runtime.cpp` | 已实现 | `danger_detection_service_start_with_backend()` 会检查 init 和 backend；`espdl_audio_runtime_start()` 会检查 runner、audio codec、input session 是否成功 | 已有基础，但仍缺少更明确的“用户看到功能开启/未就绪”的状态映射 |
 | `mic_resource_required` | 麦克风资源不可用时不得启动 | `background_service_manager.c` + `espdl_audio_runtime.cpp` + `audio_codec` | 已实现 | manager 读取 `audio_codec` input owner 快照并在前台音频占用时阻塞 Safety Monitor；ESP-DL runtime 启动时显式申请 `AUDIO_CODEC_OWNER_ESPDL_INFERENCE` input session | 已补 `danger_block_reason`，后续若 UI 需要展示具体 owner 再补窄字段 |
 | `background_run_allowed` | 离开专页后是否允许后台继续工作 | `background_service_manager.c` + `safety_monitor_session.c` | 已实现 | 用户打开 `安全监听` 后，页面退出不再 stop；后台 manager 按用户开关、power budget 和麦克风资源继续运行或恢复，并通过 `danger_should_run / danger_block_reason` 发布目标态 | 后续重点转向 stop timeout、提醒层并发安全、持续提醒和事件记录 |

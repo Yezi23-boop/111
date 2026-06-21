@@ -17,11 +17,12 @@ add_subdirectory("${LVGL_DIR}" "${CMAKE_BINARY_DIR}/lvgl")
 
 find_package(SDL2 REQUIRED)
 
-file(GLOB GENERATED_SRCS "${CMAKE_CURRENT_LIST_DIR}/../../generated/*.c")
+file(GLOB GENERATED_SRCS "main.c" "${CMAKE_CURRENT_LIST_DIR}/../../generated/*.c")
 file(GLOB GENERATED_FONTS "${CMAKE_CURRENT_LIST_DIR}/../../generated/guider_fonts/*.c")
 file(GLOB GENERATED_CUSTOMER_FONTS "${CMAKE_CURRENT_LIST_DIR}/../../generated/guider_customer_fonts/*.c")
 file(GLOB GENERATED_IMAGES "${CMAKE_CURRENT_LIST_DIR}/../../generated/images/*.c")
 file(GLOB CUSTOM_SRCS "${CMAKE_CURRENT_LIST_DIR}/../../custom/*.c" "${CMAKE_CURRENT_LIST_DIR}/../../ui_refresh_policy.c")
+list(REMOVE_ITEM CUSTOM_SRCS "${CMAKE_CURRENT_LIST_DIR}/../../custom/ui_font_assets.c")
 file(GLOB CUSTOM_FONTS "${CMAKE_CURRENT_LIST_DIR}/../../custom/fonts/*.c")
 file(GLOB MOCK_SRCS "${CMAKE_CURRENT_LIST_DIR}/mock/*.c")
 
@@ -34,6 +35,10 @@ add_executable(agent_preview_host
     ${CUSTOM_SRCS}
     ${CUSTOM_FONTS}
     ${MOCK_SRCS}
+    "${REPO_ROOT}/main/features/mini_games/mini_game_2048.c"
+    "${REPO_ROOT}/main/features/mini_games/mini_game_flappy.c"
+    "${REPO_ROOT}/main/features/mini_games/mini_game_dino.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../../custom/mini_game_sprites.c"
 )
 
 target_include_directories(agent_preview_host PRIVATE

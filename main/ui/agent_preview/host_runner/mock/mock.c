@@ -1,8 +1,10 @@
 #include <stdint.h>
+#include <string.h>
 #include "esp_err.h"
 #include "network_manager.h"
 #include "danger_detection_service.h"
 #include "system_time.h"
+#include "services/network_service.h"
 
 const char *esp_err_to_name(esp_err_t code) { return "OK"; }
 bool network_manager_is_ble_enabled(void) { return true; }
@@ -53,38 +55,163 @@ network_manager_state_t network_manager_get_state_cached(void) { return NETWORK_
 #include "esp_timer.h"
 int64_t esp_timer_get_time(void) { return 0; }
 
-void memory_watch_service_cancel_waiting(void) {}
-void memory_watch_service_cancel_clarification(void) {}
-void memory_watch_service_begin_recording(void) {}
-void memory_watch_service_send_recording(void) {}
-void memory_watch_service_cancel_recording(void) {}
-void *memory_watch_service_get_snapshot(void) { return NULL; }
-int memory_watch_service_check_health(void) { return 0; }
+#include "services/memory_watch_service.h"
 
+static memory_watch_service_snapshot_t s_memory_watch_snapshot = {
+    .state = MEMORY_WATCH_SERVICE_STATE_READY,
+    .network_ready = true,
+    .endpoint_configured = true,
+    .hermes_online = true,
+    .request_active = false,
+    .clarification_active = false,
+    .last_error = ESP_OK,
+    .request_id = "preview-request",
+    .clarification_id = "",
+    .asr_text = "帮我记住下午三点去取快递。",
+    .reply_text = "已记录：下午三点取快递。需要时我会提醒你。",
+};
+
+esp_err_t memory_watch_service_cancel_waiting(void) {
+    s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_CANCELED;
+    s_memory_watch_snapshot.request_active = false;
+    strncpy(s_memory_watch_snapshot.reply_text, "已取消等待 Hermes 回复。",
+            sizeof(s_memory_watch_snapshot.reply_text) - 1);
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_cancel_clarification(void) {
+    s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_CANCELED;
+    s_memory_watch_snapshot.clarification_active = false;
+    strncpy(s_memory_watch_snapshot.reply_text, "已取消 Hermes 追问。",
+            sizeof(s_memory_watch_snapshot.reply_text) - 1);
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_begin_recording(void) {
+    s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_RECORDING;
+    s_memory_watch_snapshot.request_active = true;
+    strncpy(s_memory_watch_snapshot.asr_text, "正在聆听...",
+            sizeof(s_memory_watch_snapshot.asr_text) - 1);
+    strncpy(s_memory_watch_snapshot.reply_text, "松手后发送给 Hermes。",
+            sizeof(s_memory_watch_snapshot.reply_text) - 1);
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_send_recording(void) {
+    s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_DONE;
+    s_memory_watch_snapshot.request_active = false;
+    strncpy(s_memory_watch_snapshot.asr_text, "帮我记住下午三点去取快递。",
+            sizeof(s_memory_watch_snapshot.asr_text) - 1);
+    strncpy(s_memory_watch_snapshot.reply_text,
+            "已记录：下午三点取快递。需要时我会提醒你。",
+            sizeof(s_memory_watch_snapshot.reply_text) - 1);
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_cancel_recording(void) {
+    s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_CANCELED;
+    s_memory_watch_snapshot.request_active = false;
+    strncpy(s_memory_watch_snapshot.reply_text, "已取消本次录音。",
+            sizeof(s_memory_watch_snapshot.reply_text) - 1);
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_get_snapshot(
+    memory_watch_service_snapshot_t *out_snapshot) {
+    if (out_snapshot == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_snapshot = s_memory_watch_snapshot;
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_check_health(void) {
+    s_memory_watch_snapshot.network_ready = true;
+    s_memory_watch_snapshot.endpoint_configured = true;
+    s_memory_watch_snapshot.hermes_online = true;
+    return ESP_OK;
+}
+
+#if 0
 void mini_game_2048_reset(void) {}
 int mini_game_2048_is_game_over(void) { return 0; }
 void mini_game_2048_move(int dir) {}
 int mini_game_2048_get_score(void) { return 0; }
 int mini_game_2048_get_cell(int r, int c) { return 0; }
 void mini_game_2048_init(void) {}
+#endif
 
+#include "app/board_button.h"
 void board_button_clear_events(void) {}
-int board_button_consume_event(int btn, int evt) { return 0; }
+board_button_event_t board_button_consume_event(void) { return BOARD_BUTTON_EVENT_NONE; }
 
 uint8_t _binary_font_puhui_common_20_4_bin_start[1] = {0};
 uint8_t _binary_font_puhui_common_20_4_bin_end[1] = {0};
 
-int official_chat_service_get_message_count(void) { return 0; }
-void *official_chat_service_get_message(int index) { return NULL; }
-const char *official_chat_service_get_last_user_text(void) { return ""; }
-const char *official_chat_service_get_last_assistant_text(void) { return ""; }
-int official_chat_service_is_shutdown_pending(void) { return 0; }
+/* Mock ui_font_assets.h to return correct LXGW and Montserrat fonts */
+#include "ui_font_assets.h"
+extern const lv_font_t lv_font_montserrat_lxgw_tghz_level1_3500_22_4;
+extern const lv_font_t lv_font_montserrat_lxgw_tghz_level1_3500_16_4;
+extern const lv_font_t lv_font_montserratMedium_16;
+
+esp_err_t ui_font_assets_init(void) { return ESP_OK; }
+bool ui_font_assets_ready(void) { return true; }
+const lv_font_t *ui_font_assets_title(void) { return &lv_font_montserrat_lxgw_tghz_level1_3500_22_4; }
+const lv_font_t *ui_font_assets_body(void) { return &lv_font_montserrat_lxgw_tghz_level1_3500_16_4; }
+const lv_font_t *ui_font_assets_meta(void) { return &lv_font_montserrat_lxgw_tghz_level1_3500_16_4; }
+const lv_font_t *ui_font_assets_icon(void) { return &lv_font_montserratMedium_16; }
+
+/* Mock official_chat_service.h with 8 conversation messages */
+#include "services/official_chat_service.h"
+
+static official_chat_service_message_t s_mock_messages[] = {
+    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "你好, 小智!" },
+    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "你好! 我是小智, 你的个人 AI 语音助手. 很高兴为你服务." },
+    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "今天天气怎么样?" },
+    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "今天北京天气晴朗, 气温 18 到 28 度, 非常适合户外出行. 建议注意防晒." },
+    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "北京有什么好玩的地方推荐吗?" },
+    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "北京有许多景点! 如果您喜欢历史, 可以去故宫和长城; 如果偏好现代, 可以逛逛 798 艺术区. 您偏好哪种?" },
+    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "我更偏好历史古迹." },
+    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "那推荐您先去故宫博物院, 建议提前预约门票. 之后可以沿着景山公园俯瞰紫禁城全景, 非常壮观!" }
+};
+
+size_t official_chat_service_get_message_count(void) {
+    return sizeof(s_mock_messages) / sizeof(s_mock_messages[0]);
+}
+
+esp_err_t official_chat_service_get_message(size_t index, official_chat_service_message_t *out_message) {
+    if (index >= sizeof(s_mock_messages) / sizeof(s_mock_messages[0])) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (out_message != NULL) {
+        *out_message = s_mock_messages[index];
+    }
+    return ESP_OK;
+}
+
+esp_err_t official_chat_service_get_last_user_text(char *buffer, size_t size) {
+    if (buffer != NULL && size > 0) {
+        strncpy(buffer, "我更偏好历史古迹.", size - 1);
+        buffer[size - 1] = '\0';
+    }
+    return ESP_OK;
+}
+
+esp_err_t official_chat_service_get_last_assistant_text(char *buffer, size_t size) {
+    if (buffer != NULL && size > 0) {
+        strncpy(buffer, "那推荐您先去故宫博物院, 建议提前预约门票. 之后可以沿着景山公园俯瞰紫禁城全景, 非常壮观!", size - 1);
+        buffer[size - 1] = '\0';
+    }
+    return ESP_OK;
+}
+
+bool official_chat_service_is_shutdown_pending(void) { return false; }
 void official_chat_service_leave_foreground(void) {}
 void official_chat_service_enter_foreground(void) {}
-int official_chat_service_get_state(void) { return 0; }
+official_chat_service_state_t official_chat_service_get_state(void) { return OFFICIAL_CHAT_SERVICE_STATE_IDLE; }
 
 void network_service_request_portal(void) {}
-int network_service_get_state(void) { return 0; }
+network_service_state_t network_service_get_state(void) { return NETWORK_SERVICE_STATE_OFFLINE; }
 
 void app_alert_manager_set_traffic_audio_overlay_enabled(int enabled) {}
 
@@ -93,7 +220,6 @@ void *background_service_manager_get_snapshot(void) { return NULL; }
 void background_service_manager_init(void) {}
 
 void *danger_detection_service_get_snapshot(void) { return NULL; }
-
 
 #include "gui_guider.h"
 lv_ui guider_ui;

@@ -66,6 +66,10 @@ set(feature_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_2048.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_flappy.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_dino.c
+
     ${CMAKE_CURRENT_LIST_DIR}/features/weather/hptts.c
 
     ${CMAKE_CURRENT_LIST_DIR}/features/weather/time_weather.c
@@ -107,6 +111,8 @@ set(ui_runtime_srcs
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/scroll_functions.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ui_font_assets.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/mini_game_sprites.c
 
 )
 
@@ -257,4 +263,6 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     "UI_FONT_ASSETS_BUILTIN_TEXT_START_SYMBOL=\"_binary_${BUILTIN_TEXT_FONT_ID}_bin_start\""
     "UI_FONT_ASSETS_BUILTIN_TEXT_END_SYMBOL=\"_binary_${BUILTIN_TEXT_FONT_ID}_bin_end\""
 )
+
+target_compile_options(${COMPONENT_LIB} PRIVATE -Os)
 

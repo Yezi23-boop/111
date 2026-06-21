@@ -43,7 +43,7 @@ typedef struct
 static background_service_manager_state_t s_manager = {
     .initialized = false,
     .started = false,
-    .danger_enabled_by_user = true,
+    .danger_enabled_by_user = false,
     .danger_allowed_by_policy = true,
     .danger_should_run = false,
     .danger_runtime_running = false,

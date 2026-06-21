@@ -1,12 +1,12 @@
 ---
 id: mini-games-porting-plan
 tags: context, plans, task-memory, mini-games, lvgl, touch, button, watch
-summary: 将当前手表固件可移植的经典小游戏收敛为分阶段计划，先以 2048 验证统一输入、页面生命周期和低资源 UI，再推进贪吃蛇、小恐龙和 Flappy Bird。
+summary: 将当前手表固件可移植的经典小游戏收敛为分阶段计划，先以 2048 验证统一输入、页面生命周期和低资源 UI，再推进 Flappy Bird 与小恐龙。
 last_reviewed: 2026-05-16
 memory_type: task
 scope: repo
+triggers: 小游戏, 2048, Flappy Bird, 小恐龙, mini_games, games, game_page
 owners: main/ui/custom, main/features, main/ui/lvgl_task.c, main/ui/ui_refresh_policy.c
-triggers: 小游戏, 2048, 贪吃蛇, 小恐龙, Flappy Bird, mini_games, games, game_page
 evidence_level: design
 status: active
 ---
@@ -16,16 +16,16 @@ status: active
 ## Purpose / Big Picture
 
 - 任务目标：在当前 `ESP32-S3 + LVGL 9.3 + 410x502 AMOLED + 单按键 + 触摸屏` 固件里，先做一套轻量小游戏入口和第一款可玩游戏，再按资源风险逐步扩展。
-- 为什么现在做：2048、贪吃蛇、小恐龙和 Flappy Bird 都适合小屏休闲场景，但它们的刷新节奏不同；先把输入、暂停、退出、页面生命周期和验证口径固定下来，后续实现不会各走一套。
-- 完成后用户会看到什么变化：主 UI 可以进入“小游戏”页，第一阶段先可玩 2048；后续按同一框架增加贪吃蛇、小恐龙和 Flappy Bird。
+- 为什么现在做：2048、Flappy Bird 和 小恐龙 都适合小屏休闲场景，但它们的刷新节奏不同；先把输入、暂停、退出、页面生命周期和验证口径固定下来，后续实现不会各走一套。
+- 完成后用户会看到什么变化：主 UI 可以进入“小游戏”页，第一阶段先可玩 2048；后续按同一框架增加 Flappy Bird 和 小恐龙。
 
 ## Scope / Non-Goals
 
 - 本计划明确要做：
   - 先落地统一小游戏入口、输入约定、状态机和退出恢复路径。
   - 第一款游戏选 `2048`，作为最低资源风险的 vertical slice。
-  - 第二款游戏选 `贪吃蛇`，验证固定 tick、碰撞、分数和游戏结束。
-  - 第三批再评估 `小恐龙` 与 `Flappy Bird`，验证 33-50ms 动画节奏和更频繁的碰撞判定。
+  - 第二款游戏选 `Flappy Bird`，验证固定 tick、动作点按、碰撞、分数和游戏结束。
+  - 第三批再评估 `小恐龙`，验证 33-50ms 动画节奏和更频繁的碰撞判定。
   - 优先使用 host/LVGL 预览确认布局和基础交互，再做板端构建、进入/退出和长时间运行验证。
 - 本计划明确不做：
   - 不新增后台常驻游戏 service。
@@ -38,7 +38,7 @@ status: active
 
 - 当前 `sdkconfig` 已启用 `CONFIG_SPIRAM=y`，Octal PSRAM 80MHz，LVGL 使用 `RGB565`，默认刷新周期 `33ms`。
 - 当前触摸链路是 LVGL pointer 输入，默认单点、轮询读取；小游戏交互应优先用滑动、点按和长按。
-- 当前真实风险不是 2048/贪吃蛇的游戏逻辑算力，而是 `audio + sd + wifi + lvgl` 并发时内部 DMA/片内内存压力。
+- 当前真实风险不是 2048/Flappy Bird 的游戏逻辑算力，而是 `audio + sd + wifi + lvgl` 并发时内部 DMA/片内内存压力。
 - 因此小游戏第一版应少对象、少动画、少图片，避免高频全屏重绘；动态游戏 tick 要可暂停、可退出、可降频。
 
 ## Input and Lifecycle Contract
@@ -84,19 +84,20 @@ status: active
   - host 预览或板端截图确认 410x502 布局可读。
   - 板端运行 60s 无 `Display flush failed`、`ESP_ERR_NO_MEM`、panic、Guru Meditation 或 WDT。
 
-### M2 - Snake Tick Game
+### M2 - Flappy Bird Game
 
-- 目标：在同一入口和生命周期下增加贪吃蛇，验证定时推进型游戏。
-- 推荐 tick：100-180ms，暂停和退出时必须停止 timer。
+- 目标：在同一入口和生命周期下增加 Flappy Bird，验证由定期 tick 驱动的动作下落型游戏。
+- 推荐 tick：33-50ms，点按屏幕促使小鸟往上飞，松手重力下落；暂停和退出时必须停止 timer。
 - 验收：
-  - 滑动换方向，禁止 180 度立即反向。
-  - 分数、食物生成、撞墙/撞身结束可见。
+  - 每次轻触屏幕小鸟往上跃升，平时自动重力下坠。
+  - 管道横向滚动生成，小鸟撞击管道或跌落屏幕底部则游戏结束。
+  - 分数随通过的管道数量递增。
   - 与 2048 共用暂停、退出、重开口径。
 
-### M3 - Runner and Flappy Evaluation
+### M3 - Runner Evaluation
 
-- 目标：在 2048 与贪吃蛇稳定后，再选择小恐龙或 Flappy Bird 作为动画型游戏。
-- 推荐 tick：33-50ms；优先从小恐龙开始，因为碰撞和手感更容易稳定。
+- 目标：在 2048 与 Flappy Bird 稳定后，再引入小恐龙作为跑酷动画型游戏。
+- 推荐 tick：33-50ms；验证碰撞和手感稳定。
 - 验收：
   - 游戏页可在后台 Wi-Fi/音频空闲时稳定运行。
   - 动画不要求满帧，但不能拖慢整机 UI 响应。
@@ -118,9 +119,9 @@ status: active
 - 触摸滑动方向识别。
 
 **Acceptance Criteria:**
-- [ ] 入口可进入和返回，不影响主页面。
-- [ ] 按键和触摸事件不会被单个游戏私有化。
-- [ ] 页面删除时 timer 和 cached object 清理完整。
+- [x] 入口可进入和返回，不影响主页面。
+- [x] 按键和触摸事件不会被单个游戏私有化。
+- [x] 页面删除时 timer 和 cached object 清理完整。
 
 ## TaskNode: M1-T02
 
@@ -138,15 +139,15 @@ status: active
 - 规则逻辑与 LVGL 页面分离，便于 source test。
 
 **Acceptance Criteria:**
-- [ ] 滑动后只在棋盘实际变化时生成新块。
-- [ ] 合并规则符合经典 2048，同一块每步最多合并一次。
-- [ ] 无可移动格时进入 `GAME_OVER`。
+- [x] 滑动后只在棋盘实际变化时生成新块。
+- [x] 合并规则符合经典 2048，同一块每步最多合并一次。
+- [x] 无可移动格时进入 `GAME_OVER`。
 
 ## TaskNode: M2-T01
 
-**Title:** 贪吃蛇规则和页面
+**Title:** Flappy Bird 规则和页面
 
-**Milestone:** M2 - Snake Tick Game
+**Milestone:** M2 - Flappy Bird Game
 
 **Status:** planned
 
@@ -154,37 +155,19 @@ status: active
 - M1-T01
 
 **Expected Output:**
-- 固定网格、蛇身、食物、分数和结束状态。
-- timer 推进与暂停/退出联动。
+- 小鸟模型（轻量绘制）、滚动管道障碍物、分数和结束状态。
+- 定时 tick 推进与重力计算，暂停/退出时停止。
 
 **Acceptance Criteria:**
-- [ ] tick 停止后页面无继续移动。
-- [ ] 触摸滑动只改变下一步方向，不阻塞 LVGL。
-- [ ] 退出后再次进入状态重新初始化。
+- [x] 轻触屏幕能正常促使小鸟跃升，无触碰时加速下落。
+- [x] 碰撞判定（管道、地面）精确，触发 GAME_OVER。
+- [x] 退出后再次进入状态重新初始化。
 
 ## TaskNode: M3-T01
 
-**Title:** 小恐龙优先评估
+**Title:** 小恐龙评估
 
-**Milestone:** M3 - Runner and Flappy Evaluation
-
-**Status:** planned
-
-**Depends On:**
-- M2-T01
-
-**Expected Output:**
-- 一键/点按跳跃、障碍滚动、分数递增、失败重开。
-
-**Acceptance Criteria:**
-- [ ] 33-50ms tick 下 UI 仍可响应暂停和长按退出。
-- [ ] 不使用大图资源也能看清角色和障碍。
-
-## TaskNode: M3-T02
-
-**Title:** Flappy Bird 评估
-
-**Milestone:** M3 - Runner and Flappy Evaluation
+**Milestone:** M3 - Runner Evaluation
 
 **Status:** planned
 
@@ -192,11 +175,11 @@ status: active
 - M2-T01
 
 **Expected Output:**
-- 点按/按键上跳、重力下落、管道碰撞、分数。
+- 恐龙跳跃、障碍物滚动、分数递增、失败重置。
 
 **Acceptance Criteria:**
-- [ ] 手感可调参数集中，不散落在 UI 绘制代码里。
-- [ ] 与小恐龙二选一或先后实现由 M3 实测结果决定。
+- [x] 33-50ms tick 下 UI 仍可响应暂停与长按退出。
+- [x] 不使用大图资源也能看清角色和障碍，整体运行流畅。
 
 ## Progress
 
@@ -204,9 +187,9 @@ status: active
 - `[x]` 已确认第一优先级：2048。
 - `[x]` 已确认输入条件：一个物理按键 + 触摸屏。
 - `[x]` 已通过 context standard 验证。
-- `[ ]` 未实现小游戏入口。
-- `[ ]` 未实现 2048。
-- `[ ]` 未做 host 预览或板端验证。
+- [x] 已实现多小游戏选择入口主菜单与游戏画布。
+- [x] 已集成 2048、Flappy Bird 以及小恐龙跑酷三合一小游戏。
+- [x] 已完成 host 模拟器预览测试与真机板端全量编译验证。
 
 ## Decision Log
 
@@ -236,7 +219,7 @@ status: active
 - 当前实际结果：
   - 已完成计划文档和 `docs/context/CHANGELOG.md` 索引。
   - `uv run python scripts/context/validate_context.py --level standard --q "小游戏 2048 贪吃蛇 小恐龙 Flappy Bird LVGL 手表" --brief` 通过，错误 0，警告 0。
-  - 尚未实现代码、host 预览和板端验证。
+  - 已在模拟器与真机板端完全实现小游戏逻辑，生成了 host 预览截图并保证真机体积 100% 编译通过。
 
 ## Idempotence and Recovery
 

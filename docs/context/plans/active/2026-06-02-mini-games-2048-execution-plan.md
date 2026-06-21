@@ -298,6 +298,12 @@ status: active
 - 2026-06-02：
   - 决策：物理按键桥接从 `volatile` pending bitmask 重构为 FreeRTOS queue。
   - 原因：短按/长按是跨上下文边沿事件，queue 能保留事件顺序并避免读改写竞态；`board_button_clear_events()` 用于丢弃非小游戏页产生的旧事件，防止进入 2048 后误暂停或误退出。
+- 2026-06-21：
+  - 决策：在 board 手势滑动回调中，增加对 `LV_EVENT_PRESS_LOST` 事件的捕获判定。
+  - 原因：因棋盘移除了 padding，物理边界较紧凑，用户在极满或剧烈滑动时易将鼠标/手指滑出棋盘区域释放，从而触发 `LV_EVENT_PRESS_LOST` 而非 `LV_EVENT_RELEASED`，导致手势直接被无视而卡死。增加该事件支持可彻底解决此问题。
+- 2026-06-21：
+  - 决策：解除真机对 Flappy Bird 和 Dino Runner 游戏编译的屏蔽。
+  - 原因：用户已扩大 ESP32 手表实机上的 app 分区容量，无需受限于原 410KB 的体积红线限制。我们将 `DISABLE_NEW_GAMES` 宏硬编码置为 0，从而使所有 3 个精选小游戏均在实机固件中完整编译接入，对用户全面开放。
 
 ## Surprises & Discoveries
 

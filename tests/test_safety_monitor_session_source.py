@@ -39,7 +39,7 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("danger_should_run", header)
         self.assertIn("danger_block_reason", header)
         self.assertIn("danger_blocked_by_foreground_audio", header)
-        self.assertIn(".danger_enabled_by_user = true", source)
+        self.assertIn(".danger_enabled_by_user = false", source)
         self.assertIn(
             "background_service_manager_set_foreground_audio_active",
             header,

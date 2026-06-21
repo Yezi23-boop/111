@@ -13,6 +13,7 @@ struct danger_detection_view {
     lv_obj_t *safety_monitor_row;
     lv_obj_t *safety_monitor_label;
     lv_obj_t *safety_monitor_switch;
+    lv_obj_t *safety_monitor_knob;
     lv_obj_t *status_label;
     lv_obj_t *category_label;
     lv_obj_t *primary_result_label;
@@ -112,7 +113,7 @@ danger_detection_view_t *danger_detection_view_create(
     view->safety_monitor_row = lv_obj_create(view->content_layer);
     lv_obj_remove_style_all(view->safety_monitor_row);
     lv_obj_set_size(view->safety_monitor_row, 176, 40);
-    lv_obj_align(view->safety_monitor_row, LV_ALIGN_TOP_RIGHT, -18, 12);
+    lv_obj_align(view->safety_monitor_row, LV_ALIGN_BOTTOM_MID, 0, -112);
     lv_obj_set_flex_flow(view->safety_monitor_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(view->safety_monitor_row, LV_FLEX_ALIGN_END,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -126,11 +127,33 @@ danger_detection_view_t *danger_detection_view_create(
     lv_obj_set_style_text_color(view->safety_monitor_label,
                                 lv_color_hex(0x111827), 0);
 
-    view->safety_monitor_switch = lv_switch_create(view->safety_monitor_row);
-    lv_obj_set_size(view->safety_monitor_switch, 48, 26);
+    view->safety_monitor_switch = lv_obj_create(view->safety_monitor_row);
+    lv_obj_remove_style_all(view->safety_monitor_switch);
+    lv_obj_set_size(view->safety_monitor_switch, 52, 28);
+    lv_obj_add_flag(view->safety_monitor_switch, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(view->safety_monitor_switch, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_set_style_radius(view->safety_monitor_switch, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(view->safety_monitor_switch, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(view->safety_monitor_switch,
+                              lv_color_hex(0xe5e7eb), 0);
+    lv_obj_set_style_bg_color(view->safety_monitor_switch,
+                              lv_color_hex(0x111827), LV_STATE_CHECKED);
+    lv_obj_set_style_pad_all(view->safety_monitor_switch, 3, 0);
     lv_obj_add_event_cb(view->safety_monitor_switch,
                         danger_detection_view_switch_event,
                         LV_EVENT_VALUE_CHANGED, view);
+
+    view->safety_monitor_knob = lv_obj_create(view->safety_monitor_switch);
+    lv_obj_remove_style_all(view->safety_monitor_knob);
+    lv_obj_set_size(view->safety_monitor_knob, 22, 22);
+    lv_obj_set_style_radius(view->safety_monitor_knob, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(view->safety_monitor_knob, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(view->safety_monitor_knob,
+                              lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_shadow_width(view->safety_monitor_knob, 6, 0);
+    lv_obj_set_style_shadow_opa(view->safety_monitor_knob, LV_OPA_20, 0);
+    lv_obj_clear_flag(view->safety_monitor_knob, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(view->safety_monitor_knob, LV_ALIGN_LEFT_MID, 3, 0);
 
     view->status_label = lv_label_create(view->content_layer);
     lv_label_set_text(view->status_label, "未开启");
@@ -269,8 +292,10 @@ void danger_detection_view_apply_model(
     view->updating_switch = true;
     if (model->safety_monitor_enabled) {
         lv_obj_add_state(view->safety_monitor_switch, LV_STATE_CHECKED);
+        lv_obj_align(view->safety_monitor_knob, LV_ALIGN_RIGHT_MID, -3, 0);
     } else {
         lv_obj_clear_state(view->safety_monitor_switch, LV_STATE_CHECKED);
+        lv_obj_align(view->safety_monitor_knob, LV_ALIGN_LEFT_MID, 3, 0);
     }
     view->updating_switch = false;
 
