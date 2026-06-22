@@ -5,6 +5,17 @@
 #include "danger_detection_service.h"
 #include "system_time.h"
 #include "services/network_service.h"
+#include "features/weather/time_weather.h"
+
+esp_err_t weather_service_get_info(weather_info_t *out)
+{
+    if (out == NULL) return ESP_FAIL;
+    out->temp = 24;
+    strcpy(out->weather_text, "多云");
+    strcpy(out->icon_path, "A:/weather/duoyun.png");
+    out->is_valid = true;
+    return ESP_OK;
+}
 
 const char *esp_err_to_name(esp_err_t code) { return "OK"; }
 bool network_manager_is_ble_enabled(void) { return true; }
@@ -19,7 +30,8 @@ esp_err_t network_manager_get_status(network_manager_status_t *status) {
 danger_detection_state_t danger_detection_service_get_state(void) { return DANGER_DETECTION_STATE_IDLE; }
 void danger_detection_service_set_state(danger_detection_state_t state) {}
 esp_err_t system_time_get_local_time(system_time_local_t *t) {
-    t->hour = 12; t->min = 0; t->sec = 0;
+    t->year = 2026; t->month = 6; t->day = 18;
+    t->hour = 10; t->min = 9; t->sec = 0;
     return ESP_OK;
 }
 void vTaskDelay(uint32_t xTicksToDelay) {}
@@ -221,5 +233,31 @@ void background_service_manager_init(void) {}
 
 void *danger_detection_service_get_snapshot(void) { return NULL; }
 
+#include "services/power_service.h"
+esp_err_t power_service_get_snapshot(board_power_state_t *out_state) {
+    if (out_state != NULL) {
+        out_state->available = true;
+        out_state->battery_data_valid = true;
+        out_state->snapshot_stale = false;
+        out_state->charging = false;
+        out_state->discharging = true;
+        out_state->external_power_present = false;
+        out_state->battery_present = true;
+        out_state->battery_mv = 3800;
+        out_state->system_mv = 3800;
+        out_state->battery_percent = 80;
+    }
+    return ESP_OK;
+}
+const board_power_state_t *power_service_get_state(void) {
+    static board_power_state_t s_state = {
+        .available = true,
+        .battery_data_valid = true,
+        .battery_percent = 80,
+    };
+    return &s_state;
+}
+
 #include "gui_guider.h"
 lv_ui guider_ui;
+

@@ -5,6 +5,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# 如果前一次留下的预览窗口还在运行，先杀掉它以释放文件锁确保编译通过
+Get-Process -Name "agent_preview_host" -ErrorAction SilentlyContinue | Stop-Process -Force
+
 $env:PATH = "D:\MSYS2\mingw64\bin;D:\MSYS2\usr\bin;" + $env:PATH
 
 cmake -S $SourceDir -B $BuildDir -G "MinGW Makefiles" -DCMAKE_C_COMPILER="D:/MSYS2/mingw64/bin/gcc.exe"

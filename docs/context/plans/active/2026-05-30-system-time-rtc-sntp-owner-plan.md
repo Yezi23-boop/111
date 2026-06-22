@@ -192,7 +192,7 @@ official_ota: time ensure callback ok before HTTPS
 ## Risks
 
 - `official_chat` 是 component，不能反向依赖 `main/services`；必须用回调注入。
-- `time_weather` 当前正式入口未启用，但仍编译；迁移时不能留下未解析符号。
+- `time_weather` 已恢复为低频后台天气任务；HTTPS/TLS 天气拉取需要预留足够任务栈，不能按普通 4KB 后台循环配置。
 - USB 串口环境下不能把 Light Sleep 作为本轮验收依据。
 - 板端 `os=1` 只有在 SNTP 成功写回 RTC 后才应清除，不能为了日志好看手动清。
 
@@ -213,6 +213,10 @@ official_ota: time ensure callback ok before HTTPS
 - `[x]` RTC driver API、`components/system_time`、`system_time_service` 和 `official_chat` 时间回调迁移完成。
 - `[x]` 旧 `components/get_time` 已删除，天气时间读取已迁移。
 - `[x]` 定向 source tests、context standard、`idf.py build` 和板端 RTC/SNTP/断电保持证据已完成。
+- `[x]` 2026-06-22 修复 `time` 任务天气 HTTPS 拉取后的 stack overflow：任务栈提升到 8KB，并移除 HTTP 请求函数中无用的 1KB 栈上响应缓存；`tests.test_nonblocking_boot_source` 与 `idf.py build` 通过。
+- `[x]` 2026-06-22 修复主屏天气图片不显示：板端重新启用 LVGL LodePNG 解码，并让天气 UI 刷新条件包含 `icon_path`，`idf.py fullclean && idf.py build` 通过。
+- `[x]` 2026-06-22 将主屏天气图标从运行时 PNG 文件解码改为 96x96 `RGB565A8` C 图片资源映射，避开 `lv_lodepng` 对 `A:` 盘符路径的原始 `fopen` 兼容问题；`idf.py build` 与 `idf.py -p COM3 app-flash` 通过。
+- `[x]` 2026-06-22 调整天气后台刷新策略：首次联网立即拉取，成功后 60 分钟间隔，失败 5 分钟退避重试，STANDBY/熄屏预算下拉长到 2 小时；`tests.test_time_weather_source`、`idf.py build` 与 `idf.py -p COM3 app-flash` 通过。
 - `[ ]` 全量 unittest discover 仍保留 AP Portal 旧预期失败，和本计划主线无直接关系。
 
 ## Decision Log

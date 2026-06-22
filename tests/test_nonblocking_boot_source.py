@@ -45,8 +45,9 @@ class NonblockingBootSourceTests(unittest.TestCase):
             'xTaskCreatePinnedToCore(lvgl_task, "lvgl_task"',
             source,
         )
+        self.assertIn("kTimeWeatherTaskStackBytes = 8192", source)
         self.assertIn(
-            '// xTaskCreatePinnedToCore(time_and_weather, "time"',
+            'xTaskCreatePinnedToCore(\n        time_and_weather, "time", kTimeWeatherTaskStackBytes',
             source,
         )
         self.assertIn("official_chat_service_init()", source)

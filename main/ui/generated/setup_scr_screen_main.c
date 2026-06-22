@@ -19,113 +19,34 @@
 int screen_main_digital_clock_1_min_value = 25;
 int screen_main_digital_clock_1_hour_value = 11;
 int screen_main_digital_clock_1_sec_value = 50;
-void setup_scr_screen_main(lv_ui *ui)
+void setup_scr_screen_main_function_page(lv_ui *ui)
 {
-    //Write codes screen_main
-    ui->screen_main = lv_obj_create(NULL);
-    lv_obj_set_size(ui->screen_main, 410, 502);
-    lv_obj_set_scrollbar_mode(ui->screen_main, LV_SCROLLBAR_MODE_OFF);
-
-    //Write style for screen_main, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_bg_opa(ui->screen_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-    //Write codes screen_main_Contorl_Con
-    ui->screen_main_Contorl_Con = lv_obj_create(ui->screen_main);
-    lv_obj_set_pos(ui->screen_main_Contorl_Con, 0, 0);
-    lv_obj_set_size(ui->screen_main_Contorl_Con, 410, 502);
-    lv_obj_set_scrollbar_mode(ui->screen_main_Contorl_Con, LV_SCROLLBAR_MODE_OFF);
-
-    //Write style for screen_main_Contorl_Con, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_border_width(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui->screen_main_Contorl_Con, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui->screen_main_Contorl_Con, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(ui->screen_main_Contorl_Con, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_top(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_left(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_right(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-    //Write codes screen_main_tileview_1
-    ui->screen_main_tileview_1 = lv_tileview_create(ui->screen_main_Contorl_Con);
-    lv_obj_set_pos(ui->screen_main_tileview_1, 0, 0);
-    lv_obj_set_size(ui->screen_main_tileview_1, 410, 502);
-    lv_obj_set_scrollbar_mode(ui->screen_main_tileview_1, LV_SCROLLBAR_MODE_OFF);
-    ui->screen_main_tileview_1_main = lv_tileview_add_tile(ui->screen_main_tileview_1, 0, 0, LV_DIR_RIGHT);
-    ui->screen_main_tileview_1_Function = lv_tileview_add_tile(ui->screen_main_tileview_1, 1, 0, LV_DIR_LEFT);
-
-    //Write style for screen_main_tileview_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_bg_opa(ui->screen_main_tileview_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui->screen_main_tileview_1, lv_color_hex(0xf6f6f6), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(ui->screen_main_tileview_1, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->screen_main_tileview_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->screen_main_tileview_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-    //Write style for screen_main_tileview_1, Part: LV_PART_SCROLLBAR, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_bg_opa(ui->screen_main_tileview_1, 255, LV_PART_SCROLLBAR|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui->screen_main_tileview_1, lv_color_hex(0xeaeff3), LV_PART_SCROLLBAR|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(ui->screen_main_tileview_1, LV_GRAD_DIR_NONE, LV_PART_SCROLLBAR|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->screen_main_tileview_1, 0, LV_PART_SCROLLBAR|LV_STATE_DEFAULT);
-
-
-
-    //Write codes screen_main_cont_1
-    ui->screen_main_cont_1 = lv_obj_create(ui->screen_main_tileview_1_main);
-    lv_obj_set_pos(ui->screen_main_cont_1, 0, 0);
-    lv_obj_set_size(ui->screen_main_cont_1, 410, 502);
-    lv_obj_set_scrollbar_mode(ui->screen_main_cont_1, LV_SCROLLBAR_MODE_OFF);
-
-    //Write style for screen_main_cont_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_border_width(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui->screen_main_cont_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui->screen_main_cont_1, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(ui->screen_main_cont_1, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_top(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_left(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_right(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_image_src(ui->screen_main_cont_1, &_5_RGB565A8_410x502, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_image_opa(ui->screen_main_cont_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_image_recolor_opa(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-    //Write codes screen_main_digital_clock_1
-    static bool screen_main_digital_clock_1_timer_enabled = false;
-    ui->screen_main_digital_clock_1 = lv_label_create(ui->screen_main_cont_1);
-    lv_obj_set_pos(ui->screen_main_digital_clock_1, 95, 96);
-    lv_obj_set_size(ui->screen_main_digital_clock_1, 251, 60);
-    lv_label_set_text(ui->screen_main_digital_clock_1, "--:--");
-    if (!screen_main_digital_clock_1_timer_enabled) {
-        lv_timer_create(screen_main_digital_clock_1_timer, 1000, NULL);
-        screen_main_digital_clock_1_timer_enabled = true;
+    //Write codes screen_main_Function_viewport
+    if (ui->screen_main_Function_main) {
+        return;
     }
-    screen_main_digital_clock_1_timer(NULL);
 
-    //Write style for screen_main_digital_clock_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_radius(ui->screen_main_digital_clock_1, 42, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(ui->screen_main_digital_clock_1, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->screen_main_digital_clock_1, &lv_font_montserratMedium_46, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui->screen_main_digital_clock_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_letter_space(ui->screen_main_digital_clock_1, 7, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(ui->screen_main_digital_clock_1, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui->screen_main_digital_clock_1, 128, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui->screen_main_digital_clock_1, lv_color_hex(0x585152), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(ui->screen_main_digital_clock_1, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_top(ui->screen_main_digital_clock_1, 7, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_right(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_left(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    ui->screen_main_tileview_1_Function = lv_obj_create(ui->screen_main_Contorl_Con);
+    lv_obj_set_pos(ui->screen_main_tileview_1_Function, 410, 0);
+    lv_obj_set_size(ui->screen_main_tileview_1_Function, 410, 502);
+    lv_obj_set_scrollbar_mode(ui->screen_main_tileview_1_Function, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(ui->screen_main_tileview_1_Function, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_border_width(ui->screen_main_tileview_1_Function, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->screen_main_tileview_1_Function, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->screen_main_tileview_1_Function, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->screen_main_tileview_1_Function, lv_color_hex(0x000000), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_dir(ui->screen_main_tileview_1_Function, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui->screen_main_tileview_1_Function, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui->screen_main_tileview_1_Function, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(ui->screen_main_tileview_1_Function, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui->screen_main_tileview_1_Function, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(ui->screen_main_tileview_1_Function, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
 
-
-
-    //Write codes screen_main_Function_main
     ui->screen_main_Function_main = lv_obj_create(ui->screen_main_tileview_1_Function);
     lv_obj_set_pos(ui->screen_main_Function_main, 0, 0);
     lv_obj_set_size(ui->screen_main_Function_main, 410, 502);
     lv_obj_set_scrollbar_mode(ui->screen_main_Function_main, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(ui->screen_main_Function_main, LV_OBJ_FLAG_CLICKABLE);
 
     //Write style for screen_main_Function_main, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
     lv_obj_set_style_border_width(ui->screen_main_Function_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
@@ -391,6 +312,115 @@ void setup_scr_screen_main(lv_ui *ui)
     lv_obj_set_style_image_recolor_opa(ui->screen_main_user, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_image_opa(ui->screen_main_user, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
 
+    //The custom code of screen_main function page.
+    setup_vertical_scroll(ui->screen_main_Function_main);
+    events_init_screen_main_function(ui);
+}
+void setup_scr_screen_main(lv_ui *ui)
+{
+    //Write codes screen_main
+    ui->screen_main = lv_obj_create(NULL);
+    lv_obj_set_size(ui->screen_main, 410, 502);
+    lv_obj_set_scrollbar_mode(ui->screen_main, LV_SCROLLBAR_MODE_OFF);
+
+    //Write style for screen_main, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
+    lv_obj_set_style_bg_opa(ui->screen_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    //Write codes screen_main_Contorl_Con
+    ui->screen_main_Contorl_Con = lv_obj_create(ui->screen_main);
+    lv_obj_set_pos(ui->screen_main_Contorl_Con, 0, 0);
+    lv_obj_set_size(ui->screen_main_Contorl_Con, 410, 502);
+    lv_obj_set_scrollbar_mode(ui->screen_main_Contorl_Con, LV_SCROLLBAR_MODE_OFF);
+
+    //Write style for screen_main_Contorl_Con, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
+    lv_obj_set_style_border_width(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->screen_main_Contorl_Con, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->screen_main_Contorl_Con, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_dir(ui->screen_main_Contorl_Con, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(ui->screen_main_Contorl_Con, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    //Write codes screen_main_tileview_1
+    // 运行时性能补丁：保留 GUI Guider 旧句柄，移除全屏 tileview 的持续滚动成本。
+    // 左右切页改由 events_init.c 的阈值手势触发，功能页按需创建并缓存。
+    ui->screen_main_tileview_1 = ui->screen_main_Contorl_Con;
+    ui->screen_main_tileview_1_main = lv_obj_create(ui->screen_main_Contorl_Con);
+    lv_obj_set_pos(ui->screen_main_tileview_1_main, 0, 0);
+    lv_obj_set_size(ui->screen_main_tileview_1_main, 410, 502);
+    lv_obj_set_scrollbar_mode(ui->screen_main_tileview_1_main, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(ui->screen_main_tileview_1_main, LV_OBJ_FLAG_SCROLLABLE);
+    ui->screen_main_tileview_1_Function = NULL;
+    ui->screen_main_Function_main = NULL;
+
+    //Write style for screen_main_tileview_1_main, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
+    lv_obj_set_style_border_width(ui->screen_main_tileview_1_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->screen_main_tileview_1_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->screen_main_tileview_1_main, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->screen_main_tileview_1_main, lv_color_hex(0xf6f6f6), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_dir(ui->screen_main_tileview_1_main, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui->screen_main_tileview_1_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui->screen_main_tileview_1_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(ui->screen_main_tileview_1_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui->screen_main_tileview_1_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(ui->screen_main_tileview_1_main, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+
+    //Write codes screen_main_cont_1
+    ui->screen_main_cont_1 = lv_obj_create(ui->screen_main_tileview_1_main);
+    lv_obj_set_pos(ui->screen_main_cont_1, 0, 0);
+    lv_obj_set_size(ui->screen_main_cont_1, 410, 502);
+    lv_obj_set_scrollbar_mode(ui->screen_main_cont_1, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(ui->screen_main_cont_1, LV_OBJ_FLAG_CLICKABLE);
+
+    //Write style for screen_main_cont_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
+    lv_obj_set_style_border_width(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->screen_main_cont_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->screen_main_cont_1, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_dir(ui->screen_main_cont_1, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_image_src(ui->screen_main_cont_1, &_5_RGB565A8_410x502, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_image_opa(ui->screen_main_cont_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_image_recolor_opa(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(ui->screen_main_cont_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    //Write codes screen_main_digital_clock_1
+    static bool screen_main_digital_clock_1_timer_enabled = false;
+    ui->screen_main_digital_clock_1 = lv_label_create(ui->screen_main_cont_1);
+    lv_obj_set_pos(ui->screen_main_digital_clock_1, 95, 96);
+    lv_obj_set_size(ui->screen_main_digital_clock_1, 251, 60);
+    lv_label_set_text(ui->screen_main_digital_clock_1, "--:--");
+    if (!screen_main_digital_clock_1_timer_enabled) {
+        lv_timer_create(screen_main_digital_clock_1_timer, 1000, NULL);
+        screen_main_digital_clock_1_timer_enabled = true;
+    }
+    screen_main_digital_clock_1_timer(NULL);
+
+    //Write style for screen_main_digital_clock_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
+    lv_obj_set_style_radius(ui->screen_main_digital_clock_1, 42, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ui->screen_main_digital_clock_1, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_digital_clock_1, &lv_font_montserratMedium_46, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(ui->screen_main_digital_clock_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_letter_space(ui->screen_main_digital_clock_1, 7, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(ui->screen_main_digital_clock_1, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->screen_main_digital_clock_1, 128, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->screen_main_digital_clock_1, lv_color_hex(0x585152), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_dir(ui->screen_main_digital_clock_1, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui->screen_main_digital_clock_1, 7, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+
+
     //Write codes screen_main_top_grab_area
     ui->screen_main_top_grab_area = lv_obj_create(ui->screen_main);
     lv_obj_set_pos(ui->screen_main_top_grab_area, 0, 0);
@@ -637,13 +667,115 @@ void setup_scr_screen_main(lv_ui *ui)
     lv_obj_set_style_text_font(ui->screen_main_imgbtn_1, &lv_font_montserratMedium_12, LV_PART_MAIN|LV_STATE_CHECKED);
     lv_obj_set_style_text_opa(ui->screen_main_imgbtn_1, 255, LV_PART_MAIN|LV_STATE_CHECKED);
     lv_obj_set_style_shadow_width(ui->screen_main_imgbtn_1, 0, LV_PART_MAIN|LV_STATE_CHECKED);
-
-    //Write style for screen_main_imgbtn_1, Part: LV_PART_MAIN, State: LV_IMAGEBUTTON_STATE_RELEASED.
     lv_obj_set_style_image_recolor_opa(ui->screen_main_imgbtn_1, 0, LV_PART_MAIN|LV_IMAGEBUTTON_STATE_RELEASED);
     lv_obj_set_style_image_opa(ui->screen_main_imgbtn_1, 255, LV_PART_MAIN|LV_IMAGEBUTTON_STATE_RELEASED);
 
-    //The custom code of screen_main.
-    setup_vertical_scroll(guider_ui.screen_main_Function_main);
+    // --- Antigravity Custom Watch Face UI Redesign Start ---
+    // 1. Clear background image and set solid warm-white color (#f6f5f0)
+    lv_obj_set_style_bg_image_src(ui->screen_main_cont_1, NULL, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->screen_main_cont_1, lv_color_hex(0xf6f5f0), LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    // 2. Create date label (top-left, x: 30, y: 24)
+    ui->screen_main_date_label = lv_label_create(ui->screen_main_cont_1);
+    lv_obj_set_pos(ui->screen_main_date_label, 30, 24);
+    lv_obj_set_style_text_color(ui->screen_main_date_label, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_date_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_label_set_text(ui->screen_main_date_label, "周二 06/18");
+
+    // 3. Create battery percentage label and battery progress bar (top-right)
+    // Battery Label: x: 332, y: 24
+    ui->screen_main_battery_label = lv_label_create(ui->screen_main_cont_1);
+    lv_obj_set_pos(ui->screen_main_battery_label, 332, 24);
+    lv_obj_set_style_text_color(ui->screen_main_battery_label, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_battery_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_label_set_text(ui->screen_main_battery_label, "80%");
+
+    // Battery Bar container: x: 298, y: 27, size: 28x14, border: 1, radius: 3
+    ui->screen_main_battery_bar = lv_obj_create(ui->screen_main_cont_1);
+    lv_obj_set_pos(ui->screen_main_battery_bar, 298, 27);
+    lv_obj_set_size(ui->screen_main_battery_bar, 28, 14);
+    lv_obj_set_scrollbar_mode(ui->screen_main_battery_bar, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_border_width(ui->screen_main_battery_bar, 1, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui->screen_main_battery_bar, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->screen_main_battery_bar, 3, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->screen_main_battery_bar, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(ui->screen_main_battery_bar, 1, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    // Battery Fill bar inside container: size: 24x10, bg_color: #10b981
+    ui->screen_main_battery_fill = lv_obj_create(ui->screen_main_battery_bar);
+    lv_obj_set_pos(ui->screen_main_battery_fill, 0, 0);
+    lv_obj_set_size(ui->screen_main_battery_fill, 24, 10);
+    lv_obj_set_scrollbar_mode(ui->screen_main_battery_fill, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_border_width(ui->screen_main_battery_fill, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->screen_main_battery_fill, 1, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->screen_main_battery_fill, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->screen_main_battery_fill, lv_color_hex(0x10b981), LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    // 4. Overwrite center large digital clock style (increase to 58px Montserrat, transparent background, centered)
+    lv_obj_set_style_bg_opa(ui->screen_main_digital_clock_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_digital_clock_1, &lv_font_montserratMedium_58, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ui->screen_main_digital_clock_1, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_pos(ui->screen_main_digital_clock_1, 0, 75);
+    lv_obj_set_size(ui->screen_main_digital_clock_1, 410, 70);
+    lv_obj_set_style_text_align(ui->screen_main_digital_clock_1, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    // 5. Create bottom Weather Bento Card and child components (x: 28, y: 246, size: 354x196, radius: 36)
+    ui->screen_main_weather_card = lv_obj_create(ui->screen_main_cont_1);
+    lv_obj_set_pos(ui->screen_main_weather_card, 28, 246);
+    lv_obj_set_size(ui->screen_main_weather_card, 354, 196);
+    lv_obj_set_scrollbar_mode(ui->screen_main_weather_card, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_border_width(ui->screen_main_weather_card, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui->screen_main_weather_card, 36, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui->screen_main_weather_card, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui->screen_main_weather_card, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(ui->screen_main_weather_card, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    // Soft gray shadow for the Bento Card
+    lv_obj_set_style_shadow_width(ui->screen_main_weather_card, 20, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_color(ui->screen_main_weather_card, lv_color_hex(0xd1d5db), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_opa(ui->screen_main_weather_card, 100, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_offset_y(ui->screen_main_weather_card, 4, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    // Weather Icon (Left-side: size 96x96, pos: 24, 50)
+    ui->screen_main_weather_icon = lv_image_create(ui->screen_main_weather_card);
+    lv_obj_set_pos(ui->screen_main_weather_icon, 24, 50);
+    lv_obj_set_size(ui->screen_main_weather_icon, 96, 96);
+    lv_image_set_src(ui->screen_main_weather_icon, &_weather_duoyun_RGB565A8_96x96);
+    lv_image_set_scale(ui->screen_main_weather_icon, LV_SCALE_NONE);
+    lv_obj_set_style_radius(ui->screen_main_weather_icon, 16, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_clip_corner(ui->screen_main_weather_icon, true, LV_PART_MAIN|LV_STATE_DEFAULT);
+
+    // Weather Temperature: (Right-side: Montserrat 46px, pos: 172, 36)
+    ui->screen_main_weather_temp = lv_label_create(ui->screen_main_weather_card);
+    lv_obj_set_pos(ui->screen_main_weather_temp, 172, 36);
+    lv_obj_set_style_text_color(ui->screen_main_weather_temp, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_weather_temp, &lv_font_montserratMedium_46, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_label_set_text(ui->screen_main_weather_temp, "24");
+
+    // Weather Unit "°C": (Right-side: Chinese 16px, aligned to top-right of temp label)
+    lv_obj_t *weather_unit = lv_label_create(ui->screen_main_weather_card);
+    lv_obj_set_style_text_color(weather_unit, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(weather_unit, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_label_set_text(weather_unit, "°C");
+    lv_obj_align_to(weather_unit, ui->screen_main_weather_temp, LV_ALIGN_OUT_RIGHT_TOP, 2, 4);
+
+    // Weather Status text: (Right-side: Chinese 22px, pos: 172, 94)
+    ui->screen_main_weather_text = lv_label_create(ui->screen_main_weather_card);
+    lv_obj_set_pos(ui->screen_main_weather_text, 172, 94);
+    lv_obj_set_style_text_color(ui->screen_main_weather_text, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_weather_text, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_label_set_text(ui->screen_main_weather_text, "多云");
+
+    // High/Low Temperature range: (Right-side: Chinese 16px, pos: 172, 128)
+    ui->screen_main_weather_range = lv_label_create(ui->screen_main_weather_card);
+    lv_obj_set_pos(ui->screen_main_weather_range, 172, 128);
+    lv_obj_set_style_text_color(ui->screen_main_weather_range, lv_color_hex(0x4E6557), LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_weather_range, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_label_set_text(ui->screen_main_weather_range, "最高 28°C / 最低 19°C");
+
+    // Invoke clock timer once to update date/time and battery stats immediately
+    screen_main_digital_clock_1_timer(NULL);
+    // --- Antigravity Custom Watch Face UI Redesign End ---
 
     //Update current screen layout.
     lv_obj_update_layout(ui->screen_main);

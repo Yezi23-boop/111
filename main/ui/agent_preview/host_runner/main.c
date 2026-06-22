@@ -17,7 +17,7 @@
 
 #define PREVIEW_W 410
 #define PREVIEW_H 502
-#define PREVIEW_CORNER_RADIUS 64
+#define PREVIEW_CORNER_RADIUS 100
 
 static uint8_t s_screen_mask_data[PREVIEW_W * PREVIEW_H * 4];
 static lv_image_dsc_t s_screen_mask_dsc;
@@ -29,15 +29,21 @@ static bool preview_point_inside_rounded_screen(int32_t x, int32_t y)
     int32_t cx = x;
     int32_t cy = y;
 
-    if (x < r) {
+    if (x < r)
+    {
         cx = r;
-    } else if (x >= PREVIEW_W - r) {
+    }
+    else if (x >= PREVIEW_W - r)
+    {
         cx = PREVIEW_W - r - 1;
     }
 
-    if (y < r) {
+    if (y < r)
+    {
         cy = r;
-    } else if (y >= PREVIEW_H - r) {
+    }
+    else if (y >= PREVIEW_H - r)
+    {
         cy = PREVIEW_H - r - 1;
     }
 
@@ -48,8 +54,10 @@ static bool preview_point_inside_rounded_screen(int32_t x, int32_t y)
 
 static void preview_create_screen_mask(void)
 {
-    for (int32_t y = 0; y < PREVIEW_H; ++y) {
-        for (int32_t x = 0; x < PREVIEW_W; ++x) {
+    for (int32_t y = 0; y < PREVIEW_H; ++y)
+    {
+        for (int32_t x = 0; x < PREVIEW_W; ++x)
+        {
             uint8_t *px = &s_screen_mask_data[((y * PREVIEW_W) + x) * 4];
             px[0] = 0;
             px[1] = 0;
@@ -58,7 +66,7 @@ static void preview_create_screen_mask(void)
         }
     }
 
-    s_screen_mask_dsc = (lv_image_dsc_t) {
+    s_screen_mask_dsc = (lv_image_dsc_t){
         .header = {
             .magic = LV_IMAGE_HEADER_MAGIC,
             .cf = LV_COLOR_FORMAT_ARGB8888,
@@ -103,7 +111,8 @@ int main(int argc, char **argv)
 
     uint32_t last_tick = SDL_GetTicks();
     bool running = true;
-    while (running) {
+    while (running)
+    {
         SDL_Delay(5);
         uint32_t now = SDL_GetTicks();
         lv_tick_inc(now - last_tick);
@@ -111,13 +120,16 @@ int main(int argc, char **argv)
         lv_timer_handler();
         memory_watch_controller_poll_ui();
         mini_games_controller_poll_ui();
-        if (s_screen_mask != NULL && lv_obj_is_valid(s_screen_mask)) {
+        if (s_screen_mask != NULL && lv_obj_is_valid(s_screen_mask))
+        {
             lv_obj_move_foreground(s_screen_mask);
         }
 
         SDL_Event event;
-        while (SDL_PollEvent(&event) != 0) {
-            if (event.type == SDL_QUIT) {
+        while (SDL_PollEvent(&event) != 0)
+        {
+            if (event.type == SDL_QUIT)
+            {
                 running = false;
             }
         }

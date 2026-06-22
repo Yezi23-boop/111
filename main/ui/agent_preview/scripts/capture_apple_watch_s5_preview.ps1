@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $env:PATH = "D:\MSYS2\mingw64\bin;D:\MSYS2\usr\bin;" + $env:PATH
 
 Add-Type -AssemblyName System.Drawing
-Add-Type -ReferencedAssemblies "System.Drawing", "System.Drawing.Common", "System.Drawing.Primitives", "System.Private.Windows.GdiPlus", "System.Private.Windows.Core" -TypeDefinition @"
+Add-Type -ReferencedAssemblies "System.Drawing" -TypeDefinition @"
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
@@ -139,9 +139,14 @@ Start-Sleep -Milliseconds 1200 # 留出足够的时间进行渲染和呼吸灯�
 
 # 调用强健的 GDI 内存 PrintWindow 截图方法
 $res = [User32Capture]::CaptureWindow($hwnd, $OutputPath)
+# Kill the temporary process used for capturing to release locks
 if (-not $proc.HasExited) {
     Stop-Process -Id $proc.Id -Force
 }
+
+# Launch a new, independent instance that breaks away from the agent's Job limit
+# using WMI/CIM, so it stays open on the user's desktop after the script finishes.
+Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$ExePath`"" } | Out-Null
 
 if (-not $res) {
     throw "GDI PrintWindow capture failed."

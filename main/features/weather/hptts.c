@@ -2,6 +2,7 @@
 #include <sys/param.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
 #include "esp_log.h"
@@ -16,6 +17,7 @@
 #include "esp_http_client.h"
 #include "cJSON.h"
 #include "hptts.h"
+#include "time_weather.h"
 
 #define MAX_HTTP_OUTPUT_BUFFER 1024 // HTTP响应缓冲区最大长度
 
@@ -28,6 +30,7 @@
 
 static const char *TAG = "HTTP_CLIENT";           // HTTP 相关日志标签
 static int user_cjson_parse_now(char *json_data); // 天气 JSON 解析函数声明
+static bool s_last_weather_parse_ok = false;      // 最近一次 HTTP 响应是否成功解析并写入快照。
 
 /**
  * @brief HTTP客户端事件处理函数
@@ -82,7 +85,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
         // 如果已收到数据，则进行JSON解析
         if (output_len > 0)
         {
-            user_cjson_parse_now(weather_buffer); // 解析心知天气JSON数据并打印信息
+            s_last_weather_parse_ok = user_cjson_parse_now(weather_buffer) == 0; // 解析心知天气JSON数据并打印信息
         }
         output_len = 0; // 重置计数器，准备下次接收
         break;
@@ -103,40 +106,44 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
  *
  * 发送HTTPS GET请求获取广州当前天气数据
  */
-void http_rest_with_url(void)
+esp_err_t http_rest_with_url(void)
 {
-    // 本地响应缓存：作为 HTTP 事件回调 user_data 传入。
-    char local_response_buffer[MAX_HTTP_OUTPUT_BUFFER] = {0};
+    s_last_weather_parse_ok = false;
+
     esp_http_client_config_t config = {
         .url = "https://api.seniverse.com/v3/weather/now.json?key=SYEUrFRiIVQow_1OX&location=guangzhou&language=zh-Hans&unit=c",
         .method = HTTP_METHOD_GET,
         .event_handler = _http_event_handler,
-        .user_data = local_response_buffer, // 传递本地缓冲区地址以获取响应
         .disable_auto_redirect = true,
         .timeout_ms = 10000,                        // HTTPS需要更长超时时间
         .crt_bundle_attach = esp_crt_bundle_attach, // 使用系统内置根证书
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    esp_http_client_perform(client);
-    // // 发送 GET 请求
-    // esp_err_t err = esp_http_client_perform(client);
-    // if (err == ESP_OK)
-    // {
-    //     int status_code = esp_http_client_get_status_code(client);
-    //     int content_length = esp_http_client_get_content_length(client);
-    //     ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %d", status_code, content_length);
+    if (client == NULL) {
+        ESP_LOGE(TAG, "HTTP client init failed");
+        return ESP_ERR_INVALID_STATE;
+    }
 
-    //     // 检查HTTP状态码
-    //     if (status_code == 200)
-    //     {
-    //         user_cjson_parse_now(local_response_buffer); // 调用解析函数
-    //     }
-    //     else
-    //     {
-    //         ESP_LOGW(TAG, "HTTP request returned status code: %d", status_code);
-    //     }
-    // }
+    esp_err_t err = esp_http_client_perform(client);
+    int status_code = esp_http_client_get_status_code(client);
+    int content_length = esp_http_client_get_content_length(client);
+    ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %d", status_code, content_length);
     esp_http_client_cleanup(client); // 清理HTTP客户端
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "HTTP request failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    if (status_code != 200) {
+        ESP_LOGW(TAG, "HTTP request returned status code: %d", status_code);
+        return ESP_FAIL;
+    }
+    if (!s_last_weather_parse_ok) {
+        ESP_LOGW(TAG, "Weather response parse failed");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
 }
 
 // 全局天气数据结构体
@@ -201,6 +208,10 @@ static int user_cjson_parse_now(char *json_data)
         user_now_config.weather_text = cJSON_GetObjectItem(now, "text")->valuestring;
         user_now_config.weather_code = cJSON_GetObjectItem(now, "code")->valuestring;
         user_now_config.temperature = cJSON_GetObjectItem(now, "temperature")->valuestring;
+
+        weather_service_update_info(atoi(user_now_config.temperature),
+                                    user_now_config.weather_text,
+                                    user_now_config.weather_code);
     }
 
     user_now_config.last_update = cJSON_GetObjectItem(item, "last_update")->valuestring;

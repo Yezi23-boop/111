@@ -24,7 +24,7 @@ DEFAULT_CHARSET = (
 )
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "resources" / "fonts"
 DEFAULT_BPP = 4
-ASCII_RANGE = "0x20-0x7E"
+ASCII_RANGE = "0x20-0x7E,0xB0"
 
 
 def read_charset(path: Path) -> str:

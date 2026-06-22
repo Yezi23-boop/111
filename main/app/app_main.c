@@ -26,6 +26,7 @@
 #include "services/startup_readiness.h"
 
 static const char *TAG = "MAIN";
+static const uint32_t kTimeWeatherTaskStackBytes = 8192;
 
 /**
  * @brief AP 门户保存 AI Memory Watch endpoint 配置的桥接回调。
@@ -76,10 +77,10 @@ static bool app_memory_watch_portal_configured_cb(void *user_ctx)
 /*
  * 任务句柄说明：
  * - lvgl_task_handle: UI 主任务，负责 LVGL 渲染与事件处理。
- * - lvgl_time_handle: 时间天气任务句柄（当前正式入口保留但未启用）。
+ * - lvgl_time_handle: 时间天气任务句柄，负责低频拉取天气快照。
  */
 TaskHandle_t lvgl_task_handle = NULL; // UI 主任务句柄，仅启动阶段写入。
-TaskHandle_t lvgl_time_handle = NULL; // 时间天气任务句柄；当前入口保留但未启用。
+TaskHandle_t lvgl_time_handle = NULL; // 时间天气任务句柄；由后台服务阶段创建。
 
 /**
  * @brief 启动 Board Foundation 阶段。
@@ -194,10 +195,16 @@ static void start_service_managers(void)
 static void start_deferred_services(void)
 {
     /*
-     * 时间天气任务当前保留为可选入口，未默认启用。
-     * 若后续恢复，需要重新评估 SNTP 与 UI 调用带来的栈占用。
+     * 天气任务会执行 HTTPS/TLS 和 cJSON 解析，4KB 栈在证书校验路径上已出现
+     * stack overflow，因此按网络型后台任务预留 8KB 栈。
      */
-    // xTaskCreatePinnedToCore(time_and_weather, "time", 1024 * 4, NULL, 5, &lvgl_time_handle, 0);
+    BaseType_t time_task_ok = xTaskCreatePinnedToCore(
+        time_and_weather, "time", kTimeWeatherTaskStackBytes, NULL, 5,
+        &lvgl_time_handle, 0);
+    if (time_task_ok != pdPASS)
+    {
+        ESP_LOGW(TAG, "Time/weather service task create failed");
+    }
 
     // BLE/AP/自动联网都由网络服务层统一调度，主入口不直接处理配网细节。
     if (ap_portal_adapter_set_memory_watch_config_callback(

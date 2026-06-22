@@ -54,6 +54,15 @@ typedef struct
 	lv_obj_t *screen_main_img_1;
 	lv_obj_t *screen_main_imgbtn_1;
 	lv_obj_t *screen_main_imgbtn_1_label;
+	lv_obj_t *screen_main_date_label;
+	lv_obj_t *screen_main_battery_label;
+	lv_obj_t *screen_main_battery_bar;
+	lv_obj_t *screen_main_battery_fill;
+	lv_obj_t *screen_main_weather_card;
+	lv_obj_t *screen_main_weather_icon;
+	lv_obj_t *screen_main_weather_temp;
+	lv_obj_t *screen_main_weather_text;
+	lv_obj_t *screen_main_weather_range;
 	lv_obj_t *screen_wallpaper;
 	bool screen_wallpaper_del;
 	lv_obj_t *screen_wallpaper_img_qp1;
@@ -99,6 +108,7 @@ extern lv_ui guider_ui;
 
 
 void setup_scr_screen_main(lv_ui *ui);
+void setup_scr_screen_main_function_page(lv_ui *ui);
 void setup_scr_screen_wallpaper(lv_ui *ui);
 void setup_scr_screen_time(lv_ui *ui);
 
@@ -121,6 +131,14 @@ LV_IMAGE_DECLARE(_1_RGB565A8_410x502);
 LV_IMAGE_DECLARE(_2_RGB565A8_410x502);
 LV_IMAGE_DECLARE(_3_RGB565A8_410x502);
 LV_IMAGE_DECLARE(_4_RGB565A8_410x502);
+LV_IMAGE_DECLARE(_weather_sunny_RGB565A8_96x96);
+LV_IMAGE_DECLARE(_weather_duoyun_RGB565A8_96x96);
+LV_IMAGE_DECLARE(_weather_yintian_RGB565A8_96x96);
+LV_IMAGE_DECLARE(_weather_rain_RGB565A8_96x96);
+LV_IMAGE_DECLARE(_weather_snow_RGB565A8_96x96);
+LV_IMAGE_DECLARE(_weather_wu_RGB565A8_96x96);
+LV_IMAGE_DECLARE(_weather_mai_RGB565A8_96x96);
+LV_IMAGE_DECLARE(_weather_wind_RGB565A8_96x96);
 LV_IMAGE_DECLARE(_yuanjiao1_RGB565A8_180x180);
 LV_IMAGE_DECLARE(_yuanjiao2_RGB565A8_180x180);
 LV_IMAGE_DECLARE(_yuanjiao3_RGB565A8_180x180);
