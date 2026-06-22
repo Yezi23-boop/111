@@ -249,7 +249,7 @@ memory_watch_view_t *memory_watch_view_create(
 
     lv_obj_t *back_btn =
         memory_watch_view_create_text_button(view->screen, "<", 54, 46);
-    lv_obj_set_pos(back_btn, 18, 18);
+    lv_obj_set_pos(back_btn, 24, 22);
     lv_obj_set_style_bg_color(back_btn, lv_color_hex(0x1f2937),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_add_event_cb(back_btn, memory_watch_view_back_event,
@@ -257,7 +257,7 @@ memory_watch_view_t *memory_watch_view_create(
 
     lv_obj_t *title = lv_label_create(view->screen);
     lv_label_set_text(title, "Hermes");
-    lv_obj_set_pos(title, 88, 16);
+    lv_obj_set_pos(title, 88, 20);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(title, &lv_font_montserratMedium_27,
@@ -274,8 +274,8 @@ memory_watch_view_t *memory_watch_view_create(
                                LV_PART_MAIN | LV_STATE_DEFAULT);
 
     view->state_label = lv_label_create(view->screen);
-    lv_obj_set_pos(view->state_label, 22, kHeaderHeight + 8);
-    lv_obj_set_size(view->state_label, 366, 28);
+    lv_obj_set_pos(view->state_label, 40, kHeaderHeight + 8);
+    lv_obj_set_size(view->state_label, 330, 28);
     lv_label_set_long_mode(view->state_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(view->state_label, lv_color_hex(0xfacc15),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -284,14 +284,14 @@ memory_watch_view_t *memory_watch_view_create(
                                LV_PART_MAIN | LV_STATE_DEFAULT);
 
     view->user_bubble = memory_watch_view_create_bubble(
-        view->screen, 84, 122, lv_color_hex(0x2563eb), &view->user_label);
+        view->screen, 76, 122, lv_color_hex(0x2563eb), &view->user_label);
     view->reply_bubble = memory_watch_view_create_bubble(
-        view->screen, 28, 252, lv_color_hex(0x1f2937), &view->reply_label);
+        view->screen, 40, 252, lv_color_hex(0x1f2937), &view->reply_label);
 
     view->cancel_btn =
         memory_watch_view_create_text_button(view->screen, "取消", 88, 40);
     view->cancel_label = lv_obj_get_child(view->cancel_btn, 0);
-    lv_obj_set_pos(view->cancel_btn, 292, 386);
+    lv_obj_set_pos(view->cancel_btn, 282, 386);
     lv_obj_set_style_bg_color(view->cancel_btn, lv_color_hex(0x475569),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_add_event_cb(view->cancel_btn, memory_watch_view_cancel_event,
@@ -299,7 +299,7 @@ memory_watch_view_t *memory_watch_view_create(
 
     view->voice_btn = memory_watch_view_create_text_button(
         view->screen, "按住说话", kVoiceButtonWidth, kVoiceButtonHeight);
-    lv_obj_set_pos(view->voice_btn, 78, 426);
+    lv_obj_set_pos(view->voice_btn, 78, 416);
     lv_obj_set_style_bg_color(view->voice_btn, lv_color_hex(0x0d9488),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
     view->voice_label = lv_obj_get_child(view->voice_btn, 0);

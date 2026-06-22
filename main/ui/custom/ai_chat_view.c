@@ -404,13 +404,13 @@ ai_chat_view_t *ai_chat_view_create(const ai_chat_view_config_t *config) {
     lv_obj_center(icon);
 
     view->chat_card = lv_obj_create(view->screen);
-    lv_obj_set_pos(view->chat_card, 22, 68);
-    lv_obj_set_size(view->chat_card, 366, 374);
+    lv_obj_set_pos(view->chat_card, 40, 68);
+    lv_obj_set_size(view->chat_card, 330, 374);
     ai_chat_view_style_card(view->chat_card);
 
     view->chat_scroll = lv_obj_create(view->chat_card);
     lv_obj_set_pos(view->chat_scroll, 8, 8);
-    lv_obj_set_size(view->chat_scroll, 350, 358);
+    lv_obj_set_size(view->chat_scroll, 314, 358);
     lv_obj_set_scroll_dir(view->chat_scroll, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(view->chat_scroll, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_radius(view->chat_scroll, 8, 0);
@@ -438,7 +438,7 @@ ai_chat_view_t *ai_chat_view_create(const ai_chat_view_config_t *config) {
                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
     lv_obj_t *footer = lv_obj_create(view->screen);
-    lv_obj_set_pos(footer, 30, 448);
+    lv_obj_set_pos(footer, 30, 446);
     lv_obj_set_size(footer, 350, 34);
     lv_obj_set_style_bg_opa(footer, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(footer, 0, 0);

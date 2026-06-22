@@ -425,7 +425,7 @@ static void mini_games_controller_setup_menu(void)
     lv_obj_set_style_text_color(title, lv_color_hex(0x1f2937), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_pos(title, 25, 40);
+    lv_obj_set_pos(title, 40, 40);
 
     /* 副标题指引 */
     lv_obj_t *sub = lv_label_create(s_menu_cont);
@@ -433,12 +433,12 @@ static void mini_games_controller_setup_menu(void)
     lv_obj_set_style_text_color(sub, lv_color_hex(0x6b7280), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(sub, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_pos(sub, 25, 84);
+    lv_obj_set_pos(sub, 40, 84);
 
     /* 选项一：2048 游戏 */
     lv_obj_t *btn_2048 = mini_games_controller_create_icon_button(
         s_menu_cont, LV_SYMBOL_IMAGE, lv_color_hex(0x3482e2), "2048 益智拼图", lv_color_hex(0x1f2937),
-        25, 130, 360, 52, lv_color_hex(0xffffff), true);
+        40, 130, 330, 52, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(btn_2048, mini_games_controller_menu_btn_cb, LV_EVENT_CLICKED,
                         (void *)(uintptr_t)MINI_GAME_TYPE_2048);
 
@@ -446,14 +446,14 @@ static void mini_games_controller_setup_menu(void)
     /* 选项二：Flappy Bird */
     lv_obj_t *btn_flappy = mini_games_controller_create_icon_button(
         s_menu_cont, LV_SYMBOL_AUDIO, lv_color_hex(0x0ea5e9), "飞翔的小鸟 (Flappy)", lv_color_hex(0x1f2937),
-        25, 202, 360, 52, lv_color_hex(0xffffff), true);
+        40, 202, 330, 52, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(btn_flappy, mini_games_controller_menu_btn_cb, LV_EVENT_CLICKED,
                         (void *)(uintptr_t)MINI_GAME_TYPE_FLAPPY);
 
     /* 选项三：Dino Runner */
     lv_obj_t *btn_dino = mini_games_controller_create_icon_button(
         s_menu_cont, LV_SYMBOL_SETTINGS, lv_color_hex(0xf59e0b), "小恐龙快跑 (Runner)", lv_color_hex(0x1f2937),
-        25, 274, 360, 52, lv_color_hex(0xffffff), true);
+        40, 274, 330, 52, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(btn_dino, mini_games_controller_menu_btn_cb, LV_EVENT_CLICKED,
                         (void *)(uintptr_t)MINI_GAME_TYPE_DINO);
 #else
@@ -471,7 +471,7 @@ static void mini_games_controller_setup_menu(void)
     /* 返回手表主屏幕的退出键 */
     lv_obj_t *back_btn = mini_games_controller_create_icon_button(
         s_menu_cont, LV_SYMBOL_LEFT, lv_color_hex(0xef4444), "返回主菜单", lv_color_hex(0xffffff),
-        25, 410, 360, 48, lv_color_hex(0x374151), false);
+        40, 410, 330, 48, lv_color_hex(0x374151), false);
     lv_obj_add_event_cb(back_btn, mini_games_controller_back_event_cb, LV_EVENT_CLICKED, NULL);
 }
 
@@ -567,7 +567,7 @@ static void mini_games_controller_setup_2048(void)
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(title_20, &lv_font_montserratMedium_46,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_pos(title_20, 22, 8);
+    lv_obj_set_pos(title_20, 40, 20);
 
     lv_obj_t *title_48 = lv_label_create(s_game_cont);
     lv_label_set_text(title_48, "48");
@@ -579,7 +579,7 @@ static void mini_games_controller_setup_2048(void)
 
     /* ── 分数卡片：Score & Best 并排，白色底板 ── */
     lv_obj_t *score_card = lv_obj_create(s_game_cont);
-    lv_obj_set_pos(score_card, 195, 8);
+    lv_obj_set_pos(score_card, 195, 20);
     lv_obj_set_size(score_card, 92, 62);
     lv_obj_set_style_bg_color(score_card, lv_color_hex(0xffffff),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -611,7 +611,7 @@ static void mini_games_controller_setup_2048(void)
     lv_obj_align(s_score_label, LV_ALIGN_BOTTOM_MID, 0, -6);
 
     lv_obj_t *best_card = lv_obj_create(s_game_cont);
-    lv_obj_set_pos(best_card, 293, 8);
+    lv_obj_set_pos(best_card, 278, 20);
     lv_obj_set_size(best_card, 92, 62);
     lv_obj_set_style_bg_color(best_card, lv_color_hex(0xffffff),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -645,7 +645,7 @@ static void mini_games_controller_setup_2048(void)
     /* ── 游戏状态提示（滑动指示器，带有绿色的左右箭头小图标和中文提示） ── */
     s_state_icon = lv_obj_create(s_game_cont);
     lv_obj_set_size(s_state_icon, 30, 18);
-    lv_obj_set_pos(s_state_icon, 22, 70);
+    lv_obj_set_pos(s_state_icon, 40, 70);
     lv_obj_set_style_radius(s_state_icon, 4, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(s_state_icon, lv_color_hex(0xdcfce7),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -675,7 +675,7 @@ static void mini_games_controller_setup_2048(void)
     /* ── 按钮行：返回 / 新游戏 / 暂停，y=88 ── */
     lv_obj_t *back_btn = mini_games_controller_create_icon_button(
         s_game_cont, LV_SYMBOL_LEFT, lv_color_hex(0x10b981), "返回", lv_color_hex(0x374151),
-        25, 88, 114, 34, lv_color_hex(0xffffff), true);
+        40, 88, 100, 34, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(back_btn, mini_games_controller_game_back_cb,
                         LV_EVENT_CLICKED, NULL);
 
@@ -687,7 +687,7 @@ static void mini_games_controller_setup_2048(void)
 
     s_pause_btn = mini_games_controller_create_icon_button(
         s_game_cont, LV_SYMBOL_PAUSE, lv_color_hex(0x3b82f6), "暂停", lv_color_hex(0x374151),
-        271, 88, 114, 34, lv_color_hex(0xffffff), true);
+        256, 88, 114, 34, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(s_pause_btn, mini_games_controller_pause_event_cb,
                         LV_EVENT_CLICKED, NULL);
 
@@ -737,13 +737,13 @@ static void mini_games_controller_refresh_board(void)
     if (s_state_label != NULL && lv_obj_is_valid(s_state_label)) {
         if (mini_game_2048_is_game_over(&s_game)) {
             lv_label_set_text(s_state_label, "游戏结束");
-            lv_obj_set_pos(s_state_label, 22, 70);
+            lv_obj_set_pos(s_state_label, 40, 70);
             if (s_state_icon && lv_obj_is_valid(s_state_icon)) {
                 lv_obj_add_flag(s_state_icon, LV_OBJ_FLAG_HIDDEN);
             }
         } else if (s_paused) {
             lv_label_set_text(s_state_label, "已暂停");
-            lv_obj_set_pos(s_state_label, 22, 70);
+            lv_obj_set_pos(s_state_label, 40, 70);
             if (s_state_icon && lv_obj_is_valid(s_state_icon)) {
                 lv_obj_add_flag(s_state_icon, LV_OBJ_FLAG_HIDDEN);
             }
@@ -814,11 +814,11 @@ static void mini_games_controller_setup_flappy(void)
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(0x0ea5e9), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_pos(title_lbl, 25, 14);
+    lv_obj_set_pos(title_lbl, 40, 20);
 
     /* 2. 右侧分数卡片 */
     lv_obj_t *score_card = lv_obj_create(s_game_cont);
-    lv_obj_set_pos(score_card, 237, 10);
+    lv_obj_set_pos(score_card, 222, 20);
     lv_obj_set_size(score_card, 148, 44);
     lv_obj_set_style_bg_color(score_card, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(score_card, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -838,7 +838,7 @@ static void mini_games_controller_setup_flappy(void)
 
     /* 3. 游戏舞台 (天空背景画布) */
     lv_obj_t *stage = lv_obj_create(s_game_cont);
-    lv_obj_set_pos(stage, 25, 60);
+    lv_obj_set_pos(stage, 40, 68);
     lv_obj_set_size(stage, FLAPPY_PLAY_AREA_W, FLAPPY_PLAY_AREA_H);
     lv_obj_set_style_bg_color(stage, lv_color_hex(0xbae6fd), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(stage, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -905,7 +905,7 @@ static void mini_games_controller_setup_flappy(void)
     /* 6. 底部控制栏 */
     lv_obj_t *back_btn = mini_games_controller_create_icon_button(
         s_game_cont, LV_SYMBOL_LEFT, lv_color_hex(0xef4444), "退出", lv_color_hex(0x374151),
-        25, 412, 114, 34, lv_color_hex(0xffffff), true);
+        40, 412, 100, 34, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(back_btn, mini_games_controller_game_back_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *restart_btn = mini_games_controller_create_icon_button(
@@ -915,7 +915,7 @@ static void mini_games_controller_setup_flappy(void)
 
     s_flappy_pause_btn = mini_games_controller_create_icon_button(
         s_game_cont, LV_SYMBOL_PAUSE, lv_color_hex(0x0ea5e9), "暂停", lv_color_hex(0x374151),
-        271, 412, 114, 34, lv_color_hex(0xffffff), true);
+        256, 412, 114, 34, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(s_flappy_pause_btn, mini_games_controller_flappy_pause_cb, LV_EVENT_CLICKED, NULL);
 }
 
@@ -1109,11 +1109,11 @@ static void mini_games_controller_setup_dino(void)
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(0xf59e0b), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_pos(title_lbl, 25, 14);
+    lv_obj_set_pos(title_lbl, 40, 20);
 
     /* 2. 右侧分数卡片 */
     lv_obj_t *score_card = lv_obj_create(s_game_cont);
-    lv_obj_set_pos(score_card, 237, 10);
+    lv_obj_set_pos(score_card, 222, 20);
     lv_obj_set_size(score_card, 148, 44);
     lv_obj_set_style_bg_color(score_card, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(score_card, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -1133,7 +1133,7 @@ static void mini_games_controller_setup_dino(void)
 
     /* 3. 游戏舞台 (浅黄色跑道背景画布) */
     lv_obj_t *stage = lv_obj_create(s_game_cont);
-    lv_obj_set_pos(stage, 25, 60);
+    lv_obj_set_pos(stage, 40, 68);
     lv_obj_set_size(stage, DINO_PLAY_AREA_W, DINO_PLAY_AREA_H);
     lv_obj_set_style_bg_color(stage, lv_color_hex(0xfef08a), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(stage, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -1203,7 +1203,7 @@ static void mini_games_controller_setup_dino(void)
     /* 6. 底部控制栏 */
     lv_obj_t *back_btn = mini_games_controller_create_icon_button(
         s_game_cont, LV_SYMBOL_LEFT, lv_color_hex(0xef4444), "退出", lv_color_hex(0x374151),
-        25, 412, 114, 34, lv_color_hex(0xffffff), true);
+        40, 412, 100, 34, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(back_btn, mini_games_controller_game_back_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *restart_btn = mini_games_controller_create_icon_button(
@@ -1213,7 +1213,7 @@ static void mini_games_controller_setup_dino(void)
 
     s_dino_pause_btn = mini_games_controller_create_icon_button(
         s_game_cont, LV_SYMBOL_PAUSE, lv_color_hex(0xf59e0b), "暂停", lv_color_hex(0x374151),
-        271, 412, 114, 34, lv_color_hex(0xffffff), true);
+        256, 412, 114, 34, lv_color_hex(0xffffff), true);
     lv_obj_add_event_cb(s_dino_pause_btn, mini_games_controller_dino_pause_cb, LV_EVENT_CLICKED, NULL);
 }
 

@@ -677,7 +677,7 @@ void setup_scr_screen_main(lv_ui *ui)
 
     // 2. Create date label (top-left, x: 30, y: 24)
     ui->screen_main_date_label = lv_label_create(ui->screen_main_cont_1);
-    lv_obj_set_pos(ui->screen_main_date_label, 30, 24);
+    lv_obj_set_pos(ui->screen_main_date_label, 42, 24);
     lv_obj_set_style_text_color(ui->screen_main_date_label, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui->screen_main_date_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_label_set_text(ui->screen_main_date_label, "周二 06/18");
@@ -685,14 +685,14 @@ void setup_scr_screen_main(lv_ui *ui)
     // 3. Create battery percentage label and battery progress bar (top-right)
     // Battery Label: x: 332, y: 24
     ui->screen_main_battery_label = lv_label_create(ui->screen_main_cont_1);
-    lv_obj_set_pos(ui->screen_main_battery_label, 332, 24);
+    lv_obj_set_pos(ui->screen_main_battery_label, 314, 24);
     lv_obj_set_style_text_color(ui->screen_main_battery_label, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui->screen_main_battery_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_label_set_text(ui->screen_main_battery_label, "80%");
 
     // Battery Bar container: x: 298, y: 27, size: 28x14, border: 1, radius: 3
     ui->screen_main_battery_bar = lv_obj_create(ui->screen_main_cont_1);
-    lv_obj_set_pos(ui->screen_main_battery_bar, 298, 27);
+    lv_obj_set_pos(ui->screen_main_battery_bar, 280, 27);
     lv_obj_set_size(ui->screen_main_battery_bar, 28, 14);
     lv_obj_set_scrollbar_mode(ui->screen_main_battery_bar, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_border_width(ui->screen_main_battery_bar, 1, LV_PART_MAIN|LV_STATE_DEFAULT);
@@ -721,8 +721,8 @@ void setup_scr_screen_main(lv_ui *ui)
 
     // 5. Create bottom Weather Bento Card and child components (x: 28, y: 246, size: 354x196, radius: 36)
     ui->screen_main_weather_card = lv_obj_create(ui->screen_main_cont_1);
-    lv_obj_set_pos(ui->screen_main_weather_card, 28, 246);
-    lv_obj_set_size(ui->screen_main_weather_card, 354, 196);
+    lv_obj_set_pos(ui->screen_main_weather_card, 30, 246);
+    lv_obj_set_size(ui->screen_main_weather_card, 350, 196);
     lv_obj_set_scrollbar_mode(ui->screen_main_weather_card, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_border_width(ui->screen_main_weather_card, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_radius(ui->screen_main_weather_card, 36, LV_PART_MAIN|LV_STATE_DEFAULT);

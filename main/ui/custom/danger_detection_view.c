@@ -32,7 +32,7 @@ struct danger_detection_view {
 };
 
 static const lv_coord_t kDangerBackButtonX = 28;
-static const lv_coord_t kDangerBackButtonY = 18;
+static const lv_coord_t kDangerBackButtonY = 22;
 static const lv_coord_t kDangerBackButtonWidth = 96;
 static const lv_coord_t kDangerBackButtonHeight = 56;
 
@@ -181,7 +181,7 @@ danger_detection_view_t *danger_detection_view_create(
     view->scores_card = lv_obj_create(view->content_layer);
     lv_obj_remove_style_all(view->scores_card);
     lv_obj_set_size(view->scores_card, 320, 92);
-    lv_obj_align(view->scores_card, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_align(view->scores_card, LV_ALIGN_BOTTOM_MID, 0, -24);
     lv_obj_set_style_radius(view->scores_card, 22, 0);
     lv_obj_set_style_bg_color(view->scores_card, lv_color_hex(0xf5f5f5), 0);
     lv_obj_set_style_bg_opa(view->scores_card, LV_OPA_COVER, 0);

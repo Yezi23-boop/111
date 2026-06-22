@@ -223,7 +223,7 @@ static lv_obj_t *wifi_management_controller_create_action_button(
 {
     lv_obj_t *button = lv_btn_create(parent);
     lv_obj_set_pos(button, x, y);
-    lv_obj_set_size(button, 362, 48); // 修改尺寸对齐设计图（宽度 362，高度 48）
+    lv_obj_set_size(button, 330, 48); // 宽度 330px，配合 x=40 右边缘恰好 370（CO5300 安全区边界）
     lv_obj_set_style_radius(button, 24, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(button, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_scrollbar_mode(button, LV_SCROLLBAR_MODE_OFF);
@@ -301,7 +301,7 @@ static lv_obj_t *wifi_management_controller_create_bento_button(
 {
     lv_obj_t *button = lv_btn_create(parent);
     lv_obj_set_pos(button, x, y);
-    lv_obj_set_size(button, 175, 120); // Bento 对齐比例：175 x 120
+    lv_obj_set_size(button, 160, 120); // Bento 按钮：160px 宽，两个并排 x=40/210 右边缘恰好 370
     lv_obj_set_style_radius(button, 24, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(button, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_scrollbar_mode(button, LV_SCROLLBAR_MODE_OFF);
@@ -626,12 +626,12 @@ static void wifi_management_controller_ensure_screen_created(void)
     lv_label_set_text(title, "Wi-Fi");
     lv_obj_set_style_text_color(title, lv_color_hex(0x1C1C1E), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_lxgw_lv_font_wifi_subset_24_24_4, LV_PART_MAIN);
-    lv_obj_set_pos(title, 24, 28);
+    lv_obj_set_pos(title, 40, 28);
 
     // 圆形返回按钮
     lv_obj_t *back_btn = lv_btn_create(s_screen);
     lv_obj_set_size(back_btn, 44, 44);
-    lv_obj_set_pos(back_btn, 342, 20);
+    lv_obj_set_pos(back_btn, 324, 20);
     lv_obj_set_style_radius(back_btn, LV_RADIUS_CIRCLE, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(back_btn, lv_color_hex(0xE4E7EB), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(back_btn, LV_OPA_90, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -647,8 +647,8 @@ static void wifi_management_controller_ensure_screen_created(void)
     
     // Status Panel (高阶毛玻璃悬浮卡片)
     s_status_panel = lv_obj_create(s_screen);
-    lv_obj_set_size(s_status_panel, 362, 94);
-    lv_obj_set_pos(s_status_panel, 24, 84);
+    lv_obj_set_size(s_status_panel, 330, 94);
+    lv_obj_set_pos(s_status_panel, 40, 84);
     lv_obj_set_style_radius(s_status_panel, 24, LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_status_panel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_status_panel, 180, LV_PART_MAIN);
@@ -714,21 +714,21 @@ static void wifi_management_controller_ensure_screen_created(void)
 
     // Bento 按钮创建
     s_ble_provision_btn = wifi_management_controller_create_bento_button(
-        s_screen, "蓝牙配网", LV_SYMBOL_BLUETOOTH, 0x0A84FF, 24, 192);
+        s_screen, "蓝牙配网", LV_SYMBOL_BLUETOOTH, 0x0A84FF, 40, 192);
     lv_obj_add_event_cb(s_ble_provision_btn, wifi_management_ble_provision_event_cb, LV_EVENT_CLICKED, NULL);
 
     s_softap_provision_btn = wifi_management_controller_create_bento_button(
-        s_screen, "网页配网", LV_SYMBOL_WIFI, 0xBF5AF2, 211, 192);
+        s_screen, "网页配网", LV_SYMBOL_WIFI, 0xBF5AF2, 210, 192);
     lv_obj_add_event_cb(s_softap_provision_btn, wifi_management_softap_provision_event_cb, LV_EVENT_CLICKED, NULL);
 
     // 长条操作按钮创建 (重试已保存网络)
     s_retry_saved_btn = wifi_management_controller_create_action_button(
-        s_screen, "重试已保存网络", LV_SYMBOL_WIFI, LV_SYMBOL_RIGHT, 0x1C1C1E, 0x32D74B, 24, 326);
+        s_screen, "重试已保存网络", LV_SYMBOL_WIFI, LV_SYMBOL_RIGHT, 0x1C1C1E, 0x32D74B, 40, 326);
     lv_obj_add_event_cb(s_retry_saved_btn, wifi_management_retry_saved_event_cb, LV_EVENT_CLICKED, NULL);
 
     // 断开连接按钮创建
     s_disconnect_btn = wifi_management_controller_create_action_button(
-        s_screen, "断开连接", NULL, LV_SYMBOL_POWER, 0xFF453A, 0xFF453A, 24, 394);
+        s_screen, "断开连接", NULL, LV_SYMBOL_POWER, 0xFF453A, 0xFF453A, 40, 394);
     lv_obj_add_event_cb(s_disconnect_btn, wifi_management_disconnect_event_cb, LV_EVENT_CLICKED, NULL);
 
     if (s_status_timer == NULL)

@@ -17,7 +17,7 @@
 
 #define PREVIEW_W 410
 #define PREVIEW_H 502
-#define PREVIEW_CORNER_RADIUS 100
+#define PREVIEW_CORNER_RADIUS 120
 
 static uint8_t s_screen_mask_data[PREVIEW_W * PREVIEW_H * 4];
 static lv_image_dsc_t s_screen_mask_dsc;

@@ -154,7 +154,7 @@ void setup_scr_screen_wallpaper(lv_ui *ui)
 
     //Write codes screen_wallpaper_label_1
     ui->screen_wallpaper_label_1 = lv_label_create(ui->screen_wallpaper);
-    lv_obj_set_pos(ui->screen_wallpaper_label_1, 140, 431);
+    lv_obj_set_pos(ui->screen_wallpaper_label_1, 140, 422);
     lv_obj_set_size(ui->screen_wallpaper_label_1, 155, 55);
     lv_label_set_text(ui->screen_wallpaper_label_1, "小祁满");
     lv_label_set_long_mode(ui->screen_wallpaper_label_1, LV_LABEL_LONG_WRAP);

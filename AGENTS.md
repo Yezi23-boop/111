@@ -174,6 +174,15 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## 当前项目专项规则（仅在触发时生效）
 
 - 显示/触摸、音频/存储、配网/联网、手表/屏幕路线的详细默认实践，统一以 `docs/context/knowledge/project/agent-operational-rules.md` 为准。
+- **CO5300 屏幕安全区（LVGL 布局硬性约束）**：屏幕物理尺寸 410×502，圆角矩形，四角有物理遮罩。新增或修改任何 `lv_obj_set_pos` / `lv_obj_set_size` 时，必须满足：
+  - 左边缘：`x ≥ 40`（x=24/25/28/30 均已实测被圆角截断，不够）
+  - 右边缘：`x + width ≤ 370`（即从 x=40 起最大宽度 330px）
+  - 上边缘：`y ≥ 20`
+  - 下边缘：`y + height ≤ 480`
+  - 例外：全屏背景图（410×502）、全宽居中文本（width=410 + text_align=center）、游戏引擎内相对于 stage 容器的局部坐标，不受此约束。
+  - 两列并排卡片标准布局：每列宽 160px，左列 x=40，右列 x=210，右边缘恰好 370。
+  - 详细实测数据见 `docs/context/knowledge/project/co5300-screen-layout-safe-zone.md`。
+
 - 命中 hearing-assist / danger reminder / ESP-DL 危险提醒任务时，产品边界、状态机、参数口径和当前固件归属统一以这 4 张卡为准：
   - `docs/context/knowledge/project/hearing-assist-danger-alert-system-architecture.md`
   - `docs/context/knowledge/project/hearing-assist-danger-alert-state-machine-and-notification-policy.md`

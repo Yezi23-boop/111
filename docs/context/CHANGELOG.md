@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-06-22：新增 `co5300-screen-layout-safe-zone.md`：整理 CO5300 面板物理分辨率（410×502 px，圆角矩形）、圆角遮挡估算与 LVGL 布局安全边距规范；记录主表盘各控件已验证坐标，以及"日期标签被左圆角截断"和"电池控件偏右被截"两个典型踩坑及修复方案。未来新增任何 UI 控件前应先查阅本文档。
+
 - 2026-06-21：修复 Wi-Fi 设置界面的 ESP-IDF 板端编译报错与未使用常数警告：由于板端未使能标准的 `lv_font_montserrat_16/20/24/48` 字体，重构中将它们替换为已使能的 Wi-Fi 字体子集 `lv_font_montserrat_lxgw_lv_font_wifi_subset_16/24` 和 `lv_font_montserratMedium_46`；同时移除死代码常数 `kWifiBackButton*`，解决 `-Werror=unused-const-variable=` 错误，实现模拟器（重新编译+PrintWindow截图）与板端（idf.py build）100% 编译通过。
 - 2026-06-21：调整 AI Memory Watch V2.0 Hermes 收件箱边界：允许 `memory_watch_service` 做无用户触发的后台低频轮询，按电源、网络和前台状态预算拉取收件箱未读状态或第一页消息；轮询结果只更新收件箱状态，不震动、不亮屏、不主动打断用户。
 - 2026-06-21：补充 AI Memory Watch V2.0 Hermes 收件箱架构口径：收件箱属于 `memory_watch_service` 的后台服务能力，而不是 UI 页面私有状态；该轮曾将拉取限制为进入 Hermes 页面、打开收件箱或加载更多时触发，后续已调整为允许后台低频轮询。
