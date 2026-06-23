@@ -3,7 +3,9 @@ import unittest
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import LVGL_TASK_SOURCE
 from tests.main_paths import MAIN_CMAKE
+from tests.main_paths import REPO_ROOT
 from tests.main_paths import UI_CUSTOM_HEADER
+from tests.main_paths import UI_EVENTS_INIT_SOURCE
 from tests.main_paths import UI_MEMORY_WATCH_CONTROLLER_HEADER
 from tests.main_paths import UI_MEMORY_WATCH_CONTROLLER_SOURCE
 from tests.main_paths import UI_MEMORY_WATCH_VIEW_HEADER
@@ -12,14 +14,12 @@ from tests.main_paths import UI_MEMORY_WATCH_VIEW_SOURCE
 
 class MemoryWatchUiSourceTests(unittest.TestCase):
     def test_main_menu_entry_binds_unused_option_8_without_generated_edit(self) -> None:
-        source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+        source = UI_EVENTS_INIT_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("screen_main_option_8", source)
         self.assertIn("screen_main_user", source)
         self.assertIn("memory_watch_controller_open();", source)
         self.assertIn("lv_obj_add_flag(ui->screen_main_option_8, LV_OBJ_FLAG_CLICKABLE)", source)
-        self.assertIn('lv_label_set_text(s_entry_label, "Hermes")', source)
-        self.assertIn("记忆手表", source)
 
     def test_lvgl_task_initializes_and_polls_memory_watch_controller(self) -> None:
         source = LVGL_TASK_SOURCE.read_text(encoding="utf-8")
@@ -91,6 +91,100 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         self.assertIn("松开发送", source)
         self.assertIn("松手取消", source)
         self.assertIn("memory_watch_view_apply_model", header)
+
+    def test_view_supports_swipe_inbox_list_and_read_only_detail(self) -> None:
+        source = UI_MEMORY_WATCH_VIEW_SOURCE.read_text(encoding="utf-8")
+        header = UI_MEMORY_WATCH_VIEW_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("MEMORY_WATCH_VIEW_PAGE_INBOX", header)
+        self.assertIn("MEMORY_WATCH_VIEW_PAGE_INBOX_DETAIL", header)
+        self.assertIn("memory_watch_view_inbox_item_t", header)
+        self.assertIn("open_inbox_cb", header)
+        self.assertIn("open_voice_cb", header)
+        self.assertIn("inbox_back_cb", header)
+        self.assertIn("open_inbox_item_cb", header)
+        self.assertIn("inbox_unread_count", header)
+
+        self.assertIn("LV_EVENT_GESTURE", source)
+        self.assertIn("LV_DIR_LEFT", source)
+        self.assertIn("LV_DIR_RIGHT", source)
+        self.assertIn("memory_watch_view_rebuild_inbox_list", source)
+        self.assertIn("memory_watch_view_update_detail", source)
+        self.assertIn("只读查看", source)
+        self.assertNotIn("删除", source)
+        self.assertNotIn("回复", source)
+
+    def test_view_uses_conversation_stream_and_status_dot(self) -> None:
+        source = UI_MEMORY_WATCH_VIEW_SOURCE.read_text(encoding="utf-8")
+        header = UI_MEMORY_WATCH_VIEW_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_view_conversation_item_t", header)
+        self.assertIn("memory_watch_view_connection_state_t", header)
+        self.assertIn("conversation_items", header)
+        self.assertIn("conversation_item_count", header)
+        self.assertIn("connection_state", header)
+
+        self.assertIn("conversation_list", source)
+        self.assertIn("memory_watch_view_rebuild_conversation", source)
+        self.assertIn("connection_dot", source)
+        self.assertIn("0x2f8f46", source)
+        self.assertIn("0xd84a3a", source)
+        self.assertIn("0xb8b8b3", source)
+        self.assertIn("按住说话开始记录", source)
+        self.assertNotIn("user_bubble", source)
+        self.assertNotIn("reply_bubble", source)
+
+    def test_controller_keeps_inbox_preview_host_only(self) -> None:
+        source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+        host_cmake = (
+            REPO_ROOT
+            / "main"
+            / "ui"
+            / "agent_preview"
+            / "host_runner"
+            / "CMakeLists.txt"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("#ifdef AGENT_PREVIEW_HOST", source)
+        self.assertIn("s_preview_inbox_items", source)
+        self.assertIn("memory_watch_controller_open_inbox", source)
+        self.assertIn("memory_watch_controller_open_voice", source)
+        self.assertIn("memory_watch_controller_open_inbox_item", source)
+        self.assertIn("s_preview_inbox_items[index].read = true", source)
+        self.assertIn("AGENT_PREVIEW_HOST=1", host_cmake)
+        self.assertNotIn("memory_watch_service_inbox", source)
+        self.assertNotIn("memory_watch_voice_client_inbox", source)
+
+    def test_controller_keeps_conversation_history_local_and_deduped(self) -> None:
+        source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("#define MEMORY_WATCH_CONVERSATION_MAX_ITEMS 12U", source)
+        self.assertIn("s_conversation_entries", source)
+        self.assertIn("s_conversation_revision", source)
+        self.assertIn("s_last_user_request_id", source)
+        self.assertIn("s_last_reply_request_id", source)
+        self.assertIn("memory_watch_controller_sync_conversation", source)
+        self.assertIn("strcmp(s_last_user_request_id, snapshot->request_id)", source)
+        self.assertIn("strcmp(s_last_reply_request_id, snapshot->request_id)", source)
+        self.assertIn("memmove(&s_conversation_entries[0]", source)
+        self.assertIn("memory_watch_connection_state", source)
+        self.assertNotIn("memory_watch_service_history", source)
+
+    def test_host_runner_observes_sdl_quit_without_consuming_input_events(self) -> None:
+        source = (
+            REPO_ROOT
+            / "main"
+            / "ui"
+            / "agent_preview"
+            / "host_runner"
+            / "main.c"
+        ).read_text(encoding="utf-8")
+        loop_section = source.split("while (running)", 1)[1].split("lv_sdl_quit();", 1)[0]
+
+        self.assertIn("SDL_AddEventWatch(preview_sdl_event_watch, NULL);", source)
+        self.assertIn("SDL_DelEventWatch(preview_sdl_event_watch, NULL);", source)
+        self.assertIn("SDL_AtomicSet(&s_preview_quit_requested, 1);", source)
+        self.assertNotIn("SDL_PollEvent(", loop_section)
 
     def test_memory_watch_ui_keeps_official_chat_and_transport_boundaries(self) -> None:
         combined = "\n".join(

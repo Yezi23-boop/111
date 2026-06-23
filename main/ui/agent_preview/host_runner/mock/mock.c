@@ -79,14 +79,14 @@ static memory_watch_service_snapshot_t s_memory_watch_snapshot = {
     .last_error = ESP_OK,
     .request_id = "preview-request",
     .clarification_id = "",
-    .asr_text = "帮我记住下午三点去取快递。",
-    .reply_text = "已记录：下午三点取快递。需要时我会提醒你。",
+    .asr_text = "帮我记住下午三点去取快递",
+    .reply_text = "已记录: 下午三点取快递, 需要时我会提醒你",
 };
 
 esp_err_t memory_watch_service_cancel_waiting(void) {
     s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_CANCELED;
     s_memory_watch_snapshot.request_active = false;
-    strncpy(s_memory_watch_snapshot.reply_text, "已取消等待 Hermes 回复。",
+    strncpy(s_memory_watch_snapshot.reply_text, "已取消等待 Hermes 回复",
             sizeof(s_memory_watch_snapshot.reply_text) - 1);
     return ESP_OK;
 }
@@ -94,7 +94,7 @@ esp_err_t memory_watch_service_cancel_waiting(void) {
 esp_err_t memory_watch_service_cancel_clarification(void) {
     s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_CANCELED;
     s_memory_watch_snapshot.clarification_active = false;
-    strncpy(s_memory_watch_snapshot.reply_text, "已取消 Hermes 追问。",
+    strncpy(s_memory_watch_snapshot.reply_text, "已取消 Hermes 追问",
             sizeof(s_memory_watch_snapshot.reply_text) - 1);
     return ESP_OK;
 }
@@ -104,7 +104,7 @@ esp_err_t memory_watch_service_begin_recording(void) {
     s_memory_watch_snapshot.request_active = true;
     strncpy(s_memory_watch_snapshot.asr_text, "正在聆听...",
             sizeof(s_memory_watch_snapshot.asr_text) - 1);
-    strncpy(s_memory_watch_snapshot.reply_text, "松手后发送给 Hermes。",
+    strncpy(s_memory_watch_snapshot.reply_text, "松手后发送给 Hermes",
             sizeof(s_memory_watch_snapshot.reply_text) - 1);
     return ESP_OK;
 }
@@ -112,10 +112,10 @@ esp_err_t memory_watch_service_begin_recording(void) {
 esp_err_t memory_watch_service_send_recording(void) {
     s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_DONE;
     s_memory_watch_snapshot.request_active = false;
-    strncpy(s_memory_watch_snapshot.asr_text, "帮我记住下午三点去取快递。",
+    strncpy(s_memory_watch_snapshot.asr_text, "帮我记住下午三点去取快递",
             sizeof(s_memory_watch_snapshot.asr_text) - 1);
     strncpy(s_memory_watch_snapshot.reply_text,
-            "已记录：下午三点取快递。需要时我会提醒你。",
+            "已记录: 下午三点取快递, 需要时我会提醒你",
             sizeof(s_memory_watch_snapshot.reply_text) - 1);
     return ESP_OK;
 }
@@ -123,7 +123,7 @@ esp_err_t memory_watch_service_send_recording(void) {
 esp_err_t memory_watch_service_cancel_recording(void) {
     s_memory_watch_snapshot.state = MEMORY_WATCH_SERVICE_STATE_CANCELED;
     s_memory_watch_snapshot.request_active = false;
-    strncpy(s_memory_watch_snapshot.reply_text, "已取消本次录音。",
+    strncpy(s_memory_watch_snapshot.reply_text, "已取消本次录音",
             sizeof(s_memory_watch_snapshot.reply_text) - 1);
     return ESP_OK;
 }
@@ -260,4 +260,3 @@ const board_power_state_t *power_service_get_state(void) {
 
 #include "gui_guider.h"
 lv_ui guider_ui;
-

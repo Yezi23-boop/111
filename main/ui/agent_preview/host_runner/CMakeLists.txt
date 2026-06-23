@@ -58,6 +58,8 @@ target_include_directories(agent_preview_host PRIVATE
 
 target_link_libraries(agent_preview_host PRIVATE lvgl SDL2::SDL2)
 
+target_compile_definitions(agent_preview_host PRIVATE AGENT_PREVIEW_HOST=1)
+
 if(WIN32)
     add_custom_command(TARGET agent_preview_host POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -3,6 +3,7 @@
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "gui_guider.h"
 #include "events_init.h"
@@ -22,6 +23,19 @@
 static uint8_t s_screen_mask_data[PREVIEW_W * PREVIEW_H * 4];
 static lv_image_dsc_t s_screen_mask_dsc;
 static lv_obj_t *s_screen_mask = NULL;
+static SDL_atomic_t s_preview_quit_requested;
+
+static int preview_sdl_event_watch(void *userdata, SDL_Event *event)
+{
+    (void)userdata;
+
+    if (event != NULL && event->type == SDL_QUIT)
+    {
+        SDL_AtomicSet(&s_preview_quit_requested, 1);
+    }
+
+    return 1;
+}
 
 static bool preview_point_inside_rounded_screen(int32_t x, int32_t y)
 {
@@ -101,6 +115,8 @@ int main(int argc, char **argv)
     lv_sdl_mouse_create();
     lv_sdl_mousewheel_create();
     lv_sdl_keyboard_create();
+    SDL_AtomicSet(&s_preview_quit_requested, 0);
+    SDL_AddEventWatch(preview_sdl_event_watch, NULL);
 
     setup_ui(&guider_ui);
     memory_watch_controller_init(&guider_ui);
@@ -108,6 +124,10 @@ int main(int argc, char **argv)
     ai_ui_controller_init(&guider_ui);
     mini_games_controller_init(&guider_ui);
     preview_create_screen_mask();
+    if (argc > 1 && strcmp(argv[1], "--open-hermes") == 0)
+    {
+        memory_watch_controller_open();
+    }
 
     uint32_t last_tick = SDL_GetTicks();
     bool running = true;
@@ -125,16 +145,17 @@ int main(int argc, char **argv)
             lv_obj_move_foreground(s_screen_mask);
         }
 
-        SDL_Event event;
-        while (SDL_PollEvent(&event) != 0)
+        /*
+         * LVGL SDL 驱动内部已经用 SDL_PollEvent 分发鼠标、滚轮和键盘事件。
+         * host 侧只旁路观察退出事件，避免提前消费点击/滑动导致页面交互丢失。
+         */
+        if (SDL_AtomicGet(&s_preview_quit_requested) != 0)
         {
-            if (event.type == SDL_QUIT)
-            {
-                running = false;
-            }
+            running = false;
         }
     }
 
+    SDL_DelEventWatch(preview_sdl_event_watch, NULL);
     lv_sdl_quit();
     return 0;
 }

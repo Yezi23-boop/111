@@ -1,5 +1,6 @@
 #include "memory_watch_controller.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -11,6 +12,7 @@
 #include "ui_chinese_fonts.h"
 
 static const char *TAG = "memory_watch_ui";
+#define MEMORY_WATCH_CONVERSATION_MAX_ITEMS 12U
 
 typedef struct
 {
@@ -18,6 +20,13 @@ typedef struct
     bool voice_button_enabled;
     bool cancel_visible;
     bool cancel_is_clarification;
+    memory_watch_view_page_t page;
+    memory_watch_view_connection_state_t connection_state;
+    size_t conversation_item_count;
+    uint32_t conversation_revision;
+    size_t inbox_item_count;
+    size_t selected_inbox_index;
+    uint8_t inbox_unread_count;
     char top_status_text[40];
     char state_text[40];
     char user_text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];
@@ -25,13 +34,92 @@ typedef struct
     char voice_button_text[24];
 } memory_watch_render_cache_t;
 
+typedef struct
+{
+    memory_watch_view_conversation_role_t role;
+    char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+    char text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];
+} memory_watch_conversation_entry_t;
+
 static lv_ui *s_ui = NULL;
 static memory_watch_view_t *s_view = NULL;
 static lv_timer_t *s_destroy_timer = NULL;
 static memory_watch_view_t *s_pending_destroy_view = NULL;
 static memory_watch_render_cache_t s_render_cache = {0};
+static memory_watch_view_page_t s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
+static size_t s_selected_inbox_index = 0;
+static memory_watch_conversation_entry_t
+    s_conversation_entries[MEMORY_WATCH_CONVERSATION_MAX_ITEMS];
+static memory_watch_view_conversation_item_t
+    s_conversation_view_items[MEMORY_WATCH_CONVERSATION_MAX_ITEMS];
+static size_t s_conversation_item_count = 0;
+static uint32_t s_conversation_revision = 0;
+static char s_last_user_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+static char s_last_reply_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+
+#ifdef AGENT_PREVIEW_HOST
+static memory_watch_view_inbox_item_t s_preview_inbox_items[] = {
+    {
+        .notification_id = "preview-006",
+        .created_at = "今天 16:20",
+        .text = "Hermes 已把下午三点取快递整理成提醒. 到点前我会把这件事带回手表.",
+        .read = false,
+    },
+    {
+        .notification_id = "preview-005",
+        .created_at = "今天 11:42",
+        .text = "电池日志可以晚饭后再看. Hermes 建议先确认待机电流和屏幕亮度曲线.",
+        .read = false,
+    },
+    {
+        .notification_id = "preview-004",
+        .created_at = "昨天 22:08",
+        .text = "已经记录 UI 优化方向: 米白画布, 浅边框卡片, 低饱和状态色, 以及更克制的 Hermes 入口.",
+        .read = true,
+    },
+    {
+        .notification_id = "preview-003",
+        .created_at = "昨天 09:15",
+        .text = "提醒: 明天上午检查 watch endpoint 的公网 release gate, 确认私有 health 没有暴露.",
+        .read = true,
+    },
+};
+#endif
 
 static void memory_watch_controller_refresh(void);
+
+static const memory_watch_view_inbox_item_t *memory_watch_inbox_items(void)
+{
+#ifdef AGENT_PREVIEW_HOST
+    return s_preview_inbox_items;
+#else
+    return NULL;
+#endif
+}
+
+static size_t memory_watch_inbox_item_count(void)
+{
+#ifdef AGENT_PREVIEW_HOST
+    return sizeof(s_preview_inbox_items) / sizeof(s_preview_inbox_items[0]);
+#else
+    return 0;
+#endif
+}
+
+static uint8_t memory_watch_inbox_unread_count(void)
+{
+    uint8_t count = 0;
+    const memory_watch_view_inbox_item_t *items = memory_watch_inbox_items();
+    const size_t item_count = memory_watch_inbox_item_count();
+    for (size_t i = 0; i < item_count; ++i)
+    {
+        if (!items[i].read && count < UINT8_MAX)
+        {
+            ++count;
+        }
+    }
+    return count;
+}
 
 static void memory_watch_controller_flush_pending_destroy(void)
 {
@@ -89,6 +177,95 @@ static void memory_watch_copy_text(char *dst, size_t dst_size,
         return;
     }
     snprintf(dst, dst_size, "%s", src != NULL ? src : "");
+}
+
+static void memory_watch_conversation_append(
+    memory_watch_view_conversation_role_t role,
+    const char *request_id,
+    const char *text)
+{
+    if (text == NULL || text[0] == '\0')
+    {
+        return;
+    }
+
+    if (s_conversation_item_count >= MEMORY_WATCH_CONVERSATION_MAX_ITEMS)
+    {
+        memmove(&s_conversation_entries[0], &s_conversation_entries[1],
+                (MEMORY_WATCH_CONVERSATION_MAX_ITEMS - 1U) *
+                    sizeof(s_conversation_entries[0]));
+        s_conversation_item_count = MEMORY_WATCH_CONVERSATION_MAX_ITEMS - 1U;
+    }
+
+    memory_watch_conversation_entry_t *entry =
+        &s_conversation_entries[s_conversation_item_count++];
+    entry->role = role;
+    memory_watch_copy_text(entry->request_id, sizeof(entry->request_id),
+                           request_id);
+    memory_watch_copy_text(entry->text, sizeof(entry->text), text);
+    ++s_conversation_revision;
+}
+
+static const memory_watch_view_conversation_item_t *
+memory_watch_conversation_view_items(void)
+{
+    for (size_t i = 0; i < s_conversation_item_count; ++i)
+    {
+        s_conversation_view_items[i].role = s_conversation_entries[i].role;
+        s_conversation_view_items[i].request_id =
+            s_conversation_entries[i].request_id;
+        s_conversation_view_items[i].text = s_conversation_entries[i].text;
+    }
+    return s_conversation_view_items;
+}
+
+static void memory_watch_controller_sync_conversation(
+    const memory_watch_service_snapshot_t *snapshot)
+{
+    if (snapshot == NULL || snapshot->request_id[0] == '\0')
+    {
+        return;
+    }
+
+    if (snapshot->asr_text[0] != '\0' &&
+        strcmp(s_last_user_request_id, snapshot->request_id) != 0)
+    {
+        memory_watch_conversation_append(
+            MEMORY_WATCH_VIEW_CONVERSATION_USER, snapshot->request_id,
+            snapshot->asr_text);
+        memory_watch_copy_text(s_last_user_request_id,
+                               sizeof(s_last_user_request_id),
+                               snapshot->request_id);
+    }
+
+    if (snapshot->reply_text[0] != '\0' &&
+        strcmp(s_last_reply_request_id, snapshot->request_id) != 0)
+    {
+        memory_watch_conversation_append(
+            MEMORY_WATCH_VIEW_CONVERSATION_HERMES, snapshot->request_id,
+            snapshot->reply_text);
+        memory_watch_copy_text(s_last_reply_request_id,
+                               sizeof(s_last_reply_request_id),
+                               snapshot->request_id);
+    }
+}
+
+static memory_watch_view_connection_state_t memory_watch_connection_state(
+    const memory_watch_service_snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return MEMORY_WATCH_VIEW_CONNECTION_UNKNOWN;
+    }
+    if (!snapshot->network_ready || !snapshot->endpoint_configured)
+    {
+        return MEMORY_WATCH_VIEW_CONNECTION_OFFLINE;
+    }
+    if (snapshot->hermes_online)
+    {
+        return MEMORY_WATCH_VIEW_CONNECTION_ONLINE;
+    }
+    return MEMORY_WATCH_VIEW_CONNECTION_UNKNOWN;
 }
 
 static bool memory_watch_is_busy_state(memory_watch_service_state_t state)
@@ -305,6 +482,13 @@ static bool memory_watch_render_cache_matches(
     return cache->voice_button_enabled == model->voice_button_enabled &&
            cache->cancel_visible == model->cancel_visible &&
            cache->cancel_is_clarification == model->cancel_is_clarification &&
+           cache->page == model->page &&
+           cache->connection_state == model->connection_state &&
+           cache->conversation_item_count == model->conversation_item_count &&
+           cache->conversation_revision == s_conversation_revision &&
+           cache->inbox_item_count == model->inbox_item_count &&
+           cache->selected_inbox_index == model->selected_inbox_index &&
+           cache->inbox_unread_count == model->inbox_unread_count &&
            strcmp(cache->top_status_text, model->top_status_text) == 0 &&
            strcmp(cache->state_text, model->state_text) == 0 &&
            strcmp(cache->user_text, model->user_text) == 0 &&
@@ -325,6 +509,13 @@ static void memory_watch_render_cache_store(
     cache->voice_button_enabled = model->voice_button_enabled;
     cache->cancel_visible = model->cancel_visible;
     cache->cancel_is_clarification = model->cancel_is_clarification;
+    cache->page = model->page;
+    cache->connection_state = model->connection_state;
+    cache->conversation_item_count = model->conversation_item_count;
+    cache->conversation_revision = s_conversation_revision;
+    cache->inbox_item_count = model->inbox_item_count;
+    cache->selected_inbox_index = model->selected_inbox_index;
+    cache->inbox_unread_count = model->inbox_unread_count;
     memory_watch_copy_text(cache->top_status_text,
                            sizeof(cache->top_status_text),
                            model->top_status_text);
@@ -414,6 +605,48 @@ static void memory_watch_controller_cancel_clarification(void *user_data)
     memory_watch_controller_refresh();
 }
 
+static void memory_watch_controller_open_inbox(void *user_data)
+{
+    (void)user_data;
+    s_render_page = MEMORY_WATCH_VIEW_PAGE_INBOX;
+    s_render_cache.valid = false;
+    memory_watch_controller_refresh();
+}
+
+static void memory_watch_controller_open_voice(void *user_data)
+{
+    (void)user_data;
+    s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
+    s_render_cache.valid = false;
+    memory_watch_controller_refresh();
+}
+
+static void memory_watch_controller_inbox_back(void *user_data)
+{
+    (void)user_data;
+    s_render_page = MEMORY_WATCH_VIEW_PAGE_INBOX;
+    s_render_cache.valid = false;
+    memory_watch_controller_refresh();
+}
+
+static void memory_watch_controller_open_inbox_item(size_t index,
+                                                    void *user_data)
+{
+    (void)user_data;
+    if (index >= memory_watch_inbox_item_count())
+    {
+        return;
+    }
+
+    s_selected_inbox_index = index;
+#ifdef AGENT_PREVIEW_HOST
+    s_preview_inbox_items[index].read = true;
+#endif
+    s_render_page = MEMORY_WATCH_VIEW_PAGE_INBOX_DETAIL;
+    s_render_cache.valid = false;
+    memory_watch_controller_refresh();
+}
+
 static bool memory_watch_controller_is_foreground(void)
 {
     return s_view != NULL &&
@@ -434,6 +667,10 @@ static void memory_watch_controller_ensure_view_created(void)
         .slide_cancel_cb = memory_watch_controller_slide_cancel,
         .cancel_waiting_cb = memory_watch_controller_cancel_waiting,
         .cancel_clarification_cb = memory_watch_controller_cancel_clarification,
+        .open_inbox_cb = memory_watch_controller_open_inbox,
+        .open_voice_cb = memory_watch_controller_open_voice,
+        .inbox_back_cb = memory_watch_controller_inbox_back,
+        .open_inbox_item_cb = memory_watch_controller_open_inbox_item,
         .user_data = NULL,
     };
 
@@ -467,6 +704,7 @@ static void memory_watch_controller_refresh(void)
                            snapshot.reply_text[0] != '\0'
                                ? snapshot.reply_text
                                : memory_watch_default_reply_text(&snapshot));
+    memory_watch_controller_sync_conversation(&snapshot);
 
     const bool busy = memory_watch_is_busy_state(snapshot.state);
     const memory_watch_view_model_t model = {
@@ -475,6 +713,14 @@ static void memory_watch_controller_refresh(void)
         .user_text = user_text,
         .reply_text = reply_text,
         .voice_button_text = memory_watch_voice_button_text(&snapshot),
+        .page = s_render_page,
+        .conversation_items = memory_watch_conversation_view_items(),
+        .conversation_item_count = s_conversation_item_count,
+        .connection_state = memory_watch_connection_state(&snapshot),
+        .inbox_items = memory_watch_inbox_items(),
+        .inbox_item_count = memory_watch_inbox_item_count(),
+        .selected_inbox_index = s_selected_inbox_index,
+        .inbox_unread_count = memory_watch_inbox_unread_count(),
         .voice_button_enabled = memory_watch_can_use_voice_button(&snapshot),
         .cancel_visible =
             busy ||
@@ -504,6 +750,7 @@ void memory_watch_controller_open(void)
         return;
     }
 
+    s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
     (void)memory_watch_service_check_health();
     s_render_cache.valid = false;
     memory_watch_controller_refresh();
