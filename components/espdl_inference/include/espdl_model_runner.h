@@ -23,7 +23,7 @@ extern "C" {
 
 /** DS-TCN-small (V3.2) danger 概率阈值。 */
 #define ESPDL_DSTCN_DANGER_THRESHOLD  0.35f
-/** DS-CNN T90 sharp (V3.4) danger 概率阈值；现场侧优先压制人声/摩擦误报。 */
+/** DS-CNN V59 softdistill danger 概率阈值；沿用样板验证的 T90 配置。 */
 #define ESPDL_DSCNN_DANGER_THRESHOLD  0.90f
 
 /** 单模型推理结果。 */

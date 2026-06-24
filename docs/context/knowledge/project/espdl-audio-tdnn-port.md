@@ -2,7 +2,7 @@
 id: espdl-audio-tdnn-port
 tags: audio, esp-dl, danger-detection, tdnn
 summary: "AudioClassification-Pytorch 到 ESP32-S3 esp-dl 的首版最小链路结论：TDNN + Fbank + TAP，训练侧 3D 特征输入，导出侧使用等价 2D wrapper 避免 ESP-PPQ 1D BN 风险。"
-last_reviewed: 2026-05-04
+last_reviewed: 2026-06-24
 memory_type: semantic
 scope: repo
 owners: components/espdl_inference, components/traffic_inference, main/features/danger_detection/danger_detection_service.c
@@ -117,3 +117,12 @@ PaSST 通过 `hear21passt` 在 1 秒窗口上会提示输入时间长度与原�
 同日已把训练仓库的模型管理扩展成完整发布登记：`models/espdl_registry/board_verified/` 统一登记 6 个已样板工程或板端实测版本，包括 locked TDNN baseline、mixed TDNN、DS-TCN FLOAT/INT8 input、DS-TCN lightaug 和当前主工程 active 对应的 DS-CNN-tiny V3.3；`models/espdl_registry/in_progress/` 登记 2 个未上板 V3.4 候选。总表为 `models/espdl_registry/model_release_table.md`，后续判断“能否替换 active”时先看该表，不要只看训练日志或聊天记录。
 
 模型管理中已显式拆分 `eval_threshold` 与 `runtime_threshold`：前者属于 PC/样板工程评估指标，后者只表示当前主工程固件实际运行值。当前 V3.3 的历史评估阈值仍可记录为 `0.40`，但主工程人声误报后实际运行阈值是 `0.80`，以后不要把这两个值混为一个“模型阈值”。
+
+2026-06-24 按用户要求将主工程 active ESP-DL 单模型从 V3.4 T90 sharp 切到 V59 softdistill：
+`edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl`。V59 源自训练仓库 registry：
+`D:\esp32S3\AudioClassification-Pytorch\models\espdl_registry\in_progress\edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608`，
+类别顺序仍为 `non_danger / danger`，运行阈值沿用 `0.90`。V59 在样板工程已通过 `Model::test()`，PC 记录为 edge wav
+`FP=0/FN=5, recall=0.938272`、hardneg `FP=0/1536`；主工程接入只替换 active `.espdl`
+和 rodata 符号，不改变 `danger_detection_service` 的连续窗口、hold/cooldown 或 active danger
+边界。主工程 `idf.py build` 已通过，板端 `app-flash`、monitor 和主工程启动期 `Model::test()`
+日志仍待补；旧 V3.4 `.espdl` 继续留在模型目录作回退资产，但当前 CMake 不嵌入。

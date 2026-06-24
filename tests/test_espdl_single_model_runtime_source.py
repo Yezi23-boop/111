@@ -14,7 +14,8 @@ class EspdlSingleModelRuntimeSourceTests(unittest.TestCase):
     def test_component_embeds_only_active_dscnn_model(self) -> None:
         cmake = ESPDL_CMAKE.read_text(encoding="utf-8")
 
-        self.assertIn("edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.espdl", cmake)
+        self.assertIn("edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl", cmake)
+        self.assertNotIn("edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.espdl", cmake)
         self.assertNotIn("edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503.espdl", cmake)
         self.assertNotIn("edge_mix_teacher_dstcn_small_1s_int8input_v20260503.espdl", cmake)
         self.assertNotIn("espdl_dual_runner.cpp", cmake)

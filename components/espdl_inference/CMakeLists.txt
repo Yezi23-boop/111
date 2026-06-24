@@ -1,5 +1,5 @@
 ## espdl_inference 组件 CMakeLists.txt
-## 基于 ESP-DL 的单模型推理组件，当前 active 模型为 V3.4 T90 sharp。
+## 基于 ESP-DL 的单模型推理组件，当前 active 模型为 V59 softdistill T90。
 
 set(srcs
     espdl_model_runner.cpp
@@ -23,7 +23,7 @@ include(${cmake_dir}/utilities.cmake)
 
 # 只嵌入 active 模型，避免多模型同时占用 flash/PSRAM。
 set(embed_files
-    models/edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.espdl
+    models/edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl
 )
 
 idf_component_register(

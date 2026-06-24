@@ -2,7 +2,7 @@
 id: espdl-danger-model-plan-anchor
 tags: project, esp-dl, audio, danger-detection, model-integration, deployment
 summary: "固定 ESP-DL 危险声音模型接入锚点：记录当前主工程 active 模型、部署边界、固件 owner，并指向训练仓库的模型版本与训练经验入口。"
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-24
 memory_type: semantic
 scope: repo
 owners: components/espdl_inference, main/features/danger_detection/danger_detection_service.c, main/ui/custom/danger_detection_controller.c
@@ -26,13 +26,15 @@ route_area: "ESP-DL danger model"
 
 ## 当前主工程事实
 
-- 当前 active 模型：`edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.espdl`。
+- 当前 active 模型：`edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl`。
 - 主工程模型目录：`D:\esp32S3\111\components\espdl_inference\models`。
 - 当前 active danger 边界：`siren / horn / alarm`。
 - 扩展类边界：`gun_shot / glass_break / crash / impact` 只属于 challenger 或扩展实验，除非产品定义明确变更，否则不得默认进入 active 主线。
 - 输入口径：16 kHz mono、1 秒窗口、Fbank 40 bins、INT8 模型入口。
 - 部署侧默认阈值：`0.90`。
 - 当前最小后处理闭环：连续 2 个 danger 窗口确认，连续 non-danger 窗口清除，保留 hold/cooldown 抑制抖动与重复提醒。
+- 验证状态：V59 主工程源码接入与 `idf.py build` 已通过；板端 `app-flash`、monitor 和主工程启动期 `Model::test()` 日志待补。
+- 回退锚点：`edge_mix_teacher_dscnn_small_v34_core_t90_sharp_20260511.espdl` 仍保留在主工程模型目录，但当前 CMake 不嵌入。
 
 ## 固件 owner 边界
 

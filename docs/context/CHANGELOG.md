@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-06-24：按用户要求将主工程危险识别 active ESP-DL 单模型切到 V59 softdistill `edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl`，运行阈值继续为 `0.90`，active danger 边界仍是 `siren / horn / alarm`；本次只替换 `components/espdl_inference` 的 active 嵌入和 rodata 符号，`danger_detection_service` 后处理策略不变，`idf.py build` 已通过，旧 V3.4 模型保留为目录内回退资产但不再由 CMake 嵌入，板端 `app-flash`/monitor/主工程 `Model::test()` 待补。
+
 - 2026-06-22：新增 `co5300-screen-layout-safe-zone.md`：整理 CO5300 面板物理分辨率（410×502 px，圆角矩形）、圆角遮挡估算与 LVGL 布局安全边距规范；记录主表盘各控件已验证坐标，以及"日期标签被左圆角截断"和"电池控件偏右被截"两个典型踩坑及修复方案。未来新增任何 UI 控件前应先查阅本文档。
 
 - 2026-06-21：修复 Wi-Fi 设置界面的 ESP-IDF 板端编译报错与未使用常数警告：由于板端未使能标准的 `lv_font_montserrat_16/20/24/48` 字体，重构中将它们替换为已使能的 Wi-Fi 字体子集 `lv_font_montserrat_lxgw_lv_font_wifi_subset_16/24` 和 `lv_font_montserratMedium_46`；同时移除死代码常数 `kWifiBackButton*`，解决 `-Werror=unused-const-variable=` 错误，实现模拟器（重新编译+PrintWindow截图）与板端（idf.py build）100% 编译通过。
