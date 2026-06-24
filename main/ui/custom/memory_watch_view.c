@@ -33,8 +33,6 @@ struct memory_watch_view
     lv_obj_t *state_label;
     lv_obj_t *conversation_list;
     lv_obj_t *conversation_empty_label;
-    lv_obj_t *cancel_btn;
-    lv_obj_t *cancel_label;
     lv_obj_t *voice_btn;
     lv_obj_t *voice_label;
     lv_obj_t *inbox_page;
@@ -65,7 +63,6 @@ struct memory_watch_view
     memory_watch_view_page_t page;
     bool pressing;
     bool press_inside;
-    bool cancel_is_clarification;
 };
 
 static const lv_coord_t kScreenWidth = 410;
@@ -198,20 +195,6 @@ static void memory_watch_view_open_inbox_event(lv_event_t *e)
     memory_watch_view_t *view =
         (memory_watch_view_t *)lv_event_get_user_data(e);
     memory_watch_view_call(view, view != NULL ? view->open_inbox_cb : NULL);
-}
-
-static void memory_watch_view_cancel_event(lv_event_t *e)
-{
-    memory_watch_view_t *view =
-        (memory_watch_view_t *)lv_event_get_user_data(e);
-    if (view == NULL)
-    {
-        return;
-    }
-
-    memory_watch_view_call(
-        view, view->cancel_is_clarification ? view->cancel_clarification_cb
-                                            : view->cancel_waiting_cb);
 }
 
 static void memory_watch_view_voice_event(lv_event_t *e)
@@ -796,15 +779,6 @@ static void memory_watch_view_create_voice_page(memory_watch_view_t *view)
     lv_obj_add_event_cb(view->conversation_empty_label,
                         memory_watch_view_gesture_event, LV_EVENT_ALL, view);
 
-    view->cancel_btn = memory_watch_view_create_text_button(
-        view->voice_page, "取消", 88, 38, lv_color_hex(0xffffff),
-        lv_color_hex(0x2f3437));
-    view->cancel_label = lv_obj_get_child(view->cancel_btn, 0);
-    lv_obj_set_pos(view->cancel_btn, 286, 276);
-    memory_watch_view_style_panel(view->cancel_btn, lv_color_hex(0xffffff));
-    lv_obj_add_event_cb(view->cancel_btn, memory_watch_view_cancel_event,
-                        LV_EVENT_CLICKED, view);
-
     view->voice_btn = memory_watch_view_create_text_button(
         view->voice_page, "按住说话", kVoiceButtonWidth, kVoiceButtonHeight,
         lv_color_hex(0x111111), lv_color_hex(0xffffff));
@@ -994,7 +968,6 @@ void memory_watch_view_apply_model(memory_watch_view_t *view,
         return;
     }
 
-    view->cancel_is_clarification = model->cancel_is_clarification;
     view->inbox_items = model->inbox_items;
     view->inbox_item_count = model->inbox_item_count;
     view->selected_inbox_index = model->selected_inbox_index;
@@ -1009,18 +982,6 @@ void memory_watch_view_apply_model(memory_watch_view_t *view,
     memory_watch_view_rebuild_inbox_list(view);
     memory_watch_view_update_detail(view);
     memory_watch_view_show_page(view, model->page);
-
-    if (model->cancel_visible)
-    {
-        lv_obj_remove_flag(view->cancel_btn, LV_OBJ_FLAG_HIDDEN);
-        memory_watch_view_set_label(
-            view->cancel_label,
-            model->cancel_is_clarification ? "取消追问" : "取消");
-    }
-    else
-    {
-        lv_obj_add_flag(view->cancel_btn, LV_OBJ_FLAG_HIDDEN);
-    }
 
     if (view->voice_btn != NULL)
     {
