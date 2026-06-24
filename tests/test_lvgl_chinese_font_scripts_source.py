@@ -58,6 +58,59 @@ class LvglChineseFontScriptsSourceTests(unittest.TestCase):
         self.assertIn('"--format"', source)
         self.assertIn('"bin"', source)
 
+    def test_punctuation_constant_covers_chinese_fullwidth_punctuation(self) -> None:
+        """标点常量必须覆盖常见全角标点，避免动态文本渲染为方框。
+
+        弯引号用 \\u 转义书写，这里用 chr() 校验，确保转义被正确解析、
+        不会因源码编码问题静默丢失。
+        """
+        module = load_module(SCRIPTS_FONT_DIR / "build_lvgl_binfont.py")
+
+        expected = {
+            0xFF0C,  # ，
+            0x3002,  # 。
+            0xFF1F,  # ？
+            0xFF01,  # ！
+            0x3001,  # 、
+            0xFF1B,  # ；
+            0xFF1A,  # ：
+            0x201C,  # “
+            0x201D,  # ”
+            0x2018,  # ‘
+            0x2019,  # ’
+            0xFF08,  # （
+            0xFF09,  # ）
+            0x2014,  # —
+            0x2026,  # …
+            0x00B7,  # ·
+        }
+        actual = {ord(ch) for ch in module.DEFAULT_PUNCTUATION}
+        self.assertTrue(
+            expected.issubset(actual),
+            f"missing punctuation codepoints: {expected - actual}",
+        )
+
+    def test_compiled_fonts_embed_chinese_punctuation_glyphs(self) -> None:
+        """编译进固件的 C 字体必须实际包含全角标点字形注释。
+
+        防止构建期标点合并失效（如 lv_font_conv 静默跳过缺失字形）导致
+        运行时方框。校验 DEFAULT_PUNCTUATION 中 16 个码点在四个字号里全量存在。
+        """
+        module = load_module(SCRIPTS_FONT_DIR / "build_lvgl_binfont.py")
+        fonts_dir = REPO_ROOT / "main" / "ui" / "custom" / "fonts"
+        required_codepoints = tuple(f"{ord(ch):04X}" for ch in module.DEFAULT_PUNCTUATION)
+
+        for size in PRESET_SIZES:
+            source = (
+                fonts_dir / f"lv_font_montserrat_lxgw_tghz_level1_3500_{size}_4.c"
+            ).read_text(encoding="utf-8")
+            for cp in required_codepoints:
+                self.assertIn(
+                    f"U+{cp}",
+                    source,
+                    f"size {size} missing glyph U+{cp}",
+                )
+
     def test_compiled_font_script_generates_lvgl_c_fonts(self) -> None:
         source = (SCRIPTS_FONT_DIR / "build_lvgl_cfont.py").read_text(
             encoding="utf-8"

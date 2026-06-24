@@ -24,6 +24,11 @@ DEFAULT_CHARSET = (
 )
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "resources" / "fonts"
 DEFAULT_BPP = 4
+# ASCII 可见区间已覆盖英文半角标点；这里只补全角中文标点和印刷符号，
+# 解决 Hermes 等动态文本出现「，。？！」等字符时渲染为方框的问题。
+# 弯引号（U+201C/201D/2018/2019）用 \u 转义，避免源码中直接写高位字符
+# 在不同编辑器/编码下被改写而静默丢失。
+DEFAULT_PUNCTUATION = "，。？！、；：\u201c\u201d\u2018\u2019（）—…·"
 ASCII_RANGE = "0x20-0x7E,0xB0"
 
 
@@ -33,6 +38,15 @@ def read_charset(path: Path) -> str:
     if not chars:
         raise ValueError(f"charset is empty: {path}")
     return "".join(dict.fromkeys(chars))
+
+
+def read_font_symbols(path: Path) -> str:
+    """返回 charset 汉字与预设标点的去重拼接串。
+
+    标点不写入 charset 文件（该文件语义是「一级 3500 字」不变量，且有
+    source 测试断言其恰好 3500 字），改为在构建期合并，保持源文件纯净。
+    """
+    return "".join(dict.fromkeys(read_charset(path) + DEFAULT_PUNCTUATION))
 
 
 def default_output_name(size: int, charset_name: str, bpp: int) -> str:
@@ -48,7 +62,7 @@ def build_font(args: argparse.Namespace) -> Path:
         if not path.exists():
             raise FileNotFoundError(path)
 
-    charset_symbols = read_charset(charset)
+    charset_symbols = read_font_symbols(charset)
     output = Path(args.output) if args.output else Path(args.output_dir) / default_output_name(
         args.size,
         args.name,

@@ -55,47 +55,65 @@ V1 只围绕这个习惯闭环：
 4. 主动信息：Hermes 主动生成待办、提醒、重点记忆摘要或任务结果，并回到手表收件箱。
 5. 快捷问答：用户询问今天事项、刚才记忆或某个上下文问题。
 
-## V2.0 Hermes 收件箱定位
+## Hermes 收件箱与系统级通知定位
 
-V2.0 在 V1“按住说 -> Hermes 处理 -> 手表回执”的基础上，增加 Hermes 主动信息回到手表的能力。
+2026-06-25 路线更新：旧的“收件箱只在 Hermes 页面内、不做全局通知、不主动打断”的 V2.0 口径已被新计划取代。当前以 `docs/context/plans/active/2026-06-25-hermes-inbox-global-notification-plan.md` 为准。
 
-Hermes 收件箱不是通知中心，也不参与与 Hermes 的对话。它只接收 Hermes 或服务器主动写给手表、适合用户稍后查看的短文本信息。
-
-V2.0 固定以下产品边界：
-
-- Hermes 主动下发的信息只进入收件箱，不震动、不亮屏、不主动打断用户。
-- 收件箱入口只出现在 Hermes 页面内，不放到主菜单，不做全局通知中心。
-- 收件箱只读：不回复、不确认、不继续任务、不删除消息。
-- 收件箱不参与 Hermes 长期记忆；已读/未读只属于 watch endpoint 的收件箱状态，V2.0 不回写 Hermes。
-- V2.0 先用脚本模拟 Hermes 主动写入，后续再接 Hermes agent 工具。
-
-V2.0 的最小交互链路：
+新定位：
 
 ```text
-Hermes / server 主动产生一条信息
-  -> watch endpoint 内部接口写入收件箱
-  -> 用户进入 Hermes 页面时拉取第一页
-  -> Hermes 页面显示收件箱未读数
-  -> 用户打开收件箱列表
-  -> 点开消息后立即标记已读
+Hermes 收件箱是系统级消息中心的第一个来源。
+
+V1 只接 Hermes 主动下发提示；
+后续可扩展到 weather / safety / system / reminders / app events。
 ```
 
-V2.0 的收件箱数据规则：
+固定产品边界：
 
-- 收件箱由 watch endpoint/server 持久化，每个 device 保留最近 50 条。
-- ESP32-S3 每次最多拉取 20 条，支持 `before` 分页继续拉取更早消息。
-- 消息按 `created_at` 倒序显示，最新在上，不把未读强行置顶。
-- `unread_count` 统计服务器保留的 50 条内全部未读消息。
-- 消息字段只保留 `notification_id`、`created_at`、`read`、`text`。
-- `text` 原文返回，不做服务器摘要或裁剪；列表页只显示预览，详情页显示完整原文并支持纵向滚动。
-- 用户点开消息即标记已读，但消息不从列表移除，直到被最近 50 条滚动淘汰。
+- 消息中心允许多个来源，但 V1 只接 Hermes。
+- V1 收件箱只读：不回复、不确认、不继续任务、不删除消息。
+- 收件箱主要放 Hermes 主动下发的提示，不把每一条普通 Hermes 对话回复都塞进收件箱。
+- 用户主动问 Hermes 后的普通回复留在 Hermes 对话页；如果用户离开页面后回复才到达，可以弹气泡，点击回到 Hermes 对话并滚到底部。
+- Hermes 主动提示进入收件箱，并可触发全局气泡；气泡由系统级 notification controller 挂在 `lv_layer_top()`，不属于某个页面。
+- 全局气泡默认可在普通页面弹出，但录音/编码、安全告警、OTA/配网关键流程、熄屏/低功耗时暂缓。
+- V1 用 HTTP 轮询打通业务和 UI；后续再重构升级为 MQTT，解决延迟和功耗。
 
-V2.0 的固件缓存规则：
+V1 的最小交互链路：
 
-- Hermes 收件箱是 `memory_watch_service` 的后台服务能力，不是 UI 页面私有状态；UI 只投递命令并读取 snapshot。
-- V2.0 可以做无用户触发的后台轮询，由 `memory_watch_service` 按电源、网络和前台状态预算低频拉取收件箱未读状态或第一页消息；后台轮询只更新收件箱状态，不震动、不亮屏、不主动打断用户。
-- 收件箱 items 缓存放 PSRAM，退出 Hermes 页面后由 `memory_watch_service` 释放。
-- 语音录音/上传优先级高于收件箱加载；收件箱 late result 不能覆盖录音、上传或思考状态。
+```text
+Hermes / server 主动产生一条提示
+  -> watch endpoint 写入 device inbox
+  -> memory_watch_service 按预算轮询 inbox
+  -> service 更新 inbox snapshot 和未读数
+  -> notification controller 发现新消息并显示全局气泡
+  -> 用户点气泡进入收件箱详情
+```
+
+后台 Hermes 回复链路单独处理：
+
+```text
+用户在 Hermes 页面发起请求
+  -> 退出 Hermes 页面后请求继续等待
+  -> 回复到达时写入 Hermes 对话记录
+  -> 如果 Hermes 页面不在前台，弹“回复已到达”气泡
+  -> 用户点气泡回到 Hermes 对话页并滚到底部
+```
+
+轮询节奏：
+
+- 首次联网：立刻拉 inbox。
+- 正常亮屏/活跃：1 分钟拉一次。
+- 普通运行：5 分钟拉一次。
+- 失败重试：1 分钟。
+- 低功耗/熄屏：暂停或 30 分钟。
+- 打开收件箱：立即拉一次。
+
+固件 owner 边界：
+
+- 收件箱数据 owner 是 `memory_watch_service`，不是 UI 页面私有状态。
+- UI 只投递“打开收件箱、打开详情、返回、点击气泡”等用户意图，并读取 snapshot。
+- HTTP 请求由 `memory_watch_voice_client` 的窄 client 执行；LVGL 页面不直接联网。
+- 全局气泡由独立 notification controller 管理，避免 Hermes 页面、天气页、主表盘互相调用。
 
 ## 端云分工
 

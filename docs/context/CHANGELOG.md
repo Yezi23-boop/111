@@ -1,5 +1,11 @@
 # 上下文库变更记录
 
+- 2026-06-25：将 `2026-06-25-hermes-inbox-global-notification-plan.md` 从产品决策稿细化为可执行 V1 规格：固定 create/list/read HTTP 请求与响应、`201/200/404/422` 语义、SQLite 持久化事务和空列表行为；明确 `memory_watch_service + inbox worker` 的 FreeRTOS owner 边界、PSRAM 有界缓存、generation/meta/summary/detail 只读快照和原子合并算法；将 surfaced ledger 唯一 owner 收敛到 `watch_notification_center`，补齐 inbox/reply 跨通道排队、气泡手势/安全区、低功耗调度、V2 MQTT 迁移边界和五阶段实施门禁。
+
+- 2026-06-25：新增 `docs/context/plans/active/2026-06-25-hermes-inbox-global-notification-plan.md`，记录 Hermes 收件箱与系统级气泡通知的当前产品/架构决策：消息中心允许多个来源但 V1 只接 Hermes；V1 收件箱只读；普通 Hermes 对话回复不进收件箱；退出 Hermes 页面后已发送请求默认后台继续；后台回复气泡点击回 Hermes 对话；Hermes 主动提示进入收件箱并触发全局气泡；V1 先用 HTTP 轮询打通业务和 UI，后续再升级 MQTT。同步更新 `ai-memory-watch-product-positioning.md`，废止旧的“收件箱不做全局通知、不主动打断”口径。
+
+- 2026-06-25：修复 Hermes 等动态文本出现全角中文标点（「，。？！」等）时渲染为方框的问题。根因是通用中文 LVGL C 字体（`lv_font_montserrat_lxgw_tghz_level1_3500_*`，16/22/24/27 四个字号）的字符集 `charset_tghz_level1_3500.txt` 只收《通用规范汉字表》一级 3500 汉字，未含任何全角标点；英文半角标点早已由 `ASCII_RANGE = "0x20-0x7E"` 覆盖，无需补。修复方式：在 `scripts/lvgl_fonts/build_lvgl_binfont.py` 新增 `DEFAULT_PUNCTUATION`（16 个全角标点+印刷符号，弯引号用 `\u` 转义避免源码编码丢失）与 `read_font_symbols()`，由 C 字体与 bin 字体两个构建脚本复用，在构建期把标点并入 `--symbols`；charset 文件保持纯 3500 字不变量不动。已重生成 4 个 C 字体（4字号×16标点 0 缺失），新增 2 个 source 测试锁定标点常量与字形回归，字体相关测试 17 passed。
+
 - 2026-06-24：按用户要求将主工程危险识别 active ESP-DL 单模型切到 V59 softdistill `edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl`，运行阈值继续为 `0.90`，active danger 边界仍是 `siren / horn / alarm`；本次只替换 `components/espdl_inference` 的 active 嵌入和 rodata 符号，`danger_detection_service` 后处理策略不变，`idf.py build` 已通过，旧 V3.4 模型保留为目录内回退资产但不再由 CMake 嵌入，板端 `app-flash`/monitor/主工程 `Model::test()` 待补。
 
 - 2026-06-22：新增 `co5300-screen-layout-safe-zone.md`：整理 CO5300 面板物理分辨率（410×502 px，圆角矩形）、圆角遮挡估算与 LVGL 布局安全边距规范；记录主表盘各控件已验证坐标，以及"日期标签被左圆角截断"和"电池控件偏右被截"两个典型踩坑及修复方案。未来新增任何 UI 控件前应先查阅本文档。

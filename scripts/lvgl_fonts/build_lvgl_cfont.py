@@ -17,7 +17,7 @@ from build_lvgl_binfont import (
     DEFAULT_LATIN_FONT,
     LV_FONT_CONV_PACKAGE,
     REPO_ROOT,
-    read_charset,
+    read_font_symbols,
 )
 
 
@@ -79,7 +79,7 @@ def build_font(args: argparse.Namespace) -> Path:
             "--font",
             str(chinese_font),
             "--symbols",
-            read_charset(charset),
+            read_font_symbols(charset),
             "--size",
             str(args.size),
             "--bpp",

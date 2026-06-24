@@ -16,6 +16,7 @@ evidence_level: observed
 - 页面侧直接引用 `ui_chinese_fonts.h` 声明的字体符号，典型用法是把 `&lv_font_montserrat_lxgw_tghz_level1_3500_24_4` 传给 `lv_obj_set_style_text_font()`。
 - 中文 label 不应直接使用 `lv_font_montserrat*`，否则 Montserrat 缺少中文字形时会出现方框、缺字或乱码。
 - 当前预置字体是《通用规范汉字表》一级 3500 字的 `16 / 22 / 24 / 27` 四个字号，`bpp=4`。
+- 字符集 `charset_tghz_level1_3500.txt` 只收 3500 个汉字（这是被 source 测试锁定的不变量）；全角中文标点（「，。？！」等 16 个）和英文半角标点（由 `ASCII_RANGE`）在构建期由 `build_lvgl_binfont.DEFAULT_PUNCTUATION` + `read_font_symbols()` 合并进 `--symbols`，不写进 charset 文件。修改标点清单改 `DEFAULT_PUNCTUATION` 后需重跑 `ensure_lvgl_compiled_fonts.py --force`。
 - `main/ui/custom/fonts/*.c` 当前使用 LVGL 压缩字体（`.bitmap_format = 1`）；必须保持 `CONFIG_LV_USE_FONT_COMPRESSED=y`（`sdkconfig` 和 `sdkconfig.defaults`），否则中文 label 绘制时 `lv_font_get_glyph_bitmap()` 会返回 `NULL` 并在 `draw_letter_cb` 触发 `LoadProhibited`。
 - 字体源、字符集和生成脚本都保存在仓库内：`tools/lvgl_fonts/` 与 `scripts/lvgl_fonts/`。
 - 编译期 C 字体生成不接入 `idf.py build`；普通构建只消费已提交到 `main/ui/custom/fonts/` 的 `.c` 产物，避免 Node/npx 影响固件构建稳定性。
