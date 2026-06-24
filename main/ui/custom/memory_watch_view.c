@@ -800,7 +800,7 @@ static void memory_watch_view_create_voice_page(memory_watch_view_t *view)
         view->voice_page, "取消", 88, 38, lv_color_hex(0xffffff),
         lv_color_hex(0x2f3437));
     view->cancel_label = lv_obj_get_child(view->cancel_btn, 0);
-    lv_obj_set_pos(view->cancel_btn, 286, 304);
+    lv_obj_set_pos(view->cancel_btn, 286, 276);
     memory_watch_view_style_panel(view->cancel_btn, lv_color_hex(0xffffff));
     lv_obj_add_event_cb(view->cancel_btn, memory_watch_view_cancel_event,
                         LV_EVENT_CLICKED, view);
@@ -808,7 +808,7 @@ static void memory_watch_view_create_voice_page(memory_watch_view_t *view)
     view->voice_btn = memory_watch_view_create_text_button(
         view->voice_page, "按住说话", kVoiceButtonWidth, kVoiceButtonHeight,
         lv_color_hex(0x111111), lv_color_hex(0xffffff));
-    lv_obj_set_pos(view->voice_btn, 83, 324);
+    lv_obj_set_pos(view->voice_btn, 83, 320);
     view->voice_label = lv_obj_get_child(view->voice_btn, 0);
     lv_obj_add_event_cb(view->voice_btn, memory_watch_view_voice_event,
                         LV_EVENT_ALL, view);
