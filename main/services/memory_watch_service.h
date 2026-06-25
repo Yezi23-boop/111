@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "services/memory_watch_voice_client.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -182,6 +183,106 @@ extern "C"
      */
     const char *memory_watch_service_state_to_string(
         memory_watch_service_state_t state);
+
+    /**
+     * @brief inbox 同步状态。
+     */
+    typedef enum
+    {
+        MEMORY_WATCH_INBOX_SYNC_UNCONFIGURED = 0, /**< endpoint 未配置，不发请求。 */
+        MEMORY_WATCH_INBOX_SYNC_IDLE,             /**< 空闲，等待下次调度。 */
+        MEMORY_WATCH_INBOX_SYNC_POLLING,          /**< inbox worker 正在执行 GET。 */
+        MEMORY_WATCH_INBOX_SYNC_READY,            /**< 最近一次成功，store 有效。 */
+        MEMORY_WATCH_INBOX_SYNC_RETRY_WAIT,       /**< 临时错误，1 分钟后重试。 */
+        MEMORY_WATCH_INBOX_SYNC_AUTH_ERROR,       /**< 401/403，不紧循环，等配置更新。 */
+        MEMORY_WATCH_INBOX_SYNC_PROTOCOL_ERROR,   /**< 422/解析失败，等下次人工触发。 */
+    } memory_watch_inbox_sync_state_t;
+
+    /**
+     * @brief inbox meta — LVGL timer 可低成本读取，不含 item 数组。
+     *
+     * generation 变化时 controller 才复制 summary 列表。
+     */
+    typedef struct
+    {
+        uint32_t generation;                      /**< 每次 store 更新时递增。 */
+        size_t item_count;                        /**< 当前 store 中的条目数。 */
+        uint8_t unread_count;                     /**< 有效未读数（含待同步已读本地置真）。 */
+        memory_watch_inbox_sync_state_t sync_state; /**< 当前同步状态。 */
+        int64_t last_success_ms;                  /**< 最近成功轮询时的 esp_timer_get_time() / 1000。 */
+    } memory_watch_inbox_meta_t;
+
+    /**
+     * @brief inbox summary — 列表页所需字段，不含 body。
+     */
+    typedef struct
+    {
+        char notification_id[64]; /**< 最多 63 字节 + '\0'。 */
+        char title[64];           /**< 最多 63 字节 + '\0'。 */
+        char preview[128];        /**< 最多 127 字节 + '\0'。 */
+        char created_at[32];      /**< UTC RFC3339 字符串。 */
+        bool read;                /**< 有效已读状态（含本地 pending-read）。 */
+    } memory_watch_inbox_summary_t;
+
+    /**
+     * @brief 读取 inbox meta（低成本，无 I/O，无 item 拷贝）。
+     * @param[out] out_meta 输出 meta，不能为空。
+     * @return `ESP_OK` 成功。
+     */
+    esp_err_t memory_watch_service_get_inbox_meta(
+        memory_watch_inbox_meta_t *out_meta);
+
+    /**
+     * @brief 拷贝最多 capacity 条 inbox summary（不含 body）。
+     *
+     * 只有 generation 变化时 controller 才应调用；LVGL timer 只调用
+     * `get_inbox_meta`。
+     *
+     * @param[out] out_summaries 调用方分配的 summary 数组，capacity >= 20。
+     * @param[in]  capacity      数组容量（条）。
+     * @param[out] out_count     实际拷贝条数。
+     * @return `ESP_OK` 成功。
+     */
+    esp_err_t memory_watch_service_copy_inbox_summaries(
+        memory_watch_inbox_summary_t *out_summaries,
+        size_t capacity,
+        size_t *out_count);
+
+    /**
+     * @brief 按 notification_id 拷贝单条完整 inbox item（含 body）。
+     *
+     * 进入详情时调用；返回后调用方保有副本，service store 可继续更新。
+     *
+     * @param[in]  notification_id 目标消息 ID。
+     * @param[out] out_item        输出完整 item，不能为空。
+     * @return `ESP_OK` 成功，`ESP_ERR_NOT_FOUND` 不存在（已被淘汰）。
+     */
+    esp_err_t memory_watch_service_get_inbox_item(
+        const char *notification_id,
+        memory_watch_inbox_item_t *out_item);
+
+    /**
+     * @brief 请求立即拉取 inbox（打开收件箱、网络恢复等场景）。
+     *
+     * 多个 poll_now 在 worker 在途时自动合并为一个 pending bit；
+     * 不堆积重复 GET。
+     *
+     * @param[in] reason 调试用描述字符串（如 "open_inbox"/"network_ready"），可为 NULL。
+     * @return `ESP_OK` 表示命令已投递。
+     */
+    esp_err_t memory_watch_service_inbox_poll_now(const char *reason);
+
+    /**
+     * @brief 标记单条消息已读（本地立即生效，异步上报服务器）。
+     *
+     * 调用后 unread_count 立即更新，不等待 HTTP 成功；上报失败时
+     * 保留在 pending-read set，网络恢复后重试。
+     *
+     * @param[in] notification_id 要标记的消息 ID。
+     * @return `ESP_OK` 表示命令已投递，`ESP_ERR_NOT_FOUND` 表示 ID 不在当前 store。
+     */
+    esp_err_t memory_watch_service_inbox_mark_read(
+        const char *notification_id);
 
 #ifdef __cplusplus
 }

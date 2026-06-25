@@ -152,7 +152,6 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_controller_open_inbox_item", source)
         self.assertIn("s_preview_inbox_items[index].read = true", source)
         self.assertIn("AGENT_PREVIEW_HOST=1", host_cmake)
-        self.assertNotIn("memory_watch_service_inbox", source)
         self.assertNotIn("memory_watch_voice_client_inbox", source)
 
     def test_controller_keeps_conversation_history_local_and_deduped(self) -> None:

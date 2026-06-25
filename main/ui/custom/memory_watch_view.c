@@ -565,7 +565,7 @@ static void memory_watch_view_rebuild_inbox_list(memory_watch_view_t *view)
     {
         const memory_watch_view_inbox_item_t *item = &view->inbox_items[i];
         lv_obj_t *row = lv_obj_create(view->inbox_list);
-        lv_obj_set_size(row, 338, 74);
+        lv_obj_set_size(row, 330, 74);
         lv_obj_set_pos(row, 0, (lv_coord_t)(i * 82U));
         memory_watch_view_style_panel(
             row, item->read ? lv_color_hex(0xffffff) : lv_color_hex(0xf7f6f3));
@@ -659,10 +659,10 @@ static void memory_watch_view_show_page(memory_watch_view_t *view,
 
     if (page == MEMORY_WATCH_VIEW_PAGE_VOICE)
     {
-        lv_obj_add_flag(view->title_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(view->title_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(view->inbox_badge, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(view->connection_dot, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(view->status_badge, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(view->status_badge, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(view->voice_page, LV_OBJ_FLAG_HIDDEN);
     }
     else if (page == MEMORY_WATCH_VIEW_PAGE_INBOX)
@@ -690,14 +690,14 @@ static void memory_watch_view_create_header(memory_watch_view_t *view)
     lv_obj_t *back_btn = memory_watch_view_create_text_button(
         view->screen, "<", 52, 44, lv_color_hex(0xffffff),
         lv_color_hex(0x111111));
-    lv_obj_set_pos(back_btn, 24, 24);
+    lv_obj_set_pos(back_btn, 40, 24);
     memory_watch_view_style_panel(back_btn, lv_color_hex(0xffffff));
     lv_obj_add_event_cb(back_btn, memory_watch_view_header_back_event,
                         LV_EVENT_CLICKED, view);
 
     view->title_label = lv_label_create(view->screen);
     lv_label_set_text(view->title_label, "Hermes");
-    lv_obj_set_pos(view->title_label, 92, 22);
+    lv_obj_set_pos(view->title_label, 108, 22);
     lv_obj_set_size(view->title_label, 140, 34);
     lv_label_set_long_mode(view->title_label, LV_LABEL_LONG_DOT);
     memory_watch_view_set_text_style(
@@ -705,7 +705,7 @@ static void memory_watch_view_create_header(memory_watch_view_t *view)
         &lv_font_montserrat_lxgw_tghz_level1_3500_27_4);
 
     view->status_badge = lv_label_create(view->screen);
-    lv_obj_set_pos(view->status_badge, 92, 56);
+    lv_obj_set_pos(view->status_badge, 108, 56);
     lv_obj_set_size(view->status_badge, 116, 28);
     lv_label_set_long_mode(view->status_badge, LV_LABEL_LONG_DOT);
     memory_watch_view_style_badge(view->status_badge, lv_color_hex(0xedf3ec),
@@ -796,7 +796,7 @@ static void memory_watch_view_create_inbox_page(memory_watch_view_t *view)
 
     lv_obj_t *subtitle = lv_label_create(view->inbox_page);
     lv_label_set_text(subtitle, "Hermes 发来的短消息, 只读查看");
-    lv_obj_set_pos(subtitle, 36, 0);
+    lv_obj_set_pos(subtitle, 40, 0);
     lv_obj_set_size(subtitle, 330, 28);
     lv_label_set_long_mode(subtitle, LV_LABEL_LONG_DOT);
     memory_watch_view_set_text_style(
@@ -804,8 +804,8 @@ static void memory_watch_view_create_inbox_page(memory_watch_view_t *view)
         &lv_font_montserrat_lxgw_tghz_level1_3500_16_4);
 
     view->inbox_list = lv_obj_create(view->inbox_page);
-    lv_obj_set_pos(view->inbox_list, 36, 42);
-    lv_obj_set_size(view->inbox_list, 338, 318);
+    lv_obj_set_pos(view->inbox_list, 40, 42);
+    lv_obj_set_size(view->inbox_list, 330, 318);
     lv_obj_set_style_bg_opa(view->inbox_list, LV_OPA_TRANSP,
                             LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(view->inbox_list, 0,
@@ -820,8 +820,8 @@ static void memory_watch_view_create_inbox_page(memory_watch_view_t *view)
 
     view->inbox_empty_label = lv_label_create(view->inbox_page);
     lv_label_set_text(view->inbox_empty_label, "暂无收件箱消息");
-    lv_obj_set_pos(view->inbox_empty_label, 36, 164);
-    lv_obj_set_size(view->inbox_empty_label, 338, 28);
+    lv_obj_set_pos(view->inbox_empty_label, 40, 164);
+    lv_obj_set_size(view->inbox_empty_label, 330, 28);
     lv_label_set_long_mode(view->inbox_empty_label, LV_LABEL_LONG_DOT);
     memory_watch_view_set_text_style(
         view->inbox_empty_label, lv_color_hex(0x787774),
@@ -835,7 +835,7 @@ static void memory_watch_view_create_detail_page(memory_watch_view_t *view)
                         LV_EVENT_ALL, view);
 
     view->detail_time_label = lv_label_create(view->detail_page);
-    lv_obj_set_pos(view->detail_time_label, 36, 0);
+    lv_obj_set_pos(view->detail_time_label, 40, 0);
     lv_obj_set_size(view->detail_time_label, 330, 24);
     lv_label_set_long_mode(view->detail_time_label, LV_LABEL_LONG_DOT);
     memory_watch_view_set_text_style(
@@ -843,8 +843,8 @@ static void memory_watch_view_create_detail_page(memory_watch_view_t *view)
         &lv_font_montserrat_lxgw_tghz_level1_3500_16_4);
 
     lv_obj_t *detail_card = lv_obj_create(view->detail_page);
-    lv_obj_set_pos(detail_card, 36, 38);
-    lv_obj_set_size(detail_card, 338, 294);
+    lv_obj_set_pos(detail_card, 40, 38);
+    lv_obj_set_size(detail_card, 330, 294);
     memory_watch_view_style_panel(detail_card, lv_color_hex(0xffffff));
     lv_obj_set_style_pad_all(detail_card, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_scroll_dir(detail_card, LV_DIR_VER);
@@ -854,7 +854,7 @@ static void memory_watch_view_create_detail_page(memory_watch_view_t *view)
                         LV_EVENT_ALL, view);
 
     view->detail_text_label = lv_label_create(detail_card);
-    lv_obj_set_width(view->detail_text_label, 304);
+    lv_obj_set_width(view->detail_text_label, 298);
     lv_label_set_long_mode(view->detail_text_label, LV_LABEL_LONG_WRAP);
     memory_watch_view_set_text_style(
         view->detail_text_label, lv_color_hex(0x2f3437),
@@ -863,8 +863,8 @@ static void memory_watch_view_create_detail_page(memory_watch_view_t *view)
 
     lv_obj_t *hint = lv_label_create(view->detail_page);
     lv_label_set_text(hint, "右滑返回收件箱");
-    lv_obj_set_pos(hint, 36, 348);
-    lv_obj_set_size(hint, 338, 24);
+    lv_obj_set_pos(hint, 40, 348);
+    lv_obj_set_size(hint, 330, 24);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_DOT);
     memory_watch_view_set_text_style(
         hint, lv_color_hex(0x787774),

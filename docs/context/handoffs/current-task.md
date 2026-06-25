@@ -34,6 +34,9 @@ evidence_level: observed
 - `mw_upload` 实机栈问题已修复：upload worker 栈迁移到 PSRAM 并提升到 `24576` words，大 `job/result` 对象移出任务栈。
 - FreeRTOS queue copy 后的 `client_config` 指针 rebind 已修复：upload/health/cancel worker 收到 job 后重新绑定指针到 job 内部字符数组。
 - COM3 真机麦克风链路已成功：串口 high-water mark 约 `3248` words，返回 `status=done/action=memory_saved/error_code=none`；服务器 `/health` 最近请求摘要显示真实 Ogg Opus、`asr_provider=mimo` 和成功耗时，不包含正文或 token。
+- `system_time_sync` 临时网络同步 HTTP 任务栈外移至 PSRAM：解决设备开机连网时 SRAM 连续碎片不足报 `create network time sync task failed`（返回 `pdFAIL`）的崩溃。
+- `memory_watch_controller` 渲染快照引入 `inbox_generation` 数据版本跟踪：解决后台短消息轮询到达时页面静默死锁不刷新的 Bug。
+- `memory_watch_service` 收件箱大段 PSRAM 内存拷贝脱离 `portENTER_CRITICAL` 自旋锁：引入互斥锁 `s_inbox_store_mutex` 替换硬件自旋锁 `s_worker_lock`，消除 PSRAM 慢速访问引发的 CPU 双核中断屏蔽与 Cache 异常。
 
 ## Decision Log
 

@@ -170,6 +170,83 @@ extern "C"
         const char *request_id,
         memory_watch_voice_client_response_t *out_response);
 
+    /**
+     * @brief inbox 单条消息；字段长度与服务器 UTF-8 字节上限保持一致。
+     *
+     * 该结构不得放在 task 栈上；20 条约占 15 KiB，必须分配在 PSRAM 或静态段。
+     */
+    typedef struct
+    {
+        char notification_id[64]; /**< 最多 63 字节 + '\0'。 */
+        char source[24];          /**< 固定为 "hermes"。 */
+        char kind[24];            /**< "reminder"/"info"/"warning"。 */
+        char created_at[32];      /**< UTC RFC3339，服务端生成。 */
+        char title[64];           /**< 最多 63 字节 + '\0'。 */
+        char preview[128];        /**< 最多 127 字节 + '\0'。 */
+        char body[384];           /**< 最多 383 字节 + '\0'。 */
+        bool read;                /**< 服务端已读状态。 */
+    } memory_watch_inbox_item_t;
+
+    /**
+     * @brief inbox 轮询响应（GET /v1/watch/inbox）。
+     *
+     * items 数组由调用方提供，容量至少为 20；实际条数写入 out_item_count。
+     */
+    typedef struct
+    {
+        int http_status;           /**< HTTP 状态码，传输失败时为 0。 */
+        esp_err_t transport_error; /**< 最近一次 HTTP/解析错误。 */
+        uint8_t unread_count;      /**< 服务端返回的未读条数。 */
+        size_t item_count;         /**< 实际解析成功的消息条数。 */
+    } memory_watch_inbox_poll_result_t;
+
+    /**
+     * @brief inbox 标记已读响应（POST /v1/watch/inbox/{id}/read）。
+     */
+    typedef struct
+    {
+        int http_status;           /**< HTTP 状态码，传输失败时为 0。 */
+        esp_err_t transport_error; /**< 最近一次 HTTP/解析错误。 */
+        bool read;                 /**< 服务端确认的 read 状态。 */
+    } memory_watch_inbox_mark_read_result_t;
+
+    #define MEMORY_WATCH_INBOX_MAX_ITEMS 20U
+    /** inbox 轮询响应体最大字节数（20 条满载 ≈ 16 KiB，保留 8 KiB 余量）。 */
+    #define MEMORY_WATCH_INBOX_RESPONSE_MAX_BYTES (24U * 1024U)
+
+    /**
+     * @brief GET /v1/watch/inbox 拉取最近 20 条快照。
+     *
+     * 只允许 inbox worker task 调用；调用方必须提供已在 PSRAM 分配的
+     * items 数组（capacity >= MEMORY_WATCH_INBOX_MAX_ITEMS）。
+     *
+     * @param[in]  config     HTTP client 配置。
+     * @param[out] items      调用方分配的条目数组，capacity >= 20。
+     * @param[in]  capacity   items 数组容量（条）。
+     * @param[out] out_result 轮询结果（状态码/条数/未读数）。
+     * @return `ESP_OK` 表示 HTTP 2xx 且响应解析成功。
+     */
+    esp_err_t memory_watch_voice_client_inbox_poll(
+        const memory_watch_voice_client_config_t *config,
+        memory_watch_inbox_item_t *items,
+        size_t capacity,
+        memory_watch_inbox_poll_result_t *out_result);
+
+    /**
+     * @brief POST /v1/watch/inbox/{notification_id}/read 标记已读。
+     *
+     * 只允许 inbox worker task 调用；幂等，target 不存在返回 404（视为终态）。
+     *
+     * @param[in]  config          HTTP client 配置。
+     * @param[in]  notification_id 要标记的消息 ID。
+     * @param[out] out_result      标记已读结果。
+     * @return `ESP_OK` 表示 HTTP 200，`ESP_ERR_NOT_FOUND` 表示 HTTP 404。
+     */
+    esp_err_t memory_watch_voice_client_inbox_mark_read(
+        const memory_watch_voice_client_config_t *config,
+        const char *notification_id,
+        memory_watch_inbox_mark_read_result_t *out_result);
+
 #ifdef __cplusplus
 }
 #endif

@@ -32,6 +32,28 @@
       "method": "POST",
       "path": "/v1/watch/request/{request_id}/cancel",
       "content_type": "multipart/form-data"
+    },
+    "inbox_create": {
+      "method": "POST",
+      "path": "/v1/watch/inbox",
+      "query": ["device_id"],
+      "content_type": "application/json",
+      "caller": "hermes_server",
+      "note": "Hermes 主动提示写入；source 由服务端固定为 hermes，不由请求方提供。"
+    },
+    "inbox_list": {
+      "method": "GET",
+      "path": "/v1/watch/inbox",
+      "query": ["device_id"],
+      "caller": "esp32_watch",
+      "note": "手表轮询拉取最近 20 条完整快照；空列表返回 200 + items=[]，不返回 404。"
+    },
+    "inbox_mark_read": {
+      "method": "POST",
+      "path": "/v1/watch/inbox/{notification_id}/read",
+      "query": ["device_id"],
+      "caller": "esp32_watch",
+      "note": "幂等；目标不存在返回 404，ESP32 视为终态不再重试该条。"
     }
   },
   "request": {
@@ -112,5 +134,41 @@
     "esp32_must_not_store": ["HERMES_API_KEY", "API_SERVER_KEY", "XIAOMI_API_KEY"],
     "esp32_must_not_call": ["Hermes Dashboard", "Hermes API Server"],
     "public_proxy_scope": "/v1/watch/*"
+  },
+  "inbox": {
+    "description": "Hermes 收件箱。V1 使用 SQLite 持久化，每设备最近保留 20 条。",
+    "source_fixed": "hermes",
+    "max_items_per_device": 20,
+    "kind_enum": ["reminder", "info", "warning"],
+    "field_byte_limits_utf8": {
+      "notification_id": 63,
+      "kind": 23,
+      "title": 63,
+      "preview": 127,
+      "body": 383
+    },
+    "required_fields_on_create": ["notification_id", "kind", "title", "preview", "body"],
+    "immutable_after_create": ["notification_id", "kind", "title", "preview", "body", "source", "created_at"],
+    "idempotency": {
+      "key": "device_id + notification_id",
+      "first_create": "201 Created, created=true",
+      "duplicate_create": "200 OK, created=false, returns existing item"
+    },
+    "errors": {
+      "422": "字段缺失、空白、超字节限制或 kind 非法",
+      "401": "missing_bearer_token",
+      "403": "device_not_allowed 或 invalid_device_token",
+      "404": "inbox_mark_read 目标消息不存在或已被淘汰"
+    },
+    "list_response": {
+      "order": "created_at DESC",
+      "fields": ["notification_id", "source", "kind", "created_at", "title", "preview", "body", "read"],
+      "empty": "200 OK, items=[], unread_count=0"
+    },
+    "read_mark": {
+      "idempotent": true,
+      "not_found": "404；ESP32 视为终态，移出待同步集合"
+    },
+    "log_policy": "只记录 endpoint/device_id/notification_id/kind/created/error；禁止记录 Authorization/token/title/preview/body"
   }
 }

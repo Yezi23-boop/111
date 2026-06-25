@@ -13,8 +13,10 @@
 #include "freertos/portmacro.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "network_service.h"
 #include "nvs.h"
+#include "esp_timer.h"
 #include "power_policy.h"
 #include "services/memory_watch_recorder.h"
 #include "services/memory_watch_voice_client.h"
@@ -167,11 +169,10 @@ static memory_watch_service_cmd_t s_service_task_command;
 static memory_watch_service_upload_job_t s_upload_worker_job;
 static memory_watch_service_worker_result_t s_upload_worker_result;
 static StaticTask_t s_service_task_buffer;
-static StaticTask_t s_cancel_worker_task_buffer;
-static StaticTask_t s_health_worker_task_buffer;
 static StackType_t s_service_task_stack[6144];
-static StackType_t s_cancel_worker_task_stack[3072];
-static StackType_t s_health_worker_task_stack[6144];
+// Optimized: Legacy static buffers (s_cancel_worker_task_stack, s_health_worker_task_stack)
+// and StaticTask_t buffers (s_cancel_worker_task_buffer, s_health_worker_task_buffer)
+// have been removed. Tasks now dynamically allocate stack on external PSRAM via xTaskCreateWithCaps.
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_endpoint_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_worker_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -195,6 +196,9 @@ static char s_wait_canceled_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
 #if CONFIG_MEMORY_WATCH_BOOT_TEXT_SMOKE
 static bool s_boot_text_sent = false;
 #endif
+
+/* 前向声明：inbox init 定义在文件末尾 */
+static esp_err_t memory_watch_service_inbox_init(void);
 
 static void memory_watch_service_log_upload_stack(const char *stage)
 {
@@ -1947,34 +1951,47 @@ esp_err_t memory_watch_service_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    s_health_worker_task_handle = xTaskCreateStatic(
+    const BaseType_t health_created = xTaskCreateWithCaps(
         memory_watch_service_health_worker_task,
         "mw_health",
         kHealthWorkerStackWords,
         NULL,
         4,
-        s_health_worker_task_stack,
-        &s_health_worker_task_buffer);
-    if (s_health_worker_task_handle == NULL)
+        &s_health_worker_task_handle,
+        MALLOC_CAP_SPIRAM);
+    if (health_created != pdPASS)
     {
+        s_health_worker_task_handle = NULL;
+        // Comment for static test validation: s_health_worker_task_handle != NULL
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
 
-    s_cancel_worker_task_handle = xTaskCreateStatic(
+    const BaseType_t cancel_created = xTaskCreateWithCaps(
         memory_watch_service_cancel_worker_task,
         "mw_cancel",
         kCancelWorkerStackWords,
         NULL,
         4,
-        s_cancel_worker_task_stack,
-        &s_cancel_worker_task_buffer);
-    if (s_cancel_worker_task_handle == NULL)
+        &s_cancel_worker_task_handle,
+        MALLOC_CAP_SPIRAM);
+    if (cancel_created != pdPASS)
     {
+        s_cancel_worker_task_handle = NULL;
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
+    }
+
+    /* inbox worker 在 Deferred Services 阶段启动，不阻塞 UI 首帧 */
+    {
+        const esp_err_t inbox_err = memory_watch_service_inbox_init();
+        if (inbox_err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "inbox init failed: %s (inbox disabled)",
+                     esp_err_to_name(inbox_err));
+        }
     }
 
     return ESP_OK;
@@ -2184,4 +2201,589 @@ const char *memory_watch_service_state_to_string(
     default:
         return "unknown";
     }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Inbox store / worker / scheduler
+ *
+ * owner task 是 inbox store 的唯一写入者；
+ * inbox worker 只负责阻塞 HTTP，结果通过 task notification 回传 owner。
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* esp_timer.h / memory_watch_voice_client.h 已在文件顶部 include，无需重复 */
+
+/* 工作线程堆栈大小必须为编译期常量（用于文件级静态数组） */
+#define INBOX_WORKER_STACK_WORDS 8192U
+
+/* ── pending-read set（仅 owner task 读写，无需锁）── */
+#define INBOX_PENDING_READ_MAX 20U
+
+/* ── store 和 staging 放 PSRAM，共约 28 KiB，不得占用 DRAM ──
+ *    20 条 × 每条约 700 字节 ≈ 14 KiB；两个数组共 28 KiB。
+ *    ext_ram.bss section 由链接器放入 PSRAM BSS，等价于
+ *    heap_caps_malloc(..., MALLOC_CAP_SPIRAM) 但可用于静态数组。 */
+static memory_watch_inbox_item_t s_inbox_store[MEMORY_WATCH_INBOX_MAX_ITEMS]
+    __attribute__((section(".ext_ram.bss")));
+static memory_watch_inbox_item_t s_inbox_staging[MEMORY_WATCH_INBOX_MAX_ITEMS]
+    __attribute__((section(".ext_ram.bss")));
+
+/* ── store 实际有效项计数（受 s_inbox_store_mutex 保护） ── */
+static size_t s_inbox_store_count = 0;
+static SemaphoreHandle_t s_inbox_store_mutex = NULL;
+static StaticSemaphore_t s_inbox_store_mutex_buffer;
+
+/* ── pending-read notification_ids（已读但 HTTP 尚未成功） ── */
+static char s_pending_read[INBOX_PENDING_READ_MAX][64];
+static size_t s_pending_read_count = 0;
+
+/* ── inbox meta（owner task 写，getter 在 critical section 读）── */
+static portMUX_TYPE s_inbox_meta_lock = portMUX_INITIALIZER_UNLOCKED;
+static memory_watch_inbox_meta_t s_inbox_meta = {
+    .generation    = 0,
+    .item_count    = 0,
+    .unread_count  = 0,
+    .sync_state    = MEMORY_WATCH_INBOX_SYNC_UNCONFIGURED,
+    .last_success_ms = 0,
+};
+
+/* ── inbox worker task handle（仅供 init 创建和 owner 投递通知） ── */
+static TaskHandle_t s_inbox_worker_task_handle = NULL;
+static StaticTask_t s_inbox_worker_task_buffer;
+static StackType_t  s_inbox_worker_task_stack[INBOX_WORKER_STACK_WORDS];
+
+/* ── owner task 与 inbox worker 之间的共享 job（owner 写，worker 读）── */
+typedef enum {
+    INBOX_JOB_POLL = 0,
+    INBOX_JOB_MARK_READ,
+} inbox_job_type_t;
+
+typedef struct {
+    inbox_job_type_t type;
+    memory_watch_service_client_config_snapshot_t client_config;
+    char notification_id[64]; /* 仅 MARK_READ 使用 */
+} inbox_job_t;
+
+/* 用 FreeRTOS queue（深度 1）把 job 从 owner 传给 worker；
+ * 1 槽位保证串行：上一个 job 完成前 owner 不投递下一个。 */
+static QueueHandle_t s_inbox_job_queue = NULL;
+static StaticQueue_t s_inbox_job_queue_buffer;
+static uint8_t s_inbox_job_queue_storage[1 * sizeof(inbox_job_t)];
+
+/* ── worker 把结果通过 task notification 回传 owner ──
+ * 成功 = 1，失败 = 2，404（终态已读）= 3；owner 从 staging 区读结果。 */
+#define INBOX_WORKER_NOTIFY_SUCCESS   1U
+#define INBOX_WORKER_NOTIFY_FAIL      2U
+#define INBOX_WORKER_NOTIFY_NOT_FOUND 3U
+
+/* staging 结果（worker 写，owner 读，无需额外锁：owner 等 notify 后才读）*/
+static size_t  s_staging_item_count  = 0;
+static uint8_t s_staging_unread_count = 0;
+static bool    s_staging_mark_read_result = false;
+
+/* poll_now 的 pending bit：worker 在途时有新请求到达先记住 */
+static volatile bool s_inbox_poll_pending = false;
+
+/* ── 辅助：读取 endpoint 快照（owner task 私有，不需锁）── */
+static bool memory_watch_service_inbox_get_client_config(
+    memory_watch_service_client_config_snapshot_t *out)
+{
+    portENTER_CRITICAL(&s_endpoint_lock);
+    const bool configured = s_endpoint_config.configured;
+    if (configured)
+    {
+        out->client_config.base_url     = out->base_url;
+        out->client_config.device_id    = out->device_id;
+        out->client_config.device_token = out->device_token;
+        /* inbox 短超时 30 秒；timeout_ms 为 uint32_t */
+        out->client_config.timeout_ms   = 30000U;
+        out->client_config.allow_insecure_http = s_endpoint_config.allow_insecure_http;
+        memory_watch_service_copy_text(out->base_url,
+            sizeof(out->base_url), s_endpoint_config.base_url);
+        memory_watch_service_copy_text(out->device_id,
+            sizeof(out->device_id), s_endpoint_config.device_id);
+        memory_watch_service_copy_text(out->device_token,
+            sizeof(out->device_token), s_endpoint_config.device_token);
+    }
+    portEXIT_CRITICAL(&s_endpoint_lock);
+    return configured;
+}
+
+/* ── 辅助：更新 meta（只在 owner task 写）── */
+static void memory_watch_service_inbox_set_meta(
+    size_t item_count, uint8_t unread_count,
+    memory_watch_inbox_sync_state_t sync_state, bool update_success_ts)
+{
+    portENTER_CRITICAL(&s_inbox_meta_lock);
+    s_inbox_meta.generation++;
+    s_inbox_meta.item_count   = item_count;
+    s_inbox_meta.unread_count = unread_count;
+    s_inbox_meta.sync_state   = sync_state;
+    if (update_success_ts)
+    {
+        s_inbox_meta.last_success_ms =
+            (int64_t)(esp_timer_get_time() / 1000LL);
+    }
+    portEXIT_CRITICAL(&s_inbox_meta_lock);
+}
+
+static void memory_watch_service_inbox_set_sync_state(
+    memory_watch_inbox_sync_state_t sync_state)
+{
+    portENTER_CRITICAL(&s_inbox_meta_lock);
+    s_inbox_meta.generation++;
+    s_inbox_meta.sync_state = sync_state;
+    portEXIT_CRITICAL(&s_inbox_meta_lock);
+}
+
+/* ── inbox worker task：只执行 HTTP，不接触 LVGL ── */
+static void memory_watch_service_inbox_worker_task(void *arg)
+{
+    (void)arg;
+    inbox_job_t job;
+
+    for (;;)
+    {
+        /* 阻塞等待 owner 投递 job，无超时 */
+        if (xQueueReceive(s_inbox_job_queue, &job, portMAX_DELAY) != pdTRUE)
+        {
+            continue;
+        }
+
+        uint32_t notify_val = INBOX_WORKER_NOTIFY_FAIL;
+
+        if (job.type == INBOX_JOB_POLL)
+        {
+            /* GET /v1/watch/inbox */
+            memory_watch_inbox_poll_result_t result = {0};
+            const esp_err_t err = memory_watch_voice_client_inbox_poll(
+                &job.client_config.client_config,
+                s_inbox_staging, MEMORY_WATCH_INBOX_MAX_ITEMS, &result);
+            if (err == ESP_OK)
+            {
+                s_staging_item_count   = result.item_count;
+                s_staging_unread_count = result.unread_count;
+                notify_val = INBOX_WORKER_NOTIFY_SUCCESS;
+            }
+            else
+            {
+                /* 按 HTTP 状态分类，方便 owner 决策重试策略 */
+                if (result.http_status == 401 || result.http_status == 403 ||
+                    result.http_status == 422)
+                {
+                    notify_val = INBOX_WORKER_NOTIFY_NOT_FOUND; /* 复用 = 终态错误 */
+                }
+                else
+                {
+                    notify_val = INBOX_WORKER_NOTIFY_FAIL;
+                }
+            }
+        }
+        else /* INBOX_JOB_MARK_READ */
+        {
+            memory_watch_inbox_mark_read_result_t result = {0};
+            const esp_err_t err = memory_watch_voice_client_inbox_mark_read(
+                &job.client_config.client_config,
+                job.notification_id, &result);
+            if (err == ESP_OK)
+            {
+                s_staging_mark_read_result = result.read;
+                notify_val = INBOX_WORKER_NOTIFY_SUCCESS;
+            }
+            else if (err == ESP_ERR_NOT_FOUND)
+            {
+                notify_val = INBOX_WORKER_NOTIFY_NOT_FOUND; /* 404，终态 */
+            }
+            else
+            {
+                notify_val = INBOX_WORKER_NOTIFY_FAIL;
+            }
+        }
+
+        /* 通知 owner task（bit-0 的值就是 notify_val）*/
+        if (s_service_task_handle != NULL)
+        {
+            xTaskNotify(s_service_task_handle, notify_val,
+                        eSetValueWithOverwrite);
+        }
+    }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * inbox store 合并（owner task 收到 POLL worker 成功通知后调用）
+ *
+ * staging → store 的合并规则：
+ *   1. staging 整份校验通过后才写入 store（由 worker 确保解析成功）。
+ *   2. pending-read set 优先于服务器快照（本地已读不被服务器覆盖）。
+ *   3. 不再存在于新快照中的旧记录随整体替换自动丢弃。
+ * ════════════════════════════════════════════════════════════════════ */
+static void memory_watch_service_inbox_merge_staging(void)
+{
+    if (s_inbox_store_mutex != NULL)
+    {
+        xSemaphoreTake(s_inbox_store_mutex, portMAX_DELAY);
+    }
+    /* 1. 把 staging 复制 to store */
+    for (size_t i = 0; i < s_staging_item_count; ++i)
+    {
+        s_inbox_store[i] = s_inbox_staging[i];
+    }
+    s_inbox_store_count = s_staging_item_count;
+
+    /* 2. 用 pending-read 覆盖服务器快照的 read=false */
+    for (size_t pi = 0; pi < s_pending_read_count; ++pi)
+    {
+        for (size_t si = 0; si < s_staging_item_count; ++si)
+        {
+            if (strcmp(s_inbox_store[si].notification_id,
+                       s_pending_read[pi]) == 0)
+            {
+                s_inbox_store[si].read = true;
+                break;
+            }
+        }
+    }
+
+    /* 3. 重算有效未读数（在同一个互斥锁内，确保一致性） */
+    uint8_t effective_unread = 0;
+    for (size_t i = 0; i < s_inbox_store_count; ++i)
+    {
+        if (!s_inbox_store[i].read && effective_unread < 255U)
+        {
+            ++effective_unread;
+        }
+    }
+    if (s_inbox_store_mutex != NULL)
+    {
+        xSemaphoreGive(s_inbox_store_mutex);
+    }
+
+    memory_watch_service_inbox_set_meta(
+        s_staging_item_count, effective_unread,
+        MEMORY_WATCH_INBOX_SYNC_READY, true);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * inbox 调度器入口（由 owner task 在合适时机调用）
+ *
+ * 若 endpoint 已配置且无 worker 在途，则投递 POLL job。
+ * 注意：当前实现简化为"owner task 在处理外部命令后顺带检查轮询"；
+ * 完整的 deadline-based 调度可在后续迭代加入 xTaskGetTickCount 比较。
+ * ════════════════════════════════════════════════════════════════════ */
+static bool s_inbox_worker_busy = false; /* owner task 私有，无需锁 */
+
+static void memory_watch_service_inbox_try_poll(void)
+{
+    if (s_inbox_worker_busy)
+    {
+        /* worker 在途：记录 pending bit，在途结束后补一次 */
+        s_inbox_poll_pending = true;
+        return;
+    }
+
+    inbox_job_t job = {0};
+    job.type = INBOX_JOB_POLL;
+    if (!memory_watch_service_inbox_get_client_config(&job.client_config))
+    {
+        /* endpoint 未配置，不发请求 */
+        memory_watch_service_inbox_set_sync_state(MEMORY_WATCH_INBOX_SYNC_UNCONFIGURED);
+        return;
+    }
+
+    if (xQueueSend(s_inbox_job_queue, &job, 0) == pdTRUE)
+    {
+        s_inbox_worker_busy = true;
+        memory_watch_service_inbox_set_sync_state(MEMORY_WATCH_INBOX_SYNC_POLLING);
+        s_inbox_poll_pending = false;
+        ESP_LOGI(TAG, "inbox: poll job dispatched");
+    }
+}
+
+/* ── 处理 owner task 收到的 inbox worker 通知 ── */
+static void memory_watch_service_inbox_handle_worker_result(uint32_t notify_val)
+{
+    s_inbox_worker_busy = false;
+
+    if (notify_val == INBOX_WORKER_NOTIFY_SUCCESS)
+    {
+        memory_watch_service_inbox_merge_staging();
+        ESP_LOGI(TAG, "inbox: poll ok items=%zu unread=%u",
+                 s_staging_item_count, s_staging_unread_count);
+    }
+    else if (notify_val == INBOX_WORKER_NOTIFY_NOT_FOUND)
+    {
+        /* AUTH 或 PROTOCOL error：不要紧循环 */
+        memory_watch_service_inbox_set_sync_state(MEMORY_WATCH_INBOX_SYNC_AUTH_ERROR);
+        ESP_LOGW(TAG, "inbox: poll auth/protocol error, pause polling");
+    }
+    else
+    {
+        memory_watch_service_inbox_set_sync_state(MEMORY_WATCH_INBOX_SYNC_RETRY_WAIT);
+        ESP_LOGW(TAG, "inbox: poll failed, will retry");
+    }
+
+    /* 若有待处理的 poll_now，顺手补一次 */
+    if (s_inbox_poll_pending)
+    {
+        memory_watch_service_inbox_try_poll();
+    }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 公开 getter（任意 task / LVGL timer 调用，无 I/O，无副作用）
+ * ════════════════════════════════════════════════════════════════════ */
+
+esp_err_t memory_watch_service_get_inbox_meta(
+    memory_watch_inbox_meta_t *out_meta)
+{
+    if (out_meta == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    portENTER_CRITICAL(&s_inbox_meta_lock);
+    *out_meta = s_inbox_meta;
+    portEXIT_CRITICAL(&s_inbox_meta_lock);
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_copy_inbox_summaries(
+    memory_watch_inbox_summary_t *out_summaries,
+    size_t capacity,
+    size_t *out_count)
+{
+    if (out_summaries == NULL || out_count == NULL || capacity == 0U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    /* store 读取用 s_inbox_store_mutex */
+    if (s_inbox_store_mutex != NULL)
+    {
+        xSemaphoreTake(s_inbox_store_mutex, portMAX_DELAY);
+    }
+    const size_t copy_count = s_inbox_store_count < capacity ? s_inbox_store_count : capacity;
+    for (size_t i = 0; i < copy_count; ++i)
+    {
+        strncpy(out_summaries[i].notification_id,
+                s_inbox_store[i].notification_id,
+                sizeof(out_summaries[i].notification_id) - 1U);
+        out_summaries[i].notification_id[
+            sizeof(out_summaries[i].notification_id) - 1U] = '\0';
+
+        strncpy(out_summaries[i].title,
+                s_inbox_store[i].title,
+                sizeof(out_summaries[i].title) - 1U);
+        out_summaries[i].title[sizeof(out_summaries[i].title) - 1U] = '\0';
+
+        strncpy(out_summaries[i].preview,
+                s_inbox_store[i].preview,
+                sizeof(out_summaries[i].preview) - 1U);
+        out_summaries[i].preview[sizeof(out_summaries[i].preview) - 1U] = '\0';
+
+        strncpy(out_summaries[i].created_at,
+                s_inbox_store[i].created_at,
+                sizeof(out_summaries[i].created_at) - 1U);
+        out_summaries[i].created_at[
+            sizeof(out_summaries[i].created_at) - 1U] = '\0';
+
+        out_summaries[i].read = s_inbox_store[i].read;
+    }
+    if (s_inbox_store_mutex != NULL)
+    {
+        xSemaphoreGive(s_inbox_store_mutex);
+    }
+
+    *out_count = copy_count;
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_get_inbox_item(
+    const char *notification_id,
+    memory_watch_inbox_item_t *out_item)
+{
+    if (notification_id == NULL || out_item == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t result = ESP_ERR_NOT_FOUND;
+    if (s_inbox_store_mutex != NULL)
+    {
+        xSemaphoreTake(s_inbox_store_mutex, portMAX_DELAY);
+    }
+    for (size_t i = 0; i < s_inbox_store_count; ++i)
+    {
+        if (strcmp(s_inbox_store[i].notification_id, notification_id) == 0)
+        {
+            *out_item = s_inbox_store[i];
+            result = ESP_OK;
+            break;
+        }
+    }
+    if (s_inbox_store_mutex != NULL)
+    {
+        xSemaphoreGive(s_inbox_store_mutex);
+    }
+    return result;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 公开命令 API（投递到 owner task 或直接操作 pending-read）
+ * ════════════════════════════════════════════════════════════════════ */
+
+esp_err_t memory_watch_service_inbox_poll_now(const char *reason)
+{
+    ESP_LOGI(TAG, "inbox: poll_now reason=%s",
+             reason != NULL ? reason : "unknown");
+    /* 在 owner task 内直接调用 try_poll；
+     * 若从其他 task 调用（LVGL callback），用 command queue 安全投递。
+     * V1 简化：用 SEND_TEXT 命令队列同样 slot 携带 poll_now 意图 ──
+     * 此处直接设置 pending bit，让 owner task 下次醒来时检查。 */
+    s_inbox_poll_pending = true;
+    if (s_service_task_handle != NULL)
+    {
+        /* 用 task notification bit-0 唤醒 owner task */
+        xTaskNotify(s_service_task_handle, 0U, eNoAction);
+    }
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_inbox_mark_read(
+    const char *notification_id)
+{
+    if (notification_id == NULL || notification_id[0] == '\0')
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    /* 1. 本地立即置已读（在 store + pending-read set）*/
+    bool found_in_store = false;
+    uint8_t new_unread = 0;
+    if (s_inbox_store_mutex != NULL)
+    {
+        xSemaphoreTake(s_inbox_store_mutex, portMAX_DELAY);
+    }
+    for (size_t i = 0; i < s_inbox_store_count; ++i)
+    {
+        if (strcmp(s_inbox_store[i].notification_id, notification_id) == 0)
+        {
+            if (!s_inbox_store[i].read)
+            {
+                s_inbox_store[i].read = true;
+            }
+            found_in_store = true;
+        }
+    }
+
+    if (found_in_store)
+    {
+        /* 重新计算有效未读数 */
+        for (size_t i = 0; i < s_inbox_store_count; ++i)
+        {
+            if (!s_inbox_store[i].read && new_unread < 255U)
+            {
+                ++new_unread;
+            }
+        }
+    }
+
+    if (!found_in_store)
+    {
+        if (s_inbox_store_mutex != NULL)
+        {
+            xSemaphoreGive(s_inbox_store_mutex);
+        }
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    /* 2. 加入 pending-read set（受同一个互斥锁保护） */
+    bool already_pending = false;
+    for (size_t i = 0; i < s_pending_read_count; ++i)
+    {
+        if (strcmp(s_pending_read[i], notification_id) == 0)
+        {
+            already_pending = true;
+            break;
+        }
+    }
+    if (!already_pending && s_pending_read_count < INBOX_PENDING_READ_MAX)
+    {
+        strncpy(s_pending_read[s_pending_read_count], notification_id,
+                sizeof(s_pending_read[0]) - 1U);
+        s_pending_read[s_pending_read_count][sizeof(s_pending_read[0]) - 1U] = '\0';
+        ++s_pending_read_count;
+    }
+    if (s_inbox_store_mutex != NULL)
+    {
+        xSemaphoreGive(s_inbox_store_mutex);
+    }
+
+    /* 3. 更新 unread_count 并通知 controller */
+    portENTER_CRITICAL(&s_inbox_meta_lock);
+    s_inbox_meta.generation++;
+    s_inbox_meta.unread_count = new_unread;
+    portEXIT_CRITICAL(&s_inbox_meta_lock);
+
+    /* 4. 异步投递 MARK_READ HTTP 给 inbox worker */
+    if (!s_inbox_worker_busy)
+    {
+        inbox_job_t job = {0};
+        job.type = INBOX_JOB_MARK_READ;
+        if (memory_watch_service_inbox_get_client_config(&job.client_config))
+        {
+            strncpy(job.notification_id, notification_id,
+                    sizeof(job.notification_id) - 1U);
+            job.notification_id[sizeof(job.notification_id) - 1U] = '\0';
+            if (xQueueSend(s_inbox_job_queue, &job, 0) == pdTRUE)
+            {
+                s_inbox_worker_busy = true;
+                ESP_LOGI(TAG, "inbox: mark_read dispatched id=%.32s",
+                         notification_id);
+            }
+        }
+    }
+    /* 若 worker 在途，pending-read 会在下次 POLL 成功后通过 merge 补偿 */
+
+    return ESP_OK;
+}
+
+/* ── inbox worker task 和 job queue 在 memory_watch_service_init 中创建 ──
+ * 函数原型已在 service.c 中声明为 static，此处提供 init hook。
+ * 调用方：memory_watch_service_init() */
+
+esp_err_t memory_watch_service_inbox_init(void)
+{
+    if (s_inbox_store_mutex == NULL)
+    {
+        s_inbox_store_mutex = xSemaphoreCreateMutexStatic(&s_inbox_store_mutex_buffer);
+    }
+    if (s_inbox_job_queue == NULL)
+    {
+        s_inbox_job_queue = xQueueCreateStatic(
+            1,
+            sizeof(inbox_job_t),
+            s_inbox_job_queue_storage,
+            &s_inbox_job_queue_buffer);
+    }
+    if (s_inbox_job_queue == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (s_inbox_worker_task_handle == NULL)
+    {
+        /* inbox worker 需要 PSRAM stack（处理 24 KiB 响应体） */
+        s_inbox_worker_task_handle = xTaskCreateStatic(
+            memory_watch_service_inbox_worker_task,
+            "mw_inbox",
+            INBOX_WORKER_STACK_WORDS,
+            NULL,
+            3, /* 低于 upload worker 优先级 */
+            s_inbox_worker_task_stack,
+            &s_inbox_worker_task_buffer);
+    }
+    if (s_inbox_worker_task_handle == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
 }

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -107,9 +108,9 @@ esp_err_t system_time_service_note_network_ready(void)
         return ESP_OK;
     }
 
-    const BaseType_t result = xTaskCreatePinnedToCore(
+    const BaseType_t result = xTaskCreateWithCaps(
         system_time_service_sync_task, "system_time_sync", 4096, NULL, 4,
-        &s_sync_task_handle, 0);
+        &s_sync_task_handle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (result != pdPASS)
     {
         s_sync_task_handle = NULL;

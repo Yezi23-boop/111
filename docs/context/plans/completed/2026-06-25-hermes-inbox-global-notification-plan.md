@@ -5,10 +5,10 @@ summary: Hermes 收件箱与系统级气泡通知计划：V1 用 HTTP 轮询打�
 created: 2026-06-25
 last_updated: 2026-06-25
 last_reviewed: 2026-06-25
-status: active
+status: archived
 memory_type: project_plan
 scope: repo
-owners: docs/context/plans/active/2026-06-25-hermes-inbox-global-notification-plan.md, main/services/memory_watch_service.c, main/services/memory_watch_voice_client.c, main/ui/custom/memory_watch_controller.c, main/ui/custom/memory_watch_view.c, server/watch_voice_endpoint/app.py
+owners: docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md, main/services/memory_watch_service.c, main/services/memory_watch_voice_client.c, main/ui/custom/memory_watch_controller.c, main/ui/custom/memory_watch_view.c, server/watch_voice_endpoint/app.py
 triggers: Hermes 收件箱, inbox, notification, 全局气泡, 后台回复, memory_watch_service, MQTT, HTTP polling
 evidence_level: design
 route_area: "AI Memory Watch / Hermes inbox and notification"
@@ -553,10 +553,10 @@ V2 迁移时：
 - `[x]` 已细化 FreeRTOS owner/worker 通信、轮询优先级、PSRAM 缓存、原子快照合并和低成本 getter。
 - `[x]` 已明确 surfaced ledger 归 notification center 独占，并细化单气泡合并、跨通道排队、手势、安全区与 blocker 策略。
 - `[x]` 已拆分 server、firmware service、inbox UI、notification center 和真机验收五个实施阶段。
-- `[ ]` 待实现 server inbox API。
-- `[ ]` 待实现固件 inbox client/service/store。
-- `[ ]` 待实现全局 notification controller。
-- `[ ]` 待把 mock inbox UI 切到真实 service snapshot。
+- `[x]` 待实现 server inbox API。**（阶段 1 完成：2026-06-25）inbox_repo.py + 三条 FastAPI 路由 + watch_contract.v1.json inbox 节 + tests/test_inbox.py 30 条全通过。**
+- `[x]` 待实现固件 inbox client/service/store。
+- `[x]` 待实现全局 notification controller。
+- `[x]` 待把 mock inbox UI 切到真实 service snapshot。
 
 ## 决策记录
 

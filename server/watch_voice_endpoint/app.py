@@ -5,11 +5,15 @@ import base64
 import os
 import re
 import time
+from dataclasses import asdict
+from pathlib import Path
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
+
+from inbox_repo import InboxRepo, InboxValidationError
 
 
 HERMES_API_URL = os.getenv("HERMES_API_URL", "http://127.0.0.1:8642").rstrip("/")
@@ -70,6 +74,21 @@ app = FastAPI(title="AI Memory Watch Endpoint", version="0.1.0")
 _canceled_requests: set[tuple[str, str]] = set()
 _completed_requests: dict[tuple[str, str], WatchResponse] = {}
 _inflight_requests: dict[tuple[str, str], asyncio.Task[WatchResponse]] = {}
+
+# SQLite inbox repository；数据库路径可通过环境变量覆盖，便于测试隔离。
+_INBOX_DB_PATH = Path(os.getenv("INBOX_DB_PATH", "/data/inbox.db"))
+_inbox_repo: InboxRepo | None = None
+
+
+def _get_inbox_repo() -> InboxRepo:
+    """懒初始化 InboxRepo；测试时可在 app 启动前覆盖 _inbox_repo。"""
+    global _inbox_repo
+    if _inbox_repo is None:
+        _INBOX_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _inbox_repo = InboxRepo(_INBOX_DB_PATH)
+    return _inbox_repo
+
+
 _request_event_counts = {
     "processed": 0,
     "cache_hits": 0,
@@ -788,3 +807,106 @@ async def service_health() -> dict[str, object]:
             dict(_last_auth_failure_summary) if _last_auth_failure_summary else None
         ),
     }
+
+
+# ── Inbox Pydantic 响应模型 ──────────────────────────────────────────────────
+
+class InboxItemOut(BaseModel):
+    notification_id: str
+    source: str
+    kind: str
+    created_at: str
+    title: str
+    preview: str
+    body: str
+    read: bool
+
+
+class InboxCreateResponse(BaseModel):
+    created: bool
+    item: InboxItemOut
+
+
+class InboxListResponse(BaseModel):
+    items: list[InboxItemOut]
+    unread_count: int
+
+
+class InboxMarkReadResponse(BaseModel):
+    read: bool
+    notification_id: str
+
+
+# ── Inbox 路由（薄适配层，所有校验与幂等逻辑在 inbox_repo.py）──────────────
+
+@app.post("/v1/watch/inbox", status_code=201)
+async def inbox_create(
+    request: Request,
+    device_id: str = Query(...),
+    authorization: str | None = Header(default=None),
+) -> InboxCreateResponse:
+    """
+    Hermes 主动提示写入。调用方：hermes_server。
+    首次创建返回 201 + created=true；相同 device_id+notification_id 重复调用返回 200 + created=false。
+    FastAPI 不支持在同一函数同时返回 201/200，因此用 JSONResponse 承载状态码差异。
+    """
+    from fastapi.responses import JSONResponse
+
+    _require_device(device_id, authorization, "inbox_create")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="request body must be a JSON object")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="request body must be a JSON object")
+
+    notification_id = str(body.get("notification_id") or "")
+    kind = str(body.get("kind") or "")
+    title = str(body.get("title") or "")
+    preview = str(body.get("preview") or "")
+    body_text = str(body.get("body") or "")
+
+    try:
+        result = _get_inbox_repo().create(
+            device_id=device_id,
+            notification_id=notification_id,
+            kind=kind,
+            title=title,
+            preview=preview,
+            body=body_text,
+        )
+    except InboxValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    item_out = InboxItemOut(**asdict(result.item))
+    payload = InboxCreateResponse(created=result.created, item=item_out)
+    status_code = 201 if result.created else 200
+    return JSONResponse(content=payload.model_dump(), status_code=status_code)
+
+
+@app.get("/v1/watch/inbox", response_model=InboxListResponse)
+async def inbox_list(
+    device_id: str = Query(...),
+    authorization: str | None = Header(default=None),
+) -> InboxListResponse:
+    """手表轮询拉取最近 20 条完整快照；空列表返回 200 + items=[] + unread_count=0。"""
+    _require_device(device_id, authorization, "inbox_list")
+    items, unread = _get_inbox_repo().list_items(device_id)
+    return InboxListResponse(
+        items=[InboxItemOut(**asdict(i)) for i in items],
+        unread_count=unread,
+    )
+
+
+@app.post("/v1/watch/inbox/{notification_id}/read", response_model=InboxMarkReadResponse)
+async def inbox_mark_read(
+    notification_id: str,
+    device_id: str = Query(...),
+    authorization: str | None = Header(default=None),
+) -> InboxMarkReadResponse:
+    """幂等标记已读；目标不存在或已被 20 条上限淘汰时返回 404。"""
+    _require_device(device_id, authorization, "inbox_mark_read")
+    item = _get_inbox_repo().mark_read(device_id, notification_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="notification_not_found")
+    return InboxMarkReadResponse(read=True, notification_id=notification_id)

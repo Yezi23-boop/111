@@ -4,6 +4,9 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
+#include "esp_heap_caps.h"
+#include "ble_control.h"
 #include "ap_portal_adapter.h"
 #include "gui_guider.h"
 #include "events_init.h"
@@ -198,9 +201,15 @@ static void start_deferred_services(void)
      * 天气任务会执行 HTTPS/TLS 和 cJSON 解析，4KB 栈在证书校验路径上已出现
      * stack overflow，因此按网络型后台任务预留 8KB 栈。
      */
-    BaseType_t time_task_ok = xTaskCreatePinnedToCore(
+    /* 
+     * 提前在 SRAM 任务上下文中完成 ble_control 初始化，以防 time 任务（在 PSRAM 栈）
+     * 首次调用 network_manager_get_state 时隐式触发 NVS 读写引发 Cache-disabled 断言崩溃。
+     */
+    (void)ble_control_init();
+
+    BaseType_t time_task_ok = xTaskCreatePinnedToCoreWithCaps(
         time_and_weather, "time", kTimeWeatherTaskStackBytes, NULL, 5,
-        &lvgl_time_handle, 0);
+        &lvgl_time_handle, 0, MALLOC_CAP_SPIRAM);
     if (time_task_ok != pdPASS)
     {
         ESP_LOGW(TAG, "Time/weather service task create failed");

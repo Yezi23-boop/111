@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-06-25：沉淀闭环 Hermes 收件箱与网络时间同步（SNTP）内存栈及自旋锁并发 Bug 修复经验：1）修复 `system_time_service` 连网校时报 `create network time sync task failed`（pdFAIL）：将 HTTP 同步临时线程栈外移至 `xTaskCreateWithCaps(..., MALLOC_CAP_SPIRAM)`，避免连网期连续 SRAM 枯竭；2）修复 `memory_watch_controller` 页面卡死不刷新：在 LVGL 渲染快照对比中引入 `inbox_generation` 版本号追踪；3）消除收件箱长跨度自旋锁拷贝违规：引入互斥锁 `s_inbox_store_mutex` 替换硬件自旋锁 `s_worker_lock`，避免在自旋锁内执行 PSRAM 大段 `strncpy` 拷贝引发 Cache 禁用异常（`Cache disabled`）与中断屏蔽死锁。同步归档 Attempt Log 至 `runs/2026-06-25-attempt-hermes-inbox-and-sntp-task-stack-fix.md`，更新接力页 `current-task.md`。
+
 - 2026-06-25：将 `2026-06-25-hermes-inbox-global-notification-plan.md` 从产品决策稿细化为可执行 V1 规格：固定 create/list/read HTTP 请求与响应、`201/200/404/422` 语义、SQLite 持久化事务和空列表行为；明确 `memory_watch_service + inbox worker` 的 FreeRTOS owner 边界、PSRAM 有界缓存、generation/meta/summary/detail 只读快照和原子合并算法；将 surfaced ledger 唯一 owner 收敛到 `watch_notification_center`，补齐 inbox/reply 跨通道排队、气泡手势/安全区、低功耗调度、V2 MQTT 迁移边界和五阶段实施门禁。
 
 - 2026-06-25：新增 `docs/context/plans/active/2026-06-25-hermes-inbox-global-notification-plan.md`，记录 Hermes 收件箱与系统级气泡通知的当前产品/架构决策：消息中心允许多个来源但 V1 只接 Hermes；V1 收件箱只读；普通 Hermes 对话回复不进收件箱；退出 Hermes 页面后已发送请求默认后台继续；后台回复气泡点击回 Hermes 对话；Hermes 主动提示进入收件箱并触发全局气泡；V1 先用 HTTP 轮询打通业务和 UI，后续再升级 MQTT。同步更新 `ai-memory-watch-product-positioning.md`，废止旧的“收件箱不做全局通知、不主动打断”口径。

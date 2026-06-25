@@ -1690,3 +1690,336 @@ esp_err_t memory_watch_voice_client_post_text_command(
     }
     return err;
 }
+
+/* ── 以下为 inbox 窄 HTTP client，与上方 voice/text/cancel 函数风格一致 ── */
+
+static const char kInboxListPathPrefix[] = "/v1/watch/inbox?device_id=";
+static const char kInboxMarkReadPrefix[] = "/v1/watch/inbox/";
+static const char kInboxMarkReadSuffix[] = "/read";
+
+/**
+ * @brief 构建 GET inbox 路径 /v1/watch/inbox?device_id=<url_encoded_device_id>
+ */
+static esp_err_t memory_watch_voice_client_build_inbox_list_path(
+    const char *device_id, char *out_path, size_t out_path_len)
+{
+    const size_t prefix_len = strlen(kInboxListPathPrefix);
+    if (prefix_len >= out_path_len)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(out_path, kInboxListPathPrefix, prefix_len);
+    size_t offset = prefix_len;
+    return memory_watch_voice_client_append_url_encoded(
+        out_path, out_path_len, &offset, device_id);
+}
+
+/**
+ * @brief 构建 POST /v1/watch/inbox/{notification_id}/read?device_id=… 路径。
+ */
+static esp_err_t memory_watch_voice_client_build_mark_read_path(
+    const char *notification_id, const char *device_id,
+    char *out_path, size_t out_path_len)
+{
+    /* notification_id 已通过 is_request_id_valid 校验，仅含 url-safe 字符 */
+    const int prefix_written = snprintf(out_path, out_path_len, "%s%s%s?device_id=",
+                                        kInboxMarkReadPrefix, notification_id,
+                                        kInboxMarkReadSuffix);
+    if (prefix_written < 0 || (size_t)prefix_written >= out_path_len)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    size_t offset = (size_t)prefix_written;
+    return memory_watch_voice_client_append_url_encoded(
+        out_path, out_path_len, &offset, device_id);
+}
+
+/**
+ * @brief 解析单条 inbox item JSON object 到 memory_watch_inbox_item_t。
+ *
+ * 解析失败时返回 ESP_FAIL，调用方应拒绝整份快照。
+ */
+static esp_err_t memory_watch_voice_client_parse_inbox_item(
+    const cJSON *obj, memory_watch_inbox_item_t *out_item)
+{
+    if (!cJSON_IsObject(obj))
+    {
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = memory_watch_voice_client_copy_json_string(
+        obj, "notification_id", out_item->notification_id,
+        sizeof(out_item->notification_id), false);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "source", out_item->source, sizeof(out_item->source), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "kind", out_item->kind, sizeof(out_item->kind), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "created_at", out_item->created_at,
+            sizeof(out_item->created_at), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "title", out_item->title, sizeof(out_item->title), true);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "preview", out_item->preview, sizeof(out_item->preview), true);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "body", out_item->body, sizeof(out_item->body), true);
+    }
+    if (err == ESP_OK)
+    {
+        const cJSON *read_item =
+            cJSON_GetObjectItemCaseSensitive(obj, "read");
+        if (!cJSON_IsBool(read_item))
+        {
+            err = ESP_FAIL;
+        }
+        else
+        {
+            out_item->read = cJSON_IsTrue(read_item);
+        }
+    }
+    return err;
+}
+
+/**
+ * @brief 解析 GET /v1/watch/inbox 的 {"items":[…],"unread_count":N} 响应。
+ *
+ * 任一条目解析失败则整份快照拒绝（err != ESP_OK），不部分更新。
+ */
+static esp_err_t memory_watch_voice_client_parse_inbox_poll(
+    const char *json_text, size_t json_len,
+    memory_watch_inbox_item_t *items, size_t capacity,
+    size_t *out_item_count, uint8_t *out_unread_count)
+{
+    cJSON *root = cJSON_ParseWithLength(json_text, json_len);
+    if (root == NULL)
+    {
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = ESP_OK;
+    if (!cJSON_IsObject(root))
+    {
+        err = ESP_FAIL;
+    }
+
+    const cJSON *items_arr = NULL;
+    if (err == ESP_OK)
+    {
+        items_arr = cJSON_GetObjectItemCaseSensitive(root, "items");
+        if (!cJSON_IsArray(items_arr))
+        {
+            err = ESP_FAIL;
+        }
+    }
+
+    const cJSON *unread_item = NULL;
+    if (err == ESP_OK)
+    {
+        unread_item = cJSON_GetObjectItemCaseSensitive(root, "unread_count");
+        if (!cJSON_IsNumber(unread_item) ||
+            unread_item->valueint < 0 || unread_item->valueint > 255)
+        {
+            err = ESP_FAIL;
+        }
+    }
+
+    size_t item_count = 0;
+    if (err == ESP_OK)
+    {
+        item_count = (size_t)cJSON_GetArraySize(items_arr);
+        if (item_count > capacity)
+        {
+            /* 超过预期最大条数视为协议错误 */
+            err = ESP_FAIL;
+        }
+    }
+
+    if (err == ESP_OK)
+    {
+        size_t idx = 0;
+        const cJSON *obj = NULL;
+        cJSON_ArrayForEach(obj, items_arr)
+        {
+            memset(&items[idx], 0, sizeof(items[idx]));
+            err = memory_watch_voice_client_parse_inbox_item(obj, &items[idx]);
+            if (err != ESP_OK)
+            {
+                break;
+            }
+            ++idx;
+        }
+    }
+
+    if (err == ESP_OK)
+    {
+        *out_item_count = item_count;
+        *out_unread_count = (uint8_t)unread_item->valueint;
+    }
+
+    cJSON_Delete(root);
+    return err;
+}
+
+esp_err_t memory_watch_voice_client_inbox_poll(
+    const memory_watch_voice_client_config_t *config,
+    memory_watch_inbox_item_t *items,
+    size_t capacity,
+    memory_watch_inbox_poll_result_t *out_result)
+{
+    if (out_result == NULL || items == NULL || capacity == 0U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out_result, 0, sizeof(*out_result));
+
+    esp_err_t err = memory_watch_voice_client_validate_config(config);
+    if (err != ESP_OK)
+    {
+        out_result->transport_error = err;
+        return err;
+    }
+
+    /* 响应体最大 24 KiB，从 PSRAM 分配避免占 task 栈 */
+    char *response =
+        (char *)memory_watch_voice_client_alloc(
+            MEMORY_WATCH_INBOX_RESPONSE_MAX_BYTES + 1U);
+    if (response == NULL)
+    {
+        out_result->transport_error = ESP_ERR_NO_MEM;
+        return ESP_ERR_NO_MEM;
+    }
+
+    char path[280]; /* prefix(26) + url-encoded device_id(~128) */
+    err = memory_watch_voice_client_build_inbox_list_path(
+        config->device_id, path, sizeof(path));
+    if (err != ESP_OK)
+    {
+        memory_watch_voice_client_free(response);
+        out_result->transport_error = err;
+        return err;
+    }
+
+    size_t response_len = 0;
+    err = memory_watch_voice_client_perform_http_json(
+        config, path, HTTP_METHOD_GET, NULL, 0U, NULL, NULL,
+        &out_result->http_status, response,
+        MEMORY_WATCH_INBOX_RESPONSE_MAX_BYTES + 1U, &response_len);
+
+    if (err == ESP_OK &&
+        (out_result->http_status < 200 || out_result->http_status >= 300))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_parse_inbox_poll(
+            response, response_len, items, capacity,
+            &out_result->item_count, &out_result->unread_count);
+    }
+
+    memory_watch_voice_client_free(response);
+    out_result->transport_error = err;
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "inbox poll failed: status=%d err=%s",
+                 out_result->http_status, esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t memory_watch_voice_client_inbox_mark_read(
+    const memory_watch_voice_client_config_t *config,
+    const char *notification_id,
+    memory_watch_inbox_mark_read_result_t *out_result)
+{
+    if (out_result == NULL || notification_id == NULL ||
+        notification_id[0] == '\0')
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out_result, 0, sizeof(*out_result));
+
+    esp_err_t err = memory_watch_voice_client_validate_config(config);
+    if (err != ESP_OK)
+    {
+        out_result->transport_error = err;
+        return err;
+    }
+
+    /* notification_id 不超过 63 字节；路径总长可控 */
+    char path[256];
+    err = memory_watch_voice_client_build_mark_read_path(
+        notification_id, config->device_id, path, sizeof(path));
+    if (err != ESP_OK)
+    {
+        out_result->transport_error = err;
+        return err;
+    }
+
+    char response[256]; /* 已读响应体很小，栈上即可 */
+    size_t response_len = 0;
+    /* POST body 为空（无 Content-Type），服务端只看 URL 参数 */
+    err = memory_watch_voice_client_perform_http_json(
+        config, path, HTTP_METHOD_POST, NULL, 0U, NULL, NULL,
+        &out_result->http_status, response, sizeof(response), &response_len);
+
+    if (err == ESP_OK && out_result->http_status == 404)
+    {
+        /* 404 视为终态：消息已被淘汰，停止重试 */
+        out_result->transport_error = ESP_ERR_NOT_FOUND;
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (err == ESP_OK &&
+        (out_result->http_status < 200 || out_result->http_status >= 300))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK)
+    {
+        /* 解析 {"read":true,"notification_id":"…"} */
+        cJSON *root = cJSON_ParseWithLength(response, response_len);
+        if (root == NULL)
+        {
+            err = ESP_FAIL;
+        }
+        else
+        {
+            const cJSON *read_item =
+                cJSON_GetObjectItemCaseSensitive(root, "read");
+            if (!cJSON_IsBool(read_item))
+            {
+                err = ESP_FAIL;
+            }
+            else
+            {
+                out_result->read = cJSON_IsTrue(read_item);
+            }
+            cJSON_Delete(root);
+        }
+    }
+
+    out_result->transport_error = err;
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "inbox mark_read failed: status=%d err=%s",
+                 out_result->http_status, esp_err_to_name(err));
+    }
+    return err;
+}

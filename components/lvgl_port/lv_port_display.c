@@ -12,6 +12,29 @@
 #include "co5300_panel_defaults.h"
 #include "lv_port.h"
 #include "lv_port_internal.h"
+static uint16_t *s_bounce_bufs[2] = {NULL, NULL};
+static size_t s_bounce_buf_size = 0;
+static uint8_t s_bounce_buf_idx = 0;
+
+static void lv_port_disp_init_bounce_buf(void)
+{
+    s_bounce_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES * sizeof(uint16_t);
+    for (int i = 0; i < 2; i++)
+    {
+        if (s_bounce_bufs[i] == NULL)
+        {
+            s_bounce_bufs[i] = heap_caps_malloc(s_bounce_buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+            if (!s_bounce_bufs[i])
+            {
+                ESP_LOGE(LV_PORT_TAG, "Failed to allocate display bounce buffer %d of size %zu!", i, s_bounce_buf_size);
+            }
+            else
+            {
+                ESP_LOGI(LV_PORT_TAG, "Successfully allocated display bounce buffer %d of size %zu", i, s_bounce_buf_size);
+            }
+        }
+    }
+}
 
 static bool lvgl_port_flush_ready_callback(esp_lcd_panel_io_handle_t panel_io,
                                            esp_lcd_panel_io_event_data_t *edata,
@@ -30,6 +53,7 @@ static void lv_port_rounder_event_cb(lv_event_t *e);
  */
 void lv_port_disp_init_small(void)
 {
+    lv_port_disp_init_bounce_buf();
     // 单块缓冲像素数 = 屏宽 * 片高。
     const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES1;
 
@@ -82,6 +106,7 @@ void lv_port_disp_init_small(void)
  */
 void lv_port_disp_init_single(void)
 {
+    lv_port_disp_init_bounce_buf();
     const size_t disp_buf_size = LCD_WIDTH * LV_PORT_FIXED_CHUNK_LINES2;
 
     ESP_LOGI(LV_PORT_TAG,
@@ -260,15 +285,29 @@ static esp_err_t lv_port_flush_area_with_sync(lv_display_t *disp, const lv_area_
     s_frame_ctx.flush_count++;
 #endif
 
-    // 当前刷新的像素总数，用于 RGB565 字节交换。
     uint32_t pixel_count = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+    uint32_t byte_size = pixel_count * sizeof(uint16_t);
+    uint8_t *tx_px_map = px_map;
+
+    if (esp_ptr_external_ram(px_map) && byte_size <= s_bounce_buf_size)
+    {
+        uint16_t *buf = s_bounce_bufs[s_bounce_buf_idx];
+        if (buf != NULL)
+        {
+            memcpy(buf, px_map, byte_size);
+            tx_px_map = (uint8_t *)buf;
+            s_bounce_buf_idx = (s_bounce_buf_idx + 1) % 2;
+        }
+    }
+
     if (s_byte_swap_enabled)
     {
-        lv_draw_sw_rgb565_swap(px_map, pixel_count);
+        lv_draw_sw_rgb565_swap(tx_px_map, pixel_count);
     }
 
     // `esp_lcd_panel_draw_bitmap()` 的右下角坐标是开区间，因此 `x2/y2` 需要额外 `+1`。
-    return esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    esp_err_t ret = esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, tx_px_map);
+    return ret;
 }
 
 /**

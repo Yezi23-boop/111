@@ -102,6 +102,8 @@ set(ui_runtime_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/memory_watch_controller.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/watch_notification_center.c
+
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/memory_watch_view.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/mini_games_controller.c

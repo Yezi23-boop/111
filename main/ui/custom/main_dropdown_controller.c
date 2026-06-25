@@ -5,6 +5,11 @@
 #include "esp_log.h"
 #include "network_manager.h"
 #include "wifi_management_controller.h"
+#include "watch_notification_center.h"
+#include "memory_watch_controller.h"
+#include "services/memory_watch_service.h"
+#include "features/danger_detection/danger_detection_service.h"
+#include "services/background_service_manager.h"
 
 static const char *TAG = "main_dropdown";
 static const uint32_t kStatusSyncPeriodMs = 250U;
@@ -191,11 +196,36 @@ static void main_dropdown_controller_status_sync_timer_cb(lv_timer_t *timer)
     if (!main_dropdown_controller_is_main_screen_active())
     {
         main_dropdown_controller_hide_toast();
-        return;
+    }
+    else
+    {
+        main_dropdown_controller_sync_wifi_button();
+        main_dropdown_controller_sync_bluetooth_button();
     }
 
-    main_dropdown_controller_sync_wifi_button();
-    main_dropdown_controller_sync_bluetooth_button();
+    /* notification center 全局 poll（与 main screen 状态无关） */
+    {
+        memory_watch_service_snapshot_t snap = {0};
+        bool is_recording = false;
+        if (memory_watch_service_get_snapshot(&snap) == ESP_OK)
+        {
+            is_recording = (snap.state == MEMORY_WATCH_SERVICE_STATE_RECORDING ||
+                            snap.state == MEMORY_WATCH_SERVICE_STATE_ENCODING ||
+                            snap.state == MEMORY_WATCH_SERVICE_STATE_UPLOADING);
+        }
+        /* 从真实的 service 获取告警是否激活（避免遮挡告警红屏） */
+        bool safety_alert_active = false;
+        const danger_detection_snapshot_t dd_snap = danger_detection_service_get_snapshot();
+        const background_service_manager_snapshot_t bsm_snap = background_service_manager_get_snapshot();
+        if (bsm_snap.danger_enabled_by_user &&
+            dd_snap.state == DANGER_DETECTION_STATE_RUNNING &&
+            dd_snap.risk_state == DANGER_DETECTION_RISK_ALERTING)
+        {
+            safety_alert_active = true;
+        }
+
+        watch_nc_poll(is_recording, safety_alert_active);
+    }
 }
 
 /**
@@ -286,6 +316,14 @@ static void main_dropdown_controller_show_toast(const char *text)
     }
 }
 
+static void main_dropdown_nc_click_cb(watch_nc_nav_target_t target,
+                                      const char *notification_id,
+                                      void *user_data)
+{
+    (void)user_data;
+    memory_watch_controller_open_via_notification(target, notification_id);
+}
+
 /**
  * @brief 绑定主界面下拉菜单控制器。
  *
@@ -323,6 +361,19 @@ void main_dropdown_controller_bind(lv_ui *ui)
 
     main_dropdown_controller_sync_wifi_button();
     main_dropdown_controller_sync_bluetooth_button();
+
+    /* notification center 初始化（幂等，只在首次 bind 时真正执行） */
+    static bool s_nc_initialized = false;
+    if (!s_nc_initialized)
+    {
+        static const watch_nc_config_t kNcConfig = {
+            .click_cb   = main_dropdown_nc_click_cb,
+            .dismiss_cb = NULL,
+            .user_data  = NULL,
+        };
+        watch_nc_init(&kNcConfig);
+        s_nc_initialized = true;
+    }
 }
 
 /**

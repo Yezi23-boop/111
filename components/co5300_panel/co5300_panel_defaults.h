@@ -43,7 +43,7 @@
 /* ========== 性能优化 ========== */
 
 #define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000) // QSPI 像素时钟（Hz）
-#define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 8        // IO 传输队列深度
+#define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 2        // IO 传输队列深度
 
 /* ========== LCD参数 ========== */
 

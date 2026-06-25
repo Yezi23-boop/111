@@ -24,6 +24,7 @@ typedef struct
     memory_watch_view_connection_state_t connection_state;
     size_t conversation_item_count;
     uint32_t conversation_revision;
+    uint32_t inbox_generation;
     size_t inbox_item_count;
     size_t selected_inbox_index;
     uint8_t inbox_unread_count;
@@ -48,6 +49,7 @@ static memory_watch_view_t *s_pending_destroy_view = NULL;
 static memory_watch_render_cache_t s_render_cache = {0};
 static memory_watch_view_page_t s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
 static size_t s_selected_inbox_index = 0;
+static lv_obj_t *s_back_screen = NULL;
 static memory_watch_conversation_entry_t
     s_conversation_entries[MEMORY_WATCH_CONVERSATION_MAX_ITEMS];
 static memory_watch_view_conversation_item_t
@@ -57,7 +59,11 @@ static uint32_t s_conversation_revision = 0;
 static char s_last_user_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
 static char s_last_reply_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
 
+/* ── 真实 inbox snapshot 缓冲区（controller 私有，LVGL task 写读）── */
+#define MEMORY_WATCH_INBOX_CTRL_MAX 20U
+
 #ifdef AGENT_PREVIEW_HOST
+/* host 预览保留静态 mock，方便截图验证 */
 static memory_watch_view_inbox_item_t s_preview_inbox_items[] = {
     {
         .notification_id = "preview-006",
@@ -74,16 +80,22 @@ static memory_watch_view_inbox_item_t s_preview_inbox_items[] = {
     {
         .notification_id = "preview-004",
         .created_at = "昨天 22:08",
-        .text = "已经记录 UI 优化方向: 米白画布, 浅边框卡片, 低饱和状态色, 以及更克制的 Hermes 入口.",
-        .read = true,
-    },
-    {
-        .notification_id = "preview-003",
-        .created_at = "昨天 09:15",
-        .text = "提醒: 明天上午检查 watch endpoint 的公网 release gate, 确认私有 health 没有暴露.",
+        .text = "已经记录 UI 优化方向: 米白画布, 浅边框卡片, 低饱和状态色.",
         .read = true,
     },
 };
+#else
+/* 板端：summary 缓冲区，controller 在 generation 变化时刷新 */
+static memory_watch_inbox_summary_t
+    s_inbox_summaries[MEMORY_WATCH_INBOX_CTRL_MAX];
+static memory_watch_view_inbox_item_t
+    s_inbox_view_items[MEMORY_WATCH_INBOX_CTRL_MAX];
+static size_t  s_inbox_item_count   = 0;
+static uint8_t s_inbox_unread_count = 0;
+static uint32_t s_inbox_generation  = 0;
+/* 详情缓冲区：进入详情时按 ID 拷贝完整 item */
+static memory_watch_inbox_item_t s_inbox_detail;
+static bool s_inbox_detail_valid = false;
 #endif
 
 static void memory_watch_controller_refresh(void);
@@ -93,7 +105,7 @@ static const memory_watch_view_inbox_item_t *memory_watch_inbox_items(void)
 #ifdef AGENT_PREVIEW_HOST
     return s_preview_inbox_items;
 #else
-    return NULL;
+    return s_inbox_view_items;
 #endif
 }
 
@@ -102,12 +114,13 @@ static size_t memory_watch_inbox_item_count(void)
 #ifdef AGENT_PREVIEW_HOST
     return sizeof(s_preview_inbox_items) / sizeof(s_preview_inbox_items[0]);
 #else
-    return 0;
+    return s_inbox_item_count;
 #endif
 }
 
 static uint8_t memory_watch_inbox_unread_count(void)
 {
+#ifdef AGENT_PREVIEW_HOST
     uint8_t count = 0;
     const memory_watch_view_inbox_item_t *items = memory_watch_inbox_items();
     const size_t item_count = memory_watch_inbox_item_count();
@@ -119,7 +132,47 @@ static uint8_t memory_watch_inbox_unread_count(void)
         }
     }
     return count;
+#else
+    return s_inbox_unread_count;
+#endif
 }
+
+/**
+ * @brief 从 service snapshot 同步 inbox summary（仅在 generation 变化时调用）。
+ */
+#ifndef AGENT_PREVIEW_HOST
+static void memory_watch_controller_sync_inbox(void)
+{
+    memory_watch_inbox_meta_t meta = {0};
+    if (memory_watch_service_get_inbox_meta(&meta) != ESP_OK)
+    {
+        return;
+    }
+    if (meta.generation == s_inbox_generation && s_inbox_generation != 0U)
+    {
+        return; /* 无变化，跳过拷贝 */
+    }
+    s_inbox_generation  = meta.generation;
+    s_inbox_unread_count = meta.unread_count;
+
+    size_t new_count = 0;
+    (void)memory_watch_service_copy_inbox_summaries(
+        s_inbox_summaries, MEMORY_WATCH_INBOX_CTRL_MAX, &new_count);
+    s_inbox_item_count = new_count;
+
+    /* 将 summary 映射到 view item（text 字段用 preview 填充） */
+    for (size_t i = 0; i < new_count; ++i)
+    {
+        s_inbox_view_items[i].notification_id =
+            s_inbox_summaries[i].notification_id;
+        s_inbox_view_items[i].created_at =
+            s_inbox_summaries[i].created_at;
+        /* view 层 text 字段 = preview（列表截断展示） */
+        s_inbox_view_items[i].text = s_inbox_summaries[i].preview;
+        s_inbox_view_items[i].read = s_inbox_summaries[i].read;
+    }
+}
+#endif
 
 static void memory_watch_controller_flush_pending_destroy(void)
 {
@@ -486,6 +539,7 @@ static bool memory_watch_render_cache_matches(
            cache->connection_state == model->connection_state &&
            cache->conversation_item_count == model->conversation_item_count &&
            cache->conversation_revision == s_conversation_revision &&
+           cache->inbox_generation == s_inbox_generation &&
            cache->inbox_item_count == model->inbox_item_count &&
            cache->selected_inbox_index == model->selected_inbox_index &&
            cache->inbox_unread_count == model->inbox_unread_count &&
@@ -513,6 +567,7 @@ static void memory_watch_render_cache_store(
     cache->connection_state = model->connection_state;
     cache->conversation_item_count = model->conversation_item_count;
     cache->conversation_revision = s_conversation_revision;
+    cache->inbox_generation = s_inbox_generation;
     cache->inbox_item_count = model->inbox_item_count;
     cache->selected_inbox_index = model->selected_inbox_index;
     cache->inbox_unread_count = model->inbox_unread_count;
@@ -560,8 +615,9 @@ static void memory_watch_controller_back(void *user_data)
     }
 
     s_render_cache.valid = false;
-    lv_screen_load_anim(s_ui->screen_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0,
-                        false);
+    lv_obj_t *target_scr = s_back_screen != NULL ? s_back_screen : s_ui->screen_main;
+    lv_screen_load_anim(target_scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0, false);
+    s_back_screen = NULL;
     memory_watch_controller_schedule_view_destroy();
 }
 
@@ -610,6 +666,12 @@ static void memory_watch_controller_open_inbox(void *user_data)
     (void)user_data;
     s_render_page = MEMORY_WATCH_VIEW_PAGE_INBOX;
     s_render_cache.valid = false;
+#ifndef AGENT_PREVIEW_HOST
+    /* 打开收件箱：立即触发一次 inbox 拉取（poll_now），按计划规则 */
+    (void)memory_watch_service_inbox_poll_now("open_inbox");
+    /* 强制同步一次 summary，确保列表不因旧缓存显示旧数据 */
+    memory_watch_controller_sync_inbox();
+#endif
     memory_watch_controller_refresh();
 }
 
@@ -641,6 +703,25 @@ static void memory_watch_controller_open_inbox_item(size_t index,
     s_selected_inbox_index = index;
 #ifdef AGENT_PREVIEW_HOST
     s_preview_inbox_items[index].read = true;
+#else
+    /* 本地立即标记已读，异步上报服务器 */
+    const char *nid =
+        s_inbox_summaries[index].notification_id;
+    if (nid != NULL && nid[0] != '\0')
+    {
+        (void)memory_watch_service_inbox_mark_read(nid);
+        /* 同步 summary 中的已读状态，避免 UI 刷新时回退 */
+        s_inbox_summaries[index].read = true;
+        s_inbox_view_items[index].read = true;
+        if (s_inbox_unread_count > 0U)
+        {
+            --s_inbox_unread_count;
+        }
+        /* 拷贝详情（含 body）供 detail 页使用 */
+        const esp_err_t detail_err =
+            memory_watch_service_get_inbox_item(nid, &s_inbox_detail);
+        s_inbox_detail_valid = (detail_err == ESP_OK);
+    }
 #endif
     s_render_page = MEMORY_WATCH_VIEW_PAGE_INBOX_DETAIL;
     s_render_cache.valid = false;
@@ -705,6 +786,10 @@ static void memory_watch_controller_refresh(void)
                                ? snapshot.reply_text
                                : memory_watch_default_reply_text(&snapshot));
     memory_watch_controller_sync_conversation(&snapshot);
+#ifndef AGENT_PREVIEW_HOST
+    /* 每次 refresh 以极低成本检查 inbox generation；仅在 generation 变化时拷贝 summary */
+    memory_watch_controller_sync_inbox();
+#endif
 
     const bool busy = memory_watch_is_busy_state(snapshot.state);
     const memory_watch_view_model_t model = {
@@ -744,6 +829,9 @@ void memory_watch_controller_init(lv_ui *ui)
 
 void memory_watch_controller_open(void)
 {
+    /* 记录当前活跃的 screen，供返回使用 */
+    s_back_screen = lv_screen_active();
+
     memory_watch_controller_ensure_view_created();
     if (s_view == NULL)
     {
@@ -760,9 +848,113 @@ void memory_watch_controller_open(void)
 
 void memory_watch_controller_poll_ui(void)
 {
-    if (!memory_watch_controller_is_foreground())
+    /* 1. 设置 inbox list 活跃状态（避免前台列表弹气泡） */
+    const bool is_fg = memory_watch_controller_is_foreground();
+    watch_nc_set_inbox_list_active(is_fg && (s_render_page == MEMORY_WATCH_VIEW_PAGE_INBOX));
+
+    /* 2. 无论是否在前台，都获取 snapshot 以进行状态变化检测（后台回复气泡） */
+    memory_watch_service_snapshot_t snapshot = {0};
+    static memory_watch_service_state_t s_last_service_state = MEMORY_WATCH_SERVICE_STATE_READY;
+    
+    if (memory_watch_service_get_snapshot(&snapshot) == ESP_OK)
+    {
+        if (!is_fg)
+        {
+            if ((s_last_service_state == MEMORY_WATCH_SERVICE_STATE_UPLOADING ||
+                 s_last_service_state == MEMORY_WATCH_SERVICE_STATE_THINKING) &&
+                (snapshot.state == MEMORY_WATCH_SERVICE_STATE_DONE ||
+                 snapshot.state == MEMORY_WATCH_SERVICE_STATE_NEEDS_CLARIFICATION))
+            {
+                /* 触发后台回复全局气泡 */
+                watch_nc_notify_hermes_reply(NULL);
+            }
+        }
+        s_last_service_state = snapshot.state;
+    }
+
+    if (!is_fg)
     {
         return;
     }
     memory_watch_controller_refresh();
+}
+
+void memory_watch_controller_open_via_notification(watch_nc_nav_target_t target,
+                                                  const char *notification_id)
+{
+    /* 1. 记录进入前的页面，用于返回 */
+    lv_obj_t *curr_scr = lv_screen_active();
+    if (s_view == NULL || curr_scr != memory_watch_view_get_screen(s_view))
+    {
+        s_back_screen = curr_scr;
+    }
+
+    /* 2. 确保 view 已经创建并加载 */
+    memory_watch_controller_ensure_view_created();
+    if (s_view == NULL)
+    {
+        return;
+    }
+
+    /* 3. 设置页面渲染状态 */
+    if (target == WATCH_NC_NAV_HERMES_VOICE)
+    {
+        s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
+    }
+    else if (target == WATCH_NC_NAV_INBOX_LIST)
+    {
+        s_render_page = MEMORY_WATCH_VIEW_PAGE_INBOX;
+#ifndef AGENT_PREVIEW_HOST
+        (void)memory_watch_service_inbox_poll_now("open_inbox");
+        memory_watch_controller_sync_inbox();
+#endif
+    }
+    else if (target == WATCH_NC_NAV_INBOX_DETAIL)
+    {
+        s_render_page = MEMORY_WATCH_VIEW_PAGE_INBOX_DETAIL;
+#ifdef AGENT_PREVIEW_HOST
+        s_selected_inbox_index = 0;
+        size_t count = sizeof(s_preview_inbox_items) / sizeof(s_preview_inbox_items[0]);
+        for (size_t i = 0; i < count; ++i)
+        {
+            if (strcmp(s_preview_inbox_items[i].notification_id, notification_id) == 0)
+            {
+                s_selected_inbox_index = i;
+                s_preview_inbox_items[i].read = true;
+                break;
+            }
+        }
+#else
+        memory_watch_controller_sync_inbox();
+        s_selected_inbox_index = 0;
+        for (size_t i = 0; i < s_inbox_item_count; ++i)
+        {
+            if (strcmp(s_inbox_summaries[i].notification_id, notification_id) == 0)
+            {
+                s_selected_inbox_index = i;
+                (void)memory_watch_service_inbox_mark_read(notification_id);
+                s_inbox_summaries[i].read = true;
+                s_inbox_view_items[i].read = true;
+                if (s_inbox_unread_count > 0U)
+                {
+                    --s_inbox_unread_count;
+                }
+                break;
+            }
+        }
+        const esp_err_t detail_err =
+            memory_watch_service_get_inbox_item(notification_id, &s_inbox_detail);
+        s_inbox_detail_valid = (detail_err == ESP_OK);
+#endif
+    }
+
+    s_render_cache.valid = false;
+    memory_watch_controller_refresh();
+
+    /* 4. 加载页面动画 */
+    if (lv_screen_active() != memory_watch_view_get_screen(s_view))
+    {
+        lv_screen_load_anim(memory_watch_view_get_screen(s_view),
+                            LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, false);
+    }
 }
