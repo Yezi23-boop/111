@@ -23,7 +23,7 @@ static const char kTimezoneShanghai[] = "Asia/Shanghai";
 static const char kSourceWatchHermesPage[] = "watch_hermes_page";
 static const char kDefaultUiState[] = "ready";
 static const size_t kMaxResponseBytes = 4096U;
-static const int kHttpBufferSize = 1024;
+static const int kHttpBufferSize = 8192;
 
 static esp_err_t memory_watch_voice_client_write_all(
     esp_http_client_handle_t client, const uint8_t *data, size_t len);

@@ -1673,6 +1673,12 @@ static void memory_watch_service_upload_worker_task(void *arg)
             result->error = memory_watch_recorder_capture_ogg_opus(
                 &recorder_config, &recorder_result);
             memory_watch_service_log_upload_stack("voice-record-done");
+            ESP_LOGI(TAG, "voice record result: err=%s audio_len=%u dur_ms=%lu pkts=%lu discard=%d",
+                     esp_err_to_name(result->error),
+                     (unsigned int)audio_buffer.len,
+                     (unsigned long)recorder_result.duration_ms,
+                     (unsigned long)recorder_result.opus_packets,
+                     (int)memory_watch_service_is_record_discard_requested());
 
             const bool discard_requested =
                 memory_watch_service_is_record_discard_requested();
@@ -2218,14 +2224,9 @@ const char *memory_watch_service_state_to_string(
 /* ── pending-read set（仅 owner task 读写，无需锁）── */
 #define INBOX_PENDING_READ_MAX 20U
 
-/* ── store 和 staging 放 PSRAM，共约 28 KiB，不得占用 DRAM ──
- *    20 条 × 每条约 700 字节 ≈ 14 KiB；两个数组共 28 KiB。
- *    ext_ram.bss section 由链接器放入 PSRAM BSS，等价于
- *    heap_caps_malloc(..., MALLOC_CAP_SPIRAM) 但可用于静态数组。 */
-static memory_watch_inbox_item_t s_inbox_store[MEMORY_WATCH_INBOX_MAX_ITEMS]
-    __attribute__((section(".ext_ram.bss")));
-static memory_watch_inbox_item_t s_inbox_staging[MEMORY_WATCH_INBOX_MAX_ITEMS]
-    __attribute__((section(".ext_ram.bss")));
+/* ── store 和 staging 按需分配在 PSRAM，共约 28 KiB ── */
+static memory_watch_inbox_item_t *s_inbox_store = NULL;
+static memory_watch_inbox_item_t *s_inbox_staging = NULL;
 
 /* ── store 实际有效项计数（受 s_inbox_store_mutex 保护） ── */
 static size_t s_inbox_store_count = 0;
@@ -2248,8 +2249,6 @@ static memory_watch_inbox_meta_t s_inbox_meta = {
 
 /* ── inbox worker task handle（仅供 init 创建和 owner 投递通知） ── */
 static TaskHandle_t s_inbox_worker_task_handle = NULL;
-static StaticTask_t s_inbox_worker_task_buffer;
-static StackType_t  s_inbox_worker_task_stack[INBOX_WORKER_STACK_WORDS];
 
 /* ── owner task 与 inbox worker 之间的共享 job（owner 写，worker 读）── */
 typedef enum {
@@ -2554,6 +2553,11 @@ esp_err_t memory_watch_service_copy_inbox_summaries(
     {
         return ESP_ERR_INVALID_ARG;
     }
+    if (s_inbox_store == NULL)
+    {
+        *out_count = 0;
+        return ESP_OK;
+    }
 
     /* store 读取用 s_inbox_store_mutex */
     if (s_inbox_store_mutex != NULL)
@@ -2604,6 +2608,10 @@ esp_err_t memory_watch_service_get_inbox_item(
     {
         return ESP_ERR_INVALID_ARG;
     }
+    if (s_inbox_store == NULL)
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
 
     esp_err_t result = ESP_ERR_NOT_FOUND;
     if (s_inbox_store_mutex != NULL)
@@ -2653,6 +2661,10 @@ esp_err_t memory_watch_service_inbox_mark_read(
     if (notification_id == NULL || notification_id[0] == '\0')
     {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (s_inbox_store == NULL)
+    {
+        return ESP_ERR_NOT_FOUND;
     }
 
     /* 1. 本地立即置已读（在 store + pending-read set）*/
@@ -2756,6 +2768,25 @@ esp_err_t memory_watch_service_inbox_init(void)
     {
         s_inbox_store_mutex = xSemaphoreCreateMutexStatic(&s_inbox_store_mutex_buffer);
     }
+
+    /* store / staging 按需分配在 PSRAM，inbox 未使用时不占内存 */
+    if (s_inbox_store == NULL)
+    {
+        s_inbox_store = (memory_watch_inbox_item_t *)heap_caps_calloc(
+            MEMORY_WATCH_INBOX_MAX_ITEMS, sizeof(memory_watch_inbox_item_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_inbox_staging == NULL)
+    {
+        s_inbox_staging = (memory_watch_inbox_item_t *)heap_caps_calloc(
+            MEMORY_WATCH_INBOX_MAX_ITEMS, sizeof(memory_watch_inbox_item_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_inbox_store == NULL || s_inbox_staging == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
     if (s_inbox_job_queue == NULL)
     {
         s_inbox_job_queue = xQueueCreateStatic(
@@ -2771,15 +2802,20 @@ esp_err_t memory_watch_service_inbox_init(void)
 
     if (s_inbox_worker_task_handle == NULL)
     {
-        /* inbox worker 需要 PSRAM stack（处理 24 KiB 响应体） */
-        s_inbox_worker_task_handle = xTaskCreateStatic(
+        /* inbox worker 需要 PSRAM stack（处理 24 KiB 响应体）；
+         * 用 xTaskCreateWithCaps 避免占用 internal RAM。 */
+        const BaseType_t inbox_created = xTaskCreateWithCaps(
             memory_watch_service_inbox_worker_task,
             "mw_inbox",
             INBOX_WORKER_STACK_WORDS,
             NULL,
             3, /* 低于 upload worker 优先级 */
-            s_inbox_worker_task_stack,
-            &s_inbox_worker_task_buffer);
+            &s_inbox_worker_task_handle,
+            MALLOC_CAP_SPIRAM);
+        if (inbox_created != pdPASS)
+        {
+            s_inbox_worker_task_handle = NULL;
+        }
     }
     if (s_inbox_worker_task_handle == NULL)
     {

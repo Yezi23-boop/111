@@ -244,6 +244,12 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
         return ESP_ERR_INVALID_ARG;
     }
 
+    ESP_LOGI(TAG, "capture: start: max_dur=%lu min_dur=%lu input_timeout=%lu read_timeout=%lu",
+             (unsigned long)config->max_duration_ms,
+             (unsigned long)config->min_duration_ms,
+             (unsigned long)config->input_timeout_ms,
+             (unsigned long)config->read_timeout_ms);
+
     const uint32_t max_duration_ms =
         memory_watch_recorder_normalize_max_duration(config);
     const uint32_t min_duration_ms =
@@ -281,6 +287,7 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
     ret = audio_codec_init();
     if (ret != ESP_OK)
     {
+        ESP_LOGE(TAG, "capture: audio_codec_init failed: %s", esp_err_to_name(ret));
         goto cleanup;
     }
     codec_ready = true;
@@ -290,6 +297,7 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
         memory_watch_recorder_normalize_input_timeout(config));
     if (ret != ESP_OK)
     {
+        ESP_LOGE(TAG, "capture: acquire_input failed: %s", esp_err_to_name(ret));
         goto cleanup;
     }
     input_acquired = true;
@@ -303,6 +311,7 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
                                              &encoder_output_bytes);
     if (ret != ESP_OK)
     {
+        ESP_LOGE(TAG, "capture: open_encoder failed: %s", esp_err_to_name(ret));
         goto cleanup;
     }
 
@@ -319,16 +328,29 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
     const size_t opus_pcm_bytes = opus_sample_count * sizeof(int16_t);
     if ((size_t)encoder_input_bytes != opus_pcm_bytes)
     {
+        ESP_LOGE(TAG, "capture: frame size mismatch: enc_in=%d opus_pcm=%u",
+                 encoder_input_bytes, (unsigned int)opus_pcm_bytes);
         ret = ESP_ERR_INVALID_SIZE;
         goto cleanup;
     }
+    ESP_LOGI(TAG, "capture: params ok: max_dur=%lu min_dur=%lu hw_bytes=%u opus_pcm=%u enc_in=%d enc_out=%d max_pkts=%lu",
+             (unsigned long)max_duration_ms, (unsigned long)min_duration_ms,
+             (unsigned int)hw_bytes, (unsigned int)opus_pcm_bytes,
+             encoder_input_bytes, encoder_output_bytes,
+             (unsigned long)(max_duration_ms / MEMORY_WATCH_RECORDER_OPUS_FRAME_DURATION_MS));
 
-    hw_pcm = (int16_t *)heap_caps_malloc(hw_bytes, MALLOC_CAP_INTERNAL |
+    /* 三个缓冲区全部放在 PSRAM，释放 internal RAM。
+     * hw_pcm 由 audio_codec_read 填充（CPU 拷贝，非 DMA 直写），PSRAM 可用。 */
+    ESP_LOGI(TAG, "capture: alloc: hw=%u opus_pcm=%u opus_out=%d internal_free=%lu",
+             (unsigned int)hw_bytes, (unsigned int)opus_pcm_bytes,
+             encoder_output_bytes,
+             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    hw_pcm = (int16_t *)heap_caps_malloc(hw_bytes, MALLOC_CAP_SPIRAM |
                                                      MALLOC_CAP_8BIT);
-    opus_pcm = (int16_t *)heap_caps_malloc(opus_pcm_bytes, MALLOC_CAP_INTERNAL |
-                                                           MALLOC_CAP_8BIT);
+    opus_pcm = (int16_t *)heap_caps_malloc(opus_pcm_bytes, MALLOC_CAP_SPIRAM |
+                                                            MALLOC_CAP_8BIT);
     opus_out = (uint8_t *)heap_caps_malloc((size_t)encoder_output_bytes,
-                                           MALLOC_CAP_INTERNAL |
+                                           MALLOC_CAP_SPIRAM |
                                                MALLOC_CAP_8BIT);
     if (hw_pcm == NULL || opus_pcm == NULL || opus_out == NULL)
     {
@@ -353,6 +375,7 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
     ret = memory_watch_ogg_opus_muxer_init(&muxer, &muxer_config);
     if (ret != ESP_OK)
     {
+        ESP_LOGE(TAG, "capture: muxer_init failed: %s", esp_err_to_name(ret));
         goto cleanup;
     }
 
@@ -381,6 +404,9 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
                                read_timeout_ticks);
         if (ret != ESP_OK || bytes_read != hw_bytes)
         {
+            ESP_LOGE(TAG, "capture: audio_read fail: ret=%s bytes_read=%u expected=%u pkt=%lu",
+                     esp_err_to_name(ret), (unsigned int)bytes_read,
+                     (unsigned int)hw_bytes, (unsigned long)packet_index);
             ret = ret != ESP_OK ? ret : ESP_ERR_TIMEOUT;
             goto cleanup;
         }
@@ -414,9 +440,15 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
 
     if (encoded_packets == 0U)
     {
+        ESP_LOGE(TAG, "capture: no packets encoded");
         ret = ESP_ERR_INVALID_SIZE;
         goto cleanup;
     }
+
+    ESP_LOGI(TAG, "capture: done: packets=%lu opus_bytes=%lu ogg_bytes=%lu dur_ms=%lu",
+             (unsigned long)encoded_packets, (unsigned long)opus_bytes,
+             (unsigned long)write_ctx.ogg_bytes,
+             (unsigned long)(encoded_packets * MEMORY_WATCH_RECORDER_OPUS_FRAME_DURATION_MS));
 
     if (out_result != NULL)
     {
@@ -428,6 +460,12 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
     }
 
 cleanup:
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "capture: cleanup with error: %s (fg=%d codec=%d input=%d enc=%p)",
+                 esp_err_to_name(ret), foreground_active, codec_ready,
+                 input_acquired, encoder);
+    }
     if (encoder != NULL)
     {
         esp_opus_enc_close(encoder);
