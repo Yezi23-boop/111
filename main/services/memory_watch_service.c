@@ -168,11 +168,9 @@ static uint8_t s_health_worker_queue_storage[
 static memory_watch_service_cmd_t s_service_task_command;
 static memory_watch_service_upload_job_t s_upload_worker_job;
 static memory_watch_service_worker_result_t s_upload_worker_result;
-static StaticTask_t s_service_task_buffer;
-static StackType_t s_service_task_stack[6144];
-// Optimized: Legacy static buffers (s_cancel_worker_task_stack, s_health_worker_task_stack)
-// and StaticTask_t buffers (s_cancel_worker_task_buffer, s_health_worker_task_buffer)
-// have been removed. Tasks now dynamically allocate stack on external PSRAM via xTaskCreateWithCaps.
+// Optimized: Legacy static buffers (s_service_task_stack, s_cancel_worker_task_stack,
+// s_health_worker_task_stack) and StaticTask_t buffers have been removed.
+// All tasks now dynamically allocate stack on external PSRAM via xTaskCreateWithCaps.
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_endpoint_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_worker_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -197,8 +195,11 @@ static char s_wait_canceled_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
 static bool s_boot_text_sent = false;
 #endif
 
-/* 前向声明：inbox init 定义在文件末尾 */
+/* 前向声明：inbox 相关函数和变量定义在文件后半部分 */
 static esp_err_t memory_watch_service_inbox_init(void);
+static volatile bool s_inbox_poll_pending = false;
+static void memory_watch_service_inbox_try_poll(void);
+static void memory_watch_service_inbox_handle_worker_result(uint32_t notify_val);
 
 static void memory_watch_service_log_upload_stack(const char *stage)
 {
@@ -1465,6 +1466,11 @@ static void memory_watch_service_handle_health_done(
     ESP_LOGI(TAG, "watch endpoint health result: hermes_online=%u err=%s",
              (unsigned int)result->hermes_online,
              esp_err_to_name(result->error));
+    /* 健康检查成功后触发首次 inbox 轮询 */
+    if (result->hermes_online)
+    {
+        memory_watch_service_inbox_try_poll();
+    }
 #if CONFIG_MEMORY_WATCH_BOOT_TEXT_SMOKE
     if (!s_boot_text_sent &&
         CONFIG_MEMORY_WATCH_BOOT_TEXT[0] != '\0')
@@ -1787,11 +1793,31 @@ static void memory_watch_service_task(void *arg)
             wait_ticks = pdMS_TO_TICKS(1000U);
         }
 #endif
+        /* 用有限超时等待命令队列，使 owner task 能周期性检查
+         * task notification（inbox worker 结果）和 inbox 轮询 pending。 */
+        const TickType_t inbox_check_ticks = pdMS_TO_TICKS(2000U);
+        if (wait_ticks == portMAX_DELAY || wait_ticks > inbox_check_ticks)
+        {
+            wait_ticks = inbox_check_ticks;
+        }
         if (xQueueReceive(s_command_queue, &s_service_task_command,
                           wait_ticks) == pdTRUE)
         {
             memory_watch_service_handle_command(&s_service_task_command);
-            continue;
+        }
+
+        /* 处理 inbox worker 完成通知（来自 xTaskNotify）*/
+        uint32_t notify_val = 0;
+        if (xTaskNotifyWait(0, UINT32_MAX, &notify_val, 0) == pdTRUE &&
+            notify_val != 0U)
+        {
+            memory_watch_service_inbox_handle_worker_result(notify_val);
+        }
+
+        /* 处理 inbox 轮询 pending（来自 poll_now 或 worker 完成后的补发）*/
+        if (s_inbox_poll_pending)
+        {
+            memory_watch_service_inbox_try_poll();
         }
 
 #if CONFIG_MEMORY_WATCH_BOOT_HEALTH_CHECK
@@ -1927,15 +1953,15 @@ esp_err_t memory_watch_service_init(void)
                  esp_err_to_name(endpoint_err));
     }
 
-    s_service_task_handle = xTaskCreateStatic(
+    const BaseType_t service_created = xTaskCreateWithCaps(
         memory_watch_service_task,
         "memory_watch",
         kTaskStackWords,
         NULL,
         4,
-        s_service_task_stack,
-        &s_service_task_buffer);
-    if (s_service_task_handle == NULL)
+        &s_service_task_handle,
+        MALLOC_CAP_SPIRAM);
+    if (service_created != pdPASS)
     {
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);
@@ -2278,9 +2304,6 @@ static uint8_t s_inbox_job_queue_storage[1 * sizeof(inbox_job_t)];
 static size_t  s_staging_item_count  = 0;
 static uint8_t s_staging_unread_count = 0;
 static bool    s_staging_mark_read_result = false;
-
-/* poll_now 的 pending bit：worker 在途时有新请求到达先记住 */
-static volatile bool s_inbox_poll_pending = false;
 
 /* ── 辅助：读取 endpoint 快照（owner task 私有，不需锁）── */
 static bool memory_watch_service_inbox_get_client_config(

@@ -58,6 +58,7 @@ struct memory_watch_view
     const memory_watch_view_inbox_item_t *inbox_items;
     size_t inbox_item_count;
     size_t selected_inbox_index;
+    const char *detail_body; /**< 详情页完整正文（由 apply_model 更新）。 */
     const memory_watch_view_conversation_item_t *conversation_items;
     size_t conversation_item_count;
     memory_watch_view_page_t page;
@@ -640,8 +641,13 @@ static void memory_watch_view_update_detail(memory_watch_view_t *view)
         &view->inbox_items[view->selected_inbox_index];
     lv_label_set_text(view->detail_time_label,
                       item->created_at != NULL ? item->created_at : "");
+    /* 优先使用 controller 提供的完整 body，回退到 summary preview */
+    const char *body = (view->detail_body != NULL &&
+                        view->detail_body[0] != '\0')
+                           ? view->detail_body
+                           : item->text;
     lv_label_set_text(view->detail_text_label,
-                      item->text != NULL ? item->text : "");
+                      body != NULL ? body : "");
 }
 
 static void memory_watch_view_show_page(memory_watch_view_t *view,
@@ -971,6 +977,7 @@ void memory_watch_view_apply_model(memory_watch_view_t *view,
     view->inbox_items = model->inbox_items;
     view->inbox_item_count = model->inbox_item_count;
     view->selected_inbox_index = model->selected_inbox_index;
+    view->detail_body = model->detail_body;
     view->conversation_items = model->conversation_items;
     view->conversation_item_count = model->conversation_item_count;
 

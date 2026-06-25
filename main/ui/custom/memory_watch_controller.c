@@ -806,6 +806,7 @@ static void memory_watch_controller_refresh(void)
         .inbox_item_count = memory_watch_inbox_item_count(),
         .selected_inbox_index = s_selected_inbox_index,
         .inbox_unread_count = memory_watch_inbox_unread_count(),
+        .detail_body = s_inbox_detail_valid ? s_inbox_detail.body : NULL,
         .voice_button_enabled = memory_watch_can_use_voice_button(&snapshot),
         .cancel_visible =
             busy ||

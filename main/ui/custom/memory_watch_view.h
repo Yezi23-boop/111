@@ -116,6 +116,7 @@ typedef struct
     size_t inbox_item_count;
     size_t selected_inbox_index;
     uint8_t inbox_unread_count;
+    const char *detail_body; /**< 详情页完整正文（controller 提供），NULL 时回退到 preview。 */
     bool voice_button_enabled;
     bool cancel_visible;
     bool cancel_is_clarification;
