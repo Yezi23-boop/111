@@ -107,6 +107,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `docs/context/handoffs/current-task.md` 是当前任务接力页，不是历史总账。它可以不频繁更新，但不允许过期到误导下一步；当“未验证/阻塞/active plan/下一步”等状态被新证据反转，或交接、暂停、上下文压缩、用户要求记录当前状态时，必须更新该文件。内容只写当前真实状态、下一步、阻塞/风险和不要再相信的旧信息，不写真实 key/token，不重复 `CHANGELOG.md`。
 - 遇到大问题错误或路线选择时，若本轮形成了可复用判断、证伪路径、取舍原因或下一步边界，可考虑写入 `docs/context/runs/`；大问题错误使用 `error-signature`，路线选择/放弃使用 `route-choice`，必要时补 `evidence`。
 - 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
+- **核心并发与底层驱动红线改动强制收尾规则**：只要当次任务修改涉及 `FreeRTOS`（任务/锁/队列/Timer）、RAM/PSRAM 内存分配、硬件驱动初始化、分区表或 `sdkconfig`，无论任务大小是否属于 active plan，在宣布任务完成前**强制**必须按固定顺序执行四步闭环：1) 新建 `docs/context/runs/YYYY-MM-DD-attempt-<特征词>.md`（沉淀错误签名与证伪路径）；2) 在 `CHANGELOG.md` 顶部记录摘要；3) 按需同步接力页 `current-task.md`；4) 必须执行 `validate_context.py --level standard` 确保索引校验通过。**未附带校验通过结果前，严禁宣称任务或修改结案。**
 
 ## 规划/框架类任务强制路由
 
@@ -131,6 +132,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 跨任务命令、状态、等待和资源仲裁优先使用 FreeRTOS 原语：queue、task notification、event group、mutex/critical section；避免裸 `volatile`、临时轮询或自造 flag 协议。
 - 板级事实由 `main/app/board_*` 或现有 board owner 持有；GPIO、总线地址、片选、传感器轴向、硬件阈值不得长期散落在 service 或 driver 中。
 - 资源受限路径优先静态分配或受控分配；区分 task stack、internal RAM、PSRAM、DMA-capable memory 和长期缓存，不把大对象默认放到任务栈。
+- 内存分配应尽量使用外部 PSRAM（如使用 `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` 等 API），避免挤压 internal RAM；只把必须快速响应、DMA 传输或无法放在外部 RAM 的关键数据留给 internal RAM。
 - 必要的输入、返回值和超时要检查；不要为假设场景堆叠复杂兜底、重试、状态机或包装层。
 - 新增协议字段、NVS key、状态枚举、owner 边界或跨端契约时，优先补 source test、契约测试或文档检查。
 - 算法或 AI 相关实现默认拆分为预处理、推理、后处理和模型配置，避免把阈值、量化参数、模型 I/O 和业务逻辑混写。
