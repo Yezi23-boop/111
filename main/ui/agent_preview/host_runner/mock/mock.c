@@ -260,3 +260,39 @@ const board_power_state_t *power_service_get_state(void) {
 
 #include "gui_guider.h"
 lv_ui guider_ui;
+
+esp_err_t memory_watch_service_get_inbox_meta(memory_watch_inbox_meta_t *out_meta)
+{
+    if (out_meta == NULL) return ESP_ERR_INVALID_ARG;
+    out_meta->generation = 1;
+    out_meta->unread_count = 2;
+    out_meta->item_count = 2;
+    out_meta->sync_state = 0; // MEMORY_WATCH_INBOX_SYNC_STATE_IDLE
+    out_meta->last_success_ms = 0;
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_copy_inbox_summaries(
+    memory_watch_inbox_summary_t *out_summaries,
+    size_t capacity,
+    size_t *out_count)
+{
+    if (out_summaries == NULL || out_count == NULL) return ESP_ERR_INVALID_ARG;
+    size_t cnt = 0;
+    if (capacity > cnt) {
+        strncpy(out_summaries[cnt].notification_id, "preview-006", sizeof(out_summaries[cnt].notification_id) - 1);
+        strncpy(out_summaries[cnt].title, "Hermes 新提示", sizeof(out_summaries[cnt].title) - 1);
+        strncpy(out_summaries[cnt].preview, "已整理下午三点取快递提醒", sizeof(out_summaries[cnt].preview) - 1);
+        out_summaries[cnt].read = false;
+        cnt++;
+    }
+    if (capacity > cnt) {
+        strncpy(out_summaries[cnt].notification_id, "preview-005", sizeof(out_summaries[cnt].notification_id) - 1);
+        strncpy(out_summaries[cnt].title, "电池日志提醒", sizeof(out_summaries[cnt].title) - 1);
+        strncpy(out_summaries[cnt].preview, "建议确认待机电流和屏幕亮度曲线", sizeof(out_summaries[cnt].preview) - 1);
+        out_summaries[cnt].read = false;
+        cnt++;
+    }
+    *out_count = cnt;
+    return ESP_OK;
+}

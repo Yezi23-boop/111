@@ -84,6 +84,9 @@ static memory_watch_view_inbox_item_t s_preview_inbox_items[] = {
         .read = true,
     },
 };
+static uint32_t s_inbox_generation  = 0;
+static memory_watch_inbox_item_t s_inbox_detail;
+static bool s_inbox_detail_valid = false;
 #else
 /* 板端：summary 缓冲区，controller 在 generation 变化时刷新 */
 static memory_watch_inbox_summary_t
