@@ -24,13 +24,13 @@
 
 static const char *TAG = "watch_nc";
 
-/* ── CO5300 安全区气泡尺寸（符合计划约束） ──
- * x=40, w=330, y=24, h=80, corner_radius=8 */
+/* ── CO5300 灵动岛安全区尺寸（霓虹赛博撞色胶囊形态） ──
+ * x=40, y=20, w=330, h=64, corner_radius=32 */
 #define NC_BUBBLE_X      40
-#define NC_BUBBLE_Y      24
+#define NC_BUBBLE_Y      20
 #define NC_BUBBLE_W      330
-#define NC_BUBBLE_H      80
-#define NC_BUBBLE_RADIUS 8
+#define NC_BUBBLE_H      88
+#define NC_BUBBLE_RADIUS 24
 
 /* ── surfaced ledger 最大条目数 ── */
 #define NC_SURFACED_MAX 20U
@@ -337,43 +337,53 @@ void watch_nc_init(const watch_nc_config_t *config)
     }
     s_config = *config;
 
-    /* 在 lv_layer_top() 创建气泡容器 */
+    /* 在 lv_layer_top() 创建气泡容器（胶囊灵动岛） */
     lv_obj_t *layer = lv_layer_top();
 
     s_bubble_cont = lv_obj_create(layer);
     lv_obj_set_pos(s_bubble_cont, NC_BUBBLE_X, NC_BUBBLE_Y);
     lv_obj_set_size(s_bubble_cont, NC_BUBBLE_W, NC_BUBBLE_H);
     lv_obj_set_style_radius(s_bubble_cont, NC_BUBBLE_RADIUS, 0);
-    lv_obj_set_style_bg_color(s_bubble_cont, lv_color_hex(0x1A1A1A), 0);
+    /* 莫兰迪调和灰调：粉与绿融合后的烟灰豆沙绿 */
+    lv_obj_set_style_bg_color(s_bubble_cont, lv_color_hex(0xC4D2C2), 0);
     lv_obj_set_style_bg_opa(s_bubble_cont, LV_OPA_90, 0);
     lv_obj_set_style_border_width(s_bubble_cont, 0, 0);
-    lv_obj_set_style_pad_all(s_bubble_cont, 10, 0);
+    lv_obj_set_style_pad_all(s_bubble_cont, 0, 0);
     lv_obj_set_style_clip_corner(s_bubble_cont, true, 0);
+    /* 精致柔和投影 */
+    lv_obj_set_style_shadow_color(s_bubble_cont, lv_color_hex(0x334433), 0);
+    lv_obj_set_style_shadow_width(s_bubble_cont, 20, 0);
+    lv_obj_set_style_shadow_opa(s_bubble_cont, LV_OPA_20, 0);
+    lv_obj_set_style_shadow_ofs_y(s_bubble_cont, 6, 0);
     /* 气泡常驻覆盖页面，不推动布局 */
     lv_obj_add_flag(s_bubble_cont, LV_OBJ_FLAG_FLOATING);
     lv_obj_add_flag(s_bubble_cont, LV_OBJ_FLAG_HIDDEN); /* 初始隐藏 */
 
-    /* 标题：白色单行 */
+    /* 左侧复古玫瑰豆沙粉指示条 */
+    lv_obj_t *pink_bar = lv_obj_create(s_bubble_cont);
+    lv_obj_set_size(pink_bar, 6, 44);
+    lv_obj_set_style_radius(pink_bar, 3, 0);
+    lv_obj_set_style_bg_color(pink_bar, lv_color_hex(0xD85A7A), 0);
+    lv_obj_set_style_border_width(pink_bar, 0, 0);
+    lv_obj_align(pink_bar, LV_ALIGN_LEFT_MID, 16, 0);
+
+    /* 标题：粗黑单行（强调信息标题） */
     s_bubble_title_label = lv_label_create(s_bubble_cont);
-    lv_obj_set_width(s_bubble_title_label, NC_BUBBLE_W - 20);
-    lv_obj_set_style_text_color(s_bubble_title_label,
-                                lv_color_white(), 0);
-    lv_label_set_long_mode(s_bubble_title_label,
-                           LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_bubble_title_label, NC_BUBBLE_W - 56);
+    lv_obj_set_style_text_color(s_bubble_title_label, lv_color_hex(0x111111), 0);
+    lv_label_set_long_mode(s_bubble_title_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(s_bubble_title_label,
                                &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, 0);
-    lv_obj_align(s_bubble_title_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_align(s_bubble_title_label, LV_ALIGN_TOP_LEFT, 32, 12);
 
-    /* preview：浅灰双行 */
+    /* preview：深灰炭黑内容简述（支持两行显示，超出截断省略） */
     s_bubble_preview_label = lv_label_create(s_bubble_cont);
-    lv_obj_set_width(s_bubble_preview_label, NC_BUBBLE_W - 20);
-    lv_obj_set_style_text_color(s_bubble_preview_label,
-                                lv_color_hex(0xAAAAAA), 0);
-    lv_label_set_long_mode(s_bubble_preview_label,
-                           LV_LABEL_LONG_DOT);
+    lv_obj_set_size(s_bubble_preview_label, NC_BUBBLE_W - 56, 44);
+    lv_obj_set_style_text_color(s_bubble_preview_label, lv_color_hex(0x333333), 0);
+    lv_label_set_long_mode(s_bubble_preview_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(s_bubble_preview_label,
                                &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, 0);
-    lv_obj_align(s_bubble_preview_label, LV_ALIGN_TOP_LEFT, 0, 24);
+    lv_obj_align(s_bubble_preview_label, LV_ALIGN_TOP_LEFT, 32, 34);
 
     /* 手势事件 */
     lv_obj_add_event_cb(s_bubble_cont, nc_on_bubble_pressed,

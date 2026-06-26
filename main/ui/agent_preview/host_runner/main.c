@@ -14,6 +14,7 @@
 #include "drivers/sdl/lv_sdl_mouse.h"
 #include "drivers/sdl/lv_sdl_mousewheel.h"
 #include "drivers/sdl/lv_sdl_window.h"
+#include "watch_notification_center.h"
 #include "lvgl.h"
 
 #define PREVIEW_W 410
@@ -124,6 +125,8 @@ int main(int argc, char **argv)
     ai_ui_controller_init(&guider_ui);
     mini_games_controller_init(&guider_ui);
     preview_create_screen_mask();
+    static const watch_nc_config_t kMockNcCfg = {0};
+    watch_nc_init(&kMockNcCfg);
     if (argc > 1 && strcmp(argv[1], "--open-hermes") == 0)
     {
         memory_watch_controller_open();
@@ -140,6 +143,7 @@ int main(int argc, char **argv)
         lv_timer_handler();
         memory_watch_controller_poll_ui();
         mini_games_controller_poll_ui();
+        watch_nc_poll(false, false);
         if (s_screen_mask != NULL && lv_obj_is_valid(s_screen_mask))
         {
             lv_obj_move_foreground(s_screen_mask);

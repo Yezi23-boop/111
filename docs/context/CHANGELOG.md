@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-06-26：归档 AI Memory Watch / Hermes V2 收件箱与全局气泡通知计划：按当前定义 `V2 = Hermes 主动提示回到手表：server inbox + ESP32 收件箱 + 全局气泡通知` 视为完成；新版 watch endpoint 在 `127.0.0.1:8787` 暴露 `/v1/watch/inbox` 与已读接口，公网未鉴权访问返回 `401` 表明 Cloudflare 已打到新版路由；脚本模拟 Hermes 写入 inbox 后公网 GET 成功读回创建项（`201 Created`、`found_created_item=true`、`unread_count=2`），未写入或泄露真实 token/key。同步修正产品定位中的 completed 计划路径与 current-task 接力页，后续进入 V2.1/V3 的真实 Hermes 业务事件、下发 agent 和 MQTT/低功耗优化。
+
 - 2026-06-25：沉淀闭环 Hermes 收件箱与网络时间同步（SNTP）内存栈及自旋锁并发 Bug 修复经验：1）修复 `system_time_service` 连网校时报 `create network time sync task failed`（pdFAIL）：将 HTTP 同步临时线程栈外移至 `xTaskCreateWithCaps(..., MALLOC_CAP_SPIRAM)`，避免连网期连续 SRAM 枯竭；2）修复 `memory_watch_controller` 页面卡死不刷新：在 LVGL 渲染快照对比中引入 `inbox_generation` 版本号追踪；3）消除收件箱长跨度自旋锁拷贝违规：引入互斥锁 `s_inbox_store_mutex` 替换硬件自旋锁 `s_worker_lock`，避免在自旋锁内执行 PSRAM 大段 `strncpy` 拷贝引发 Cache 禁用异常（`Cache disabled`）与中断屏蔽死锁。同步归档 Attempt Log 至 `runs/2026-06-25-attempt-hermes-inbox-and-sntp-task-stack-fix.md`，更新接力页 `current-task.md`。
 
 - 2026-06-25：将 `2026-06-25-hermes-inbox-global-notification-plan.md` 从产品决策稿细化为可执行 V1 规格：固定 create/list/read HTTP 请求与响应、`201/200/404/422` 语义、SQLite 持久化事务和空列表行为；明确 `memory_watch_service + inbox worker` 的 FreeRTOS owner 边界、PSRAM 有界缓存、generation/meta/summary/detail 只读快照和原子合并算法；将 surfaced ledger 唯一 owner 收敛到 `watch_notification_center`，补齐 inbox/reply 跨通道排队、气泡手势/安全区、低功耗调度、V2 MQTT 迁移边界和五阶段实施门禁。

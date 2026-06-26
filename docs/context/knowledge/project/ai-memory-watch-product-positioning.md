@@ -1,8 +1,8 @@
 ---
 id: ai-memory-watch-product-positioning
 tags: project, product, ai-memory-watch, hermes, voice, watch, positioning
-summary: 固定 ESP32-S3 手表作为 Hermes 随身输入与交互工具时的产品定位、核心闭环、V1 功能边界和端云分工。
-last_reviewed: 2026-06-21
+summary: 固定 ESP32-S3 手表作为 Hermes 随身输入与交互工具时的产品定位、核心闭环、V1/V2 功能边界和端云分工。
+last_reviewed: 2026-06-26
 memory_type: project_knowledge
 scope: repo
 owners: docs/context/knowledge/project/ai-memory-watch-product-positioning.md
@@ -57,7 +57,13 @@ V1 只围绕这个习惯闭环：
 
 ## Hermes 收件箱与系统级通知定位
 
-2026-06-25 路线更新：旧的“收件箱只在 Hermes 页面内、不做全局通知、不主动打断”的 V2.0 口径已被新计划取代。当前以 `docs/context/plans/active/2026-06-25-hermes-inbox-global-notification-plan.md` 为准。
+2026-06-26 归档更新：旧的“收件箱只在 Hermes 页面内、不做全局通知、不主动打断”的 V2.0 口径已被新计划取代。当前以 `docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md` 为准。
+
+V2 当前完成定义：
+
+```text
+V2 = Hermes 主动提示回到手表：server inbox + ESP32 收件箱 + 全局气泡通知。
+```
 
 新定位：
 

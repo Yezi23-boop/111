@@ -1,12 +1,12 @@
 ---
 id: context-current-task
-tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive
-summary: 记录 AI Memory Watch / Hermes V1 已完成归档后的当前状态、剩余 hardening 风险和 V2 下一步。
-last_reviewed: 2026-06-20
+tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox
+summary: 记录 AI Memory Watch / Hermes V1 与 V2 已完成归档后的当前状态、剩余观察项和下一步 V2.1/V3 方向。
+last_reviewed: 2026-06-26
 memory_type: task
 scope: task
 owners: docs/context/handoffs
-triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive
+triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive, v2-archive, inbox
 evidence_level: observed
 ---
 
@@ -14,16 +14,20 @@ evidence_level: observed
 
 ## 目标
 
-- 当前目标已从“打通 V1 主链路”切换为“V1 收尾归档 + hardening + V2 通知箱设计”。
+- 当前目标已从“打通 V1 主链路”推进到“V1 已归档 + V2 已归档 + 后续 V2.1/V3 体验和自动化”。
 - V1 主链路已完成：`ESP32-S3 真机麦克风 -> Ogg Opus -> watch endpoint -> MiMo ASR -> Hermes -> 手表 V1 固定 7 字段 JSON`。
+- V2 主链路已完成：`Hermes/脚本模拟主动提示 -> watch endpoint inbox -> SQLite -> 公网 GET 读回 -> ESP32 收件箱/全局气泡能力`。
 - 不要再相信旧 handoff 里“真机按住说话未验证”“板端缺 endpoint 配置导致无法验证”的状态；这些已经被 2026-06-17 之后的证据反转。
+- 不要再相信旧状态里“V2 通知箱尚未实现代码”或“需要新建 V2 计划”的表述；`2026-06-25-hermes-inbox-global-notification-plan.md` 已在 `completed/` 归档。
 
 ## 当前状态
 
 - 当前分支：`codex/ai-memory-watch-hermes-api`。
 - 主计划 `2026-06-05-ai-memory-watch-hermes-page-plan.md` 已从 `plans/active/` 移到 `docs/context/plans/completed/`，状态为 `archived`。
 - SoftAP/NVS 配置计划 `2026-06-17-ai-memory-watch-softap-nvs-config-plan.md` 已在 `docs/context/plans/completed/` 归档。
+- V2 收件箱与全局气泡计划 `2026-06-25-hermes-inbox-global-notification-plan.md` 已在 `docs/context/plans/completed/` 归档，状态为 `archived`。
 - Hermes API Server、watch voice endpoint、Cloudflare Tunnel、公网 `watch.934000.xyz/v1/watch/*`、文本命令和真实麦克风语音链路均已有成功证据。
+- 新版 watch endpoint 在本机 `127.0.0.1:8787` 暴露 `/v1/watch/inbox` 和 `/v1/watch/inbox/{notification_id}/read`；旧 LAN 调试容器 `8788` 曾无 inbox，后续调试优先走公网或新版 `8787`。
 - 开发阶段允许本机 `sdkconfig` 或 NVS 持有 watch device token 进行联调；提交前必须确认 `sdkconfig`、文档、日志和 diff 不包含真实 token。
 
 ## Progress
@@ -37,10 +41,12 @@ evidence_level: observed
 - `system_time_sync` 临时网络同步 HTTP 任务栈外移至 PSRAM：解决设备开机连网时 SRAM 连续碎片不足报 `create network time sync task failed`（返回 `pdFAIL`）的崩溃。
 - `memory_watch_controller` 渲染快照引入 `inbox_generation` 数据版本跟踪：解决后台短消息轮询到达时页面静默死锁不刷新的 Bug。
 - `memory_watch_service` 收件箱大段 PSRAM 内存拷贝脱离 `portENTER_CRITICAL` 自旋锁：引入互斥锁 `s_inbox_store_mutex` 替换硬件自旋锁 `s_worker_lock`，消除 PSRAM 慢速访问引发的 CPU 双核中断屏蔽与 Cache 异常。
+- V2 公网脚本验收已通过：脚本模拟 Hermes 写入一条 inbox 消息，公网 GET 成功读回创建项，摘要为 `201 Created`、`found_created_item=true`、`unread_count=2`；未记录真实 token/key。
 
 ## Decision Log
 
 - V1 到此停止加功能；后台通知、TTS、历史列表、长任务主动反馈都放到 V2。
+- V2 当前定义固定为：`Hermes 主动提示回到手表：server inbox + ESP32 收件箱 + 全局气泡通知`，并已归档完成。
 - ESP32-S3 只调用 watch endpoint，不直接调用 Hermes Dashboard、Hermes API Server 或 MiMo API。
 - Hermes/MiMo/API key 只保留在服务器或仓库外 env；ESP32 固件最多保存 watch endpoint 的 `device_id/device_token/base_url`。
 - 公网第一版只允许代理 `/v1/watch/*`；Hermes `8642` 和 Dashboard `9119` 保持私有。
@@ -58,19 +64,20 @@ evidence_level: observed
 - 工作区有大量已有未提交改动，且 `sdkconfig` 现在可能含开发期 watch device token；不要误提交。
 - `docs/context/handoffs/current-task.md` 是当前接力页，不是历史总账；历史细节看 changelog 和 completed plan。
 - V1 hardening 仍可补异常路径验证：短音频、长音频、取消等待、token 错误、Hermes 离线、HTTPS 超时、late result 忽略。
-- app 分区余量曾接近 4%，后续新增 V2 功能前要继续关注二进制体积。
+- app 分区余量曾接近 4%，后续新增 V2.1/V3 功能前要继续关注二进制体积。
 
 ## 下一步
 
-- 跑 V1 归档后的 context 校验：`uv run python scripts/context/validate_context.py --level standard --q "AI Memory Watch Hermes V1 archived" --brief`。
+- 跑 V2 归档后的 context 校验：`uv run python scripts/context/validate_context.py --level standard --q "AI Memory Watch Hermes V2 inbox archived" --brief`。
 - 提交前检查密钥卫生：`sdkconfig`、`memory_watch_dev_endpoint_local.h`、日志和文档都不能带真实 token/key。
-- 如果做最终 V1 smoke：先 `idf.py fullclean && idf.py build`，再 `idf.py -p COM3 app-flash`，验证 health online 和一次真机按住说话成功。
-- 新建 V2 计划时，从“服务器通知箱 + 手表低功耗短轮询 + 完成反馈 UI”开始，不要重开 V1 主计划。
+- 如果做最终 V2 体验 smoke：等待 ESP32 下一轮轮询或打开收件箱，观察未读数、全局气泡、详情页和已读回写。
+- V2.1/V3 从“真实 Hermes 业务事件自动生成 notification_id 并写入 inbox、下发 agent、多入口/多设备和 MQTT 低功耗同步”开始，不要重开 V1/V2 主计划。
 
 ## 证据入口
 
 - V1 主计划归档：`docs/context/plans/completed/2026-06-05-ai-memory-watch-hermes-page-plan.md`
 - SoftAP/NVS 计划归档：`docs/context/plans/completed/2026-06-17-ai-memory-watch-softap-nvs-config-plan.md`
+- V2 收件箱与全局气泡计划归档：`docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md`
 - 服务器目录：`server/watch_voice_endpoint/`
 - 机器可读契约：`server/watch_voice_endpoint/watch_contract.v1.json`
 - 产品定位：`docs/context/knowledge/project/ai-memory-watch-product-positioning.md`

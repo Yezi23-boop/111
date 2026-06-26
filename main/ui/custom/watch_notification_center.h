@@ -12,7 +12,7 @@
  * 约束：
  * - 所有公开 API 只能在 LVGL task 调用。
  * - controller 不执行 HTTP、不持有 service 可写指针。
- * - 气泡遵守 CO5300 安全区：x=40，w=330，y>=24，h<=96，圆角 8px。
+ * - 气泡遵守 CO5300 安全区：x=40，w=330，y=20，h=64，圆角 32px（灵动岛胶囊）。
  */
 
 #include <stdbool.h>

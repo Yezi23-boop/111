@@ -1,20 +1,35 @@
 ---
 id: 2026-06-25-hermes-inbox-global-notification-plan
-tags: plan, active, ai-memory-watch, hermes, inbox, notification, global-bubble, polling
-summary: Hermes 收件箱与系统级气泡通知计划：V1 用 HTTP 轮询打通业务和 UI，后续升级为 MQTT 推送；收件箱只放 Hermes 主动下发提示，不混入普通对话回复。
+tags: plan, completed, ai-memory-watch, hermes, inbox, notification, global-bubble, polling
+summary: Hermes 收件箱与系统级气泡通知计划已完成归档：用 HTTP 轮询打通 server inbox、ESP32 收件箱和全局气泡通知，公网脚本模拟 Hermes 写入并读回成功。
 created: 2026-06-25
-last_updated: 2026-06-25
-last_reviewed: 2026-06-25
+last_updated: 2026-06-26
+last_reviewed: 2026-06-26
 status: archived
 memory_type: project_plan
 scope: repo
 owners: docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md, main/services/memory_watch_service.c, main/services/memory_watch_voice_client.c, main/ui/custom/memory_watch_controller.c, main/ui/custom/memory_watch_view.c, server/watch_voice_endpoint/app.py
 triggers: Hermes 收件箱, inbox, notification, 全局气泡, 后台回复, memory_watch_service, MQTT, HTTP polling
-evidence_level: design
+evidence_level: observed
 route_area: "AI Memory Watch / Hermes inbox and notification"
 ---
 
 # Hermes 收件箱与全局通知计划
+
+## 归档结论
+
+2026-06-26 归档：本计划按当前 V2 定义视为完成。
+
+```text
+V2 = Hermes 主动提示回到手表：server inbox + ESP32 收件箱 + 全局气泡通知
+```
+
+归档证据：
+
+- server 侧新版 `watch endpoint` 在本机 `127.0.0.1:8787` 暴露 `/v1/watch/inbox` 与 `/v1/watch/inbox/{notification_id}/read`。
+- 公网 `https://watch.934000.xyz/v1/watch/inbox?device_id=watch-001` 未带鉴权返回 `401`，说明 Cloudflare 已打到新版 inbox 路由，而不是旧版 `404`。
+- 脚本模拟 Hermes 写入一条 inbox 消息后，公网 GET 成功读回该 `notification_id`；返回摘要为 `201 Created`、`list_items=2`、`unread_count=2`、`found_created_item=true`。
+- 本轮归档不记录任何真实 token/key；只记录非敏感状态码、计数和测试消息 ID。
 
 ## 目标与全局
 
@@ -553,10 +568,11 @@ V2 迁移时：
 - `[x]` 已细化 FreeRTOS owner/worker 通信、轮询优先级、PSRAM 缓存、原子快照合并和低成本 getter。
 - `[x]` 已明确 surfaced ledger 归 notification center 独占，并细化单气泡合并、跨通道排队、手势、安全区与 blocker 策略。
 - `[x]` 已拆分 server、firmware service、inbox UI、notification center 和真机验收五个实施阶段。
-- `[x]` 待实现 server inbox API。**（阶段 1 完成：2026-06-25）inbox_repo.py + 三条 FastAPI 路由 + watch_contract.v1.json inbox 节 + tests/test_inbox.py 30 条全通过。**
-- `[x]` 待实现固件 inbox client/service/store。
-- `[x]` 待实现全局 notification controller。
-- `[x]` 待把 mock inbox UI 切到真实 service snapshot。
+- `[x]` server inbox API 已实现。**（阶段 1 完成：2026-06-25）inbox_repo.py + 三条 FastAPI 路由 + watch_contract.v1.json inbox 节 + tests/test_inbox.py 30 条全通过。**
+- `[x]` 固件 inbox client/service/store 已实现。
+- `[x]` 全局 notification controller 已实现。
+- `[x]` mock inbox UI 已切到真实 service snapshot。
+- `[x]` V2 公网脚本验收通过。**（归档验收：2026-06-26）脚本模拟 Hermes 写入 inbox，公网 GET 读回创建项，`201 Created`、`found_created_item=true`。**
 
 ## 决策记录
 
@@ -639,7 +655,11 @@ main/ui/agent_preview/scripts/capture_apple_watch_s5_preview.ps1
 
 当前实际结果：
 
-- 产品、API、owner、FreeRTOS 执行模型、快照合并、全局气泡和分阶段门禁已细化；尚未实现代码。
+- V2 按“`Hermes 主动提示回到手表：server inbox + ESP32 收件箱 + 全局气泡通知`”定义已完成。
+- server 侧 inbox create/list/read、SQLite 持久化、幂等去重和最近 20 条保留策略已实现。
+- 固件侧 inbox worker/store/snapshot、收件箱列表/详情和 notification controller 已实现，并修复过 PSRAM 大对象拷贝与 generation 刷新问题。
+- 公网脚本验收已通过：脚本模拟 Hermes 写入一条 inbox，`watch.934000.xyz` 读回该项，未记录或泄露真实 token/key。
+- 后续实机观察仍可补充“手表实际看到气泡并点开详情”的体验证据，但这不再阻塞 V2 归档。
 
 ## 幂等与恢复
 
@@ -649,5 +669,6 @@ main/ui/agent_preview/scripts/capture_apple_watch_s5_preview.ps1
 
 ## 下一步
 
-- 下一步最小动作：执行“阶段 1”，先扩展 `watch_contract.v1.json` 和 server pytest，再实现 SQLite repository 与 create/list/read route。
-- 阶段 1 门禁通过前不开始固件 worker/UI，避免两端边写边猜协议。
+- 后续进入 V2.1/V3：让 Hermes 真实业务事件自动生成稳定 `notification_id` 并写入 inbox，而不是只用脚本模拟。
+- 继续补真机体验证据：等待 ESP32 下一轮轮询后观察未读数、全局气泡、详情页和已读回写。
+- 如果要优化延迟和功耗，再评估 MQTT 作为同步唤醒；HTTP 完整快照继续保留为首次上线、断网恢复和漏消息补偿路径。
