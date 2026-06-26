@@ -1,437 +1,394 @@
 ---
 id: hermes-multi-agent-architecture
-tags: project, architecture, hermes, multi-agent, ai-memory-watch, watch-notify, v2.1, draft
-summary: AI Memory Watch / Hermes V2.1 框架需求草案：先做单用户、单手表、单入口的 Hermes Brain + watch_notify 工具；后续 V3 也继续保持单入口/单手表，不做多入口和多设备，只演进下发 agent、任务执行、conversation store 与 MQTT。
-last_reviewed: 2026-06-26
+tags: project, architecture, hermes, ai-memory-watch, conversation, async-reply, v2.1, draft
+summary: AI Memory Watch / Hermes V2.1 框架需求草案：主线改为手表发起复杂 Hermes 任务后的异步对话回传，server conversation 为真相源，ESP32 只缓存最近 5 轮用于显示；多入口、多设备不在 V2.1/V3 范围。
+last_reviewed: 2026-06-27
 memory_type: project_knowledge
 scope: repo
 owners: docs/context/knowledge/project/hermes-multi-agent-architecture.md
-triggers: Hermes multi-agent, Hermes 多 Agent, watch_notify, 下发 agent, 通讯 agent, AI Memory Watch V2.1, AI Memory Watch V3
+triggers: Hermes async reply, Hermes conversation, watch conversation, AI Memory Watch V2.1, conversation endpoint, async Hermes task
 evidence_level: design
 status: draft
-route_area: "Hermes watch_notify and multi-agent architecture"
+route_area: "Hermes async conversation reply architecture"
 ---
 
-# Hermes watch_notify 与多 Agent 架构草案
+# Hermes 异步对话回传与单手表架构草案
 
-> 日期：2026-06-26
+> 日期：2026-06-27
 > 状态：V2.1 需求框架草案
 
 ## 0. 当前结论
 
-当前不要直接搭完整多 agent 系统。先做最短、最有价值的闭环：
+V2.1 的真实主线不是先做 `watch_notify` 主动通知工具，而是：
 
 ```text
-V2.1 = 让 Hermes 能主动通知手表。
+手表发起复杂 Hermes 任务后，用户可以退出 Hermes 页面；
+Hermes 完成后，回复回到 Hermes 对话页；
+如果用户不在 Hermes 页面，则用气泡提醒“回复已到达”。
 ```
 
-V2 已完成范围以 `docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md` 为准：
+一句话：
+
+```text
+V2.1 = 手表 Hermes 对话的异步回传机制。
+```
+
+V2 已完成范围仍以 `docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md` 为准：
 
 ```text
 V2 = Hermes 主动提示回到手表：server inbox + ESP32 收件箱 + 全局气泡通知。
 ```
 
-V2.1 的新增目标不是重写 ESP32 固件架构，也不是一次性做微信、多入口、多设备、TTS、完整执行 agent，而是让 Hermes 在合适条件下调用一个稳定工具：
+V2.1 要新增的是 conversation 通道，不是把普通回复塞进 inbox。
+
+## 1. 产品目标
+
+用户在 Hermes 页面按住说话，向 Hermes 提出复杂要求，例如：
 
 ```text
-Hermes Brain -> watch_notify -> watch endpoint inbox -> ESP32 收件箱/气泡
+帮我分析最近的电池日志，找出耗电原因。
 ```
 
-## 1. 阶段边界
+期望体验：
 
-V2.1 固定为单用户、单手表、单入口增强：
+- 用户上传语音后，不必一直停留在 Hermes 页面等待。
+- ASR 文本尽快显示在 Hermes 对话页面，让用户看到“刚才说了什么”。
+- Hermes 可以慢慢执行复杂任务。
+- Hermes 完成后，回复写入 conversation。
+- 如果用户仍在 Hermes 页面，回复直接显示在当前对话流。
+- 如果用户已经退出 Hermes 页面，后台最小服务轮询到新回复后弹气泡。
+- 用户点气泡回到 Hermes 页面，看到连续对话记录。
+- Hermes 页面可以显示多次对话记录，而不是只显示最后一次回复。
 
-```text
-V2.1 不解决“从哪里来”和“发给谁”的复杂路由，
-只解决“Hermes 如何把该通知手表的内容稳定送到 watch-001”。
-```
+## 2. 固定非目标
 
-### V2.1 必须做
+V2.1 不做：
 
-- 增加 Hermes 可调用的 `watch_notify` 能力。
-- `watch_notify` 只写入手表的 proactive inbox。
-- 通知目标先固定为 `watch-001`。
-- Hermes 生成稳定 `notification_id`。
-- Hermes 负责把消息压缩成适合手表看的短文本。
-- watch endpoint 只校验字段、鉴权、去重、持久化，不总结、不截断、不理解语义。
-- 触发规则写进 Hermes instructions / tool-use policy，而不是写成 Python 关键词匹配。
-
-### V2.1 不做
-
+- 不做多设备，目标固定 `watch-001`。
+- 不做多入口，不接网页、终端、微信等入口。
+- V3 默认也不做多入口、多设备；如果未来路线变化，需要另起计划。
 - 不做完整多 agent 编排。
-- 不做微信 agent。
-- 不做网页、终端、微信等多入口接入或入口路由。
-- 不做多设备路由。
 - 不做 TTS 语音下发。
 - 不做手机通知聚合。
-- 不做收件箱内回复、确认、删除、继续任务按钮。
+- 不把普通对话回复写入 inbox。
 - 不让 ESP32 端新增多个 Hermes 后台服务。
-- 不把其他入口的普通聊天回复顺手通知手表。
-- 不把“其他入口明确要求通知手表”作为 V2.1 或 V3 目标；多入口不是当前产品路线。
-- 不把普通 conversation reply 混入 proactive inbox。
+- 不把 conversation 历史长期保存在 ESP32 作为真相源。
 
-### V2.2 / V3 再做
+## 3. 两条消息通道
 
-- conversation store：保证手表对话回复在离页、断网或后台完成后仍可找回。
-- Watch Notifier / Delivery Agent：从工具升级为真正的下发 agent。
-- Task Executor Agent：负责长任务、脚本、API、定时任务。
-- 单手表下的更稳通知策略、后台任务结果回传和低功耗同步。
-- MQTT：作为低功耗同步唤醒；HTTP 完整快照继续用于首次上线、断网恢复和漏消息补偿。
+### 3.1 conversation_reply
 
-## 2. 核心消息通道
+用途：手表用户和 Hermes 的连续对话。
 
-V2.1 必须把两个通道分清楚：
+显示位置：
 
 ```text
-conversation_reply
-proactive_inbox
+Hermes 页面 UI
 ```
 
-### 2.1 conversation_reply
+特点：
 
-含义：用户和 Hermes 的普通对话回复。
+- 保存 user / assistant 消息。
+- 支持多轮历史显示。
+- 后台完成时可以弹“回复已到达”气泡。
+- 不进入收件箱 inbox。
+- 不使用 inbox 的 `kind/title/preview/body` 结构。
 
-规则：
+### 3.2 proactive_inbox
 
-- 哪里发起的对话，普通回复就回到哪里。
-- 手表发起的普通聊天，只返回手表 Hermes 页面。
-- 网页、终端、微信等其他入口发起的普通聊天，只返回原入口。
-- conversation reply 不进入手表 inbox。
-- conversation reply 不触发 `watch_notify`。
+用途：Hermes 主动提醒、主动提示、任务结果通知。
 
-示例：
+显示位置：
 
 ```text
-手表用户：今天要带伞吗？
-Hermes：下午可能下雨，建议带伞。
+收件箱 + 全局气泡
 ```
 
-这条回复应该显示在 Hermes 页面连续对话里，而不是进入收件箱。
+特点：
 
-当前风险：
+- 使用 V2 已完成的 inbox 机制。
+- 只读通知，不参与 Hermes 对话流。
+- 与 conversation 分表、分接口、分 UI 语义。
 
-- 如果手表用户离开 Hermes 页面，而普通回复稍后才到达，当前若没有 conversation store，存在丢失或用户看不到的风险。
-- 这个问题不通过把普通回复塞进 inbox 解决；正确方向是 V2.2 增加 conversation store / conversation reply channel。
+## 4. 推荐主流程
 
-### 2.2 proactive_inbox
-
-含义：Hermes 主动提醒、任务结果通知，以及单手表路线中明确需要回到手表的主动消息。
-
-规则：
-
-- 写入 watch endpoint inbox。
-- 触发 ESP32 收件箱未读数和全局气泡。
-- 不参与 Hermes 对话流。
-- 用户点开详情后标记已读。
-
-示例：
+V2.1 主流程：
 
 ```text
-10 点开会，记得带充电器。
-日志分析完成，主要问题是待机耗电偏高。
+1. 用户在 Hermes 页面按住说话。
+2. ESP32 上传 Ogg Opus 到 watch endpoint。
+3. server 做 ASR，得到用户文本。
+4. server 写入 conversation：user message。
+5. server 返回 accepted + asr_text + request_id。
+6. ESP32 Hermes 页面先显示用户刚才说了什么，并显示处理中。
+7. server 后台把 user text 交给 Hermes 执行。
+8. Hermes 完成后，server 写入 conversation：assistant message。
+9. ESP32 通过 conversation endpoint 轮询到 assistant reply。
+10. 如果 Hermes 页面在前台：直接显示回复。
+11. 如果 Hermes 页面不在前台：弹“回复已到达”气泡。
+12. 用户点气泡回到 Hermes 页面，看到连续对话。
 ```
 
-## 3. 通知触发规则
+## 5. 存储边界
 
-V2.1 的核心原则：
+### 5.1 server 是 conversation 真相源
+
+V2.1 新增 server 侧 conversation store，建议使用 SQLite。
+
+保留策略：
 
 ```text
-不是所有任务完成都通知手表。
+每个 device 保留最近 20 条 conversation messages。
 ```
 
-允许调用 `watch_notify` 的情况：
+注意：20 条是 message 数，不是 20 轮；`user` 和 `assistant` 各算一条，因此大约是最近 10 轮。
 
-1. 请求来源是手表，并且结果属于后台完成、长任务完成、稍后触发或用户离开页面后仍需要回到手表的提醒。
-2. Hermes 内部定时提醒、主动提示或任务创建时明确绑定 `notify_watch=true`，且目标设备固定为 `watch-001`。
+### 5.2 ESP32 只做显示缓存
 
-禁止调用 `watch_notify` 的情况：
+ESP32 本地只缓存最近几轮，用于 Hermes 页面快速显示。
 
-1. 普通聊天回复。
-2. 用户已经在原入口前台看到的同步回复。
-3. 其他入口发起的普通对话回复。
-4. 内部工具日志、每个小步骤的进度、低价值状态。
-5. 网页、终端、微信等其他入口任务；V2.1/V3 都不规划多入口到手表的通知路由。
-
-推荐写入 Hermes instructions 的规则：
+当前口径：
 
 ```text
-仅在需要主动通知手表时调用 watch_notify。
-普通回复必须回到原会话来源；不要把其他入口的普通回复发送到手表。
-手表发起的普通回复回到手表 Hermes 页面；只有手表相关的主动提醒、任务完成通知或明确 notify_watch=true 的 Hermes 内部事件写入 inbox。
-不要规划多入口路由；不要因为网页、终端或微信里的普通请求而通知手表。
+ESP32 缓存最近 5 轮对话。
 ```
 
-## 4. ESP32 端 owner 原则
+推荐 V2.1 先放 PSRAM：
 
-ESP32-S3 RAM 有限，不能因为产品上有两个通道就在固件里拆多个长期服务。
+- 不磨 flash。
+- 不引入 SD card 生命周期。
+- 重启后可从 server conversation 重新拉取。
+
+Flash / NVS / SD card 可作为后续离线历史体验再讨论，不作为 V2.1 必做。
+
+## 6. server 表设计
+
+conversation 和 inbox 分开两张表：
+
+```text
+watch_inbox
+watch_conversation
+```
+
+原因：
+
+- inbox 是主动通知，有 `notification_id/kind/title/preview/body/read`。
+- conversation 是对话历史，有 `message_id/request_id/role/text/status/created_at`。
+- 两者 UI、生命周期和语义不同；共表会让后续逻辑混乱。
+
+## 7. conversation endpoint
+
+V2.1 新增 conversation endpoint，不复用 inbox：
+
+```http
+GET /v1/watch/conversation?device_id=watch-001
+Authorization: Bearer <device_token>
+```
+
+返回最近 20 条 conversation messages。
+
+最小响应：
+
+```json
+{
+  "messages": [
+    {
+      "message_id": "msg_xxx",
+      "request_id": "watch-001-boot-seq",
+      "role": "user",
+      "text": "帮我分析电池日志",
+      "created_at": "2026-06-27T10:30:00+08:00",
+      "status": "done"
+    },
+    {
+      "message_id": "msg_yyy",
+      "request_id": "watch-001-boot-seq",
+      "role": "assistant",
+      "text": "分析完成，主要问题是待机耗电偏高。",
+      "created_at": "2026-06-27T10:31:12+08:00",
+      "status": "done"
+    }
+  ],
+  "unread_reply_count": 1
+}
+```
+
+V2.1 限定：
+
+```text
+role: user | assistant
+status: pending | done | error | timeout | canceled
+```
+
+## 8. voice-command V2.1 响应
+
+V2.1 的 `/v1/watch/voice-command` 不再默认等待 Hermes 最终回复。
+
+它应该先完成：
+
+```text
+上传音频 -> ASR -> 写 user message -> 返回 accepted + asr_text
+```
+
+然后 server 后台继续执行 Hermes。
+
+可以沿用 V1 固定 7 字段响应：
+
+```json
+{
+  "request_id": "...",
+  "status": "accepted",
+  "action": "task_started",
+  "asr_text": "帮我分析电池日志",
+  "reply_text": "",
+  "clarification_id": null,
+  "error_code": null
+}
+```
+
+ESP32 收到后：
+
+- Hermes 页面立刻显示用户文本。
+- 当前 request 标记为处理中。
+- 后续通过 conversation endpoint 获取 assistant reply。
+
+## 9. 前台/后台轮询
+
+选择方案：
+
+```text
+A. 前台 Hermes 页面也通过 conversation endpoint 拿 reply。
+```
+
+理由：
+
+- 前台/后台逻辑统一。
+- 不长期占用 ESP32 HTTP/TLS 连接。
+- 不依赖 120 秒长连接。
+- 后续 MQTT 可以无缝替换“轮询触发”为“事件唤醒”。
+- conversation endpoint 是数据真相源；MQTT 只做通知唤醒。
+
+轮询节奏：
+
+```text
+Hermes 页面前台：2 秒轮询 conversation。
+后台普通运行：60 秒轮询 conversation。
+低功耗/熄屏：暂停或跟随维护窗口；后续 MQTT 接管唤醒。
+```
+
+前台行为：
+
+```text
+如果 Hermes 页面在前台，轮询到 assistant reply 后直接追加到对话 UI。
+```
+
+后台行为：
+
+```text
+如果 Hermes 页面不在前台，轮询到新 assistant reply 后弹“回复已到达”气泡。
+点击气泡跳转到 Hermes 页面。
+```
+
+## 10. MQTT 未来关系
+
+V2.1 先用 HTTP polling 打通。
+
+未来 MQTT 不承载完整消息正文，而是作为唤醒信号：
+
+```text
+server 写 conversation
+server 发 MQTT：有新 reply
+ESP32 收到 MQTT
+ESP32 拉 conversation endpoint
+ESP32 显示/气泡
+```
 
 固定原则：
 
 ```text
-通道分开，服务不分开。
+conversation endpoint 是数据真相源；
+MQTT 只是未来的低功耗唤醒信号。
 ```
 
-ESP32 端只保留一个 Hermes owner：
+## 11. ESP32 owner 边界
+
+ESP32 端仍只保留一个 Hermes owner：
 
 ```text
 memory_watch_service
 ```
 
-它统一负责：
+它负责：
 
-- 按住说话。
 - 上传语音。
-- 接收当前同步回复。
-- 拉取 inbox。
-- 维护 inbox 小缓存、未读数和待同步已读。
-- 向 UI 暴露只读 snapshot。
-- 向 notification controller 提供新消息信号。
+- 接收 `accepted + asr_text`。
+- 维护本地最近 5 轮显示缓存。
+- 前台/后台轮询 conversation。
+- 合并 server conversation snapshot。
+- 向 Hermes 页面发布只读 snapshot。
+- 在后台收到新 assistant reply 时通知气泡控制器。
 
-`watch_notification_center` / controller 只能是薄 UI 浮层：
+`watch_notification_center` 仍是薄 UI 浮层：
 
-- 只负责显示气泡、点击、右滑清除和跳转。
+- 只负责显示气泡、点击、右滑和跳转。
 - 不联网。
-- 不保存 inbox 数据。
+- 不保存 conversation。
 - 不调用 Hermes。
-- 不拥有业务状态。
 
-禁止在 ESP32 端新增：
+禁止新增长期服务：
 
 ```text
 conversation_service
-inbox_service
 reply_service
 task_service
-reminder_service
 ```
 
-这些语义可存在于 Hermes/server 协议层，但固件 owner 不拆。
+## 12. watch_notify 的位置
 
-## 5. watch_notify 工具契约
+`watch_notify` 不再是 V2.1 主线。
 
-### 5.1 工具职责
-
-`watch_notify` 只负责写 proactive inbox：
+它可以作为后续 proactive inbox 能力保留，但不要混淆：
 
 ```text
-watch_notify = 通知手表，不是回复聊天。
+conversation_reply -> Hermes 页面连续对话
+proactive_inbox -> 收件箱通知
 ```
 
-它不负责：
-
-- 写 conversation reply。
-- 修改 Hermes 对话历史。
-- 判断 ESP32 当前页面。
-- 生成长文本总结。
-- 调度提醒。
-- 管理任务状态。
-
-### 5.2 目标设备
-
-V2.1 固定目标设备：
+V2.1 优先级：
 
 ```text
-watch-001
+1. voice-command accepted + asr_text
+2. watch_conversation store
+3. conversation endpoint
+4. ESP32 前台/后台轮询
+5. 后台 reply 气泡
+6. Hermes 页面多轮对话显示
 ```
 
-暂不做多设备路由、用户设备表、默认设备选择、在线状态选择。
+`watch_notify` 可后续再作为主动通知工具，不阻塞 V2.1。
 
-同时暂不做多入口来源识别；工具配置层默认就是给 `watch-001` 写入通知。
+## 13. 待确认问题
 
-### 5.3 调用地址
+以下问题尚未完全敲定：
 
-ESP32 走公网：
+- conversation 已读语义：进入 Hermes 页面是否立即清空 `unread_reply_count`。
+- 是否需要单独 `POST /v1/watch/conversation/read`。
+- server 后台 Hermes 任务最长执行时间、失败重试和超时状态如何落库。
+- ASR 失败时是否也写入 conversation error message。
+- ESP32 最近 5 轮缓存的具体内存分配方式：PSRAM 固定数组、动态分配，或后续 flash/SD。
+- 后台 60 秒轮询与现有 inbox 轮询是否合并调度，避免两个 HTTP worker 竞争。
+
+## 14. 当前定稿口径
 
 ```text
-https://watch.934000.xyz/v1/watch/*
-```
-
-Hermes / watch_notify 走服务器内部地址，不绕 Cloudflare：
-
-```text
-http://host.docker.internal:8787/v1/watch/inbox
-```
-
-未来如果 Hermes 与 watch endpoint 合并进同一进程，可从 HTTP 调用替换为内部函数或 repository 调用，但手表 API 不变。
-
-### 5.4 鉴权
-
-V2.1 继续复用现有 watch device token。
-
-Hermes 调用时携带：
-
-```http
-Authorization: Bearer <watch-001 device token>
-```
-
-本仓库文档、日志、测试输出中不得记录真实 token/key。
-
-V3 可再升级为：
-
-```text
-内部 WATCH_NOTIFY_TOKEN + device_id 权限映射
-```
-
-### 5.5 notification_id
-
-`notification_id` 由 Hermes / 调用方生成。
-
-原因：
-
-```text
-谁知道“这是同一个任务”，谁就生成 ID。
-```
-
-同一个任务、同一次提醒、同一个完成结果必须复用同一个 `notification_id`，以便 watch endpoint 按：
-
-```text
-device_id + notification_id
-```
-
-幂等去重。
-
-如果 Hermes 写错内容且消息尚未成功落库，可缩短内容后复用同一个 `notification_id` 重试。若已成功落库且需要修正内容，必须生成新的 `notification_id`，不得覆盖旧消息。
-
-### 5.6 文本生成责任
-
-Hermes 负责生成适合手表显示的短文本。
-
-watch endpoint 只做：
-
-- 字段必填校验。
-- UTF-8 字节长度校验。
-- `kind` 枚举校验。
-- 鉴权。
-- 幂等去重。
-- SQLite 持久化。
-
-watch endpoint 不做：
-
-- 总结。
-- 截断。
-- 改写。
-- 语义判断。
-
-### 5.7 kind
-
-V2.1 允许 Hermes 指定 `kind`。
-
-允许值：
-
-```text
-info
-reminder
-warning
-```
-
-server 只接受这三个枚举；未知类型返回 `422`。
-
-ESP32 V2.1 先只保存和显示 `kind`，不根据 `kind` 改图标、颜色、震动、优先级或抢占策略。未来可以基于该字段扩展体验。
-
-### 5.8 请求示例
-
-```json
-{
-  "notification_id": "task-log-analysis-20260626-done",
-  "kind": "info",
-  "title": "日志分析完成",
-  "preview": "主要问题是待机耗电偏高",
-  "body": "日志分析完成，主要问题是待机耗电偏高。"
-}
-```
-
-实际 HTTP：
-
-```http
-POST http://host.docker.internal:8787/v1/watch/inbox?device_id=watch-001
-Authorization: Bearer <watch-001 device token>
-Content-Type: application/json
-```
-
-## 6. 推荐演进架构
-
-### V2.1：工具优先
-
-```text
-Hermes Brain
-  -> watch_notify tool
-      -> watch endpoint inbox
-          -> ESP32 memory_watch_service
-              -> 收件箱 + 全局气泡
-```
-
-这一阶段不必真正拆多个 agent。关键是让 Hermes 能按规则主动通知手表。
-
-### V2.2：补 conversation store
-
-```text
-Hermes conversation reply
-  -> conversation store
-      -> ESP32 进入 Hermes 页面时拉取
-      -> 后台回复可弹“回复已到达”
-```
-
-这解决“手表发起的普通回复在离页/断网后可能看不到”的问题，但不污染 inbox。
-
-### V3：单手表多 agent / 低功耗演进
-
-```text
-Hermes Brain
-  -> Task Executor Agent
-  -> Delivery / Watch Notifier Agent
-  -> watch_notify / conversation store / MQTT sync
-```
-
-V3 再处理：
-
-- 单手表下的 Task Executor Agent。
-- 单手表下的 Delivery / Watch Notifier Agent。
-- conversation store 与后台回复找回。
-- 下发 agent 的多格式输出。
-- 可选 TTS。
-- MQTT 低功耗同步。
-- 内部 notify token 与更细权限边界。
-
-## 7. 命名建议
-
-第一阶段不要把所有东西都叫 agent。
-
-推荐命名：
-
-- `Hermes Brain`：主脑，负责语义、记忆、上下文和工具选择。
-- `watch_notify tool`：V2.1 立刻要做的工具。
-- `Task Executor Agent`：V3 后续长任务执行者。
-- `Delivery Agent` / `Watch Notifier Agent`：V3 后续多格式下发者。
-- `Watch Adapter`：只做手表 I/O 格式转换，不推理。
-
-不推荐把 `watch endpoint` 叫手表 agent。它当前更准确的职责是：
-
-```text
-设备桥 / Watch Endpoint / Adapter
-```
-
-它负责 ASR、鉴权、Hermes API 调用、inbox 存储和 JSON 适配，不负责判断任务语义。
-
-## 8. 待确认问题
-
-以下问题不要阻塞 V2.1 `watch_notify`：
-
-- 手表离开 Hermes 页面后的普通 conversation reply 是否必须持久化。
-- conversation store 存在哪里：watch endpoint SQLite、Hermes memory，还是独立会话表。
-- 后台 conversation reply 的气泡文案、点击目标和与 proactive inbox 气泡的排队规则。
-- Hermes 的定时任务能力是否已经有足够证据；若无，先按“计划使用/待验证”记录。
-- 如果未来路线变化重新引入多设备或多入口，需要另起计划，不从当前 V3 默认继承。
-- V3 是否引入独立 `WATCH_NOTIFY_TOKEN`。
-
-## 9. 当前定稿口径
-
-```text
-V2.1 先做 Hermes Brain + watch_notify 工具。
-watch_notify 只写 proactive inbox。
-普通回复按会话来源归还。
-V2.1/V3 都不做多设备、多入口；默认只服务 watch-001。
-手表端通道分开，但只保留 memory_watch_service 一个 Hermes owner。
-notification_id、短文本、kind 由 Hermes 负责。
-watch endpoint 只负责校验、鉴权、去重和持久化。
-单手表多 agent 与低功耗同步放到 V3。
+V2.1 = 手表发起复杂 Hermes 任务后的异步对话回传。
+server watch_conversation 是真相源，每 device 最近 20 条 messages。
+ESP32 只缓存最近 5 轮用于显示，优先 PSRAM。
+voice-command ASR 完成后先返回 accepted + asr_text。
+Hermes 后台执行完成后写 assistant message。
+Hermes 页面前台 2 秒轮询 conversation。
+后台普通运行 60 秒轮询 conversation。
+前台直接显示新 reply，后台弹“回复已到达”气泡。
+MQTT 未来只做唤醒，conversation endpoint 仍是数据真相源。
+V2.1/V3 都不做多设备、多入口，默认只服务 watch-001。
 ```

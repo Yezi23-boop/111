@@ -1,5 +1,7 @@
 # 上下文库变更记录
 
+- 2026-06-27：重写 `hermes-multi-agent-architecture.md` 的 V2.1 口径：V2.1 主线从 `watch_notify` 主动通知工具改为“手表发起复杂 Hermes 任务后的异步对话回传”。固定流程为 voice-command ASR 后先返回 `accepted + asr_text`，server 写入 `watch_conversation` user message 并后台执行 Hermes，完成后写 assistant message；ESP32 前台 2 秒、后台普通运行 60 秒轮询 conversation endpoint，前台直接追加对话，后台弹“回复已到达”气泡。server conversation 为真相源，每 device 最近 20 条 messages；ESP32 只用 PSRAM 缓存最近 5 轮用于显示；MQTT 未来只做唤醒信号，conversation endpoint 仍是数据真相源。V2.1/V3 继续不做多入口、多设备，默认只服务 `watch-001`。
+
 - 2026-06-26：归档 AI Memory Watch / Hermes V2 收件箱与全局气泡通知计划：按当前定义 `V2 = Hermes 主动提示回到手表：server inbox + ESP32 收件箱 + 全局气泡通知` 视为完成；新版 watch endpoint 在 `127.0.0.1:8787` 暴露 `/v1/watch/inbox` 与已读接口，公网未鉴权访问返回 `401` 表明 Cloudflare 已打到新版路由；脚本模拟 Hermes 写入 inbox 后公网 GET 成功读回创建项（`201 Created`、`found_created_item=true`、`unread_count=2`），未写入或泄露真实 token/key。同步修正产品定位中的 completed 计划路径与 current-task 接力页，后续进入 V2.1/V3 的真实 Hermes 业务事件、下发 agent 和 MQTT/低功耗优化。
 
 - 2026-06-25：沉淀闭环 Hermes 收件箱与网络时间同步（SNTP）内存栈及自旋锁并发 Bug 修复经验：1）修复 `system_time_service` 连网校时报 `create network time sync task failed`（pdFAIL）：将 HTTP 同步临时线程栈外移至 `xTaskCreateWithCaps(..., MALLOC_CAP_SPIRAM)`，避免连网期连续 SRAM 枯竭；2）修复 `memory_watch_controller` 页面卡死不刷新：在 LVGL 渲染快照对比中引入 `inbox_generation` 版本号追踪；3）消除收件箱长跨度自旋锁拷贝违规：引入互斥锁 `s_inbox_store_mutex` 替换硬件自旋锁 `s_worker_lock`，避免在自旋锁内执行 PSRAM 大段 `strncpy` 拷贝引发 Cache 禁用异常（`Cache disabled`）与中断屏蔽死锁。同步归档 Attempt Log 至 `runs/2026-06-25-attempt-hermes-inbox-and-sntp-task-stack-fix.md`，更新接力页 `current-task.md`。
