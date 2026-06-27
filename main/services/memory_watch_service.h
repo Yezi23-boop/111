@@ -19,6 +19,7 @@ extern "C"
 #define MEMORY_WATCH_SERVICE_DEVICE_ID_MAX_BYTES 32
 #define MEMORY_WATCH_SERVICE_DEVICE_TOKEN_MAX_BYTES 128
 #define MEMORY_WATCH_SERVICE_HEALTH_TIMEOUT_MS 5000U
+#define MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS 10U
 
     /**
      * @brief AI Memory Watch 服务状态。
@@ -60,7 +61,31 @@ extern "C"
         char clarification_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES]; /**< 当前追问 ID。 */
         char asr_text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];       /**< 最近 ASR 文本。 */
         char reply_text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];     /**< 最近 Hermes 回复。 */
+        uint32_t conversation_generation; /**< 最近 5 轮本地显示缓存的版本号。 */
     } memory_watch_service_snapshot_t;
+
+    /**
+     * @brief Hermes 本地显示缓存消息角色。
+     *
+     * server conversation 仍是真相源；ESP32 只缓存最近 5 轮，用于页面重建和气泡
+     * 点击回到 Hermes 页时快速显示，不作为长期记忆。
+     */
+    typedef enum
+    {
+        MEMORY_WATCH_SERVICE_CONVERSATION_USER = 0,   /**< 用户语音/文本经 ASR 后的内容。 */
+        MEMORY_WATCH_SERVICE_CONVERSATION_HERMES,     /**< Hermes assistant 回复。 */
+        MEMORY_WATCH_SERVICE_CONVERSATION_SYSTEM,     /**< 手表侧状态提示。 */
+    } memory_watch_service_conversation_role_t;
+
+    /**
+     * @brief Hermes 本地显示缓存条目。
+     */
+    typedef struct
+    {
+        memory_watch_service_conversation_role_t role; /**< 消息角色。 */
+        char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES]; /**< 关联请求 ID。 */
+        char text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];     /**< 短文本展示内容。 */
+    } memory_watch_service_conversation_item_t;
 
     /**
      * @brief AI Memory Watch watch endpoint 运行期配置。
@@ -119,6 +144,17 @@ extern "C"
     esp_err_t memory_watch_service_check_health(void);
 
     /**
+     * @brief 告诉 Memory Watch owner Hermes 页面是否处于前台。
+     *
+     * UI 只发布页面生命周期意图；实际 WebSocket 关闭、后台 conversation polling
+     * 由 service/worker 按 owner 规则处理，UI 不直接做网络操作。
+     *
+     * @param[in] foreground true 表示 Hermes 页面前台可见。
+     * @return `ESP_OK` 表示命令已投递或状态已记录。
+     */
+    esp_err_t memory_watch_service_set_foreground(bool foreground);
+
+    /**
      * @brief 用户按住语音按钮，开始一次录音意图。
      * @return `ESP_OK` 表示命令已投递到 owner task。
      */
@@ -166,6 +202,21 @@ extern "C"
      */
     esp_err_t memory_watch_service_get_snapshot(
         memory_watch_service_snapshot_t *out_snapshot);
+
+    /**
+     * @brief 复制 Hermes 最近 5 轮本地显示缓存。
+     *
+     * 该接口只复制 service 内存缓存，不访问网络、不读取 flash/SD，也不推进状态机。
+     *
+     * @param[out] out_items 输出数组；capacity 为 0 时可以为 NULL。
+     * @param[in] capacity 输出数组容量。
+     * @param[out] out_count 实际复制数量，不能为空。
+     * @return `ESP_OK` 表示成功复制。
+     */
+    esp_err_t memory_watch_service_copy_conversation_items(
+        memory_watch_service_conversation_item_t *out_items,
+        size_t capacity,
+        size_t *out_count);
 
     /**
      * @brief 查询当前 watch endpoint 是否已配置。

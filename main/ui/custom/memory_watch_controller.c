@@ -12,7 +12,6 @@
 #include "ui_chinese_fonts.h"
 
 static const char *TAG = "memory_watch_ui";
-#define MEMORY_WATCH_CONVERSATION_MAX_ITEMS 12U
 
 typedef struct
 {
@@ -35,13 +34,6 @@ typedef struct
     char voice_button_text[24];
 } memory_watch_render_cache_t;
 
-typedef struct
-{
-    memory_watch_view_conversation_role_t role;
-    char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
-    char text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];
-} memory_watch_conversation_entry_t;
-
 static lv_ui *s_ui = NULL;
 static memory_watch_view_t *s_view = NULL;
 static lv_timer_t *s_destroy_timer = NULL;
@@ -50,14 +42,12 @@ static memory_watch_render_cache_t s_render_cache = {0};
 static memory_watch_view_page_t s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
 static size_t s_selected_inbox_index = 0;
 static lv_obj_t *s_back_screen = NULL;
-static memory_watch_conversation_entry_t
-    s_conversation_entries[MEMORY_WATCH_CONVERSATION_MAX_ITEMS];
+static memory_watch_service_conversation_item_t
+    s_conversation_items[MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS];
 static memory_watch_view_conversation_item_t
-    s_conversation_view_items[MEMORY_WATCH_CONVERSATION_MAX_ITEMS];
+    s_conversation_view_items[MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS];
 static size_t s_conversation_item_count = 0;
 static uint32_t s_conversation_revision = 0;
-static char s_last_user_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
-static char s_last_reply_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
 
 /* ── 真实 inbox snapshot 缓冲区（controller 私有，LVGL task 写读）── */
 #define MEMORY_WATCH_INBOX_CTRL_MAX 20U
@@ -235,42 +225,29 @@ static void memory_watch_copy_text(char *dst, size_t dst_size,
     snprintf(dst, dst_size, "%s", src != NULL ? src : "");
 }
 
-static void memory_watch_conversation_append(
-    memory_watch_view_conversation_role_t role,
-    const char *request_id,
-    const char *text)
-{
-    if (text == NULL || text[0] == '\0')
-    {
-        return;
-    }
-
-    if (s_conversation_item_count >= MEMORY_WATCH_CONVERSATION_MAX_ITEMS)
-    {
-        memmove(&s_conversation_entries[0], &s_conversation_entries[1],
-                (MEMORY_WATCH_CONVERSATION_MAX_ITEMS - 1U) *
-                    sizeof(s_conversation_entries[0]));
-        s_conversation_item_count = MEMORY_WATCH_CONVERSATION_MAX_ITEMS - 1U;
-    }
-
-    memory_watch_conversation_entry_t *entry =
-        &s_conversation_entries[s_conversation_item_count++];
-    entry->role = role;
-    memory_watch_copy_text(entry->request_id, sizeof(entry->request_id),
-                           request_id);
-    memory_watch_copy_text(entry->text, sizeof(entry->text), text);
-    ++s_conversation_revision;
-}
-
 static const memory_watch_view_conversation_item_t *
 memory_watch_conversation_view_items(void)
 {
     for (size_t i = 0; i < s_conversation_item_count; ++i)
     {
-        s_conversation_view_items[i].role = s_conversation_entries[i].role;
+        switch (s_conversation_items[i].role)
+        {
+        case MEMORY_WATCH_SERVICE_CONVERSATION_USER:
+            s_conversation_view_items[i].role =
+                MEMORY_WATCH_VIEW_CONVERSATION_USER;
+            break;
+        case MEMORY_WATCH_SERVICE_CONVERSATION_HERMES:
+            s_conversation_view_items[i].role =
+                MEMORY_WATCH_VIEW_CONVERSATION_HERMES;
+            break;
+        default:
+            s_conversation_view_items[i].role =
+                MEMORY_WATCH_VIEW_CONVERSATION_SYSTEM;
+            break;
+        }
         s_conversation_view_items[i].request_id =
-            s_conversation_entries[i].request_id;
-        s_conversation_view_items[i].text = s_conversation_entries[i].text;
+            s_conversation_items[i].request_id;
+        s_conversation_view_items[i].text = s_conversation_items[i].text;
     }
     return s_conversation_view_items;
 }
@@ -278,31 +255,19 @@ memory_watch_conversation_view_items(void)
 static void memory_watch_controller_sync_conversation(
     const memory_watch_service_snapshot_t *snapshot)
 {
-    if (snapshot == NULL || snapshot->request_id[0] == '\0')
+    if (snapshot == NULL ||
+        snapshot->conversation_generation == s_conversation_revision)
     {
         return;
     }
 
-    if (snapshot->asr_text[0] != '\0' &&
-        strcmp(s_last_user_request_id, snapshot->request_id) != 0)
+    size_t count = 0;
+    if (memory_watch_service_copy_conversation_items(
+            s_conversation_items, MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS,
+            &count) == ESP_OK)
     {
-        memory_watch_conversation_append(
-            MEMORY_WATCH_VIEW_CONVERSATION_USER, snapshot->request_id,
-            snapshot->asr_text);
-        memory_watch_copy_text(s_last_user_request_id,
-                               sizeof(s_last_user_request_id),
-                               snapshot->request_id);
-    }
-
-    if (snapshot->reply_text[0] != '\0' &&
-        strcmp(s_last_reply_request_id, snapshot->request_id) != 0)
-    {
-        memory_watch_conversation_append(
-            MEMORY_WATCH_VIEW_CONVERSATION_HERMES, snapshot->request_id,
-            snapshot->reply_text);
-        memory_watch_copy_text(s_last_reply_request_id,
-                               sizeof(s_last_reply_request_id),
-                               snapshot->request_id);
+        s_conversation_item_count = count;
+        s_conversation_revision = snapshot->conversation_generation;
     }
 }
 
@@ -605,18 +570,17 @@ static void memory_watch_controller_back(void *user_data)
         {
             (void)memory_watch_service_cancel_recording();
         }
-        else if (snapshot.state == MEMORY_WATCH_SERVICE_STATE_UPLOADING ||
-                 snapshot.state == MEMORY_WATCH_SERVICE_STATE_THINKING)
-        {
-            (void)memory_watch_service_cancel_waiting();
-        }
         else if (snapshot.state ==
                  MEMORY_WATCH_SERVICE_STATE_NEEDS_CLARIFICATION)
         {
             (void)memory_watch_service_cancel_clarification();
         }
+        /* V2.1 语义：离开 Hermes 页面不等于取消已上传的 Hermes 任务。
+         * V2.2 起离页会让 service 关闭前台 WS，并用后台 conversation polling
+         * 继续等待结果；只有页面内“取消”等待按钮才显式取消。 */
     }
 
+    (void)memory_watch_service_set_foreground(false);
     s_render_cache.valid = false;
     lv_obj_t *target_scr = s_back_screen != NULL ? s_back_screen : s_ui->screen_main;
     lv_screen_load_anim(target_scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0, false);
@@ -843,6 +807,7 @@ void memory_watch_controller_open(void)
     }
 
     s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
+    (void)memory_watch_service_set_foreground(true);
     (void)memory_watch_service_check_health();
     s_render_cache.valid = false;
     memory_watch_controller_refresh();
@@ -854,6 +819,12 @@ void memory_watch_controller_poll_ui(void)
 {
     /* 1. 设置 inbox list 活跃状态（避免前台列表弹气泡） */
     const bool is_fg = memory_watch_controller_is_foreground();
+    static bool s_last_foreground = false;
+    if (is_fg != s_last_foreground)
+    {
+        (void)memory_watch_service_set_foreground(is_fg);
+        s_last_foreground = is_fg;
+    }
     watch_nc_set_inbox_list_active(is_fg && (s_render_page == MEMORY_WATCH_VIEW_PAGE_INBOX));
 
     /* 2. 无论是否在前台，都获取 snapshot 以进行状态变化检测（后台回复气泡） */
@@ -867,7 +838,9 @@ void memory_watch_controller_poll_ui(void)
             if ((s_last_service_state == MEMORY_WATCH_SERVICE_STATE_UPLOADING ||
                  s_last_service_state == MEMORY_WATCH_SERVICE_STATE_THINKING) &&
                 (snapshot.state == MEMORY_WATCH_SERVICE_STATE_DONE ||
-                 snapshot.state == MEMORY_WATCH_SERVICE_STATE_NEEDS_CLARIFICATION))
+                 snapshot.state == MEMORY_WATCH_SERVICE_STATE_ERROR ||
+                 snapshot.state == MEMORY_WATCH_SERVICE_STATE_TIMEOUT ||
+                 snapshot.state == MEMORY_WATCH_SERVICE_STATE_CANCELED))
             {
                 /* 触发后台回复全局气泡 */
                 watch_nc_notify_hermes_reply(NULL);
@@ -904,6 +877,7 @@ void memory_watch_controller_open_via_notification(watch_nc_nav_target_t target,
     if (target == WATCH_NC_NAV_HERMES_VOICE)
     {
         s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
+        (void)memory_watch_service_set_foreground(true);
     }
     else if (target == WATCH_NC_NAV_INBOX_LIST)
     {

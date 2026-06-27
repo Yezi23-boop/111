@@ -1696,6 +1696,8 @@ esp_err_t memory_watch_voice_client_post_text_command(
 static const char kInboxListPathPrefix[] = "/v1/watch/inbox?device_id=";
 static const char kInboxMarkReadPrefix[] = "/v1/watch/inbox/";
 static const char kInboxMarkReadSuffix[] = "/read";
+static const char kConversationPathPrefix[] =
+    "/v1/watch/conversation?device_id=";
 
 /**
  * @brief 构建 GET inbox 路径 /v1/watch/inbox?device_id=<url_encoded_device_id>
@@ -1732,6 +1734,44 @@ static esp_err_t memory_watch_voice_client_build_mark_read_path(
     size_t offset = (size_t)prefix_written;
     return memory_watch_voice_client_append_url_encoded(
         out_path, out_path_len, &offset, device_id);
+}
+
+/**
+ * @brief 构建 GET conversation 路径
+ * /v1/watch/conversation?device_id=...&after=...
+ */
+static esp_err_t memory_watch_voice_client_build_conversation_path(
+    const char *device_id,
+    const char *after_message_id,
+    char *out_path,
+    size_t out_path_len)
+{
+    const size_t prefix_len = strlen(kConversationPathPrefix);
+    if (prefix_len >= out_path_len)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(out_path, kConversationPathPrefix, prefix_len);
+    size_t offset = prefix_len;
+    esp_err_t err = memory_watch_voice_client_append_url_encoded(
+        out_path, out_path_len, &offset, device_id);
+    if (err != ESP_OK || after_message_id == NULL ||
+        after_message_id[0] == '\0')
+    {
+        return err;
+    }
+
+    static const char kAfterParam[] = "&after=";
+    const size_t after_len = strlen(kAfterParam);
+    if (offset + after_len >= out_path_len)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(out_path + offset, kAfterParam, after_len);
+    offset += after_len;
+    out_path[offset] = '\0';
+    return memory_watch_voice_client_append_url_encoded(
+        out_path, out_path_len, &offset, after_message_id);
 }
 
 /**
@@ -1871,6 +1911,118 @@ static esp_err_t memory_watch_voice_client_parse_inbox_poll(
     {
         *out_item_count = item_count;
         *out_unread_count = (uint8_t)unread_item->valueint;
+    }
+
+    cJSON_Delete(root);
+    return err;
+}
+
+static esp_err_t memory_watch_voice_client_parse_conversation_message(
+    const cJSON *obj,
+    memory_watch_conversation_message_t *out_message)
+{
+    if (!cJSON_IsObject(obj) || out_message == NULL)
+    {
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = memory_watch_voice_client_copy_json_string(
+        obj, "message_id", out_message->message_id,
+        sizeof(out_message->message_id), false);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "request_id", out_message->request_id,
+            sizeof(out_message->request_id), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "role", out_message->role, sizeof(out_message->role), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "text", out_message->text, sizeof(out_message->text), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "created_at", out_message->created_at,
+            sizeof(out_message->created_at), false);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "status", out_message->status,
+            sizeof(out_message->status), false);
+    }
+    return err;
+}
+
+static esp_err_t memory_watch_voice_client_parse_conversation_poll(
+    const char *json_text,
+    size_t json_len,
+    memory_watch_conversation_message_t *messages,
+    size_t capacity,
+    size_t *out_message_count,
+    bool *out_has_more)
+{
+    cJSON *root = cJSON_ParseWithLength(json_text, json_len);
+    if (root == NULL)
+    {
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = ESP_OK;
+    const cJSON *messages_arr = NULL;
+    if (!cJSON_IsObject(root))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK)
+    {
+        messages_arr = cJSON_GetObjectItemCaseSensitive(root, "messages");
+        if (!cJSON_IsArray(messages_arr))
+        {
+            err = ESP_FAIL;
+        }
+    }
+
+    size_t message_count = 0;
+    if (err == ESP_OK)
+    {
+        message_count = (size_t)cJSON_GetArraySize(messages_arr);
+        if (message_count > capacity)
+        {
+            err = ESP_FAIL;
+        }
+    }
+
+    if (err == ESP_OK)
+    {
+        size_t idx = 0;
+        const cJSON *obj = NULL;
+        cJSON_ArrayForEach(obj, messages_arr)
+        {
+            memset(&messages[idx], 0, sizeof(messages[idx]));
+            err = memory_watch_voice_client_parse_conversation_message(
+                obj, &messages[idx]);
+            if (err != ESP_OK)
+            {
+                break;
+            }
+            ++idx;
+        }
+    }
+
+    if (err == ESP_OK)
+    {
+        const cJSON *has_more_item =
+            cJSON_GetObjectItemCaseSensitive(root, "has_more");
+        *out_has_more =
+            cJSON_IsBool(has_more_item) ? cJSON_IsTrue(has_more_item) : false;
+        *out_message_count = message_count;
     }
 
     cJSON_Delete(root);
@@ -2019,6 +2171,72 @@ esp_err_t memory_watch_voice_client_inbox_mark_read(
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "inbox mark_read failed: status=%d err=%s",
+                 out_result->http_status, esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t memory_watch_voice_client_conversation_poll(
+    const memory_watch_voice_client_config_t *config,
+    const char *after_message_id,
+    memory_watch_conversation_message_t *messages,
+    size_t capacity,
+    memory_watch_conversation_poll_result_t *out_result)
+{
+    if (out_result == NULL || messages == NULL || capacity == 0U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out_result, 0, sizeof(*out_result));
+
+    esp_err_t err = memory_watch_voice_client_validate_config(config);
+    if (err != ESP_OK)
+    {
+        out_result->transport_error = err;
+        return err;
+    }
+
+    char *response = (char *)memory_watch_voice_client_alloc(
+        MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES + 1U);
+    if (response == NULL)
+    {
+        out_result->transport_error = ESP_ERR_NO_MEM;
+        return ESP_ERR_NO_MEM;
+    }
+
+    char path[360];
+    err = memory_watch_voice_client_build_conversation_path(
+        config->device_id, after_message_id, path, sizeof(path));
+    if (err != ESP_OK)
+    {
+        memory_watch_voice_client_free(response);
+        out_result->transport_error = err;
+        return err;
+    }
+
+    size_t response_len = 0;
+    err = memory_watch_voice_client_perform_http_json(
+        config, path, HTTP_METHOD_GET, NULL, 0U, NULL, NULL,
+        &out_result->http_status, response,
+        MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES + 1U, &response_len);
+
+    if (err == ESP_OK &&
+        (out_result->http_status < 200 || out_result->http_status >= 300))
+    {
+        err = ESP_FAIL;
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_parse_conversation_poll(
+            response, response_len, messages, capacity,
+            &out_result->message_count, &out_result->has_more);
+    }
+
+    memory_watch_voice_client_free(response);
+    out_result->transport_error = err;
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "conversation poll failed: status=%d err=%s",
                  out_result->http_status, esp_err_to_name(err));
     }
     return err;

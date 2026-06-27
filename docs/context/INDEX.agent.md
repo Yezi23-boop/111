@@ -133,6 +133,7 @@ Recommended reasons when recording:
 | Area | Owners | Start with |
 | --- | --- | --- |
 | AI Memory Watch / Hermes | `docs/context/plans/completed/2026-06-05-ai-memory-watch-hermes-page-plan.md`, `docs/context/knowledge/project/ai-memory-watch-product-positioning.md` | `docs/context/plans/completed/2026-06-05-ai-memory-watch-hermes-page-plan.md` |
+| AI Memory Watch / Hermes inbox and notification | `docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md`, `main/services/memory_watch_service.c`, `main/services/memory_watch_voice_client.c`, `main/ui/custom/memory_watch_controller.c`, `main/ui/custom/memory_watch_view.c`, `server/watch_voice_endpoint/app.py` | `docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md` |
 | AI Memory Watch positioning | `docs/context/knowledge/project/ai-memory-watch-product-positioning.md` | `docs/context/knowledge/project/ai-memory-watch-product-positioning.md` |
 | Audio sessions | `components/audio_codec/audio_codec.c`, `components/audio_codec/include/audio_codec.h`, `components/espdl_inference/espdl_audio_runtime.cpp`, `components/traffic_inference/traffic_inference_realtime.cc`, `tests/test_audio_codec_port_source.py` | `docs/context/runs/2026-05-04-attempt-audio-codec-owner-session.md` |
 | BLE miniapp provisioning evidence | `C:/Users/ye/Desktop/eps32_ble`, `docs/context/knowledge/project/wechat-miniapp-official-ble-provisioning.md`, `docs/context/knowledge/project/ble-provisioning-miniapp-write-fragmentation.md` | `docs/context/runs/2026-05-04-attempt-ble-official-provisioning-mtu-fragmentation.md` |
@@ -140,12 +141,14 @@ Recommended reasons when recording:
 | ESP-DL danger model | `components/espdl_inference`, `main/features/danger_detection/danger_detection_service.c`, `main/ui/custom/danger_detection_controller.c` | `docs/context/knowledge/project/espdl-danger-model-plan-anchor.md` |
 | GUI Guider / LVGL preview | `main/ui/agent_preview`, `main/ui/generated`, `main/ui/custom` | `docs/context/knowledge/project/gui-guider-lvgl-host-preview-workflow.md` |
 | Hearing assist / danger alerts | `main/features/danger_detection/danger_detection_service.c`, `main/features/alerts/app_alert_manager.c`, `components/espdl_inference`, `main/ui/custom/danger_detection_controller.c` | `docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md` |
+| Hermes WebSocket async conversation reply architecture | `docs/context/knowledge/project/hermes-multi-agent-architecture.md` | `docs/context/knowledge/project/hermes-multi-agent-architecture.md` |
 | IMU / motion framework | `components/qmi8658c`, `main/app/board_imu.c`, `main/services/imu_service.c`, `components/imu_motion` | `docs/context/plans/active/2026-06-05-imu-runtime-framework-plan.md` |
 | Low power framework | `main/services/power_policy.c`, `main/services/background_service_manager.c`, `main/services/network_service.c`, `main/ui/ui_refresh_policy.c` | `docs/context/knowledge/project/low-power-framework-architecture.md` |
 | Network and provisioning | `components/network_manager`, `components/network_provisioning_adapter`, `components/ap_portal_adapter`, `main/services/network_service.c` | `docs/context/knowledge/project/network-provisioning-custom-upper-architecture.md` |
 | Official Chat | `main/services/official_chat_service.c`, `main/services/network_service.c`, `components/official_chat` | `docs/context/knowledge/project/official-chat-ota-tls-time-bootstrap.md` |
 | Power / PMIC | `components/axp2101`, `main/app/board_power.c`, `main/services/power_service.c` | `docs/context/knowledge/project/axp2101-power-component-implementation.md` |
 | QMI8658C board evidence | `components/qmi8658c`, `main/app/board_imu.c`, `main/services/imu_service.c` | `docs/context/runs/2026-06-04-attempt-qmi8658c-int1-gpio21-schematic-board-evidence.md` |
+| Screen Layout / UI Positioning | `main/ui/generated`, `main/ui/custom`, `components/co5300_panel` | `docs/context/knowledge/project/co5300-screen-layout-safe-zone.md` |
 | SoftAP portal evidence | `components/ap_portal_adapter/src/ap_portal_adapter.c`, `components/ap_portal_adapter/src/ap_portal_routes.c`, `components/captive_portal_dns/src/captive_portal_dns.c`, `components/network_manager/src/network_manager.c`, `docs/context/knowledge/project/softap-captive-portal-auto-popup.md` | `docs/context/runs/2026-05-04-attempt-softap-captive-portal-official-provisioning.md` |
 <!-- DOMAIN_ROUTING_END -->
 

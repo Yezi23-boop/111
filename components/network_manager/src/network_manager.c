@@ -36,7 +36,7 @@ static portMUX_TYPE s_manager_bootstrap_lock = portMUX_INITIALIZER_UNLOCKED;
 static esp_err_t network_manager_ensure_mutex(void);
 static esp_err_t network_manager_sync_ip(network_manager_status_t *status);
 static void network_manager_sync_ble_active_from_adapter(void);
-static esp_err_t network_manager_sync_ble_presence(void);
+static esp_err_t network_manager_sync_ble_presence(bool allow_start);
 static esp_err_t network_manager_stop_active_transport(void);
 static esp_err_t network_manager_start_selected_transport(void);
 static esp_err_t network_manager_start_selected_transport_auto(void);
@@ -182,8 +182,9 @@ static void network_manager_sync_ble_active_from_adapter(void)
  *
  * @note 调用方通常已经持有 `s_manager_mutex`，本函数自身不会访问 manager 共享字段。
  */
-static esp_err_t network_manager_sync_ble_presence(void)
+static esp_err_t network_manager_sync_ble_presence(bool allow_start)
 {
+    esp_err_t ret = ESP_OK;
     const bool ble_transport_active =
         network_provisioning_adapter_is_active() &&
         network_provisioning_adapter_get_transport() ==
@@ -194,7 +195,18 @@ static esp_err_t network_manager_sync_ble_presence(void)
         return ble_presence_stop();
     }
 
-    return ble_presence_start();
+    if (!allow_start)
+    {
+        return ESP_OK;
+    }
+
+    ret = ble_presence_start();
+    if (ret != ESP_OK)
+    {
+        (void)ble_control_set_active(false);
+        (void)ble_control_set_enabled(false);
+    }
+    return ret;
 }
 
 /**
@@ -230,7 +242,7 @@ static esp_err_t network_manager_stop_active_transport(void)
     if (ret == ESP_OK)
     {
         (void)ble_control_set_active(false);
-        ret = network_manager_sync_ble_presence();
+        ret = network_manager_sync_ble_presence(false);
     }
     else
     {
@@ -294,7 +306,7 @@ static esp_err_t network_manager_start_selected_transport(void)
         if (ret == ESP_OK)
         {
             (void)ble_control_set_active(false);
-            (void)network_manager_sync_ble_presence();
+            (void)network_manager_sync_ble_presence(false);
             s_state = NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP;
         }
         else
@@ -321,7 +333,7 @@ static esp_err_t network_manager_start_selected_transport(void)
 static esp_err_t network_manager_start_selected_transport_auto(void)
 {
     (void)ble_control_set_active(false);
-    (void)network_manager_sync_ble_presence();
+    (void)network_manager_sync_ble_presence(false);
     s_state = NETWORK_MANAGER_STATE_IDLE;
     return ESP_OK;
 }
@@ -387,7 +399,7 @@ static void network_manager_refresh_runtime_state(bool sync_ble_presence)
     network_manager_sync_ble_active_from_adapter();
     if (sync_ble_presence)
     {
-        (void)network_manager_sync_ble_presence();
+        (void)network_manager_sync_ble_presence(false);
     }
 
     if (wifi_connected || wifi_state == WIFI_CONTROL_STATE_CONNECTED)
@@ -682,7 +694,7 @@ esp_err_t network_manager_start(void)
     ret = network_credentials_get_latest(&latest);
     if (ret == ESP_OK)
     {
-        (void)network_manager_sync_ble_presence();
+        (void)network_manager_sync_ble_presence(false);
         ret = network_manager_connect_entry(&latest, true);
         xSemaphoreGive(s_manager_mutex);
         return ret;
@@ -994,7 +1006,7 @@ esp_err_t network_manager_set_ble_enabled(bool enabled)
         return ESP_OK;
     }
 
-    ret = network_manager_sync_ble_presence();
+    ret = network_manager_sync_ble_presence(true);
     if (ret != ESP_OK)
     {
         xSemaphoreGive(s_manager_mutex);

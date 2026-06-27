@@ -30,6 +30,22 @@ class BlePresenceSourceTests(unittest.TestCase):
         self.assertNotIn("active = s_runtime.initialized;", is_active_body)
         self.assertNotIn("network_prov", source)
 
+    def test_start_checks_internal_heap_before_nimble_init(self) -> None:
+        source = BLE_PRESENCE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("#include \"esp_heap_caps.h\"", source)
+        self.assertIn("kBlePresenceMinInternalFreeBytes", source)
+        self.assertIn("kBlePresenceMinInternalLargestBlockBytes", source)
+        self.assertIn("heap_caps_get_free_size(caps)", source)
+        self.assertIn("heap_caps_get_largest_free_block(caps)", source)
+        start_body = source.split("esp_err_t ble_presence_start(void)", 1)[1]
+        preflight_index = start_body.index("ble_presence_check_internal_heap()")
+        nimble_index = start_body.index("nimble_port_init()")
+        initialized_index = start_body.index("s_runtime.initialized = true;")
+
+        self.assertLess(preflight_index, nimble_index)
+        self.assertLess(preflight_index, initialized_index)
+
 
 if __name__ == "__main__":
     unittest.main()

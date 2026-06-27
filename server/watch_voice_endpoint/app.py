@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import re
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, WebSocket
 from pydantic import BaseModel
+from starlette.websockets import WebSocketDisconnect
 
+from conversation_repo import ConversationMessage, ConversationRepo, ConversationValidationError
 from inbox_repo import InboxRepo, InboxValidationError
 
 
@@ -35,6 +38,8 @@ MIMO_ASR_TRANSCODE_TIMEOUT_SECONDS = float(os.getenv("MIMO_ASR_TRANSCODE_TIMEOUT
 MAX_AUDIO_BYTES = int(os.getenv("WATCH_MAX_AUDIO_BYTES", str(6 * 1024 * 1024)))
 MAX_TEXT_CHARS = int(os.getenv("WATCH_MAX_TEXT_CHARS", "240"))
 REPLY_MAX_CHARS = int(os.getenv("WATCH_REPLY_MAX_CHARS", "80"))
+WATCH_WS_ENABLED = os.getenv("WATCH_WS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+WATCH_WS_MAX_MESSAGE_BYTES = int(os.getenv("WATCH_WS_MAX_MESSAGE_BYTES", str(6 * 1024 * 1024)))
 MIMO_ASR_DIRECT_MIME_TYPES = {"audio/wav", "audio/mp3", "audio/mpeg"}
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,96}$")
 INVALID_REQUEST_ID = "invalid-request"
@@ -77,7 +82,19 @@ _inflight_requests: dict[tuple[str, str], asyncio.Task[WatchResponse]] = {}
 
 # SQLite inbox repository；数据库路径可通过环境变量覆盖，便于测试隔离。
 _INBOX_DB_PATH = Path(os.getenv("INBOX_DB_PATH", "/data/inbox.db"))
+_CONVERSATION_DB_PATH = Path(os.getenv("CONVERSATION_DB_PATH", "/data/conversation.db"))
 _inbox_repo: InboxRepo | None = None
+_conversation_repo: ConversationRepo | None = None
+_ws_background_tasks: set[asyncio.Task[None]] = set()
+
+
+@dataclass
+class WsConnectionState:
+    """单条 watch WebSocket 的 best-effort 推送状态。"""
+
+    websocket: WebSocket
+    send_lock: asyncio.Lock
+    connected: bool = True
 
 
 def _get_inbox_repo() -> InboxRepo:
@@ -87,6 +104,15 @@ def _get_inbox_repo() -> InboxRepo:
         _INBOX_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         _inbox_repo = InboxRepo(_INBOX_DB_PATH)
     return _inbox_repo
+
+
+def _get_conversation_repo() -> ConversationRepo:
+    """懒初始化 watch_conversation store；server 断线补发的真相源。"""
+    global _conversation_repo
+    if _conversation_repo is None:
+        _CONVERSATION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _conversation_repo = ConversationRepo(_CONVERSATION_DB_PATH)
+    return _conversation_repo
 
 
 _request_event_counts = {
@@ -613,6 +639,297 @@ async def _await_request_task(
         return response
 
 
+def _conversation_message_payload(message: ConversationMessage) -> dict[str, object]:
+    return {
+        "message_id": message.message_id,
+        "request_id": message.request_id,
+        "role": message.role,
+        "text": message.text,
+        "created_at": message.created_at,
+        "status": message.status,
+    }
+
+
+async def _ws_send_json(websocket: WebSocket, payload: dict[str, object]) -> None:
+    # 单个 WebSocket 连接内串行发送，避免 ASR/Hermes 后台任务与主循环同时写 socket。
+    await websocket.send_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+
+
+async def _ws_send_error(websocket: WebSocket, request_id: str | None, code: str) -> None:
+    payload: dict[str, object] = {"type": "error", "error_code": code}
+    if request_id:
+        payload["request_id"] = request_id
+    await _ws_send_json(websocket, payload)
+
+
+async def _ws_try_send_json(conn: WsConnectionState | None, payload: dict[str, object]) -> None:
+    """向仍在线的 WS 连接 best-effort 推送；断线不影响后台任务落库。"""
+    if conn is None or not conn.connected:
+        return
+    async with conn.send_lock:
+        if not conn.connected:
+            return
+        try:
+            await _ws_send_json(conn.websocket, payload)
+        except Exception:
+            conn.connected = False
+
+
+async def _ws_try_send_error(
+    conn: WsConnectionState | None,
+    request_id: str | None,
+    code: str,
+) -> None:
+    payload: dict[str, object] = {"type": "error", "error_code": code}
+    if request_id:
+        payload["request_id"] = request_id
+    await _ws_try_send_json(conn, payload)
+
+
+async def _ws_run_hermes_job(
+    conn: WsConnectionState | None,
+    device_id: str,
+    request_id: str,
+    asr_text: str,
+) -> None:
+    repo = _get_conversation_repo()
+    await _ws_try_send_json(conn, {"type": "task_started", "request_id": request_id})
+    try:
+        reply_text = await _call_hermes(device_id, asr_text, None)
+        if not reply_text:
+            raise RuntimeError("empty_hermes_reply")
+        message = repo.add_message(
+            device_id=device_id,
+            request_id=request_id,
+            role="assistant",
+            text=reply_text[:REPLY_MAX_CHARS],
+            status="done",
+        )
+        await _ws_try_send_json(
+            conn,
+            {"type": "conversation_message", **_conversation_message_payload(message)},
+        )
+    except Exception:
+        try:
+            message = repo.add_message(
+                device_id=device_id,
+                request_id=request_id,
+                role="assistant",
+                text="没有处理成功，请再说一次",
+                status="error",
+            )
+            await _ws_try_send_json(
+                conn,
+                {"type": "conversation_message", **_conversation_message_payload(message)},
+            )
+        except Exception:
+            await _ws_try_send_error(conn, request_id, "hermes_error")
+
+
+async def _ws_finish_audio(
+    conn: WsConnectionState | None,
+    device_id: str,
+    request_id: str,
+    audio_bytes: bytes,
+    mock_asr_text: str | None,
+) -> None:
+    if not audio_bytes:
+        await _ws_try_send_error(conn, request_id, "empty_audio")
+        return
+    try:
+        asr_text = await _transcribe_audio(audio_bytes, "audio/ogg", mock_asr_text)
+        if not asr_text:
+            await _ws_try_send_error(conn, request_id, "empty_asr_text")
+            return
+        message = _get_conversation_repo().add_message(
+            device_id=device_id,
+            request_id=request_id,
+            role="user",
+            text=asr_text,
+            status="done",
+        )
+        await _ws_try_send_json(
+            conn,
+            {
+                "type": "asr_result",
+                "request_id": request_id,
+                "message_id": message.message_id,
+                "text": asr_text,
+            },
+        )
+        await _ws_run_hermes_job(conn, device_id, request_id, asr_text)
+    except ConversationValidationError:
+        await _ws_try_send_error(conn, request_id, "conversation_store_error")
+    except Exception:
+        await _ws_try_send_error(conn, request_id, "asr_or_agent_error")
+
+
+def _ws_track_background_task(task: asyncio.Task[None]) -> None:
+    _ws_background_tasks.add(task)
+    task.add_done_callback(_ws_background_tasks.discard)
+
+
+@app.websocket("/v1/watch/ws")
+async def watch_websocket(websocket: WebSocket) -> None:
+    await websocket.accept()
+    if not WATCH_WS_ENABLED:
+        await _ws_send_json(websocket, {"type": "error", "error_code": "websocket_disabled"})
+        await websocket.close(code=1013)
+        return
+
+    conn = WsConnectionState(websocket=websocket, send_lock=asyncio.Lock())
+    device_id: str | None = None
+    current_request_id: str | None = None
+    audio_chunks: list[bytes] = []
+    audio_total = 0
+    mock_asr_text: str | None = None
+
+    try:
+        auth = await websocket.receive_json()
+        if auth.get("type") != "auth":
+            await _ws_try_send_error(conn, None, "auth_required")
+            await websocket.close(code=1008)
+            return
+        device_id = str(auth.get("device_id") or "")
+        device_token = str(auth.get("device_token") or "")
+        expected = _device_tokens().get(device_id)
+        if not expected or device_token != expected:
+            await _ws_try_send_error(conn, None, "invalid_device_token")
+            await websocket.close(code=1008)
+            return
+        await _ws_try_send_json(
+            conn,
+            {"type": "auth_ok", "server_time": int(time.time())},
+        )
+        last_seen = auth.get("last_seen_conversation_id")
+        messages = _get_conversation_repo().list_after(
+            device_id,
+            str(last_seen) if last_seen else None,
+        )
+        await _ws_try_send_json(
+            conn,
+            {
+                "type": "conversation_snapshot",
+                "messages": [_conversation_message_payload(message) for message in messages],
+                "unread_reply_count": sum(1 for message in messages if message.role == "assistant"),
+            },
+        )
+
+        while True:
+            message = await websocket.receive()
+            if message.get("type") == "websocket.disconnect":
+                break
+            if message.get("bytes") is not None:
+                if current_request_id is None:
+                    await _ws_try_send_error(conn, None, "audio_start_required")
+                    continue
+                chunk = message["bytes"] or b""
+                audio_total += len(chunk)
+                if audio_total > min(MAX_AUDIO_BYTES, WATCH_WS_MAX_MESSAGE_BYTES):
+                    current_request_id = None
+                    audio_chunks.clear()
+                    audio_total = 0
+                    await _ws_try_send_error(conn, None, "audio_too_large")
+                    continue
+                audio_chunks.append(chunk)
+                continue
+            text = message.get("text")
+            if not text:
+                continue
+            try:
+                event = json.loads(text)
+            except json.JSONDecodeError:
+                await _ws_try_send_error(conn, current_request_id, "invalid_json")
+                continue
+            event_type = event.get("type")
+            if event_type == "audio_start":
+                request_id = _normalize_request_id(str(event.get("request_id") or ""))
+                if request_id is None:
+                    await _ws_try_send_error(conn, None, "invalid_request_id")
+                    continue
+                if event.get("format") not in (None, "ogg_opus"):
+                    await _ws_try_send_error(conn, request_id, "unsupported_audio_format")
+                    continue
+                current_request_id = request_id
+                audio_chunks = []
+                audio_total = 0
+                mock_asr_text = event.get("mock_asr_text")
+                if mock_asr_text is not None:
+                    mock_asr_text = str(mock_asr_text)
+                await _ws_try_send_json(conn, {"type": "audio_started", "request_id": request_id})
+                continue
+            if event_type == "audio_end":
+                request_id = str(event.get("request_id") or "")
+                if not current_request_id or request_id != current_request_id:
+                    await _ws_try_send_error(conn, request_id or current_request_id, "request_id_mismatch")
+                    continue
+                finished_request_id = current_request_id
+                finished_audio = b"".join(audio_chunks)
+                current_request_id = None
+                audio_chunks = []
+                audio_total = 0
+                task = asyncio.create_task(
+                    _ws_finish_audio(
+                        conn,
+                        device_id,
+                        finished_request_id,
+                        finished_audio,
+                        mock_asr_text,
+                    )
+                )
+                _ws_track_background_task(task)
+                mock_asr_text = None
+                continue
+            if event_type == "ack":
+                await _ws_try_send_json(
+                    conn,
+                    {
+                        "type": "ack_ok",
+                        "scope": event.get("scope") or "conversation",
+                        "message_id": event.get("message_id"),
+                    },
+                )
+                continue
+            await _ws_try_send_error(conn, current_request_id, "unsupported_event_type")
+    except WebSocketDisconnect:
+        conn.connected = False
+        return
+    finally:
+        conn.connected = False
+
+
+class ConversationMessageOut(BaseModel):
+    message_id: str
+    request_id: str
+    role: str
+    text: str
+    created_at: str
+    status: str
+
+
+class ConversationListResponse(BaseModel):
+    messages: list[ConversationMessageOut]
+    has_more: bool = False
+
+
+@app.get("/v1/watch/conversation", response_model=ConversationListResponse)
+async def conversation_list(
+    device_id: str = Query(...),
+    after: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+) -> ConversationListResponse:
+    """手表离页 pending 轮询对话结果；server conversation store 是真相源。"""
+    _require_device(device_id, authorization, "conversation_list")
+    messages = _get_conversation_repo().list_after(device_id, after)
+    return ConversationListResponse(
+        messages=[
+            ConversationMessageOut(**_conversation_message_payload(message))
+            for message in messages
+        ],
+        has_more=False,
+    )
+
+
 @app.get("/v1/watch/health", response_model=HealthResponse)
 async def health(
     device_id: str = Query(...),
@@ -801,6 +1118,7 @@ async def service_health() -> dict[str, object]:
         "request_events": dict(_request_event_counts),
         "request_status_counts": dict(_request_status_counts),
         "auth_failures": dict(_auth_failure_counts),
+        "websocket_enabled": WATCH_WS_ENABLED,
         "request_error_counts": dict(_request_error_counts),
         "last_request": dict(_last_request_summary) if _last_request_summary else None,
         "last_auth_failure": (

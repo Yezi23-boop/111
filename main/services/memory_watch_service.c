@@ -9,6 +9,7 @@
 #include "esp_random.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/idf_additions.h"
 #include "freertos/portmacro.h"
 #include "freertos/queue.h"
@@ -20,6 +21,7 @@
 #include "power_policy.h"
 #include "services/memory_watch_recorder.h"
 #include "services/memory_watch_voice_client.h"
+#include "services/memory_watch_ws_client.h"
 
 #ifndef CONFIG_MEMORY_WATCH_DEFAULT_BASE_URL
 #define CONFIG_MEMORY_WATCH_DEFAULT_BASE_URL ""
@@ -54,7 +56,15 @@ static const uint32_t kTaskStackWords = 6144;
 static const uint32_t kUploadWorkerStackWords = 24576;
 static const uint32_t kCancelWorkerStackWords = 3072;
 static const uint32_t kHealthWorkerStackWords = 6144;
+static const uint32_t kConversationWorkerStackWords = 6144;
 static const size_t kAudioBufferInitialBytes = 8192U;
+static const size_t kWsAudioChunkBytes = 16U * 1024U;
+static const int64_t kConversationPollIntervalMs = 5000;
+static const uint32_t kConversationPollTimeoutMs = 4000U;
+static const int64_t kConversationPendingMaxWaitMs = 10LL * 60LL * 1000LL;
+static const EventBits_t kWsWaitConversationBit = BIT0;
+static const EventBits_t kWsWaitErrorBit = BIT1;
+static const EventBits_t kWsWaitDisconnectedBit = BIT2;
 static const char *kEndpointNvsNamespace = "memory_watch";
 static const char *kEndpointNvsBaseUrlKey = "base_url";
 static const char *kEndpointNvsDeviceIdKey = "device_id";
@@ -74,6 +84,8 @@ typedef enum
     MEMORY_WATCH_SERVICE_CMD_HEALTH_DONE,
     MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED,
     MEMORY_WATCH_SERVICE_CMD_WORKER_DONE,
+    MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND,
+    MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE,
 } memory_watch_service_cmd_type_t;
 
 typedef struct
@@ -116,6 +128,12 @@ typedef struct
 
 typedef struct
 {
+    memory_watch_service_client_config_snapshot_t client_config;
+    char after_message_id[64];
+} memory_watch_service_conversation_job_t;
+
+typedef struct
+{
     esp_err_t error;
     bool hermes_online;
 } memory_watch_service_health_result_t;
@@ -126,6 +144,7 @@ typedef struct
     esp_err_t error;
     bool has_response;
     bool cancel_requested;
+    bool conversation_already_appended;
     memory_watch_voice_client_response_t response;
 } memory_watch_service_worker_result_t;
 
@@ -138,25 +157,35 @@ typedef struct
 
 typedef struct
 {
+    memory_watch_service_worker_result_t *result;
+    const char *request_id;
+} memory_watch_service_ws_wait_ctx_t;
+
+typedef struct
+{
     memory_watch_service_cmd_type_t type;
     memory_watch_service_health_result_t health_result;
     memory_watch_service_worker_result_t worker_result;
     char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
     char text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];
+    bool foreground;
 } memory_watch_service_cmd_t;
 
 static TaskHandle_t s_service_task_handle = NULL;
 static TaskHandle_t s_upload_worker_task_handle = NULL;
 static TaskHandle_t s_cancel_worker_task_handle = NULL;
 static TaskHandle_t s_health_worker_task_handle = NULL;
+static TaskHandle_t s_conversation_worker_task_handle = NULL;
 static QueueHandle_t s_command_queue = NULL;
 static QueueHandle_t s_upload_worker_queue = NULL;
 static QueueHandle_t s_cancel_worker_queue = NULL;
 static QueueHandle_t s_health_worker_queue = NULL;
+static QueueHandle_t s_conversation_worker_queue = NULL;
 static StaticQueue_t s_command_queue_buffer;
 static StaticQueue_t s_upload_worker_queue_buffer;
 static StaticQueue_t s_cancel_worker_queue_buffer;
 static StaticQueue_t s_health_worker_queue_buffer;
+static StaticQueue_t s_conversation_worker_queue_buffer;
 static uint8_t s_command_queue_storage[
     8 * sizeof(memory_watch_service_cmd_t)];
 static uint8_t s_upload_worker_queue_storage[
@@ -165,15 +194,25 @@ static uint8_t s_cancel_worker_queue_storage[
     1 * sizeof(memory_watch_service_cancel_job_t)];
 static uint8_t s_health_worker_queue_storage[
     1 * sizeof(memory_watch_service_health_job_t)];
+static uint8_t s_conversation_worker_queue_storage[
+    1 * sizeof(memory_watch_service_conversation_job_t)];
 static memory_watch_service_cmd_t s_service_task_command;
 static memory_watch_service_upload_job_t s_upload_worker_job;
 static memory_watch_service_worker_result_t s_upload_worker_result;
+static memory_watch_service_conversation_job_t s_conversation_worker_job;
+static memory_watch_service_conversation_item_t
+    s_conversation_items[MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS];
+static size_t s_conversation_item_count = 0;
+static uint32_t s_conversation_generation = 0;
+static StaticEventGroup_t s_ws_wait_event_buffer;
+static EventGroupHandle_t s_ws_wait_event_group = NULL;
 // Optimized: Legacy static buffers (s_service_task_stack, s_cancel_worker_task_stack,
 // s_health_worker_task_stack) and StaticTask_t buffers have been removed.
 // All tasks now dynamically allocate stack on external PSRAM via xTaskCreateWithCaps.
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_endpoint_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_worker_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_foreground_lock = portMUX_INITIALIZER_UNLOCKED;
 static memory_watch_service_snapshot_t s_snapshot = {
     .state = MEMORY_WATCH_SERVICE_STATE_READY,
     .network_ready = false,
@@ -190,6 +229,16 @@ static bool s_record_stop_requested = false;
 static bool s_record_discard_requested = false;
 static bool s_wait_cancel_requested = false;
 static bool s_upload_worker_busy = false;
+static bool s_foreground_active = false;
+static bool s_conversation_worker_busy = false;
+static bool s_conversation_poll_active = false;
+static int64_t s_conversation_poll_started_ms = 0;
+static int64_t s_conversation_poll_next_due_ms = 0;
+static char s_conversation_pending_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
+static char s_last_seen_conversation_id[64];
+static memory_watch_conversation_message_t *s_conversation_staging = NULL;
+static size_t s_conversation_staging_count = 0;
+static esp_err_t s_conversation_staging_error = ESP_OK;
 static char s_wait_canceled_request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
 #if CONFIG_MEMORY_WATCH_BOOT_TEXT_SMOKE
 static bool s_boot_text_sent = false;
@@ -197,9 +246,17 @@ static bool s_boot_text_sent = false;
 
 /* 前向声明：inbox 相关函数和变量定义在文件后半部分 */
 static esp_err_t memory_watch_service_inbox_init(void);
-static volatile bool s_inbox_poll_pending = false;
+static portMUX_TYPE s_inbox_poll_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool s_inbox_poll_pending = false;
+static void memory_watch_service_inbox_set_poll_pending(bool pending);
+static bool memory_watch_service_inbox_is_poll_pending(void);
 static void memory_watch_service_inbox_try_poll(void);
 static void memory_watch_service_inbox_handle_worker_result(uint32_t notify_val);
+static void memory_watch_service_conversation_try_poll(void);
+static void memory_watch_service_conversation_handle_worker_done(void);
+static
+void memory_watch_service_handle_worker_done(
+    const memory_watch_service_worker_result_t *result);
 
 static void memory_watch_service_log_upload_stack(const char *stage)
 {
@@ -302,6 +359,139 @@ static bool memory_watch_service_is_safe_user_text(const char *text)
         }
     }
     return true;
+}
+
+static void memory_watch_service_append_conversation_item(
+    memory_watch_service_conversation_role_t role,
+    const char *request_id,
+    const char *text)
+{
+    if (text == NULL || text[0] == '\0')
+    {
+        return;
+    }
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    for (size_t i = 0; i < s_conversation_item_count; ++i)
+    {
+        if (s_conversation_items[i].role == role &&
+            strcmp(s_conversation_items[i].request_id,
+                   request_id != NULL ? request_id : "") == 0 &&
+            strcmp(s_conversation_items[i].text, text) == 0)
+        {
+            portEXIT_CRITICAL(&s_snapshot_lock);
+            return;
+        }
+    }
+
+    if (s_conversation_item_count >= MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS)
+    {
+        memmove(&s_conversation_items[0], &s_conversation_items[1],
+                (MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS - 1U) *
+                    sizeof(s_conversation_items[0]));
+        s_conversation_item_count =
+            MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS - 1U;
+    }
+
+    memory_watch_service_conversation_item_t *item =
+        &s_conversation_items[s_conversation_item_count++];
+    item->role = role;
+    memory_watch_service_copy_text(item->request_id, sizeof(item->request_id),
+                                   request_id);
+    memory_watch_service_copy_text(item->text, sizeof(item->text), text);
+    ++s_conversation_generation;
+    s_snapshot.conversation_generation = s_conversation_generation;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+static void memory_watch_service_append_response_conversation(
+    const memory_watch_voice_client_response_t *response)
+{
+    if (response == NULL)
+    {
+        return;
+    }
+
+    if (response->asr_text[0] != '\0')
+    {
+        memory_watch_service_append_conversation_item(
+            MEMORY_WATCH_SERVICE_CONVERSATION_USER,
+            response->request_id,
+            response->asr_text);
+    }
+    if (response->reply_text[0] != '\0')
+    {
+        memory_watch_service_append_conversation_item(
+            MEMORY_WATCH_SERVICE_CONVERSATION_HERMES,
+            response->request_id,
+            response->reply_text);
+    }
+}
+
+static void memory_watch_service_set_last_seen_conversation_id(
+    const char *message_id)
+{
+    if (message_id == NULL || message_id[0] == '\0')
+    {
+        return;
+    }
+    portENTER_CRITICAL(&s_snapshot_lock);
+    memory_watch_service_copy_text(s_last_seen_conversation_id,
+                                   sizeof(s_last_seen_conversation_id),
+                                   message_id);
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+static void memory_watch_service_copy_last_seen_conversation_id(
+    char *out, size_t out_len)
+{
+    if (out == NULL || out_len == 0U)
+    {
+        return;
+    }
+    portENTER_CRITICAL(&s_snapshot_lock);
+    memory_watch_service_copy_text(out, out_len, s_last_seen_conversation_id);
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+static void memory_watch_service_append_server_conversation_message(
+    const memory_watch_conversation_message_t *message)
+{
+    if (message == NULL)
+    {
+        return;
+    }
+    if (strcmp(message->role, "user") == 0)
+    {
+        memory_watch_service_append_conversation_item(
+            MEMORY_WATCH_SERVICE_CONVERSATION_USER,
+            message->request_id,
+            message->text);
+    }
+    else if (strcmp(message->role, "assistant") == 0)
+    {
+        memory_watch_service_append_conversation_item(
+            MEMORY_WATCH_SERVICE_CONVERSATION_HERMES,
+            message->request_id,
+            message->text);
+    }
+    memory_watch_service_set_last_seen_conversation_id(message->message_id);
+}
+
+static void memory_watch_service_set_foreground_active(bool foreground)
+{
+    portENTER_CRITICAL(&s_foreground_lock);
+    s_foreground_active = foreground;
+    portEXIT_CRITICAL(&s_foreground_lock);
+}
+
+static bool memory_watch_service_is_foreground_active(void)
+{
+    bool foreground = false;
+    portENTER_CRITICAL(&s_foreground_lock);
+    foreground = s_foreground_active;
+    portEXIT_CRITICAL(&s_foreground_lock);
+    return foreground;
 }
 
 static esp_err_t memory_watch_service_copy_required_text(char *dst,
@@ -954,6 +1144,234 @@ static esp_err_t memory_watch_service_audio_write_cb(const uint8_t *data,
     return ESP_OK;
 }
 
+static void memory_watch_service_ws_event_cb(
+    const memory_watch_ws_event_t *event,
+    void *user_ctx)
+{
+    memory_watch_service_ws_wait_ctx_t *ctx =
+        (memory_watch_service_ws_wait_ctx_t *)user_ctx;
+    if (event == NULL || ctx == NULL || ctx->result == NULL ||
+        s_ws_wait_event_group == NULL)
+    {
+        return;
+    }
+
+    if (event->request_id[0] != '\0' && ctx->request_id != NULL &&
+        strcmp(event->request_id, ctx->request_id) != 0)
+    {
+        return;
+    }
+
+    if (strcmp(event->type, "asr_result") == 0)
+    {
+        memory_watch_service_copy_text(ctx->result->response.request_id,
+                                       sizeof(ctx->result->response.request_id),
+                                       ctx->request_id);
+        memory_watch_service_copy_text(ctx->result->response.asr_text,
+                                       sizeof(ctx->result->response.asr_text),
+                                       event->text);
+        memory_watch_service_set_last_seen_conversation_id(event->message_id);
+        memory_watch_service_append_conversation_item(
+            MEMORY_WATCH_SERVICE_CONVERSATION_USER,
+            ctx->request_id,
+            event->text);
+        return;
+    }
+
+    if (strcmp(event->type, "conversation_message") == 0 &&
+        strcmp(event->role, "assistant") == 0)
+    {
+        memory_watch_service_copy_text(ctx->result->response.request_id,
+                                       sizeof(ctx->result->response.request_id),
+                                       ctx->request_id);
+        memory_watch_service_copy_text(ctx->result->response.status,
+                                       sizeof(ctx->result->response.status),
+                                       event->status[0] != '\0' ? event->status : "done");
+        memory_watch_service_copy_text(ctx->result->response.action,
+                                       sizeof(ctx->result->response.action),
+                                       "conversation_reply");
+        memory_watch_service_copy_text(ctx->result->response.reply_text,
+                                       sizeof(ctx->result->response.reply_text),
+                                       event->text);
+        if (event->error_code[0] != '\0')
+        {
+            memory_watch_service_copy_text(ctx->result->response.error_code,
+                                           sizeof(ctx->result->response.error_code),
+                                           event->error_code);
+        }
+        memory_watch_service_set_last_seen_conversation_id(event->message_id);
+        (void)memory_watch_ws_client_send_ack(event->message_id);
+        xEventGroupSetBits(s_ws_wait_event_group, kWsWaitConversationBit);
+        return;
+    }
+
+    if (strcmp(event->type, "error") == 0)
+    {
+        memory_watch_service_copy_text(ctx->result->response.request_id,
+                                       sizeof(ctx->result->response.request_id),
+                                       ctx->request_id);
+        memory_watch_service_copy_text(ctx->result->response.status,
+                                       sizeof(ctx->result->response.status),
+                                       "error");
+        memory_watch_service_copy_text(ctx->result->response.action,
+                                       sizeof(ctx->result->response.action),
+                                       "error");
+        memory_watch_service_copy_text(ctx->result->response.error_code,
+                                       sizeof(ctx->result->response.error_code),
+                                       event->error_code[0] != '\0'
+                                           ? event->error_code
+                                           : "websocket_error");
+        xEventGroupSetBits(s_ws_wait_event_group, kWsWaitErrorBit);
+    }
+}
+
+static void memory_watch_service_ws_disconnect_cb(void *user_ctx)
+{
+    (void)user_ctx;
+    if (s_ws_wait_event_group != NULL)
+    {
+        xEventGroupSetBits(s_ws_wait_event_group, kWsWaitDisconnectedBit);
+    }
+}
+
+static void memory_watch_service_fill_pending_response(
+    memory_watch_service_worker_result_t *result,
+    const char *request_id)
+{
+    if (result == NULL)
+    {
+        return;
+    }
+    memory_watch_service_copy_text(result->response.request_id,
+                                   sizeof(result->response.request_id),
+                                   request_id);
+    memory_watch_service_copy_text(result->response.status,
+                                   sizeof(result->response.status),
+                                   "pending");
+    memory_watch_service_copy_text(result->response.action,
+                                   sizeof(result->response.action),
+                                   "conversation_pending");
+    result->has_response = true;
+}
+
+static esp_err_t memory_watch_service_send_voice_over_ws(
+    const memory_watch_service_upload_job_t *job,
+    const memory_watch_service_audio_buffer_t *audio_buffer,
+    memory_watch_service_worker_result_t *result)
+{
+    if (job == NULL || audio_buffer == NULL || audio_buffer->data == NULL ||
+        audio_buffer->len == 0U || result == NULL ||
+        s_ws_wait_event_group == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memory_watch_service_ws_wait_ctx_t wait_ctx = {
+        .result = result,
+        .request_id = job->request_id,
+    };
+    xEventGroupClearBits(s_ws_wait_event_group,
+                         kWsWaitConversationBit |
+                             kWsWaitErrorBit |
+                             kWsWaitDisconnectedBit);
+    char last_seen_conversation_id[64];
+    memory_watch_service_copy_last_seen_conversation_id(
+        last_seen_conversation_id, sizeof(last_seen_conversation_id));
+
+    const memory_watch_ws_client_config_t ws_config = {
+        .endpoint = job->client_config.client_config,
+        .last_seen_conversation_id = last_seen_conversation_id,
+        .event_cb = memory_watch_service_ws_event_cb,
+        .disconnect_cb = memory_watch_service_ws_disconnect_cb,
+        .user_ctx = &wait_ctx,
+    };
+    esp_err_t err = memory_watch_ws_client_connect(&ws_config);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    err = memory_watch_ws_client_send_audio_start(job->request_id);
+    for (size_t offset = 0U; err == ESP_OK && offset < audio_buffer->len;)
+    {
+        const size_t remaining = audio_buffer->len - offset;
+        const size_t chunk_len =
+            remaining > kWsAudioChunkBytes ? kWsAudioChunkBytes : remaining;
+        err = memory_watch_ws_client_send_audio_chunk(
+            audio_buffer->data + offset, chunk_len);
+        offset += chunk_len;
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_ws_client_send_audio_end(job->request_id);
+    }
+    if (err != ESP_OK)
+    {
+        memory_watch_ws_client_close();
+        return err;
+    }
+
+    const uint32_t timeout_ms =
+        job->client_config.client_config.timeout_ms > 0U
+            ? job->client_config.client_config.timeout_ms
+            : MEMORY_WATCH_VOICE_CLIENT_DEFAULT_TIMEOUT_MS;
+    EventBits_t bits = 0;
+    const int64_t wait_deadline_ms = esp_timer_get_time() / 1000LL +
+                                     (int64_t)timeout_ms;
+    while (true)
+    {
+        if (!memory_watch_service_is_foreground_active())
+        {
+            memory_watch_service_fill_pending_response(result, job->request_id);
+            memory_watch_ws_client_close();
+            return ESP_OK;
+        }
+
+        bits = xEventGroupWaitBits(
+            s_ws_wait_event_group,
+            kWsWaitConversationBit | kWsWaitErrorBit | kWsWaitDisconnectedBit,
+            pdTRUE,
+            pdFALSE,
+            pdMS_TO_TICKS(250U));
+        if (bits != 0)
+        {
+            break;
+        }
+        if ((esp_timer_get_time() / 1000LL) >= wait_deadline_ms)
+        {
+            break;
+        }
+    }
+    memory_watch_ws_client_close();
+
+    if ((bits & kWsWaitConversationBit) != 0)
+    {
+        return ESP_OK;
+    }
+    if ((bits & kWsWaitErrorBit) != 0)
+    {
+        return ESP_FAIL;
+    }
+    if ((bits & kWsWaitDisconnectedBit) != 0)
+    {
+        memory_watch_service_fill_pending_response(result, job->request_id);
+        return ESP_OK;
+    }
+    memory_watch_service_copy_text(result->response.request_id,
+                                   sizeof(result->response.request_id),
+                                   job->request_id);
+    memory_watch_service_copy_text(result->response.status,
+                                   sizeof(result->response.status),
+                                   "timeout");
+    memory_watch_service_copy_text(result->response.action,
+                                   sizeof(result->response.action),
+                                   "timeout");
+    memory_watch_service_copy_text(result->response.error_code,
+                                   sizeof(result->response.error_code),
+                                   "watch_timeout");
+    return ESP_ERR_TIMEOUT;
+}
+
 static esp_err_t memory_watch_service_post_worker_result(
     const memory_watch_service_worker_result_t *result)
 {
@@ -1164,6 +1582,121 @@ static esp_err_t memory_watch_service_start_health_job(
         return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
+}
+
+static esp_err_t memory_watch_service_start_conversation_job(
+    const memory_watch_service_client_config_snapshot_t *client_config)
+{
+    if (s_conversation_worker_queue == NULL || client_config == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memory_watch_service_conversation_job_t job = {
+        .client_config = *client_config,
+    };
+    memory_watch_service_rebind_client_config(&job.client_config);
+    job.client_config.client_config.timeout_ms = kConversationPollTimeoutMs;
+    memory_watch_service_copy_last_seen_conversation_id(
+        job.after_message_id, sizeof(job.after_message_id));
+
+    if (xQueueSend(s_conversation_worker_queue, &job, 0) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    s_conversation_worker_busy = true;
+    return ESP_OK;
+}
+
+static void memory_watch_service_start_conversation_polling(
+    const char *request_id)
+{
+    if (request_id == NULL || request_id[0] == '\0')
+    {
+        return;
+    }
+    s_conversation_poll_active = true;
+    s_conversation_poll_started_ms = esp_timer_get_time() / 1000LL;
+    s_conversation_poll_next_due_ms = s_conversation_poll_started_ms;
+    memory_watch_service_copy_text(s_conversation_pending_request_id,
+                                   sizeof(s_conversation_pending_request_id),
+                                   request_id);
+    ESP_LOGI(TAG, "conversation: background polling started request_id=%.32s",
+             request_id);
+}
+
+static void memory_watch_service_stop_conversation_polling(void)
+{
+    s_conversation_poll_active = false;
+    s_conversation_poll_started_ms = 0;
+    s_conversation_poll_next_due_ms = 0;
+    s_conversation_pending_request_id[0] = '\0';
+}
+
+static bool memory_watch_service_conversation_status_is_terminal(
+    const char *status)
+{
+    return status != NULL &&
+           (strcmp(status, "done") == 0 ||
+            strcmp(status, "error") == 0 ||
+            strcmp(status, "timeout") == 0 ||
+            strcmp(status, "canceled") == 0);
+}
+
+static void memory_watch_service_conversation_try_poll(void)
+{
+    if (!s_conversation_poll_active || s_conversation_worker_busy)
+    {
+        return;
+    }
+
+    const int64_t now_ms = esp_timer_get_time() / 1000LL;
+    if (now_ms - s_conversation_poll_started_ms >
+        kConversationPendingMaxWaitMs)
+    {
+        memory_watch_service_worker_result_t timeout_result = {0};
+        memory_watch_service_copy_text(timeout_result.request_id,
+                                       sizeof(timeout_result.request_id),
+                                       s_conversation_pending_request_id);
+        timeout_result.error = ESP_ERR_TIMEOUT;
+        timeout_result.has_response = true;
+        memory_watch_service_copy_text(
+            timeout_result.response.request_id,
+            sizeof(timeout_result.response.request_id),
+            s_conversation_pending_request_id);
+        memory_watch_service_copy_text(timeout_result.response.status,
+                                       sizeof(timeout_result.response.status),
+                                       "timeout");
+        memory_watch_service_copy_text(timeout_result.response.action,
+                                       sizeof(timeout_result.response.action),
+                                       "timeout");
+        memory_watch_service_copy_text(timeout_result.response.error_code,
+                                       sizeof(timeout_result.response.error_code),
+                                       "conversation_poll_timeout");
+        memory_watch_service_handle_worker_done(&timeout_result);
+        memory_watch_service_stop_conversation_polling();
+        return;
+    }
+    if (now_ms < s_conversation_poll_next_due_ms)
+    {
+        return;
+    }
+
+    memory_watch_service_client_config_snapshot_t client_config;
+    if (memory_watch_service_copy_client_config(&client_config) != ESP_OK)
+    {
+        s_conversation_poll_next_due_ms = now_ms + kConversationPollIntervalMs;
+        return;
+    }
+
+    const esp_err_t err =
+        memory_watch_service_start_conversation_job(&client_config);
+    if (err != ESP_OK)
+    {
+        s_conversation_poll_next_due_ms = now_ms + kConversationPollIntervalMs;
+        ESP_LOGW(TAG, "conversation: poll dispatch failed: %s",
+                 esp_err_to_name(err));
+    }
 }
 
 static void memory_watch_service_handle_begin_recording(void)
@@ -1548,7 +2081,20 @@ static void memory_watch_service_handle_worker_done(
 
     if (result->has_response)
     {
+        if (strcmp(result->response.status, "pending") == 0 &&
+            strcmp(result->response.action, "conversation_pending") == 0)
+        {
+            memory_watch_service_start_conversation_polling(
+                result->request_id);
+            memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_THINKING,
+                                           ESP_OK);
+            return;
+        }
         memory_watch_service_set_response_texts(&result->response);
+        if (!result->conversation_already_appended)
+        {
+            memory_watch_service_append_response_conversation(&result->response);
+        }
         ESP_LOGI(TAG,
                  "watch request result: request_id=%s status=%s action=%s error_code=%s asr_chars=%u reply_chars=%u",
                  result->response.request_id,
@@ -1567,6 +2113,78 @@ static void memory_watch_service_handle_worker_done(
             result->error);
     memory_watch_service_set_request_active(false);
     memory_watch_service_set_state(next_state, result->error);
+}
+
+static void memory_watch_service_conversation_handle_worker_done(void)
+{
+    s_conversation_worker_busy = false;
+    const int64_t now_ms = esp_timer_get_time() / 1000LL;
+
+    if (s_conversation_staging_error != ESP_OK)
+    {
+        s_conversation_poll_next_due_ms = now_ms + kConversationPollIntervalMs;
+        ESP_LOGW(TAG, "conversation: poll failed, will retry");
+        return;
+    }
+
+    memory_watch_service_worker_result_t terminal_result = {0};
+    bool has_terminal_reply = false;
+    for (size_t i = 0; i < s_conversation_staging_count; ++i)
+    {
+        const memory_watch_conversation_message_t *message =
+            &s_conversation_staging[i];
+        memory_watch_service_append_server_conversation_message(message);
+        if (strcmp(message->role, "assistant") == 0 &&
+            strcmp(message->request_id, s_conversation_pending_request_id) == 0 &&
+            memory_watch_service_conversation_status_is_terminal(
+                message->status))
+        {
+            has_terminal_reply = true;
+            terminal_result.error =
+                strcmp(message->status, "done") == 0 ? ESP_OK : ESP_FAIL;
+            terminal_result.has_response = true;
+            terminal_result.conversation_already_appended = true;
+            memory_watch_service_copy_text(
+                terminal_result.request_id,
+                sizeof(terminal_result.request_id),
+                message->request_id);
+            memory_watch_service_copy_text(
+                terminal_result.response.request_id,
+                sizeof(terminal_result.response.request_id),
+                message->request_id);
+            memory_watch_service_copy_text(
+                terminal_result.response.status,
+                sizeof(terminal_result.response.status),
+                message->status);
+            memory_watch_service_copy_text(
+                terminal_result.response.action,
+                sizeof(terminal_result.response.action),
+                "conversation_reply");
+            memory_watch_service_copy_text(
+                terminal_result.response.reply_text,
+                sizeof(terminal_result.response.reply_text),
+                message->text);
+            if (strcmp(message->status, "done") != 0)
+            {
+                memory_watch_service_copy_text(
+                    terminal_result.response.error_code,
+                    sizeof(terminal_result.response.error_code),
+                    "conversation_reply_error");
+            }
+        }
+    }
+
+    ESP_LOGI(TAG, "conversation: poll ok messages=%u terminal=%u",
+             (unsigned int)s_conversation_staging_count,
+             (unsigned int)has_terminal_reply);
+    if (has_terminal_reply)
+    {
+        memory_watch_service_stop_conversation_polling();
+        memory_watch_service_handle_worker_done(&terminal_result);
+        return;
+    }
+
+    s_conversation_poll_next_due_ms = now_ms + kConversationPollIntervalMs;
 }
 
 static void memory_watch_service_handle_command(
@@ -1611,6 +2229,16 @@ static void memory_watch_service_handle_command(
         break;
     case MEMORY_WATCH_SERVICE_CMD_WORKER_DONE:
         memory_watch_service_handle_worker_done(&command->worker_result);
+        break;
+    case MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND:
+        memory_watch_service_set_foreground_active(command->foreground);
+        if (command->foreground)
+        {
+            memory_watch_service_inbox_try_poll();
+        }
+        break;
+    case MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE:
+        memory_watch_service_conversation_handle_worker_done();
         break;
     default:
         break;
@@ -1697,6 +2325,14 @@ static void memory_watch_service_upload_worker_task(void *arg)
             {
                 (void)memory_watch_service_post_upload_started(job->request_id);
 
+#if CONFIG_MEMORY_WATCH_WEBSOCKET_ENABLED
+                result->error = memory_watch_service_send_voice_over_ws(
+                    job, &audio_buffer, result);
+                result->has_response =
+                    result->error == ESP_OK ||
+                    result->response.status[0] != '\0';
+                memory_watch_service_log_upload_stack("voice-ws-done");
+#else
                 memory_watch_voice_client_request_t request = {
                     .request_id = job->request_id,
                     .audio = audio_buffer.data,
@@ -1712,17 +2348,63 @@ static void memory_watch_service_upload_worker_task(void *arg)
                     &job->client_config.client_config, &request,
                     &result->response);
                 result->has_response = result->error == ESP_OK;
+                memory_watch_service_log_upload_stack("voice-http-done");
+#endif
                 result->cancel_requested =
                     memory_watch_service_is_wait_cancel_requested() ||
                     memory_watch_service_is_wait_canceled_request(
                         job->request_id);
-                memory_watch_service_log_upload_stack("voice-http-done");
             }
 
             memory_watch_service_audio_buffer_free(&audio_buffer);
         }
         memory_watch_service_set_upload_worker_busy(false);
         (void)memory_watch_service_post_worker_result(result);
+    }
+}
+
+static void memory_watch_service_conversation_worker_task(void *arg)
+{
+    (void)arg;
+
+    while (1)
+    {
+        if (xQueueReceive(s_conversation_worker_queue,
+                          &s_conversation_worker_job,
+                          portMAX_DELAY) != pdTRUE)
+        {
+            continue;
+        }
+
+        memory_watch_service_rebind_client_config(
+            &s_conversation_worker_job.client_config);
+        s_conversation_staging_count = 0;
+        s_conversation_staging_error = ESP_FAIL;
+
+        memory_watch_conversation_poll_result_t result = {0};
+        const esp_err_t err = memory_watch_voice_client_conversation_poll(
+            &s_conversation_worker_job.client_config.client_config,
+            s_conversation_worker_job.after_message_id,
+            s_conversation_staging,
+            MEMORY_WATCH_CONVERSATION_MAX_MESSAGES,
+            &result);
+        if (err == ESP_OK)
+        {
+            s_conversation_staging_count = result.message_count;
+            s_conversation_staging_error = ESP_OK;
+        }
+        else
+        {
+            s_conversation_staging_error = err;
+        }
+
+        if (s_command_queue != NULL)
+        {
+            memory_watch_service_cmd_t command = {
+                .type = MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE,
+            };
+            (void)xQueueSend(s_command_queue, &command, portMAX_DELAY);
+        }
     }
 }
 
@@ -1815,10 +2497,11 @@ static void memory_watch_service_task(void *arg)
         }
 
         /* 处理 inbox 轮询 pending（来自 poll_now 或 worker 完成后的补发）*/
-        if (s_inbox_poll_pending)
+        if (memory_watch_service_inbox_is_poll_pending())
         {
             memory_watch_service_inbox_try_poll();
         }
+        memory_watch_service_conversation_try_poll();
 
 #if CONFIG_MEMORY_WATCH_BOOT_HEALTH_CHECK
         if (boot_health_done)
@@ -1874,14 +2557,16 @@ esp_err_t memory_watch_service_init(void)
     if (s_service_task_handle != NULL &&
         s_upload_worker_task_handle != NULL &&
         s_cancel_worker_task_handle != NULL &&
-        s_health_worker_task_handle != NULL)
+        s_health_worker_task_handle != NULL &&
+        s_conversation_worker_task_handle != NULL)
     {
         return ESP_OK;
     }
     if (s_service_task_handle != NULL ||
         s_upload_worker_task_handle != NULL ||
         s_cancel_worker_task_handle != NULL ||
-        s_health_worker_task_handle != NULL)
+        s_health_worker_task_handle != NULL ||
+        s_conversation_worker_task_handle != NULL)
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1939,6 +2624,45 @@ esp_err_t memory_watch_service_init(void)
             &s_health_worker_queue_buffer);
     }
     if (s_health_worker_queue == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+    if (s_conversation_worker_queue == NULL)
+    {
+        s_conversation_worker_queue = xQueueCreateStatic(
+            kWorkerQueueLength,
+            sizeof(memory_watch_service_conversation_job_t),
+            s_conversation_worker_queue_storage,
+            &s_conversation_worker_queue_buffer);
+    }
+    if (s_conversation_worker_queue == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+    if (s_conversation_staging == NULL)
+    {
+        s_conversation_staging =
+            (memory_watch_conversation_message_t *)heap_caps_calloc(
+                MEMORY_WATCH_CONVERSATION_MAX_MESSAGES,
+                sizeof(memory_watch_conversation_message_t),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_conversation_staging == NULL)
+    {
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+    if (s_ws_wait_event_group == NULL)
+    {
+        s_ws_wait_event_group =
+            xEventGroupCreateStatic(&s_ws_wait_event_buffer);
+    }
+    if (s_ws_wait_event_group == NULL)
     {
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);
@@ -2011,6 +2735,22 @@ esp_err_t memory_watch_service_init(void)
     if (cancel_created != pdPASS)
     {
         s_cancel_worker_task_handle = NULL;
+        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
+                                       ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+
+    const BaseType_t conversation_created = xTaskCreateWithCaps(
+        memory_watch_service_conversation_worker_task,
+        "mw_conv",
+        kConversationWorkerStackWords,
+        NULL,
+        4,
+        &s_conversation_worker_task_handle,
+        MALLOC_CAP_SPIRAM);
+    if (conversation_created != pdPASS)
+    {
+        s_conversation_worker_task_handle = NULL;
         memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
                                        ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
@@ -2132,6 +2872,25 @@ esp_err_t memory_watch_service_check_health(void)
         MEMORY_WATCH_SERVICE_CMD_CHECK_HEALTH);
 }
 
+esp_err_t memory_watch_service_set_foreground(bool foreground)
+{
+    memory_watch_service_set_foreground_active(foreground);
+    if (s_command_queue == NULL)
+    {
+        return ESP_OK;
+    }
+
+    memory_watch_service_cmd_t command = {
+        .type = MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND,
+        .foreground = foreground,
+    };
+    if (xQueueSend(s_command_queue, &command, 0) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
 esp_err_t memory_watch_service_begin_recording(void)
 {
     return memory_watch_service_post_command(
@@ -2193,6 +2952,28 @@ esp_err_t memory_watch_service_get_snapshot(
     }
 
     *out_snapshot = memory_watch_service_copy_snapshot();
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_copy_conversation_items(
+    memory_watch_service_conversation_item_t *out_items,
+    size_t capacity,
+    size_t *out_count)
+{
+    if (out_count == NULL || (capacity > 0U && out_items == NULL))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    const size_t count =
+        s_conversation_item_count < capacity ? s_conversation_item_count : capacity;
+    for (size_t i = 0; i < count; ++i)
+    {
+        out_items[i] = s_conversation_items[i];
+    }
+    *out_count = count;
+    portEXIT_CRITICAL(&s_snapshot_lock);
     return ESP_OK;
 }
 
@@ -2313,18 +3094,17 @@ static bool memory_watch_service_inbox_get_client_config(
     const bool configured = s_endpoint_config.configured;
     if (configured)
     {
-        out->client_config.base_url     = out->base_url;
-        out->client_config.device_id    = out->device_id;
-        out->client_config.device_token = out->device_token;
-        /* inbox 短超时 30 秒；timeout_ms 为 uint32_t */
-        out->client_config.timeout_ms   = 30000U;
-        out->client_config.allow_insecure_http = s_endpoint_config.allow_insecure_http;
         memory_watch_service_copy_text(out->base_url,
             sizeof(out->base_url), s_endpoint_config.base_url);
         memory_watch_service_copy_text(out->device_id,
             sizeof(out->device_id), s_endpoint_config.device_id);
         memory_watch_service_copy_text(out->device_token,
             sizeof(out->device_token), s_endpoint_config.device_token);
+        memory_watch_service_rebind_client_config(out);
+        /* inbox 短超时 30 秒；timeout_ms 为 uint32_t */
+        out->client_config.timeout_ms = 30000U;
+        out->client_config.allow_insecure_http =
+            s_endpoint_config.allow_insecure_http;
     }
     portEXIT_CRITICAL(&s_endpoint_lock);
     return configured;
@@ -2357,7 +3137,23 @@ static void memory_watch_service_inbox_set_sync_state(
     portEXIT_CRITICAL(&s_inbox_meta_lock);
 }
 
-/* ── inbox worker task：只执行 HTTP，不接触 LVGL ── */
+static void memory_watch_service_inbox_set_poll_pending(bool pending)
+{
+    portENTER_CRITICAL(&s_inbox_poll_lock);
+    s_inbox_poll_pending = pending;
+    portEXIT_CRITICAL(&s_inbox_poll_lock);
+}
+
+static bool memory_watch_service_inbox_is_poll_pending(void)
+{
+    bool pending = false;
+    portENTER_CRITICAL(&s_inbox_poll_lock);
+    pending = s_inbox_poll_pending;
+    portEXIT_CRITICAL(&s_inbox_poll_lock);
+    return pending;
+}
+
+/* ── inbox worker task：只执行 HTTP，不接触界面对象 ── */
 static void memory_watch_service_inbox_worker_task(void *arg)
 {
     (void)arg;
@@ -2370,6 +3166,7 @@ static void memory_watch_service_inbox_worker_task(void *arg)
         {
             continue;
         }
+        memory_watch_service_rebind_client_config(&job.client_config);
 
         uint32_t notify_val = INBOX_WORKER_NOTIFY_FAIL;
 
@@ -2498,7 +3295,7 @@ static void memory_watch_service_inbox_try_poll(void)
     if (s_inbox_worker_busy)
     {
         /* worker 在途：记录 pending bit，在途结束后补一次 */
-        s_inbox_poll_pending = true;
+        memory_watch_service_inbox_set_poll_pending(true);
         return;
     }
 
@@ -2515,7 +3312,7 @@ static void memory_watch_service_inbox_try_poll(void)
     {
         s_inbox_worker_busy = true;
         memory_watch_service_inbox_set_sync_state(MEMORY_WATCH_INBOX_SYNC_POLLING);
-        s_inbox_poll_pending = false;
+        memory_watch_service_inbox_set_poll_pending(false);
         ESP_LOGI(TAG, "inbox: poll job dispatched");
     }
 }
@@ -2544,14 +3341,14 @@ static void memory_watch_service_inbox_handle_worker_result(uint32_t notify_val)
     }
 
     /* 若有待处理的 poll_now，顺手补一次 */
-    if (s_inbox_poll_pending)
+    if (memory_watch_service_inbox_is_poll_pending())
     {
         memory_watch_service_inbox_try_poll();
     }
 }
 
 /* ════════════════════════════════════════════════════════════════════
- * 公开 getter（任意 task / LVGL timer 调用，无 I/O，无副作用）
+ * 公开 getter（任意 task / 界面刷新路径调用，无 I/O，无副作用）
  * ════════════════════════════════════════════════════════════════════ */
 
 esp_err_t memory_watch_service_get_inbox_meta(
@@ -2666,10 +3463,10 @@ esp_err_t memory_watch_service_inbox_poll_now(const char *reason)
     ESP_LOGI(TAG, "inbox: poll_now reason=%s",
              reason != NULL ? reason : "unknown");
     /* 在 owner task 内直接调用 try_poll；
-     * 若从其他 task 调用（LVGL callback），用 command queue 安全投递。
+     * 若从其他 task 调用（例如界面 callback），用 owner 唤醒路径安全投递。
      * V1 简化：用 SEND_TEXT 命令队列同样 slot 携带 poll_now 意图 ──
      * 此处直接设置 pending bit，让 owner task 下次醒来时检查。 */
-    s_inbox_poll_pending = true;
+    memory_watch_service_inbox_set_poll_pending(true);
     if (s_service_task_handle != NULL)
     {
         /* 用 task notification bit-0 唤醒 owner task */

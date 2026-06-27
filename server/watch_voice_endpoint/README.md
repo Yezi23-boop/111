@@ -16,6 +16,7 @@ V1 keeps ASR on the server side so the watch can validate Ogg Opus upload, auth,
 GET  /v1/watch/health?device_id=watch-001
 POST /v1/watch/voice-command
 POST /v1/watch/request/{request_id}/cancel
+WS   /v1/watch/ws
 ```
 
 All watch endpoints require:
@@ -25,6 +26,21 @@ Authorization: Bearer <device_token>
 ```
 
 The Hermes API key is only configured on this server through `HERMES_API_KEY`; it must not be written into ESP32 firmware.
+
+`/v1/watch/ws` is the V2.1 experimental Hermes conversation path. It is disabled by default with `WATCH_WS_ENABLED=false` so the already-validated HTTP V1/V2 routes remain the rollback path. Enable it in the same `ai-memory-watch-voice-endpoint` container with:
+
+```text
+WATCH_WS_ENABLED=true
+```
+
+The WS path uses JSON control frames and binary Ogg Opus frames:
+
+```text
+auth -> conversation_snapshot -> audio_start -> binary audio chunks -> audio_end
+     -> asr_result -> task_started -> conversation_message
+```
+
+The server stores conversation messages in `CONVERSATION_DB_PATH` or `/data/conversation.db` by default and keeps the most recent 20 messages per device for reconnect replay.
 
 ## Request Contract
 
@@ -122,6 +138,20 @@ Verify the full server-side path without printing tokens:
 .\smoke_test.ps1 -IncludeCancel
 .\smoke_test.ps1 -IncludeCancel -IncludeAuthFailure
 ```
+
+Verify the V2.1 WebSocket path after setting `WATCH_WS_ENABLED=true` in the container env and recreating the container:
+
+```powershell
+.\websocket_smoke_test.ps1
+```
+
+For the public Cloudflare route, use the WSS URL:
+
+```powershell
+.\websocket_smoke_test.ps1 -BaseUrl "wss://watch.934000.xyz/v1/watch/ws"
+```
+
+`websocket_smoke_test.ps1` reports only event types and text-present/length fields. It does not print the device token, ASR text, Hermes reply text, audio bytes, or any API key.
 
 `hermes_text_smoke.ps1` directly verifies Hermes API Server `/health`, `/v1/models`, and `/v1/responses` with `API_SERVER_KEY` loaded from `D:\Docker_data\hermes\data\.env`. It reports only non-secret status, model count, response status, and output length.
 

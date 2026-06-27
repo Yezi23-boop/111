@@ -215,6 +215,34 @@ extern "C"
     #define MEMORY_WATCH_INBOX_RESPONSE_MAX_BYTES (24U * 1024U)
 
     /**
+     * @brief server conversation 单条消息。
+     *
+     * 用于离开 Hermes 页面后，手表通过 HTTP polling 拉取后台 Hermes 回复。
+     * server conversation 才是真相源；ESP32 只合并最近几条用于显示。
+     */
+    typedef struct
+    {
+        char message_id[64]; /**< server 生成的 msg_xxx。 */
+        char request_id[MEMORY_WATCH_VOICE_CLIENT_ID_MAX_BYTES];
+        char role[16];       /**< "user" 或 "assistant"。 */
+        char text[MEMORY_WATCH_VOICE_CLIENT_TEXT_MAX_BYTES];
+        char created_at[32]; /**< UTC RFC3339。 */
+        char status[MEMORY_WATCH_VOICE_CLIENT_STATUS_MAX_BYTES];
+    } memory_watch_conversation_message_t;
+
+    typedef struct
+    {
+        int http_status;           /**< HTTP 状态码，传输失败时为 0。 */
+        esp_err_t transport_error; /**< 最近一次 HTTP/解析错误。 */
+        size_t message_count;      /**< 实际解析成功的消息条数。 */
+        bool has_more;             /**< V2.2 固定 false，保留给后续分页。 */
+    } memory_watch_conversation_poll_result_t;
+
+    #define MEMORY_WATCH_CONVERSATION_MAX_MESSAGES 20U
+    /** conversation polling 响应体最大字节数，按 20 条短文本预留。 */
+    #define MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES (12U * 1024U)
+
+    /**
      * @brief GET /v1/watch/inbox 拉取最近 20 条快照。
      *
      * 只允许 inbox worker task 调用；调用方必须提供已在 PSRAM 分配的
@@ -246,6 +274,27 @@ extern "C"
         const memory_watch_voice_client_config_t *config,
         const char *notification_id,
         memory_watch_inbox_mark_read_result_t *out_result);
+
+    /**
+     * @brief GET /v1/watch/conversation 拉取离页 pending 对话消息。
+     *
+     * 只允许 conversation worker task 调用；调用方必须提供已在 PSRAM 分配的
+     * messages 数组（capacity >= MEMORY_WATCH_CONVERSATION_MAX_MESSAGES）。
+     * 单次 timeout 由传入 config 控制，V2.2 后台 polling 使用 4000 ms。
+     *
+     * @param[in] config HTTP client 配置。
+     * @param[in] after_message_id 可选 last_seen message_id；NULL/空表示最近 20 条。
+     * @param[out] messages 调用方分配的消息数组。
+     * @param[in] capacity messages 数组容量。
+     * @param[out] out_result 轮询结果。
+     * @return `ESP_OK` 表示 HTTP 2xx 且响应解析成功。
+     */
+    esp_err_t memory_watch_voice_client_conversation_poll(
+        const memory_watch_voice_client_config_t *config,
+        const char *after_message_id,
+        memory_watch_conversation_message_t *messages,
+        size_t capacity,
+        memory_watch_conversation_poll_result_t *out_result);
 
 #ifdef __cplusplus
 }

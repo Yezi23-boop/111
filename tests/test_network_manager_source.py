@@ -82,6 +82,7 @@ class NetworkManagerSourceTests(unittest.TestCase):
         self.assertIn("network_manager_sync_ble_presence", source)
         self.assertIn("ble_presence_start()", source)
         self.assertIn("ble_presence_stop()", source)
+        self.assertIn("network_manager_sync_ble_presence(bool allow_start)", source)
         self.assertIn(
             "static void network_manager_refresh_runtime_state(bool sync_ble_presence)",
             source,
@@ -91,12 +92,54 @@ class NetworkManagerSourceTests(unittest.TestCase):
             1,
         )[1].split("/**\n * @brief 用一条 recent Wi-Fi", 1)[0]
         self.assertIn("if (sync_ble_presence)", refresh_body)
-        self.assertIn("(void)network_manager_sync_ble_presence();", refresh_body)
+        self.assertIn("(void)network_manager_sync_ble_presence(false);", refresh_body)
         get_status_body = source.split(
             "esp_err_t network_manager_get_status(network_manager_status_t *status)", 1
         )[1].split("/**\n * @brief 再次尝试", 1)[0]
         self.assertIn("network_manager_refresh_runtime_state(false);", get_status_body)
         self.assertNotIn("network_manager_refresh_runtime_state(true);", get_status_body)
+
+    def test_background_refresh_does_not_auto_start_ble_presence(self) -> None:
+        source = NETWORK_MANAGER_SOURCE.read_text(encoding="utf-8")
+        sync_body = source.split(
+            "static esp_err_t network_manager_sync_ble_presence(bool allow_start)", 1
+        )[1].split("/**\n * @brief 停止当前 active provisioning transport", 1)[0]
+        refresh_body = source.split(
+            "static void network_manager_refresh_runtime_state(bool sync_ble_presence)",
+            1,
+        )[1].split("/**\n * @brief 用一条 recent Wi-Fi", 1)[0]
+        monitor_body = source.split("static void network_manager_task(void *arg)", 1)[
+            1
+        ].split("/**\n * @brief 处理来自 adapter", 1)[0]
+        set_ble_body = source.split(
+            "esp_err_t network_manager_set_ble_enabled(bool enabled)", 1
+        )[1].split("bool network_manager_is_ble_enabled(void)", 1)[0]
+
+        self.assertIn("if (!allow_start)", sync_body)
+        self.assertLess(sync_body.index("if (!allow_start)"), sync_body.index("ble_presence_start()"))
+        self.assertIn("(void)network_manager_sync_ble_presence(false);", refresh_body)
+        self.assertIn("network_manager_refresh_runtime_state(true);", monitor_body)
+        self.assertIn("ret = network_manager_sync_ble_presence(true);", set_ble_body)
+        self.assertNotIn("network_manager_sync_ble_presence();", source)
+
+    def test_ble_enable_failure_rolls_back_preference_and_active_state(self) -> None:
+        source = NETWORK_MANAGER_SOURCE.read_text(encoding="utf-8")
+        sync_body = source.split(
+            "static esp_err_t network_manager_sync_ble_presence(bool allow_start)", 1
+        )[1].split("/**\n * @brief 停止当前 active provisioning transport", 1)[0]
+
+        self.assertIn("ret = ble_presence_start();", sync_body)
+        self.assertIn("if (ret != ESP_OK)", sync_body)
+        self.assertIn("(void)ble_control_set_active(false);", sync_body)
+        self.assertIn("(void)ble_control_set_enabled(false);", sync_body)
+        self.assertLess(
+            sync_body.index("(void)ble_control_set_active(false);"),
+            sync_body.index("return ret;"),
+        )
+        self.assertLess(
+            sync_body.index("(void)ble_control_set_enabled(false);"),
+            sync_body.index("return ret;"),
+        )
 
     def test_source_exposes_explicit_provisioning_entries(self) -> None:
         source = NETWORK_MANAGER_SOURCE.read_text(encoding="utf-8")

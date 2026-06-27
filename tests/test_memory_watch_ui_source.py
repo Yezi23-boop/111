@@ -72,6 +72,9 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         )[1].split("static void memory_watch_controller_press_start", 1)[0]
         self.assertIn("lv_screen_load_anim", back_section)
         self.assertIn("memory_watch_controller_schedule_view_destroy();", back_section)
+        self.assertIn("memory_watch_service_cancel_recording();", back_section)
+        self.assertNotIn("memory_watch_service_cancel_waiting();", back_section)
+        self.assertIn("离开 Hermes 页面不等于取消已上传的 Hermes 任务", back_section)
 
     def test_view_implements_hold_release_and_slide_cancel_callbacks(self) -> None:
         source = UI_MEMORY_WATCH_VIEW_SOURCE.read_text(encoding="utf-8")
@@ -154,20 +157,37 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         self.assertIn("AGENT_PREVIEW_HOST=1", host_cmake)
         self.assertNotIn("memory_watch_voice_client_inbox", source)
 
-    def test_controller_keeps_conversation_history_local_and_deduped(self) -> None:
+    def test_controller_reads_conversation_history_from_service_cache(self) -> None:
         source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("#define MEMORY_WATCH_CONVERSATION_MAX_ITEMS 12U", source)
-        self.assertIn("s_conversation_entries", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS", source)
+        self.assertIn("s_conversation_items", source)
         self.assertIn("s_conversation_revision", source)
-        self.assertIn("s_last_user_request_id", source)
-        self.assertIn("s_last_reply_request_id", source)
         self.assertIn("memory_watch_controller_sync_conversation", source)
-        self.assertIn("strcmp(s_last_user_request_id, snapshot->request_id)", source)
-        self.assertIn("strcmp(s_last_reply_request_id, snapshot->request_id)", source)
-        self.assertIn("memmove(&s_conversation_entries[0]", source)
+        self.assertIn("snapshot->conversation_generation", source)
+        self.assertIn("memory_watch_service_copy_conversation_items", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_USER", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_HERMES", source)
         self.assertIn("memory_watch_connection_state", source)
+        self.assertNotIn("s_conversation_entries", source)
+        self.assertNotIn("s_last_user_request_id", source)
+        self.assertNotIn("s_last_reply_request_id", source)
         self.assertNotIn("memory_watch_service_history", source)
+
+    def test_controller_reports_memory_watch_foreground_without_owning_transport(self) -> None:
+        source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_service_set_foreground(true)", source)
+        self.assertIn("memory_watch_service_set_foreground(false)", source)
+        self.assertIn("static bool s_last_foreground = false", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_STATE_TIMEOUT", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_STATE_CANCELED", source)
+        bubble_section = source.split("watch_nc_notify_hermes_reply(NULL)")[0].rsplit(
+            "if (!is_fg)", 1
+        )[1]
+        self.assertNotIn("MEMORY_WATCH_SERVICE_STATE_NEEDS_CLARIFICATION", bubble_section)
+        self.assertNotIn("memory_watch_ws_client_close", source)
+        self.assertNotIn("esp_http_client", source)
 
     def test_host_runner_observes_sdl_quit_without_consuming_input_events(self) -> None:
         source = (

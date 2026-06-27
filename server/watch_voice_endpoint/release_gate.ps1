@@ -11,6 +11,7 @@ param(
   [switch]$SkipHermesApi,
   [switch]$SkipServiceHealth,
   [switch]$SkipRealAsr,
+  [switch]$IncludeWebSocketSmoke,
   [switch]$AssertPrivateNotExposed
 )
 
@@ -21,6 +22,7 @@ $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $requirements = Join-Path $scriptRoot "requirements.txt"
 $testsDir = Join-Path $scriptRoot "tests"
 $acceptanceScript = Join-Path $scriptRoot "acceptance_test.ps1"
+$websocketSmokeScript = Join-Path $scriptRoot "websocket_smoke_test.ps1"
 $composeFile = Join-Path $scriptRoot "compose.local.yml"
 
 function Convert-JsonOutput {
@@ -164,6 +166,32 @@ if (
   }
 }
 
+$websocketSmoke = $null
+$websocketSmokeExitCode = $null
+$websocketSmokeParseError = $null
+if (
+  $IncludeWebSocketSmoke `
+    -and $pytestExitCode -eq 0 `
+    -and ($rebuildSummary.exit_code -eq $null -or $rebuildSummary.exit_code -eq 0) `
+    -and ($rebuildSummary.service_ready -ne $false) `
+    -and ($acceptanceExitCode -eq $null -or $acceptanceExitCode -eq 0)
+) {
+  $wsBaseUrl = $BaseUrl
+  if ($wsBaseUrl.StartsWith("https://")) {
+    $wsBaseUrl = "wss://" + $wsBaseUrl.Substring("https://".Length)
+  } elseif ($wsBaseUrl.StartsWith("http://")) {
+    $wsBaseUrl = "ws://" + $wsBaseUrl.Substring("http://".Length)
+  }
+  $wsBaseUrl = $wsBaseUrl.TrimEnd("/") + "/v1/watch/ws"
+  $websocketOutput = & $websocketSmokeScript -BaseUrl $wsBaseUrl -EnvFile $EnvFile -DeviceId $DeviceId 2>&1
+  $websocketSmokeExitCode = $LASTEXITCODE
+  try {
+    $websocketSmoke = Convert-JsonOutput -Output $websocketOutput
+  } catch {
+    $websocketSmokeParseError = $_.Exception.Message
+  }
+}
+
 $status = "passed"
 $reason = $null
 if ($pytestExitCode -ne 0) {
@@ -181,6 +209,12 @@ if ($pytestExitCode -ne 0) {
 } elseif ($acceptanceParseError) {
   $status = "failed"
   $reason = "acceptance_json_parse_failed"
+} elseif ($websocketSmokeExitCode -ne $null -and $websocketSmokeExitCode -ne 0) {
+  $status = "failed"
+  $reason = "websocket_smoke_failed"
+} elseif ($websocketSmokeParseError) {
+  $status = "failed"
+  $reason = "websocket_smoke_json_parse_failed"
 }
 
 $summary = [pscustomobject]@{
@@ -211,6 +245,30 @@ $summary = [pscustomobject]@{
         skipped = [bool]$SkipAcceptance
         exit_code = $acceptanceExitCode
         parse_error = $acceptanceParseError
+      }
+    })
+  websocket_smoke = $(if ($websocketSmoke) {
+      [pscustomobject]@{
+        exit_code = $websocketSmokeExitCode
+        status = $websocketSmoke.status
+        base_url = $websocketSmoke.base_url
+        request_id = $websocketSmoke.request_id
+        snapshot_count = $websocketSmoke.snapshot_count
+        asr_type = $websocketSmoke.asr_type
+        asr_text_present = $websocketSmoke.asr_text_present
+        asr_text_chars = $websocketSmoke.asr_text_chars
+        task_type = $websocketSmoke.task_type
+        reply_type = $websocketSmoke.reply_type
+        reply_role = $websocketSmoke.reply_role
+        reply_status = $websocketSmoke.reply_status
+        reply_text_present = $websocketSmoke.reply_text_present
+        reply_text_chars = $websocketSmoke.reply_text_chars
+      }
+    } else {
+      [pscustomobject]@{
+        skipped = -not [bool]$IncludeWebSocketSmoke
+        exit_code = $websocketSmokeExitCode
+        parse_error = $websocketSmokeParseError
       }
     })
 }

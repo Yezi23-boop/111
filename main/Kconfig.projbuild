@@ -131,4 +131,13 @@ config MEMORY_WATCH_BOOT_TEXT
     help
         Text used only when MEMORY_WATCH_BOOT_TEXT_SMOKE is enabled.
 
+config MEMORY_WATCH_WEBSOCKET_ENABLED
+    bool "Use WebSocket for Hermes voice conversation"
+    default y
+    depends on MEMORY_WATCH_DEFAULT_ENDPOINT_ENABLED
+    help
+        Enable the V2.1 experimental /v1/watch/ws path for active Hermes
+        conversations. The existing HTTP voice-command path remains available
+        as a rollback route during development.
+
 endmenu

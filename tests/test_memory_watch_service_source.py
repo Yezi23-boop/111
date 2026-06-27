@@ -5,6 +5,8 @@ from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import MAIN_KCONFIG
 from tests.main_paths import MEMORY_WATCH_SERVICE_HEADER
 from tests.main_paths import MEMORY_WATCH_SERVICE_SOURCE
+from tests.main_paths import MEMORY_WATCH_VOICE_CLIENT_HEADER
+from tests.main_paths import MEMORY_WATCH_VOICE_CLIENT_SOURCE
 
 
 class MemoryWatchServiceSourceTests(unittest.TestCase):
@@ -62,7 +64,6 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("xQueueCreateStatic(", source)
         self.assertIn("xQueueSend(", source)
         self.assertIn("xQueueReceive(", source)
-        self.assertIn("xTaskCreateStatic(", source)
         self.assertIn('#include "freertos/idf_additions.h"', source)
         self.assertIn("kUploadWorkerStackWords = 24576", source)
         self.assertIn("xTaskCreateWithCaps(", source)
@@ -270,6 +271,22 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
             cancel_worker_section,
         )
 
+        inbox_get_config_section = source.split(
+            "static bool memory_watch_service_inbox_get_client_config"
+        )[1].split("static void memory_watch_service_inbox_set_meta")[0]
+        self.assertIn(
+            "memory_watch_service_rebind_client_config(out)",
+            inbox_get_config_section,
+        )
+
+        inbox_worker_section = source.split(
+            "static void memory_watch_service_inbox_worker_task"
+        )[1].split("static void memory_watch_service_inbox_merge_staging")[0]
+        self.assertIn(
+            "memory_watch_service_rebind_client_config(&job.client_config)",
+            inbox_worker_section,
+        )
+
     def test_service_splits_cancel_paths_and_ignores_late_results(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
 
@@ -339,6 +356,84 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         )[1].split("else", 1)[0]
         self.assertIn("memory_watch_voice_client_post_text_command", upload_worker_section)
         self.assertNotIn("memory_watch_recorder_capture_ogg_opus", upload_worker_section)
+
+    def test_service_owns_recent_conversation_display_cache(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+        header = MEMORY_WATCH_SERVICE_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS 10U", header)
+        self.assertIn("conversation_generation", header)
+        self.assertIn("memory_watch_service_conversation_item_t", header)
+        self.assertIn("memory_watch_service_copy_conversation_items", header)
+        self.assertIn("s_conversation_items", source)
+        self.assertIn("s_conversation_item_count", source)
+        self.assertIn("s_conversation_generation", source)
+        self.assertIn("memory_watch_service_append_conversation_item", source)
+        self.assertIn("memory_watch_service_append_response_conversation", source)
+        self.assertIn("memmove(&s_conversation_items[0]", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_USER", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_HERMES", source)
+        append_section = source.split(
+            "static void memory_watch_service_append_conversation_item"
+        )[1].split("static void memory_watch_service_append_response_conversation")[0]
+        self.assertIn("strcmp(s_conversation_items[i].request_id", append_section)
+        self.assertIn("strcmp(s_conversation_items[i].text, text) == 0", append_section)
+
+        ws_event_section = source.split(
+            "static void memory_watch_service_ws_event_cb"
+        )[1].split("static void memory_watch_service_ws_disconnect_cb")[0]
+        asr_section = ws_event_section.split('strcmp(event->type, "asr_result") == 0')[1].split(
+            'strcmp(event->type, "conversation_message") == 0', 1
+        )[0]
+        self.assertIn("memory_watch_service_append_conversation_item", asr_section)
+        self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_USER", asr_section)
+        self.assertIn(
+            "memory_watch_service_append_response_conversation(&result->response)",
+            source,
+        )
+
+        copy_section = source.split(
+            "esp_err_t memory_watch_service_copy_conversation_items"
+        )[1].split("bool memory_watch_service_is_endpoint_configured", 1)[0]
+        self.assertIn("portENTER_CRITICAL(&s_snapshot_lock)", copy_section)
+        self.assertIn("out_items[i] = s_conversation_items[i]", copy_section)
+        self.assertNotIn("esp_http_client", copy_section)
+        self.assertNotIn("nvs_", copy_section)
+
+    def test_v22_background_conversation_polling_owner_path(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+        header = MEMORY_WATCH_SERVICE_HEADER.read_text(encoding="utf-8")
+        client_source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
+        client_header = MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_service_set_foreground", header)
+        self.assertIn("MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND", source)
+        self.assertIn("MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE", source)
+        self.assertIn("kConversationPollIntervalMs = 5000", source)
+        self.assertIn("kConversationPollTimeoutMs = 4000U", source)
+        self.assertIn("kConversationPendingMaxWaitMs = 10LL * 60LL * 1000LL", source)
+        self.assertIn("memory_watch_service_conversation_worker_task", source)
+        self.assertIn("s_conversation_staging", source)
+        self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
+        self.assertIn("memory_watch_voice_client_conversation_poll", source)
+        self.assertIn("conversation_pending", source)
+        self.assertIn("memory_watch_service_start_conversation_polling", source)
+        self.assertIn("memory_watch_ws_client_close();", source)
+        self.assertIn("memory_watch_service_is_foreground_active()", source)
+        self.assertIn("s_last_seen_conversation_id", source)
+        self.assertIn(".last_seen_conversation_id = last_seen_conversation_id", source)
+        self.assertIn("conversation_already_appended", source)
+        self.assertIn("if (!result->conversation_already_appended)", source)
+        self.assertIn("terminal_result.conversation_already_appended = true", source)
+
+        self.assertIn("memory_watch_conversation_message_t", client_header)
+        self.assertIn("MEMORY_WATCH_CONVERSATION_MAX_MESSAGES 20U", client_header)
+        self.assertIn("MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES", client_header)
+        self.assertIn("memory_watch_voice_client_conversation_poll", client_header)
+        self.assertIn('"/v1/watch/conversation?device_id="', client_source)
+        self.assertIn('"&after="', client_source)
+        self.assertIn('"messages"', client_source)
+        self.assertIn('"has_more"', client_source)
 
     def test_main_kconfig_exposes_memory_watch_defaults_without_secret_value(self) -> None:
         kconfig = MAIN_KCONFIG.read_text(encoding="utf-8")

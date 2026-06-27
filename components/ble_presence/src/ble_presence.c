@@ -7,6 +7,7 @@
 
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -27,6 +28,10 @@ static const char *kBlePresenceDeviceName = "ESP32S3-723C";
 static const uint32_t kBlePresenceStopTimeoutMs = 1000;
 /** @brief 等待 host task 自删除完成的让步时间，单位毫秒。 */
 static const uint32_t kBlePresenceTaskExitGraceMs = 30;
+/** @brief 启动 BLE controller 前预留的最小 internal 8-bit heap，避免底层大块申请失败后触发 controller assert。 */
+static const size_t kBlePresenceMinInternalFreeBytes = 64U * 1024U;
+/** @brief BLE controller 初始化期间已观察到约 30 KiB 连续块申请，largest block 必须额外留出余量。 */
+static const size_t kBlePresenceMinInternalLargestBlockBytes = 40U * 1024U;
 
 /**
  * @brief `ble_presence` 单实例运行态。
@@ -57,6 +62,7 @@ static SemaphoreHandle_t s_stop_done = NULL;
 static ble_presence_runtime_t s_runtime = {0};
 
 static esp_err_t ble_presence_ensure_primitives(void);
+static esp_err_t ble_presence_check_internal_heap(void);
 static esp_err_t ble_presence_start_advertising(void);
 static void ble_presence_on_sync(void);
 static void ble_presence_on_reset(int reason);
@@ -92,6 +98,36 @@ static esp_err_t ble_presence_ensure_primitives(void)
 
     return (s_presence_mutex != NULL && s_stop_done != NULL) ? ESP_OK
                                                              : ESP_FAIL;
+}
+
+/**
+ * @brief 检查 NimBLE controller 初始化前的 internal heap 余量。
+ *
+ * `nimble_port_init()` 内部会进入 BT controller 初始化。实机日志已观察到
+ * `BLE_INIT: Malloc failed` 后 controller 在 `emi.c` assert，因此这里在进入
+ * controller 路径前先看 internal 8-bit heap 的总量和最大连续块，内存不足时
+ * 直接把失败返回给 UI，而不是让底层 panic。
+ *
+ * @return `ESP_OK` 表示可以尝试初始化；`ESP_ERR_NO_MEM` 表示当前内存不足。
+ */
+static esp_err_t ble_presence_check_internal_heap(void)
+{
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const size_t free_bytes = heap_caps_get_free_size(caps);
+    const size_t largest_block = heap_caps_get_largest_free_block(caps);
+
+    if (free_bytes < kBlePresenceMinInternalFreeBytes ||
+        largest_block < kBlePresenceMinInternalLargestBlockBytes)
+    {
+        ESP_LOGW(TAG,
+                 "BLE presence start skipped: internal heap low free=%u largest=%u min_free=%u min_largest=%u",
+                 (unsigned)free_bytes, (unsigned)largest_block,
+                 (unsigned)kBlePresenceMinInternalFreeBytes,
+                 (unsigned)kBlePresenceMinInternalLargestBlockBytes);
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
 }
 
 /**
@@ -309,6 +345,13 @@ esp_err_t ble_presence_start(void)
 
     while (xSemaphoreTake(s_stop_done, 0) == pdTRUE)
     {
+    }
+
+    ret = ble_presence_check_internal_heap();
+    if (ret != ESP_OK)
+    {
+        xSemaphoreGive(s_presence_mutex);
+        return ret;
     }
 
     memset(&s_runtime, 0, sizeof(s_runtime));

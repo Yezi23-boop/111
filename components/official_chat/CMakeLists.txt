@@ -1,5 +1,6 @@
 set(OFFICIAL_CHAT_SOURCES
     "official_chat_c_api.cc"
+    "official_chat_websocket_transport.cc"
     "application.cc"
     "board_metadata.cc"
     "settings.cc"
