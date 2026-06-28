@@ -19,12 +19,27 @@ extern "C"
 #define MEMORY_WATCH_WS_TYPE_MAX_BYTES 32U
 
     /**
+     * @brief WebSocket 入站业务事件类型。
+     *
+     * 原始 JSON frame 名称只在 ws client 内部解析；service 只消费这些
+     * turn-level 事件，避免把协议帧细节扩散到 owner task。
+     */
+    typedef enum
+    {
+        MEMORY_WATCH_WS_EVENT_UNKNOWN = 0,
+        MEMORY_WATCH_WS_EVENT_TURN_ASR_READY,
+        MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE,
+        MEMORY_WATCH_WS_EVENT_TURN_ERROR,
+    } memory_watch_ws_event_kind_t;
+
+    /**
      * @brief WebSocket 入站 JSON 事件。
      *
      * 文本字段只保存给 UI 和状态机需要的短文本；不得存放 token 或原始响应体。
      */
     typedef struct
     {
+        memory_watch_ws_event_kind_t kind; /**< 已映射的业务事件类型。 */
         char type[MEMORY_WATCH_WS_TYPE_MAX_BYTES];
         char request_id[MEMORY_WATCH_VOICE_CLIENT_ID_MAX_BYTES];
         char message_id[MEMORY_WATCH_WS_MESSAGE_ID_MAX_BYTES];
@@ -82,6 +97,17 @@ extern "C"
      */
     esp_err_t memory_watch_ws_client_send_audio_end(
         const char *request_id);
+
+    /**
+     * @brief 发送一个完整语音 turn：audio_start、binary chunks、audio_end。
+     *
+     * `memory_watch_service` 优先调用本接口，避免直接理解 WS 控制帧序列。
+     */
+    esp_err_t memory_watch_ws_client_send_audio_turn(
+        const char *request_id,
+        const uint8_t *audio,
+        size_t audio_len,
+        size_t chunk_size);
 
     /**
      * @brief 发送 ACK，更新 server 侧 last seen。

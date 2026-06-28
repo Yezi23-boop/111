@@ -17,6 +17,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from conversation_repo import ConversationMessage, ConversationRepo, ConversationValidationError
 from inbox_repo import InboxRepo, InboxValidationError
+from session_repo import SessionRepo, SessionValidationError
 
 
 HERMES_API_URL = os.getenv("HERMES_API_URL", "http://127.0.0.1:8642").rstrip("/")
@@ -83,8 +84,10 @@ _inflight_requests: dict[tuple[str, str], asyncio.Task[WatchResponse]] = {}
 # SQLite inbox repository；数据库路径可通过环境变量覆盖，便于测试隔离。
 _INBOX_DB_PATH = Path(os.getenv("INBOX_DB_PATH", "/data/inbox.db"))
 _CONVERSATION_DB_PATH = Path(os.getenv("CONVERSATION_DB_PATH", "/data/conversation.db"))
+_SESSION_DB_PATH = Path(os.getenv("SESSION_DB_PATH", "/data/session.db"))
 _inbox_repo: InboxRepo | None = None
 _conversation_repo: ConversationRepo | None = None
+_session_repo: SessionRepo | None = None
 _ws_background_tasks: set[asyncio.Task[None]] = set()
 
 
@@ -113,6 +116,15 @@ def _get_conversation_repo() -> ConversationRepo:
         _CONVERSATION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         _conversation_repo = ConversationRepo(_CONVERSATION_DB_PATH)
     return _conversation_repo
+
+
+def _get_session_repo() -> SessionRepo:
+    """懒初始化 watch_session store；V2.3 任务状态真相源。"""
+    global _session_repo
+    if _session_repo is None:
+        _SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _session_repo = SessionRepo(_SESSION_DB_PATH)
+    return _session_repo
 
 
 _request_event_counts = {
@@ -693,6 +705,15 @@ async def _ws_run_hermes_job(
     asr_text: str,
 ) -> None:
     repo = _get_conversation_repo()
+    session_repo = _get_session_repo()
+    session_id = request_id  # V2.3: session_id == request_id
+
+    # 标记 session 进入 running 状态
+    try:
+        session_repo.transition(device_id, session_id, "running")
+    except SessionValidationError:
+        pass  # session 可能已被取消或已终态，继续尽力执行
+
     await _ws_try_send_json(conn, {"type": "task_started", "request_id": request_id})
     try:
         reply_text = await _call_hermes(device_id, asr_text, None)
@@ -705,6 +726,13 @@ async def _ws_run_hermes_job(
             text=reply_text[:REPLY_MAX_CHARS],
             status="done",
         )
+        # 更新 session 为 done
+        try:
+            session_repo.transition(device_id, session_id, "done",
+                                    reply_text=reply_text[:REPLY_MAX_CHARS],
+                                    last_delivered_message_id=message.message_id)
+        except SessionValidationError:
+            pass
         await _ws_try_send_json(
             conn,
             {"type": "conversation_message", **_conversation_message_payload(message)},
@@ -718,11 +746,21 @@ async def _ws_run_hermes_job(
                 text="没有处理成功，请再说一次",
                 status="error",
             )
+            try:
+                session_repo.transition(device_id, session_id, "error",
+                                        reply_text="没有处理成功，请再说一次",
+                                        last_delivered_message_id=message.message_id)
+            except SessionValidationError:
+                pass
             await _ws_try_send_json(
                 conn,
                 {"type": "conversation_message", **_conversation_message_payload(message)},
             )
         except Exception:
+            try:
+                session_repo.transition(device_id, session_id, "error")
+            except SessionValidationError:
+                pass
             await _ws_try_send_error(conn, request_id, "hermes_error")
 
 
@@ -736,11 +774,57 @@ async def _ws_finish_audio(
     if not audio_bytes:
         await _ws_try_send_error(conn, request_id, "empty_audio")
         return
+
+    session_repo = _get_session_repo()
+    session_id = request_id  # V2.3: session_id == request_id
+
+    # ── 幂等检查：相同 request_id 不重复处理 ──
+    try:
+        existing = session_repo.get(device_id, session_id)
+        if existing.state in ("done", "error", "timeout", "canceled"):
+            # 终态 → 重放已有结果，不重新处理
+            conv_repo = _get_conversation_repo()
+            recent = conv_repo.list_recent(device_id)
+            for msg in reversed(recent):
+                if msg.request_id == request_id and msg.role == "assistant":
+                    await _ws_try_send_json(
+                        conn,
+                        {"type": "conversation_message",
+                         **_conversation_message_payload(msg)},
+                    )
+                    return
+            # 有 session 但找不到 conversation message（异常情况），继续处理
+        else:
+            # 非终态 → 已在处理中
+            await _ws_try_send_error(conn, request_id, "duplicate_request")
+            return
+    except SessionValidationError:
+        pass  # session 不存在，正常处理
+
+    # ── 创建 session ──
+    try:
+        session_repo.create(device_id=device_id, session_id=session_id,
+                            request_id=request_id)
+    except SessionValidationError:
+        pass  # 并发创建，继续
+
     try:
         asr_text = await _transcribe_audio(audio_bytes, "audio/ogg", mock_asr_text)
         if not asr_text:
             await _ws_try_send_error(conn, request_id, "empty_asr_text")
+            try:
+                session_repo.transition(device_id, session_id, "error")
+            except SessionValidationError:
+                pass
             return
+
+        # 更新 session 为 asr_ready
+        try:
+            session_repo.transition(device_id, session_id, "asr_ready",
+                                    user_text=asr_text)
+        except SessionValidationError:
+            pass
+
         message = _get_conversation_repo().add_message(
             device_id=device_id,
             request_id=request_id,
@@ -759,8 +843,16 @@ async def _ws_finish_audio(
         )
         await _ws_run_hermes_job(conn, device_id, request_id, asr_text)
     except ConversationValidationError:
+        try:
+            session_repo.transition(device_id, session_id, "error")
+        except SessionValidationError:
+            pass
         await _ws_try_send_error(conn, request_id, "conversation_store_error")
     except Exception:
+        try:
+            session_repo.transition(device_id, session_id, "error")
+        except SessionValidationError:
+            pass
         await _ws_try_send_error(conn, request_id, "asr_or_agent_error")
 
 
@@ -927,6 +1019,168 @@ async def conversation_list(
             for message in messages
         ],
         has_more=False,
+    )
+
+
+class SessionStateOut(BaseModel):
+    session_id: str
+    request_id: str
+    state: str
+    created_at: str
+    updated_at: str
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionStateOut]
+    active_count: int  # 非终态 session 数
+
+
+class SyncConversationResponse(BaseModel):
+    has_pending: bool
+    session_state: Literal["none", "running", "done", "error", "timeout", "canceled"]
+    messages: list[ConversationMessageOut]
+
+
+class SyncLatestUnreadOut(BaseModel):
+    notification_id: str
+    title: str
+    preview: str
+    created_at: str
+
+
+class SyncInboxResponse(BaseModel):
+    unread_count: int
+    latest_unread: SyncLatestUnreadOut | None = None
+
+
+class WatchSyncResponse(BaseModel):
+    schema_version: int = 1
+    conversation: SyncConversationResponse
+    inbox: SyncInboxResponse
+
+
+def _public_session_state(state: str) -> Literal["running", "done", "error", "timeout", "canceled"]:
+    if state in ("accepted", "asr_ready", "running"):
+        return "running"
+    if state in ("done", "error", "timeout", "canceled"):
+        return state  # type: ignore[return-value]
+    return "error"
+
+
+def _sync_messages_for(
+    device_id: str,
+    after_message_id: str | None,
+    max_messages: int,
+    request_id: str | None = None,
+) -> list[ConversationMessage]:
+    if max_messages <= 0:
+        return []
+    messages = _get_conversation_repo().list_after(device_id, after_message_id)
+    if request_id:
+        messages = [message for message in messages if message.request_id == request_id]
+    if max_messages > 0 and len(messages) > max_messages:
+        if after_message_id:
+            return messages[:max_messages]
+        return messages[-max_messages:]
+    return messages
+
+
+def _latest_unread_for(device_id: str) -> tuple[int, SyncLatestUnreadOut | None]:
+    items, unread_count = _get_inbox_repo().list_items(device_id)
+    latest_unread = next((item for item in items if not item.read), None)
+    if latest_unread is None:
+        return unread_count, None
+    return unread_count, SyncLatestUnreadOut(
+        notification_id=latest_unread.notification_id,
+        title=latest_unread.title,
+        preview=latest_unread.preview,
+        created_at=latest_unread.created_at,
+    )
+
+
+@app.get("/v1/watch/session", response_model=SessionListResponse)
+async def session_list(
+    device_id: str = Query(...),
+    request_id: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+) -> SessionListResponse:
+    """查询 device 的 session 状态。ESP32 用于判断 pending 是否完成。
+
+    - 不带 request_id：返回所有 session（最近 20 条）
+    - 带 request_id：只返回匹配的 session
+    """
+    _require_device(device_id, authorization, "session_list")
+    session_repo = _get_session_repo()
+
+    if request_id:
+        try:
+            s = session_repo.get_by_request_id(device_id, request_id)
+            sessions = [s]
+        except SessionValidationError:
+            sessions = []
+    else:
+        sessions = session_repo.list_recent(device_id)
+
+    active_count = sum(1 for s in sessions if s.state not in ("done", "error", "timeout", "canceled"))
+    return SessionListResponse(
+        sessions=[
+            SessionStateOut(
+                session_id=s.session_id,
+                request_id=s.request_id,
+                state=s.state,
+                created_at=s.created_at,
+                updated_at=s.updated_at,
+            )
+            for s in sessions
+        ],
+        active_count=active_count,
+    )
+
+
+@app.get("/v1/watch/sync", response_model=WatchSyncResponse)
+async def watch_sync(
+    device_id: str = Query(...),
+    mode: Literal["background", "foreground_reconcile"] = Query("background"),
+    pending_request_id: str | None = Query(default=None),
+    after_message_id: str | None = Query(default=None),
+    max_messages: int = Query(default=10, ge=0, le=20),
+    authorization: str | None = Header(default=None),
+) -> WatchSyncResponse:
+    """ESP32 后台统一 delta sync；server 内部仍分 session/conversation/inbox 三本账。"""
+    _require_device(device_id, authorization, "watch_sync")
+
+    session_state: Literal["none", "running", "done", "error", "timeout", "canceled"] = "none"
+    messages: list[ConversationMessage] = []
+    if pending_request_id:
+        try:
+            session = _get_session_repo().get_by_request_id(device_id, pending_request_id)
+            session_state = _public_session_state(session.state)
+            messages = _sync_messages_for(
+                device_id,
+                after_message_id,
+                max_messages,
+                request_id=pending_request_id,
+            )
+        except SessionValidationError:
+            session_state = "none"
+            messages = []
+    elif mode == "foreground_reconcile":
+        messages = _sync_messages_for(device_id, after_message_id, max_messages)
+
+    unread_count, latest_unread = _latest_unread_for(device_id)
+    return WatchSyncResponse(
+        conversation=SyncConversationResponse(
+            has_pending=session_state == "running",
+            session_state=session_state,
+            messages=[
+                ConversationMessageOut(**_conversation_message_payload(message))
+                for message in messages
+            ],
+        ),
+        inbox=SyncInboxResponse(
+            unread_count=unread_count,
+            latest_unread=latest_unread,
+        ),
     )
 
 

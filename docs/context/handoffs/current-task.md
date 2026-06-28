@@ -1,25 +1,36 @@
 ---
 id: context-current-task
-tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox
-summary: 记录 AI Memory Watch / Hermes V1/V2 归档、V2.1 WebSocket 完成、V2.2 前台 WS + 后台 conversation polling 已完成，以及后续 hardening 方向。
-last_reviewed: 2026-06-27
+tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox, thin-watch-client, thick-watch-endpoint
+summary: 记录 AI Memory Watch / Hermes V1/V2/V2.1/V2.2/V2.3 状态，以及当前 V2.4 ESP32 真实瘦身计划阶段 6 真机验收进展。
+last_reviewed: 2026-06-28
 memory_type: task
 scope: task
 owners: docs/context/handoffs
-triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive, v2-archive, inbox, websocket, conversation_polling
+triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive, v2-archive, inbox, websocket, conversation_polling, thin_watch_client, thick_watch_endpoint, server_session
 evidence_level: observed
 ---
 
 # AI Memory Watch / Hermes 当前任务交接
 
+> **2026-06-28 插入：全国嵌入式比赛报告收尾状态**
+>
+> - 本轮完成 paper-spine-research 阶段：已补充 `source_index.md`、`research_dossier.md`、`style_profile.md`、`sota_gap_map.md`、`motivation_options_after_research.md`、`confirmed_motivation.md`。
+> - 已更新 `evidence_bank.md` 与 `figure_asset_map.md`，填入模型大小、板端状态机/Hermes 日志等可验证证据。
+> - 已重写 `paper_rewriting_output/final_paper/main.tex`，补入实测性能指标和第 3.5 小节“关键测试证据整理”。
+> - 本会话内命令执行工具异常，无法编译 PDF 与运行服务器测试，需用户本地编译并补拍实物照片/界面截图。
+> - 下一步：补拍 F07 手表实物照片、F08 危险提醒界面截图、F09 Hermes 页面/回执截图；录制断网本地提醒视频；运行 `pytest tests/test_app.py` 并截图；编译 PDF 并检查匿名与字数。
+
+
 ## 目标
 
-- 当前目标已从“打通 V1 主链路”推进到“V1 已归档 + V2 已归档 + V2.1 WebSocket 完成 + V2.2 前台 WS/后台 conversation polling 完成，后续进入体验 hardening”。
+- 当前目标已从“打通 V1 主链路”推进到“V1 已归档 + V2 已归档 + V2.1 WebSocket 完成 + V2.2 前台 WS/后台 conversation polling 完成 + V2.3 Thin Watch Client / Thick Watch Endpoint 完成并归档”，现在进入 V2.4 ESP32 真实瘦身计划。
 - V1 主链路已完成：`ESP32-S3 真机麦克风 -> Ogg Opus -> watch endpoint -> MiMo ASR -> Hermes -> 手表 V1 固定 7 字段 JSON`。
 - V2 主链路已完成：`Hermes/脚本模拟主动提示 -> watch endpoint inbox -> SQLite -> 公网 GET 读回 -> ESP32 收件箱/全局气泡能力`。
 - V2.1 主链路已完成：前台 Hermes 页面使用 `WSS /v1/watch/ws` 上传 Ogg Opus、ASR 先显用户消息、assistant reply 后显 Hermes 消息。
 - V2.2 服务器与固件骨架已完成：前台 Hermes 页面仍用 WS，离页 pending 时关闭 WS，后台 HTTP `GET /v1/watch/conversation` 每 5 秒轮询取回结果。
 - V2.2 最新真机反馈：前台 Hermes 页面可正常使用，离开 Hermes 页面后也能通过气泡收到 Hermes 回复；同一回复重复显示的问题已在代码侧修复并经用户复测确认当前没有问题。
+- V2.3 已完成：把 ESP32-S3 手表继续做薄的第一轮 server 侧地基已落地；server session_repo 成为任务状态真相源，watch endpoint 增加 session 状态查询和 WS session 状态转移，ESP32 侧保持已验证显示去重路径。
+- V2.4 新目标：真正减少 ESP32-S3 端 Hermes 状态理解、重复去重、协议细节扩散和资源占用；这是 server + ESP32 端到端瘦身计划，ESP32 端允许修改，但必须围绕职责变薄、体验不回退、资源不恶化推进。
 - 不要再相信旧 handoff 里“真机按住说话未验证”“板端缺 endpoint 配置导致无法验证”的状态；这些已经被 2026-06-17 之后的证据反转。
 - 不要再相信旧状态里“V2 通知箱尚未实现代码”或“需要新建 V2 计划”的表述；`2026-06-25-hermes-inbox-global-notification-plan.md` 已在 `completed/` 归档。
 
@@ -31,6 +42,10 @@ evidence_level: observed
 - V2 收件箱与全局气泡计划 `2026-06-25-hermes-inbox-global-notification-plan.md` 已在 `docs/context/plans/completed/` 归档，状态为 `archived`。
 - Hermes API Server、watch voice endpoint、Cloudflare Tunnel、公网 `watch.934000.xyz/v1/watch/*`、文本命令和真实麦克风语音链路均已有成功证据。
 - 当前 watch endpoint 容器已重建到 V2.2 server 代码，本机 `127.0.0.1:8787/health` healthy，公网 `watch.934000.xyz` runtime gate、WS smoke、conversation polling smoke 均通过。
+- V2.3 计划已归档：`docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.3-thin-watch-client-thick-watch-endpoint-plan.md`。
+- V2.4 active plan 已新增并开始执行：`docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md`。
+- V2.4 阶段 0/1/1.5/2/3/4/5 已完成：基线复核、ESP32 职责审计、server `/v1/watch/sync` 契约测试与 endpoint、ESP32 `/sync` 窄客户端、后台 pending/foreground reconcile sync 换芯、WS client 意图级收口、旧 `/conversation` poll client 删除和 `done` 空回复兜底修正已落地。当前验证：server tests `140 passed`，ESP32 Memory Watch source tests `40 passed`，`idf.py build` 通过（`111.bin` `0xabef80`，最小 app 分区剩余 `0x341080`/23%）。
+- V2.4 阶段 6 已完成部分真机验收：用户修复 Mihomo/Fake-IP DNS 后，COM3 日志显示手表联网到 `192.168.103.11`、进入 `SERVICE_READY`、SNTP 同步成功、Hermes health online、inbox poll 正常；watch endpoint 容器重建后 `/v1/watch/sync` 路由已部署，本机/公网未授权请求返回 401，真机日志出现 `conversation: sync ok messages=0 session=none terminal=0`；前台 WSS 真麦克风链路再次成功，返回 `status=done/action=conversation_reply/error_code=none`，`mw_upload` high-water 约 `3172` words。
 - 新版 watch endpoint 在本机 `127.0.0.1:8787` 暴露 `/v1/watch/inbox` 和 `/v1/watch/inbox/{notification_id}/read`；旧 LAN 调试容器 `8788` 曾无 inbox，后续调试优先走公网或新版 `8787`。
 - 开发阶段允许本机 `sdkconfig` 或 NVS 持有 watch device token 进行联调；提交前必须确认 `sdkconfig`、文档、日志和 diff 不包含真实 token。
 
@@ -48,6 +63,15 @@ evidence_level: observed
 - V2 公网脚本验收已通过：脚本模拟 Hermes 写入一条 inbox 消息，公网 GET 成功读回创建项，摘要为 `201 Created`、`found_created_item=true`、`unread_count=2`；未记录真实 token/key。
 - V2.2 公网脚本验收已通过：`conversation_polling_smoke_test.ps1 -BaseUrl "https://watch.934000.xyz"` 证明 WS 发完音频断开后，HTTP conversation polling 可拉到 user message 和 assistant `done` reply。
 - V2.2 真机反馈已证明前台 WS 和离页气泡链路可用；重复回复修复为后台 polling terminal reply 标记 `conversation_already_appended`，避免 server conversation 已合并后 worker done 二次 append 到本地对话；用户复测确认当前无问题。
+- V2.4 server `/sync` 首个闭环已完成：`GET /v1/watch/sync` 支持 `mode=background|foreground_reconcile`、`pending_request_id`、`after_message_id`、`max_messages`，返回公开 `session_state`、conversation delta、`inbox.unread_count` 与 `latest_unread` 摘要；新增 `server/watch_voice_endpoint/tests/test_sync.py` 覆盖契约。
+- V2.4 ESP32 `/sync` client 已完成：`memory_watch_voice_client_sync()` 可构建统一 sync URL，解析公开 `session_state`、conversation messages 和 inbox 最新未读摘要；response buffer 走 PSRAM 优先分配，固件源码不包含 `poll_after_ms` 或 server 内部 session state 名。
+- V2.4 `memory_watch_service` 后台 pending 首轮已改薄：保留原 worker/queue 外壳以降低回归风险，但 HTTP 调用改为 `memory_watch_voice_client_sync()`；离页 pending 走 `mode=background`，进入 Hermes 页面走 `mode=foreground_reconcile`。本地 10 分钟 `conversation_poll_timeout` 已删除，长任务终态改看 server `session_state`。
+- V2.4 WebSocket 首轮已收口：`memory_watch_ws_client` 负责把原始 frame 映射成业务 event kind，并提供 `memory_watch_ws_client_send_audio_turn()`；`memory_watch_service` 不再直接判断 `asr_result/conversation_message/error` frame 名，也不再手写 start/chunk/end 发送序列。
+- V2.4 阶段 5 代码侧瘦身已完成：ESP32 `memory_watch_voice_client` 不再暴露旧 `memory_watch_voice_client_conversation_poll()`，后台 conversation delta 只走 `/v1/watch/sync`；`memory_watch_service` 不再保留旧本地 pending 起始时间计时；`session_state=done` 但没有 assistant message 时继续补拉，不生成空回复。
+- V2.4 阶段 6 部分验收证据已记录：`board_logs/2026-06-28-19-27-07-hermes-v24-stage6-dns-fixed-verify.log` 证明 DNS 修复后 health/inbox/WSS 真麦克风链路恢复；`board_logs/2026-06-28-19-30-47-hermes-v24-stage6-sync-deployed-verify.log` 证明 `/sync` 容器部署后真机可完成 `conversation: sync ok` 并再次完成前台 WSS 真麦克风请求。两轮均未见 Guru、panic、stack overflow、`Error parse url`。
+- V2.4 后台 `/sync` 数据面已脚本化验证：容器内注入 `codex-stage6-sync-bg-20260628` 测试 session/conversation 后，本机和公网 `/sync?mode=background&pending_request_id=...` 均返回 `session_state=done` 与 user/assistant messages；带 `after_message_id=<user message>` 时公网 `/sync` 只返回 assistant 增量。该验证不打印真实 token。
+- V2.4 真机发现新的离页时序问题并已代码修复：日志 `board_logs/2026-06-28-19-52-48-hermes-v24-stage6-background-sync-bubble-60s-retry.log` 中，ESP32 在 `audio_end` 后立即关闭 WS 并开始后台 polling，但 server 侧该 request 的 session/conversation 计数均为 0，导致 `/sync` 持续 `session=none/messages=0`，UI 一直“思考中”。已改为收到 `TURN_ASR_READY` 后设置 `kWsWaitAsrReadyBit`，离页时只有 `asr_ready_seen=true` 才关闭 WS 并切后台 `/sync`。验证：Memory Watch source tests `40 passed`，server `test_sync.py` `14 passed`，`idf.py build` 通过（`111.bin` `0xabef90`，app free `0x341070`/23%），`idf.py -p COM3 app-flash` 成功。
+- V2.4 阶段 6 用户真机复测已完成：重新执行“Hermes 页面按住说，松手后立刻离开页面”后，后台 `/sync` 不再长期 `session=none`，此前离页后一直“思考中”的阻塞解除。
 
 ## Decision Log
 
@@ -58,6 +82,7 @@ evidence_level: observed
 - 公网第一版只允许代理 `/v1/watch/*`；Hermes `8642` 和 Dashboard `9119` 保持私有。
 - 开发阶段可把 watch device token 放本机 `sdkconfig`，但不得提交；正式/演示前建议轮换 token。
 - V2.2 当前定稿：前台 Hermes 页面 `WS` 实时；离开 Hermes 页面后如果有 pending，关闭 WS 并通过 HTTP conversation polling 取回；无 pending 时只保留 inbox 低频轮询。
+- V2.3 当前结果：Thin Watch Client / Thick Watch Endpoint 第一轮完成，server session 层已新增并接入 WS 路径；后续若继续推进，应以公网部署验证、COM3 前台/离页复测和进一步 ESP32 接口瘦身为主。
 
 ## 已验证
 
@@ -66,6 +91,9 @@ evidence_level: observed
 - 真机文本命令和真机麦克风 Ogg Opus 端到端链路均已成功。
 - context 校验在最近文档更新中多次通过；V1 归档后仍需再跑一次 standard 校验。
 - 最新 V2.2 验证：server pytest `91 passed`，Memory Watch source tests `39 passed`，`idf.py build` 通过，`idf.py -p COM3 app-flash` 通过，30 秒启动 smoke 通过，公网 private exposure gate/WS smoke/conversation polling smoke 通过。
+- 最新 V2.4 阶段 6 部分验证：用户已修复 Mihomo/Fake-IP DNS 影响；watch endpoint 容器重建后 `/v1/watch/sync` 本机/公网路由存在；COM3 证明 health、inbox、`conversation: sync ok` 和前台 WSS 真麦克风请求成功。
+- 最新 V2.4 服务器数据面验证：后台 `/sync` 对 pending done session 能返回 assistant reply；带 `after_message_id` 时只返回 assistant 增量，满足离页 pending 的数据契约。
+- 最新 V2.4 代码与真机验证：修复 WS 过早 detach 后，source tests、`idf.py build`、`idf.py -p COM3 app-flash` 均已通过；用户复测确认后台 `/sync` 不再长期 `session=none`。
 
 ## 当前风险
 
@@ -73,15 +101,21 @@ evidence_level: observed
 - `docs/context/handoffs/current-task.md` 是当前接力页，不是历史总账；历史细节看 changelog 和 completed plan。
 - 最新用户日志中的问题不是 Hermes 链路问题。第一轮是点击主界面 Bluetooth 后普通 BLE presence 进入 BT controller 初始化时 internal heap 不足触发 `BLE_INIT: Malloc failed` / `emi.c` assert / interrupt WDT；已加 `ble_presence` preflight 和 `network_manager` 回滚保护。第二轮复测不再崩溃，但 BLE enabled 偏好在开机 latest Wi-Fi 路径自动启动普通 BLE，抢占 LVGL/SPI DMA internal RAM，导致 display bounce / flush `ESP_ERR_NO_MEM`；已改成后台路径只收口不自动启动，只有用户显式 Bluetooth 开关才允许启动 BLE。第三轮冷启动复测已通过：未自动 BLE advertising，display bounce buffer 分配成功，Wi-Fi 到 `SERVICE_READY`，Hermes health online。第四轮手动连续点击 Bluetooth 复测也已通过防护目标：internal heap 约 `30 KiB`、最大连续块约 `14 KiB` 时稳定返回 `ESP_ERR_NO_MEM` 并显示失败 toast，无 `emi.c`、Guru、interrupt WDT 或显示链路回退。
 - V2.2 离页 pending 主链路和重复回复修复均已由用户真机反馈确认可用；后续主要风险转为体验细节、异常路径和低功耗参数，不再是主链路可用性。
+- 不要继续把 Mihomo/Fake-IP DNS 当作当前阻塞点；用户已修复，后续只有在同网络再次出现 `ESP_ERR_HTTP_CONNECT`、公网域名连不上或解析异常时，才把 fake-ip DNS 作为复发线索。
+- V2.4 当前可收尾归档：服务器 `/sync` 数据面已验证，WS 过早 detach 已修复并刷入，用户真机复测确认离页后不再长期 `session=none`。
 - app 分区余量曾接近 4%，后续新增 V2.1/V3 功能前要继续关注二进制体积。
 
 ## 下一步
 
-- 跑 V2.2 收尾后的 context 校验：`uv run python scripts/context/validate_context.py --level standard --q "AI Memory Watch Hermes V2.2 foreground websocket background conversation polling" --brief`。
+- ~~跑 V2.2 收尾后的 context 校验~~ 已完成，light 级别通过。
 - 提交前检查密钥卫生：`sdkconfig`、`memory_watch_dev_endpoint_local.h`、日志和文档都不能带真实 token/key。
-- 如果继续做 V2.2 hardening：优先使用 COM3 `app-flash-monitor`，观察 `conversation`、`voice-ws`、`watch request result`、`reply arrived`，确认异常路径无 Guru/panic/stack overflow/URL 乱码。
+- **V2.3 阶段 0 已完成**（2026-06-27）：V2.2 RAM/栈基线已记录。internal RAM 316/338 KB (93.5%), PSRAM 1395/8192 KB (17%), mw_upload stack high-water 3172 words。基线数据已写入计划文件和 CHANGELOG。
+- **V2.3 阶段 1-5 全部完成**（2026-06-27）：计划已归档到 `docs/context/plans/completed/`。server session_repo 成为任务状态真相源（Stage 1-2），ESP32 保留 display dedup（Stage 3），通知路由继承 V2.2 分通道（Stage 4），门禁 126 server tests + 39 source tests + idf.py build 全部通过（Stage 5）。
+- **V2.3 复查修复**（2026-06-27）：`SessionRepo` 允许 `accepted -> error/timeout`，避免 ASR 前置失败导致 session 假 active/pending；server pytest `126 passed`。
+- **下一步**：server 公网部署验证 + COM3 真机 Hermes 前台/离页链路复测（Stage 0 冷启动基线已确认，Stage 2-3 主要为 server 增量，预期无回归）。
+- **V2.4 下一步**：可按用户节奏归档 V2.4 active plan，或继续做体验微调/低功耗参数微调；不要再回到旧的“离页后 session=none 一直思考中”排查路线，除非新日志再次复现。
 - 如果继续 BLE 问题，下一步不是放宽 guard，而是单独做 internal RAM 预算收敛；当前已证明普通运行态下手动 Bluetooth 会因 internal heap 不足 fail closed。
-- V2.2 剩余不是重新设计通讯，而是真机体验验收和必要 hardening；不要回退到“离页保持 WS 等最终回复”的旧口径。
+- 不要回退到“离页保持 WS 等最终回复”的旧口径，也不要把多设备、多入口或完整多 agent 编排提前塞进 V2.3。
 
 ## 证据入口
 
@@ -91,4 +125,6 @@ evidence_level: observed
 - 服务器目录：`server/watch_voice_endpoint/`
 - 机器可读契约：`server/watch_voice_endpoint/watch_contract.v1.json`
 - 产品定位：`docs/context/knowledge/project/ai-memory-watch-product-positioning.md`
+- V2.3 completed plan：`docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.3-thin-watch-client-thick-watch-endpoint-plan.md`
+- V2.4 active plan：`docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md`
 - 变更记录：`docs/context/CHANGELOG.md`

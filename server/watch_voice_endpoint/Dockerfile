@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY inbox_repo.py .
 COPY conversation_repo.py .
+COPY session_repo.py .
 
 EXPOSE 8787
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8787"]

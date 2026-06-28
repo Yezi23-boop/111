@@ -1,5 +1,79 @@
 # 上下文库变更记录
 
+- 2026-06-28：推进 AI Memory Watch / Hermes V2.4 阶段 6 真机验收。用户已修复 Mihomo/Fake-IP 导致的 `watch.934000.xyz` 解析/连接问题；COM3 日志显示手表获得 `192.168.103.11`，网络进入 `SERVICE_READY`，SNTP 同步成功，Hermes health `hermes_online=1`，inbox poll 正常。发现 watch endpoint 容器曾为旧镜像导致公网/本机 `/v1/watch/sync` 返回 404，重建容器后 `/sync` 路由存在且未授权请求返回 401；真机日志随后出现 `conversation: sync ok messages=0 session=none terminal=0`，并再次完成前台 WSS 真麦克风链路，`watch request result ... status=done action=conversation_reply error_code=none`，`mw_upload` 栈高水位约 `3172` words。无 Guru/panic/stack overflow/URL 乱码。剩余专项验收：发起慢任务后离开 Hermes 页面，确认后台 `/sync` 拉回 assistant reply 并弹气泡。
+
+- 2026-06-28：补充 AI Memory Watch / Hermes V2.4 后台 `/sync` 脚本化验收。使用运行中的 watch endpoint 容器向 `/data/session.db` 与 `/data/conversation.db` 注入一条 `codex-stage6-sync-bg-20260628` 测试 session、user message 和 assistant message；本机与公网 `GET /v1/watch/sync?mode=background&pending_request_id=...` 均返回 `session_state=done`、`messages=user,assistant`、assistant 文本为“后台 sync 测试回复已到达”。再带 `after_message_id=<user message>` 请求公网 `/sync`，只返回 1 条 assistant 增量，证明离页 pending 场景的数据面不会重复补用户消息。该测试不打印、不记录真实 token；仍需真机 UI 场景确认离页后气泡和回页连续对话。
+
+- 2026-06-28：修复 AI Memory Watch / Hermes V2.4 离页后一直“思考中”的时序问题。真机日志显示请求 `watch-001-f8bc9e26-0001` 在 ESP32 侧 `audio_end` 后立即关闭 WS 并进入后台 polling，但 server `/data/session.db` 与 `/data/conversation.db` 均无该 request，后台 `/sync` 因此持续返回 `session=none/messages=0`。根因是离页时 ESP32 在 server 处理 `audio_end`、创建 session、写入 user conversation 前就关闭 WS。固件侧新增 `kWsWaitAsrReadyBit` 与 `asr_ready_seen`，ASR ready 事件到达后才允许离页关闭 WS 并切后台 `/sync`，避免 pending request 在 server 侧不存在。验证：Memory Watch source tests `40 passed`，`idf.py build` 通过（`111.bin` `0xabef90`，最小 app 分区剩余 `0x341070`/23%），`idf.py -p COM3 app-flash` 成功。
+
+- 2026-06-28：AI Memory Watch / Hermes V2.4 阶段 6 真机复测完成。用户确认在新固件下执行“Hermes 页面按住说，松手后立刻离开页面”场景后，后台 `/sync` 不再长期 `session=none`，此前“离页后一直思考中”的阻塞已解除。V2.4 的前台 WSS、离页后台 `/sync` 数据面、WS detach 接管屏障与真机离页复测均已闭环；后续可进入计划归档或继续做体验/低功耗参数微调。
+
+- 2026-06-28：推进全国大学生嵌入式芯片与系统设计竞赛应用赛道报告收尾。完成 paper-spine-research 阶段，更新 `source_index.md`、`research_dossier.md`、`style_profile.md`、`sota_gap_map.md`、`motivation_options_after_research.md`、`confirmed_motivation.md`；更新 `evidence_bank.md` 与 `figure_asset_map.md`，补入模型大小、板端状态机/Hermes 日志等可验证证据；重写 `paper_rewriting_output/final_paper/main.tex`，在 1.4 主要性能指标、3.3 特性成果、3.4 性能参数汇总中填入实测数据，并新增 3.5 关键测试证据整理。当前会话命令执行工具异常，PDF 编译与服务器测试待本地完成。
+
+- 2026-06-27：完成 AI Memory Watch / Hermes V2.4 阶段 5 代码侧瘦身闭环。ESP32 `memory_watch_voice_client` 删除旧 `GET /v1/watch/conversation` polling 公开接口、path builder、parser 与 `MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES`，后台 conversation delta 只保留统一 `memory_watch_voice_client_sync()`；`memory_watch_service` 删除已失效的本地 pending 起始时间计时，并修正 `/sync session_state=done` 但未返回 assistant message 时的处理：继续补拉，不伪造空回复。验证：Memory Watch source tests `40 passed`，server tests `140 passed`，`idf.py build` 通过（`111.bin` `0xabef80`，较阶段 4 `0xabeff0` 减少 `0x70`，最小 app 分区剩余 `0x341080`/23%）。真机 RAM/栈高水位待阶段 6 COM3 验收记录。
+
+- 2026-06-27：完成 AI Memory Watch / Hermes V2.4 阶段 4 首轮。`memory_watch_ws_client` 新增业务事件枚举，把原始 WebSocket JSON frame 映射为 `TURN_ASR_READY` / `TURN_REPLY_MESSAGE` / `TURN_ERROR`；`memory_watch_service_ws_event_cb()` 改为消费业务 event kind，不再判断原始 `asr_result` / `conversation_message` / `error` frame 名。WS client 新增 `memory_watch_ws_client_send_audio_turn()`，service 不再手写 `audio_start` / binary chunk / `audio_end` 序列。验证：Memory Watch source tests `40 passed`，server tests `140 passed`，`idf.py build` 通过（`111.bin` `0xabeff0`，最小 app 分区剩余 `0x341010`/23%）。
+
+- 2026-06-27：完成 AI Memory Watch / Hermes V2.4 阶段 3 首轮。ESP32 `memory_watch_service` 保留 conversation worker/queue 外壳但内部改用 `memory_watch_voice_client_sync()`，离页 pending 走 `/v1/watch/sync mode=background + pending_request_id + after_message_id`，进入 Hermes 页面触发 `mode=foreground_reconcile` 对账；删除本地 10 分钟 `conversation_poll_timeout` 判定，Hermes 长任务终态改看 server 公开 `session_state`，401/403 sync auth 失败停止高频 pending sync 并走配置错误路径。验证：Memory Watch source tests `40 passed`，server tests `140 passed`，`idf.py build` 通过（`111.bin` `0xabefb0`，最小 app 分区剩余 `0x341050`/23%）。
+
+- 2026-06-27：完成 AI Memory Watch / Hermes V2.4 阶段 2。ESP32 侧 `memory_watch_voice_client` 新增后台统一 `GET /v1/watch/sync` 窄客户端，支持 `mode=background|foreground_reconcile`、`pending_request_id`、`after_message_id`、`max_messages`，解析公开 `session_state`、conversation delta、`inbox.unread_count` 与 `latest_unread` 摘要；response buffer 继续经 `memory_watch_voice_client_alloc()` 优先放 PSRAM，固件源码不包含 `poll_after_ms` 或 server 内部 session state 名。验证：Memory Watch source tests `40 passed`，server tests `140 passed`，`idf.py build` 通过（`111.bin` `0xabecc0`，最小 app 分区剩余 `0x341340`/23%）。
+
+- 2026-06-27：完成 AI Memory Watch / Hermes V2.4 阶段 0-1.5 首个执行闭环。阶段 0 基线：server tests `126 passed`，ESP32 Memory Watch source tests `39 passed`，`idf.py build` 通过（`111.bin` `0xabec30`，最小 app 分区剩余 `0x3413d0`/23%）。阶段 1 记录 ESP32 职责审计清单，确认 `memory_watch_service` 仍保留本地 conversation polling / pending timeout / display dedup 等待后续收敛。阶段 1.5 新增 server `GET /v1/watch/sync` 与 `tests/test_sync.py`，契约覆盖 `mode=background|foreground_reconcile`、`after_message_id`、公开 `session_state`、`latest_unread.notification_id`、`max_messages=0`、pending done 补发、inbox 不 mark-read；验证 `test_sync.py` `14 passed`、server tests `140 passed`、ESP32 source tests `39 passed`。
+
+- 2026-06-27：固定 AI Memory Watch / Hermes V2.4 inbox 已读边界：进入 Hermes 页面触发 `mode=foreground_reconcile` 只恢复 conversation，不标记 inbox 已读；只有用户打开/查看收件箱消息时才调用 `POST /v1/watch/inbox/{notification_id}/read`。
+
+- 2026-06-27：固定 AI Memory Watch / Hermes V2.4 `/sync` 气泡本地去重规则：assistant reply 气泡按 `message_id` 去重，同一 `message_id` 只弹一次；inbox 气泡按 `notification_id` 去重，同一 `notification_id` 只弹一次，避免网络重试、游标滞后或页面重入造成重复提示。
+
+- 2026-06-27：固定 AI Memory Watch / Hermes V2.4 `/sync` 失败语义：网络失败、DNS/TLS/timeout 或 server 5xx 只表示本轮同步失败，不清 pending、不把 Hermes 任务判为 error/timeout；401/403 授权失败不清 pending，但停止高频 pending sync 并提示配置失效/需要重新配置 device token。
+
+- 2026-06-27：固定 AI Memory Watch / Hermes V2.4 `/sync` 对 ESP32 暴露的 `session_state` 枚举为 `none/running/done/error/timeout/canceled`；server 内部 `accepted/asr_ready/running` 统一映射为公开 `running`，避免把 server 任务阶段扩散到 ESP32 端。
+
+- 2026-06-27：对齐 AI Memory Watch / Hermes V2.4 `/sync` 的 inbox 标识字段：`latest_unread` 使用现有 `notification_id`，不新增 `id` 别名；这样与当前 `GET /v1/watch/inbox` 和 `POST /v1/watch/inbox/{notification_id}/read` 保持一致，ESP32 不需要做字段转换。
+
+- 2026-06-27：收敛 AI Memory Watch / Hermes V2.4 conversation reply 气泡边界：assistant reply 气泡文案和展示方式沿用当前已验证行为，V2.4 不新增固定标题、截断长度或 UI 文案规则；本轮只调整 `/sync` 数据来源、气泡优先级和后台同步职责。
+
+- 2026-06-27：固定 AI Memory Watch / Hermes V2.4 `/sync` 气泡优先级：同一次 sync 同时包含 conversation assistant reply 与 inbox `latest_unread` 时，优先显示 assistant reply 到达并跳转 Hermes 对话页；inbox 只更新未读数，稍后由用户进入收件箱查看。没有 assistant reply 时才显示 inbox 气泡。
+
+- 2026-06-27：补充 AI Memory Watch / Hermes V2.4 多条 inbox 未读气泡规则：`/sync` 仍只返回最新未读摘要 `latest_unread` 与总 `unread_count`，气泡显示最新摘要并在未读数大于 1 时提示“还有 N 条未读”；点开后进入 Hermes 收件箱列表，由现有 `GET /v1/watch/inbox` 拉完整最近 20 条。
+
+- 2026-06-27：确定 AI Memory Watch / Hermes V2.4 `/sync` 的 inbox 策略采用 B 方案：后台 `/sync` 返回 `unread_count + latest_unread`，用于气泡显示 Hermes 最新未读摘要，但不返回完整 `items[]` / `body`，也不在 `/sync` 内维护 inbox 游标。用户点气泡或打开收件箱后继续使用现有 `GET /v1/watch/inbox` 拉最近 20 条完整 item；当前 server 没有独立 `GET /v1/watch/inbox/{id}` detail endpoint，本轮不新增。
+
+- 2026-06-27：固定 AI Memory Watch / Hermes V2.4 `/sync` conversation 增量返回顺序：`conversation.messages[]` 必须按 `created_at` 升序返回，ESP32 端可直接 append 到本地对话缓存和 UI，不需要反转、排序或头插。
+
+- 2026-06-27：细化 AI Memory Watch / Hermes V2.4 `/sync` 前台重入对账：`mode=foreground_reconcile` 时 ESP32 默认请求最近 10 条 conversation messages，用于恢复最近 5 轮左右对话；V2.4 server 不对 conversation `text` 做长度截断或摘要压缩，短回复约束交给 Hermes 提示词，ESP32 侧必须用 PSRAM buffer 与明确失败状态兜住异常长文本。
+
+- 2026-06-27：细化 AI Memory Watch / Hermes V2.4 `/sync` 的 background 语义：`mode=background` 且无 `pending_request_id` 时保持小包，不返回 conversation messages；但 `mode=background` 且有 `pending_request_id` 时，必须能返回该 pending request 的新 assistant message，用于离页后缓存回复并触发“回复已到达”气泡。
+
+- 2026-06-27：补充 AI Memory Watch / Hermes V2.4 `/sync` 同步场景字段：request 增加 `mode=background|foreground_reconcile`。后台 idle sync 使用 `background`，只返回 inbox 未读摘要和必要状态；进入 Hermes 页面后的重入对账使用 `foreground_reconcile`，才允许返回最近 conversation messages，避免后台 5 分钟同步拉聊天记录大包。
+
+- 2026-06-27：细化 AI Memory Watch / Hermes V2.4 `/sync` 游标命名：conversation 增量游标采用 `after_message_id`，避免 `last_conversation_id` 被误解为 conversation/session/request 层级 id。后续已确定 `/sync` 的 inbox 只返回 `unread_count + latest_unread`，不维护 inbox 列表游标。
+
+- 2026-06-27：在 AI Memory Watch / Hermes V2.4 计划中新增阶段 1.5：先定义 `/v1/watch/sync` 协议契约与 server/ESP32 source tests，再进入 sync client 实现。该阶段固定 request query、response schema、游标语义、delta 上限、pending/inbox 边界、`session_state=done` 与 assistant message 的一致性要求，并明确 no `poll_after_ms`，防止后续实现重新发散成 `/session`、`/conversation`、`/inbox` 多接口组合。
+
+- 2026-06-27：进一步收紧 AI Memory Watch / Hermes V2.4 `/sync` 契约：本轮不引入 `poll_after_ms`，因为 server 无法可靠预测 Hermes 复杂任务完成时间。ESP32 使用本地固定节奏：离页 pending 每 5 秒调用 `/sync`，后台 idle 每 5 分钟调用 `/sync`；任务完成/失败只看 `session_state` 与 `conversation.messages[]`，不依赖 server 调度建议。
+
+- 2026-06-27：调整 AI Memory Watch / Hermes V2.4 ESP32 Thin Client Slimming 主通讯口径为“前台 WebSocket + 后台统一 `/v1/watch/sync`”。server 内部继续保持 session / conversation / inbox 三本账分离，ESP32 后台主路径只访问 `/sync` delta 聚合口，用游标和 `pending_request_id` 一次拿任务状态、对话增量和 inbox 未读摘要，避免手表端分别组合 `/session`、`/conversation`、`/inbox`。MQTT + UDP 混合方案保留为后续替代 transport，不进入 V2.4 主线。
+
+- 2026-06-27：澄清 AI Memory Watch / Hermes V2.4 ESP32 Thin Client Slimming 范围：V2.4 是 server + ESP32 端到端瘦身计划，不是 server-only 计划；ESP32 端允许修改，并以职责变薄、体验不回退、资源不恶化为主要验收目标。补充说明即使 watch endpoint 与 Hermes 在同一服务器或同一 Docker Desktop 环境，server session 仍有必要，因为它承担长任务状态、幂等、断线恢复、设备同步和后续 MQTT 轻信号的数据真相源职责。
+
+- 2026-06-27：V2.3 server 改动已部署到公网 `watch.934000.xyz`。Dockerfile 新增 `COPY session_repo.py`，容器重建后 runtime gate 全绿（watch_health ok, hermes_online, private_exposure 3/3 404, WS smoke passed）。
+
+- 2026-06-27：细化 AI Memory Watch / Hermes V2.4 ESP32 Thin Client Slimming 完成标准：硬性完成线定为“ESP32 不再把 Hermes 任务状态当真相源、后台 pending 判断接入 server session、UI/controller 不理解 WS frame/ACK/server state transition、前台/离页体验无回归、internal RAM/栈/bin size 不恶化”；`memory_watch_service` 代码行数下降、internal RAM free 增加、buffer 缩小/迁移 PSRAM、本地状态字段删除列为加分目标而非阻塞条件。
+
+- 2026-06-27：新增 AI Memory Watch / Hermes V2.4 ESP32 Thin Client Slimming active plan：明确 V2.3 已完成 server session 地基但尚未真正减少 ESP32 端代码和资源，V2.4 专门处理 ESP32 真实瘦身。计划要求先复核 V2.3 后验收基线，再做 `memory_watch_service` / `memory_watch_ws_client` 职责审计，引入 `/v1/watch/session` 窄客户端，逐步把后台 pending 判断改为依赖 server session + conversation 真相源，最后以 bin size、internal RAM、PSRAM、task stack high-water、source tests、server tests 和 COM3 真机前台/离页链路做资源与体验验收。
+
+- 2026-06-27：复查 AI Memory Watch / Hermes V2.3 server session 实现后，补充修复 `SessionRepo` 状态转移：允许 `accepted -> error/timeout`，避免 ASR 前置失败或超时在 session 创建后、进入 `asr_ready` 前被吞掉状态转移，导致 session 长期残留为假 active/pending。新增 `test_accepted_can_transition_to_terminal_before_asr_ready` 覆盖早期失败路径，endpoint 自带 venv 下 server pytest 更新为 `126 passed`。
+
+- 2026-06-27：完成 AI Memory Watch / Hermes V2.3 阶段 3-5——ESP32 瘦身 + 通知路由 + 门禁验收。server 新增 `GET /v1/watch/session` 端点（124 tests passed）；ESP32 `idf.py build` 通过（bin 0xabec30，23% free，无膨胀），39 source tests passed；COM3 Stage 0 冷启动基线无异常。V2.3 整体闭环：server session_repo 成为任务状态真相源（Stage 1-2），ESP32 保留 display dedup 但不再承担 server 状态推断（Stage 3），conversation/inbox 路由继承 V2.2 已验证分通道（Stage 4）。`session_repo` 接入 `app.py`：`_ws_finish_audio` 增加 session 创建 + 幂等检查（终态 replay 已有 assistant message、非终态拒绝 `duplicate_request`）+ ASR 成功/失败的状态转移；`_ws_run_hermes_job` 增加 running→done/error 转移 + reply_text 写入 session。server pytest 121 passed 无回归。新增 `server/watch_voice_endpoint/session_repo.py`（WatchSession dataclass + SessionRepo with thread-safe SQLite/WAL/启动恢复/状态转移矩阵/终态不可回退/24h+100条淘汰）和 `tests/test_session_repo.py`（30 tests passed）。明确 V2.3 约定 session_id 与 request_id 1:1 映射但 schema 保留独立 session_id。本次只做 repo 层闭环，未接入 `app.py`，未改 ESP32。
+
+- 2026-06-27：完成 AI Memory Watch / Hermes V2.3 阶段 0——记录 V2.2 资源与行为基线。COM3 冷启动 ~60s 日志采集 `printf_esp32_memory_stats()` 5 个稳定快照：internal RAM 316/338 KB (93.5%)，PSRAM 1395/8192 KB (17.0%)，IRAM text 137 KB；`mw_upload` 栈 high-water 3172 words (~12.4 KB 余量)。同时修复 `printf_esp32.c` 中 emoji 字符（📊⚡）导致 `idf.py monitor` GBK 终端 `UnicodeEncodeError` 崩溃的问题，去掉 emoji 保留纯文本；`lvgl_task.c` 的 `printf_esp32_memory_stats()` 采集后重新注释。基线发现：internal RAM 极度紧张（仅 ~22 KB free），V2.3 瘦身应优先把 JSON/HTTP/WS 临时缓冲外移 PSRAM；PSRAM 充裕（~6.6 MB free）。
+
+- 2026-06-27：将 AI Memory Watch / Hermes V2.3 Thin Watch Client / Thick Watch Endpoint 计划整理为可交给其他 agent 执行的交接版：补充必须先读文档、允许修改/禁止修改范围、推荐 subagent 分工、阶段执行顺序、每阶段交付格式、阶段停止条件和最小首个执行任务。首个执行闭环被收敛为只新增 `session_repo.py` 与 `test_session_repo.py` 的 repo 层测试，不接入 `app.py`、不改 ESP32，以降低 V2.3 开始阶段的回归风险。
+
+- 2026-06-27：复查并补强 AI Memory Watch / Hermes V2.3 Thin Watch Client / Thick Watch Endpoint 计划：明确 V2.3 从一开始保留独立 `session_id` 字段但先与 `request_id` 1:1 映射，避免后续多请求聚合时重写 schema；新增 `session_repo.py`、`test_session_repo.py`、状态转移图、新旧 endpoint 共存策略、server session 持久化/重启恢复/淘汰策略；补充 V2.2 RAM/栈资源基线阶段，并明确仓库已有 `printf_esp32_memory_stats()`、`printf_esp32_task_stack_stats()`、`memory_watch_service_log_upload_stack()` 等观测函数，缺口是记录一次 V2.2 基线快照而非新增观测工具；同时补充 `memory_watch_ws_client.cc` 保留并内部分层的处理方向、ESP32 service 瘦身候选清单格式，以及 server 变厚但 ESP 旧状态机尚未瘦身时的双重状态机风险窗口。
+
+- 2026-06-27：新增 AI Memory Watch / Hermes V2.3 Thin Watch Client / Thick Watch Endpoint 执行计划：在 V2.2 前台 WS + 离页 conversation polling 已经真机确认可用的基础上，下一阶段把 ESP32-S3 手表继续收敛为薄输入输出终端，保留录音、上传、显示、气泡、少量本地缓存和基础配置；把 ASR、Hermes 调用、server session、conversation/inbox 真相源、去重、断线补发、失败重试、通知分发和未来 MQTT 轻信号集中到 watch endpoint。计划明确 V2.3 不做多设备、多入口或完整多 agent 编排，优先以 server session 层降低 ESP32 侧 RAM/状态机压力。
+
 - 2026-06-27：根据 AI Memory Watch / Hermes V2.2 真机反馈修复重复回复显示：用户确认前台 Hermes 页面可正常使用，离开 Hermes 页面后也能通过气泡收到回复，但同一回复会显示两次相同信息。根因收敛为离页 conversation polling 拉到 terminal assistant 后已将 server conversation message 合并到本地对话缓存，随后 worker done 收尾又可能把同一 reply 作为 response 再追加一次。现为 worker result 增加 `conversation_already_appended` 标记，后台 polling terminal reply 只更新状态/回复文本，不二次 append conversation；前台 WS reply 仍按原路径首次写入本地对话。验证：server pytest `91 passed`，Memory Watch source tests `39 passed`，`idf.py build` 通过，`idf.py -p COM3 app-flash` 通过，30 秒启动 smoke 见 `board_logs/2026-06-27-16-22-39-hermes-v22-duplicate-reply-fix-boot.log`，Hermes health online 且无 Guru/panic/stack overflow/URL 乱码；用户真机复测确认当前没有问题，前台/离页回复不再重复显示。
 
 - 2026-06-27：实现 AI Memory Watch / Hermes V2.2 前台 WebSocket + 离页后台 conversation polling 主链路：server `audio_end` 后 ASR/Hermes job 已后台化，WS 断开只影响 best-effort 推送，不影响 `watch_conversation` 落库；新增 `GET /v1/watch/conversation` 与 `conversation_polling_smoke_test.ps1`。ESP32 侧新增 `memory_watch_voice_client_conversation_poll()`、`mw_conv` FreeRTOS worker、PSRAM staging、`memory_watch_service_set_foreground()`、`last_seen_conversation_id` 和离页 pending 轮询状态机，固定每 5 秒 poll、单次 timeout 4 秒、总等待 10 分钟。验证：server pytest `91 passed`，Memory Watch source tests `39 passed`，`idf.py build` 通过（`111.bin` `0xabec30`，app 分区余量 `0x3413d0`/23%），公网 runtime gate 与 WS smoke 通过，新增公网 conversation polling smoke 证明 WS 发完音频断开后仍可 HTTP 拉到 assistant `done` reply；真机离页 pending 气泡场景仍待 COM3 验收。

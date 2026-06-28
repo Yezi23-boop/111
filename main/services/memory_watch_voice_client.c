@@ -1696,8 +1696,7 @@ esp_err_t memory_watch_voice_client_post_text_command(
 static const char kInboxListPathPrefix[] = "/v1/watch/inbox?device_id=";
 static const char kInboxMarkReadPrefix[] = "/v1/watch/inbox/";
 static const char kInboxMarkReadSuffix[] = "/read";
-static const char kConversationPathPrefix[] =
-    "/v1/watch/conversation?device_id=";
+static const char kSyncPathPrefix[] = "/v1/watch/sync?device_id=";
 
 /**
  * @brief 构建 GET inbox 路径 /v1/watch/inbox?device_id=<url_encoded_device_id>
@@ -1736,42 +1735,119 @@ static esp_err_t memory_watch_voice_client_build_mark_read_path(
         out_path, out_path_len, &offset, device_id);
 }
 
+static const char *memory_watch_voice_client_sync_mode_name(
+    memory_watch_sync_mode_t mode)
+{
+    switch (mode)
+    {
+    case MEMORY_WATCH_SYNC_MODE_FOREGROUND_RECONCILE:
+        return "foreground_reconcile";
+    case MEMORY_WATCH_SYNC_MODE_BACKGROUND:
+    default:
+        return "background";
+    }
+}
+
 /**
- * @brief 构建 GET conversation 路径
- * /v1/watch/conversation?device_id=...&after=...
+ * @brief 构建 GET /v1/watch/sync 路径。
+ *
+ * `/sync` 是 V2.4 后台统一 delta 入口；ESP32 不再在后台组合 session、
+ * conversation、inbox 多个接口。
  */
-static esp_err_t memory_watch_voice_client_build_conversation_path(
+static esp_err_t memory_watch_voice_client_build_sync_path(
     const char *device_id,
-    const char *after_message_id,
+    const memory_watch_voice_client_sync_cursor_t *cursor,
     char *out_path,
     size_t out_path_len)
 {
-    const size_t prefix_len = strlen(kConversationPathPrefix);
+    const memory_watch_sync_mode_t mode =
+        cursor != NULL ? cursor->mode : MEMORY_WATCH_SYNC_MODE_BACKGROUND;
+    const char *mode_name = memory_watch_voice_client_sync_mode_name(mode);
+    const char *pending_request_id =
+        cursor != NULL ? cursor->pending_request_id : NULL;
+    const char *after_message_id =
+        cursor != NULL ? cursor->after_message_id : NULL;
+    const size_t max_messages =
+        cursor != NULL && cursor->max_messages > 0U
+            ? cursor->max_messages
+            : MEMORY_WATCH_SYNC_DEFAULT_MAX_MESSAGES;
+
+    const size_t prefix_len = strlen(kSyncPathPrefix);
     if (prefix_len >= out_path_len)
     {
         return ESP_ERR_INVALID_SIZE;
     }
-    memcpy(out_path, kConversationPathPrefix, prefix_len);
+    memcpy(out_path, kSyncPathPrefix, prefix_len);
     size_t offset = prefix_len;
     esp_err_t err = memory_watch_voice_client_append_url_encoded(
         out_path, out_path_len, &offset, device_id);
-    if (err != ESP_OK || after_message_id == NULL ||
-        after_message_id[0] == '\0')
+    if (err != ESP_OK)
     {
         return err;
     }
 
-    static const char kAfterParam[] = "&after=";
-    const size_t after_len = strlen(kAfterParam);
-    if (offset + after_len >= out_path_len)
+    static const char kModeParam[] = "&mode=";
+    const size_t mode_param_len = strlen(kModeParam);
+    if (offset + mode_param_len >= out_path_len)
     {
         return ESP_ERR_INVALID_SIZE;
     }
-    memcpy(out_path + offset, kAfterParam, after_len);
-    offset += after_len;
+    memcpy(out_path + offset, kModeParam, mode_param_len);
+    offset += mode_param_len;
     out_path[offset] = '\0';
-    return memory_watch_voice_client_append_url_encoded(
-        out_path, out_path_len, &offset, after_message_id);
+    err = memory_watch_voice_client_append_url_encoded(
+        out_path, out_path_len, &offset, mode_name);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    if (pending_request_id != NULL && pending_request_id[0] != '\0')
+    {
+        static const char kPendingParam[] = "&pending_request_id=";
+        const size_t pending_len = strlen(kPendingParam);
+        if (offset + pending_len >= out_path_len)
+        {
+            return ESP_ERR_INVALID_SIZE;
+        }
+        memcpy(out_path + offset, kPendingParam, pending_len);
+        offset += pending_len;
+        out_path[offset] = '\0';
+        err = memory_watch_voice_client_append_url_encoded(
+            out_path, out_path_len, &offset, pending_request_id);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+
+    if (after_message_id != NULL && after_message_id[0] != '\0')
+    {
+        static const char kAfterParam[] = "&after_message_id=";
+        const size_t after_len = strlen(kAfterParam);
+        if (offset + after_len >= out_path_len)
+        {
+            return ESP_ERR_INVALID_SIZE;
+        }
+        memcpy(out_path + offset, kAfterParam, after_len);
+        offset += after_len;
+        out_path[offset] = '\0';
+        err = memory_watch_voice_client_append_url_encoded(
+            out_path, out_path_len, &offset, after_message_id);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+
+    static const char kMaxParam[] = "&max_messages=";
+    const int written = snprintf(out_path + offset, out_path_len - offset,
+                                 "%s%u", kMaxParam, (unsigned)max_messages);
+    if (written < 0 || (size_t)written >= out_path_len - offset)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return ESP_OK;
 }
 
 /**
@@ -1953,20 +2029,78 @@ static esp_err_t memory_watch_voice_client_parse_conversation_message(
     }
     if (err == ESP_OK)
     {
-        err = memory_watch_voice_client_copy_json_string(
-            obj, "status", out_message->status,
-            sizeof(out_message->status), false);
+        const cJSON *status_item =
+            cJSON_GetObjectItemCaseSensitive(obj, "status");
+        if (cJSON_IsString(status_item) && status_item->valuestring != NULL)
+        {
+            err = memory_watch_voice_client_copy_json_string(
+                obj, "status", out_message->status,
+                sizeof(out_message->status), false);
+        }
+        else
+        {
+            memory_watch_voice_client_copy_text(
+                out_message->status, sizeof(out_message->status), "done");
+        }
     }
     return err;
 }
 
-static esp_err_t memory_watch_voice_client_parse_conversation_poll(
+static bool memory_watch_voice_client_is_public_session_state(
+    const char *state)
+{
+    static const char *const kAllowedStates[] = {
+        "none", "running", "done", "error", "timeout", "canceled",
+    };
+    for (size_t i = 0; i < sizeof(kAllowedStates) / sizeof(kAllowedStates[0]); ++i)
+    {
+        if (strcmp(state, kAllowedStates[i]) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static esp_err_t memory_watch_voice_client_parse_sync_latest_unread(
+    const cJSON *obj,
+    memory_watch_sync_inbox_summary_t *out_summary)
+{
+    if (!cJSON_IsObject(obj) || out_summary == NULL)
+    {
+        return ESP_FAIL;
+    }
+    memset(out_summary, 0, sizeof(*out_summary));
+
+    esp_err_t err = memory_watch_voice_client_copy_json_string(
+        obj, "notification_id", out_summary->notification_id,
+        sizeof(out_summary->notification_id), false);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "title", out_summary->title, sizeof(out_summary->title), true);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "preview", out_summary->preview,
+            sizeof(out_summary->preview), true);
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            obj, "created_at", out_summary->created_at,
+            sizeof(out_summary->created_at), false);
+    }
+    return err;
+}
+
+static esp_err_t memory_watch_voice_client_parse_sync(
     const char *json_text,
     size_t json_len,
     memory_watch_conversation_message_t *messages,
     size_t capacity,
-    size_t *out_message_count,
-    bool *out_has_more)
+    memory_watch_voice_client_sync_result_t *out_result)
 {
     cJSON *root = cJSON_ParseWithLength(json_text, json_len);
     if (root == NULL)
@@ -1975,14 +2109,60 @@ static esp_err_t memory_watch_voice_client_parse_conversation_poll(
     }
 
     esp_err_t err = ESP_OK;
-    const cJSON *messages_arr = NULL;
     if (!cJSON_IsObject(root))
     {
         err = ESP_FAIL;
     }
+
     if (err == ESP_OK)
     {
-        messages_arr = cJSON_GetObjectItemCaseSensitive(root, "messages");
+        const cJSON *schema_version =
+            cJSON_GetObjectItemCaseSensitive(root, "schema_version");
+        if (!cJSON_IsNumber(schema_version) || schema_version->valueint != 1)
+        {
+            err = ESP_FAIL;
+        }
+    }
+
+    const cJSON *conversation = NULL;
+    if (err == ESP_OK)
+    {
+        conversation = cJSON_GetObjectItemCaseSensitive(root, "conversation");
+        if (!cJSON_IsObject(conversation))
+        {
+            err = ESP_FAIL;
+        }
+    }
+
+    const cJSON *messages_arr = NULL;
+    if (err == ESP_OK)
+    {
+        const cJSON *has_pending_item =
+            cJSON_GetObjectItemCaseSensitive(conversation, "has_pending");
+        if (!cJSON_IsBool(has_pending_item))
+        {
+            err = ESP_FAIL;
+        }
+        else
+        {
+            out_result->has_pending = cJSON_IsTrue(has_pending_item);
+        }
+    }
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_copy_json_string(
+            conversation, "session_state", out_result->session_state,
+            sizeof(out_result->session_state), false);
+        if (err == ESP_OK &&
+            !memory_watch_voice_client_is_public_session_state(
+                out_result->session_state))
+        {
+            err = ESP_FAIL;
+        }
+    }
+    if (err == ESP_OK)
+    {
+        messages_arr = cJSON_GetObjectItemCaseSensitive(conversation, "messages");
         if (!cJSON_IsArray(messages_arr))
         {
             err = ESP_FAIL;
@@ -1998,7 +2178,6 @@ static esp_err_t memory_watch_voice_client_parse_conversation_poll(
             err = ESP_FAIL;
         }
     }
-
     if (err == ESP_OK)
     {
         size_t idx = 0;
@@ -2016,13 +2195,48 @@ static esp_err_t memory_watch_voice_client_parse_conversation_poll(
         }
     }
 
+    const cJSON *inbox = NULL;
     if (err == ESP_OK)
     {
-        const cJSON *has_more_item =
-            cJSON_GetObjectItemCaseSensitive(root, "has_more");
-        *out_has_more =
-            cJSON_IsBool(has_more_item) ? cJSON_IsTrue(has_more_item) : false;
-        *out_message_count = message_count;
+        inbox = cJSON_GetObjectItemCaseSensitive(root, "inbox");
+        if (!cJSON_IsObject(inbox))
+        {
+            err = ESP_FAIL;
+        }
+    }
+    if (err == ESP_OK)
+    {
+        const cJSON *unread_item =
+            cJSON_GetObjectItemCaseSensitive(inbox, "unread_count");
+        if (!cJSON_IsNumber(unread_item) ||
+            unread_item->valueint < 0 || unread_item->valueint > 255)
+        {
+            err = ESP_FAIL;
+        }
+        else
+        {
+            out_result->inbox_unread_count = (uint8_t)unread_item->valueint;
+        }
+    }
+    if (err == ESP_OK)
+    {
+        const cJSON *latest_unread =
+            cJSON_GetObjectItemCaseSensitive(inbox, "latest_unread");
+        if (cJSON_IsNull(latest_unread))
+        {
+            out_result->has_latest_unread = false;
+        }
+        else
+        {
+            err = memory_watch_voice_client_parse_sync_latest_unread(
+                latest_unread, &out_result->latest_unread);
+            out_result->has_latest_unread = err == ESP_OK;
+        }
+    }
+
+    if (err == ESP_OK)
+    {
+        out_result->message_count = message_count;
     }
 
     cJSON_Delete(root);
@@ -2176,12 +2390,12 @@ esp_err_t memory_watch_voice_client_inbox_mark_read(
     return err;
 }
 
-esp_err_t memory_watch_voice_client_conversation_poll(
+esp_err_t memory_watch_voice_client_sync(
     const memory_watch_voice_client_config_t *config,
-    const char *after_message_id,
+    const memory_watch_voice_client_sync_cursor_t *cursor,
     memory_watch_conversation_message_t *messages,
     size_t capacity,
-    memory_watch_conversation_poll_result_t *out_result)
+    memory_watch_voice_client_sync_result_t *out_result)
 {
     if (out_result == NULL || messages == NULL || capacity == 0U)
     {
@@ -2197,16 +2411,16 @@ esp_err_t memory_watch_voice_client_conversation_poll(
     }
 
     char *response = (char *)memory_watch_voice_client_alloc(
-        MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES + 1U);
+        MEMORY_WATCH_SYNC_RESPONSE_MAX_BYTES + 1U);
     if (response == NULL)
     {
         out_result->transport_error = ESP_ERR_NO_MEM;
         return ESP_ERR_NO_MEM;
     }
 
-    char path[360];
-    err = memory_watch_voice_client_build_conversation_path(
-        config->device_id, after_message_id, path, sizeof(path));
+    char path[560];
+    err = memory_watch_voice_client_build_sync_path(
+        config->device_id, cursor, path, sizeof(path));
     if (err != ESP_OK)
     {
         memory_watch_voice_client_free(response);
@@ -2218,7 +2432,7 @@ esp_err_t memory_watch_voice_client_conversation_poll(
     err = memory_watch_voice_client_perform_http_json(
         config, path, HTTP_METHOD_GET, NULL, 0U, NULL, NULL,
         &out_result->http_status, response,
-        MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES + 1U, &response_len);
+        MEMORY_WATCH_SYNC_RESPONSE_MAX_BYTES + 1U, &response_len);
 
     if (err == ESP_OK &&
         (out_result->http_status < 200 || out_result->http_status >= 300))
@@ -2227,16 +2441,15 @@ esp_err_t memory_watch_voice_client_conversation_poll(
     }
     if (err == ESP_OK)
     {
-        err = memory_watch_voice_client_parse_conversation_poll(
-            response, response_len, messages, capacity,
-            &out_result->message_count, &out_result->has_more);
+        err = memory_watch_voice_client_parse_sync(
+            response, response_len, messages, capacity, out_result);
     }
 
     memory_watch_voice_client_free(response);
     out_result->transport_error = err;
     if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "conversation poll failed: status=%d err=%s",
+        ESP_LOGW(TAG, "sync failed: status=%d err=%s",
                  out_result->http_status, esp_err_to_name(err));
     }
     return err;

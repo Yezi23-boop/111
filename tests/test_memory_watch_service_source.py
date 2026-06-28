@@ -382,11 +382,27 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         ws_event_section = source.split(
             "static void memory_watch_service_ws_event_cb"
         )[1].split("static void memory_watch_service_ws_disconnect_cb")[0]
-        asr_section = ws_event_section.split('strcmp(event->type, "asr_result") == 0')[1].split(
-            'strcmp(event->type, "conversation_message") == 0', 1
+        self.assertNotIn('strcmp(event->type, "asr_result")', ws_event_section)
+        self.assertNotIn('strcmp(event->type, "conversation_message")', ws_event_section)
+        self.assertNotIn('strcmp(event->type, "error")', ws_event_section)
+        self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ASR_READY", ws_event_section)
+        self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE", ws_event_section)
+        self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ERROR", ws_event_section)
+        self.assertIn("kWsWaitAsrReadyBit", source)
+        asr_section = ws_event_section.split(
+            "MEMORY_WATCH_WS_EVENT_TURN_ASR_READY"
+        )[1].split(
+            "MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE", 1
         )[0]
         self.assertIn("memory_watch_service_append_conversation_item", asr_section)
         self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_USER", asr_section)
+        self.assertIn("xEventGroupSetBits(s_ws_wait_event_group, kWsWaitAsrReadyBit)", asr_section)
+        ws_send_section = source.split(
+            "static esp_err_t memory_watch_service_send_voice_over_ws"
+        )[1].split("static esp_err_t memory_watch_service_post_worker_result", 1)[0]
+        self.assertIn("bool asr_ready_seen = false", ws_send_section)
+        self.assertIn("if (asr_ready_seen)", ws_send_section)
+        self.assertIn("kWsWaitAsrReadyBit", ws_send_section)
         self.assertIn(
             "memory_watch_service_append_response_conversation(&result->response)",
             source,
@@ -400,7 +416,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertNotIn("esp_http_client", copy_section)
         self.assertNotIn("nvs_", copy_section)
 
-    def test_v22_background_conversation_polling_owner_path(self) -> None:
+    def test_v24_background_sync_owner_path(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
         header = MEMORY_WATCH_SERVICE_HEADER.read_text(encoding="utf-8")
         client_source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
@@ -411,13 +427,20 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE", source)
         self.assertIn("kConversationPollIntervalMs = 5000", source)
         self.assertIn("kConversationPollTimeoutMs = 4000U", source)
-        self.assertIn("kConversationPendingMaxWaitMs = 10LL * 60LL * 1000LL", source)
         self.assertIn("memory_watch_service_conversation_worker_task", source)
         self.assertIn("s_conversation_staging", source)
+        self.assertIn("s_conversation_sync_result", source)
         self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
-        self.assertIn("memory_watch_voice_client_conversation_poll", source)
+        self.assertIn("memory_watch_voice_client_sync", source)
+        self.assertIn("memory_watch_voice_client_sync_cursor_t", source)
+        self.assertIn("MEMORY_WATCH_SYNC_MODE_BACKGROUND", source)
+        self.assertIn("MEMORY_WATCH_SYNC_MODE_FOREGROUND_RECONCILE", source)
+        self.assertIn(".pending_request_id =", source)
+        self.assertIn(".after_message_id =", source)
+        self.assertIn(".max_messages = MEMORY_WATCH_SYNC_DEFAULT_MAX_MESSAGES", source)
         self.assertIn("conversation_pending", source)
         self.assertIn("memory_watch_service_start_conversation_polling", source)
+        self.assertIn("memory_watch_service_start_foreground_reconcile", source)
         self.assertIn("memory_watch_ws_client_close();", source)
         self.assertIn("memory_watch_service_is_foreground_active()", source)
         self.assertIn("s_last_seen_conversation_id", source)
@@ -425,15 +448,67 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("conversation_already_appended", source)
         self.assertIn("if (!result->conversation_already_appended)", source)
         self.assertIn("terminal_result.conversation_already_appended = true", source)
+        self.assertIn('strcmp(s_conversation_sync_result.session_state, "done") != 0', source)
+        self.assertIn('"sync_session_terminal"', source)
+        self.assertNotIn("kConversationPendingMaxWaitMs", source)
+        self.assertNotIn("s_conversation_poll_started_ms", source)
+        self.assertNotIn("conversation_poll_timeout", source)
+        self.assertNotIn("memory_watch_voice_client_conversation_poll(", source)
 
         self.assertIn("memory_watch_conversation_message_t", client_header)
         self.assertIn("MEMORY_WATCH_CONVERSATION_MAX_MESSAGES 20U", client_header)
-        self.assertIn("MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES", client_header)
-        self.assertIn("memory_watch_voice_client_conversation_poll", client_header)
-        self.assertIn('"/v1/watch/conversation?device_id="', client_source)
-        self.assertIn('"&after="', client_source)
+        self.assertNotIn("MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES", client_header)
+        self.assertNotIn("memory_watch_conversation_poll_result_t", client_header)
+        self.assertNotIn("memory_watch_voice_client_conversation_poll", client_header)
+        self.assertNotIn("memory_watch_voice_client_conversation_poll(", client_source)
+        self.assertNotIn("memory_watch_voice_client_build_conversation_path", client_source)
+        self.assertNotIn("memory_watch_voice_client_parse_conversation_poll", client_source)
+        self.assertNotIn('"/v1/watch/conversation?device_id="', client_source)
+        self.assertNotIn('"&after="', client_source)
         self.assertIn('"messages"', client_source)
-        self.assertIn('"has_more"', client_source)
+
+    def test_v24_voice_client_exposes_unified_sync_contract(self) -> None:
+        client_source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
+        client_header = MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8")
+        combined = client_source + "\n" + client_header
+
+        self.assertIn("memory_watch_sync_mode_t", client_header)
+        self.assertIn("MEMORY_WATCH_SYNC_MODE_BACKGROUND", client_header)
+        self.assertIn("MEMORY_WATCH_SYNC_MODE_FOREGROUND_RECONCILE", client_header)
+        self.assertIn("memory_watch_voice_client_sync_cursor_t", client_header)
+        self.assertIn("memory_watch_voice_client_sync_result_t", client_header)
+        self.assertIn("memory_watch_sync_inbox_summary_t", client_header)
+        self.assertIn("MEMORY_WATCH_SYNC_DEFAULT_MAX_MESSAGES 10U", client_header)
+        self.assertIn("MEMORY_WATCH_SYNC_RESPONSE_MAX_BYTES", client_header)
+        self.assertIn("memory_watch_voice_client_sync", client_header)
+
+        self.assertIn('"/v1/watch/sync?device_id="', client_source)
+        self.assertIn('"&mode="', client_source)
+        self.assertIn('"background"', client_source)
+        self.assertIn('"foreground_reconcile"', client_source)
+        self.assertIn('"&pending_request_id="', client_source)
+        self.assertIn('"&after_message_id="', client_source)
+        self.assertIn('"&max_messages="', client_source)
+        self.assertIn('"schema_version"', client_source)
+        self.assertIn('"conversation"', client_source)
+        self.assertIn('"has_pending"', client_source)
+        self.assertIn('"session_state"', client_source)
+        self.assertIn('"inbox"', client_source)
+        self.assertIn('"unread_count"', client_source)
+        self.assertIn('"latest_unread"', client_source)
+        self.assertIn('"notification_id"', client_source)
+        self.assertIn("memory_watch_voice_client_parse_sync", client_source)
+        self.assertIn("memory_watch_voice_client_parse_sync_latest_unread", client_source)
+        self.assertIn("memory_watch_voice_client_is_public_session_state", client_source)
+        self.assertIn("MEMORY_WATCH_SYNC_RESPONSE_MAX_BYTES + 1U", client_source)
+        self.assertIn("memory_watch_voice_client_alloc", client_source)
+        self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", client_source)
+        self.assertIn("memory_watch_voice_client_perform_http_json", client_source)
+        self.assertNotIn("poll_after_ms", combined)
+        self.assertNotIn("after_inbox_id", combined)
+        self.assertNotIn("max_inbox_items", combined)
+        self.assertNotIn("accepted", combined)
+        self.assertNotIn("asr_ready", combined)
 
     def test_main_kconfig_exposes_memory_watch_defaults_without_secret_value(self) -> None:
         kconfig = MAIN_KCONFIG.read_text(encoding="utf-8")

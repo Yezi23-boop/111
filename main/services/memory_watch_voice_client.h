@@ -188,6 +188,20 @@ extern "C"
     } memory_watch_inbox_item_t;
 
     /**
+     * @brief `/v1/watch/sync` 返回的最新未读 inbox 摘要。
+     *
+     * 这里只承载气泡提示需要的短字段；完整收件箱列表仍走
+     * `memory_watch_voice_client_inbox_poll()`，避免后台 idle sync 拉大包。
+     */
+    typedef struct
+    {
+        char notification_id[64]; /**< 最新未读 notification_id。 */
+        char title[64];           /**< 短标题，允许服务端截断。 */
+        char preview[128];        /**< 气泡预览文本，允许服务端截断。 */
+        char created_at[32];      /**< UTC RFC3339，服务端生成。 */
+    } memory_watch_sync_inbox_summary_t;
+
+    /**
      * @brief inbox 轮询响应（GET /v1/watch/inbox）。
      *
      * items 数组由调用方提供，容量至少为 20；实际条数写入 out_item_count。
@@ -217,7 +231,7 @@ extern "C"
     /**
      * @brief server conversation 单条消息。
      *
-     * 用于离开 Hermes 页面后，手表通过 HTTP polling 拉取后台 Hermes 回复。
+     * 用于 `/v1/watch/sync` 返回的 conversation delta。
      * server conversation 才是真相源；ESP32 只合并最近几条用于显示。
      */
     typedef struct
@@ -230,17 +244,52 @@ extern "C"
         char status[MEMORY_WATCH_VOICE_CLIENT_STATUS_MAX_BYTES];
     } memory_watch_conversation_message_t;
 
+    #define MEMORY_WATCH_CONVERSATION_MAX_MESSAGES 20U
+
+    /**
+     * @brief `/v1/watch/sync` 后台同步模式。
+     */
+    typedef enum
+    {
+        MEMORY_WATCH_SYNC_MODE_BACKGROUND = 0,          /**< 离页/后台低频同步。 */
+        MEMORY_WATCH_SYNC_MODE_FOREGROUND_RECONCILE,   /**< 进入 Hermes 页时补齐最近对话。 */
+    } memory_watch_sync_mode_t;
+
+    /**
+     * @brief `/v1/watch/sync` 游标参数。
+     *
+     * `max_messages` 为 0 时使用设备侧默认 10 条；V2.4 的轮询节奏
+     * 由 service owner 持有，不从 server response 动态下发。
+     */
+    typedef struct
+    {
+        memory_watch_sync_mode_t mode;
+        const char *pending_request_id; /**< 可选；后台等待中的 request_id。 */
+        const char *after_message_id;   /**< 可选；已显示的最后 message_id。 */
+        size_t max_messages;            /**< 请求的 conversation 增量条数，0 使用默认 10。 */
+    } memory_watch_voice_client_sync_cursor_t;
+
+    /**
+     * @brief `/v1/watch/sync` 聚合响应。
+     *
+     * ESP32 只理解公开 session_state：none/running/done/error/timeout/canceled。
+     * server 内部细分状态不应出现在本结构或 UI/controller。
+     */
     typedef struct
     {
         int http_status;           /**< HTTP 状态码，传输失败时为 0。 */
         esp_err_t transport_error; /**< 最近一次 HTTP/解析错误。 */
-        size_t message_count;      /**< 实际解析成功的消息条数。 */
-        bool has_more;             /**< V2.2 固定 false，保留给后续分页。 */
-    } memory_watch_conversation_poll_result_t;
+        bool has_pending;          /**< server 认为 pending_request_id 仍在运行。 */
+        char session_state[MEMORY_WATCH_VOICE_CLIENT_STATUS_MAX_BYTES];
+        size_t message_count;      /**< 实际解析成功的 conversation messages 条数。 */
+        uint8_t inbox_unread_count;
+        bool has_latest_unread;
+        memory_watch_sync_inbox_summary_t latest_unread;
+    } memory_watch_voice_client_sync_result_t;
 
-    #define MEMORY_WATCH_CONVERSATION_MAX_MESSAGES 20U
-    /** conversation polling 响应体最大字节数，按 20 条短文本预留。 */
-    #define MEMORY_WATCH_CONVERSATION_RESPONSE_MAX_BYTES (12U * 1024U)
+    #define MEMORY_WATCH_SYNC_DEFAULT_MAX_MESSAGES 10U
+    /** `/sync` 响应体最大字节数；按 10 条短 conversation + inbox 摘要预留。 */
+    #define MEMORY_WATCH_SYNC_RESPONSE_MAX_BYTES (12U * 1024U)
 
     /**
      * @brief GET /v1/watch/inbox 拉取最近 20 条快照。
@@ -276,25 +325,24 @@ extern "C"
         memory_watch_inbox_mark_read_result_t *out_result);
 
     /**
-     * @brief GET /v1/watch/conversation 拉取离页 pending 对话消息。
+     * @brief GET /v1/watch/sync 后台统一同步。
      *
-     * 只允许 conversation worker task 调用；调用方必须提供已在 PSRAM 分配的
-     * messages 数组（capacity >= MEMORY_WATCH_CONVERSATION_MAX_MESSAGES）。
-     * 单次 timeout 由传入 config 控制，V2.2 后台 polling 使用 4000 ms。
+     * 只允许 service/worker task 调用；调用方必须提供 PSRAM 分配的 messages
+     * 数组。网络失败只表示本轮同步失败，不能据此清除 pending。
      *
-     * @param[in] config HTTP client 配置。
-     * @param[in] after_message_id 可选 last_seen message_id；NULL/空表示最近 20 条。
-     * @param[out] messages 调用方分配的消息数组。
-     * @param[in] capacity messages 数组容量。
-     * @param[out] out_result 轮询结果。
-     * @return `ESP_OK` 表示 HTTP 2xx 且响应解析成功。
+     * @param[in]  config     HTTP client 配置。
+     * @param[in]  cursor     同步模式与游标；NULL 使用 background + 默认条数。
+     * @param[out] messages   调用方分配的 conversation 增量数组。
+     * @param[in]  capacity   messages 数组容量。
+     * @param[out] out_result 聚合同步结果。
+     * @return `ESP_OK` 表示 HTTP 2xx 且响应契约解析成功。
      */
-    esp_err_t memory_watch_voice_client_conversation_poll(
+    esp_err_t memory_watch_voice_client_sync(
         const memory_watch_voice_client_config_t *config,
-        const char *after_message_id,
+        const memory_watch_voice_client_sync_cursor_t *cursor,
         memory_watch_conversation_message_t *messages,
         size_t capacity,
-        memory_watch_conversation_poll_result_t *out_result);
+        memory_watch_voice_client_sync_result_t *out_result);
 
 #ifdef __cplusplus
 }

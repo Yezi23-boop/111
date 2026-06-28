@@ -81,6 +81,20 @@ std::string JsonStringField(cJSON *root, const char *name) {
   return "";
 }
 
+memory_watch_ws_event_kind_t MapEventKind(const std::string &type,
+                                          const std::string &role) {
+  if (type == "asr_result") {
+    return MEMORY_WATCH_WS_EVENT_TURN_ASR_READY;
+  }
+  if (type == "conversation_message" && role == "assistant") {
+    return MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE;
+  }
+  if (type == "error") {
+    return MEMORY_WATCH_WS_EVENT_TURN_ERROR;
+  }
+  return MEMORY_WATCH_WS_EVENT_UNKNOWN;
+}
+
 void DispatchJson(const char *data, size_t len) {
   if (data == nullptr || len == 0 || g_event_cb == nullptr) {
     return;
@@ -93,13 +107,14 @@ void DispatchJson(const char *data, size_t len) {
 
   memory_watch_ws_event_t event = {};
   const std::string type = JsonStringField(root, "type");
+  const std::string role = JsonStringField(root, "role");
+  event.kind = MapEventKind(type, role);
   CopyText(event.type, sizeof(event.type), type.c_str());
   CopyText(event.request_id, sizeof(event.request_id),
            JsonStringField(root, "request_id").c_str());
   CopyText(event.message_id, sizeof(event.message_id),
            JsonStringField(root, "message_id").c_str());
-  CopyText(event.role, sizeof(event.role),
-           JsonStringField(root, "role").c_str());
+  CopyText(event.role, sizeof(event.role), role.c_str());
   CopyText(event.status, sizeof(event.status),
            JsonStringField(root, "status").c_str());
   CopyText(event.text, sizeof(event.text),
@@ -250,6 +265,27 @@ extern "C" esp_err_t memory_watch_ws_client_send_audio_end(
     err = SendJsonObject(root);
   }
   cJSON_Delete(root);
+  return err;
+}
+
+extern "C" esp_err_t memory_watch_ws_client_send_audio_turn(
+    const char *request_id, const uint8_t *audio, size_t audio_len,
+    size_t chunk_size) {
+  if (request_id == nullptr || audio == nullptr || audio_len == 0 ||
+      chunk_size == 0) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  esp_err_t err = memory_watch_ws_client_send_audio_start(request_id);
+  for (size_t offset = 0; err == ESP_OK && offset < audio_len;) {
+    const size_t remaining = audio_len - offset;
+    const size_t part_len = remaining > chunk_size ? chunk_size : remaining;
+    err = memory_watch_ws_client_send_audio_chunk(audio + offset, part_len);
+    offset += part_len;
+  }
+  if (err == ESP_OK) {
+    err = memory_watch_ws_client_send_audio_end(request_id);
+  }
   return err;
 }
 

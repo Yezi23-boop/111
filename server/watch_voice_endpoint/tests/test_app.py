@@ -891,3 +891,51 @@ async def test_mimo_asr_adapter_uses_openai_compatible_audio_payload(watch_app, 
     content = body["messages"][0]["content"][0]
     assert content["type"] == "input_audio"
     assert content["input_audio"]["data"].startswith("data:audio/wav;base64,")
+
+
+# ── V2.3 session endpoint ────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_session_list_returns_active_count(watch_app):
+    """GET /v1/watch/session 应返回 200 且响应含 sessions 和 active_count 字段。"""
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/v1/watch/session",
+            headers={"Authorization": "Bearer test-token"},
+            params={"device_id": "watch-001"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "sessions" in body
+        assert "active_count" in body
+        assert isinstance(body["sessions"], list)
+        assert isinstance(body["active_count"], int)
+
+
+@pytest.mark.anyio
+async def test_session_list_by_request_id_handles_missing(watch_app):
+    """GET /v1/watch/session?request_id=missing 应返回空列表。"""
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/v1/watch/session",
+            headers={"Authorization": "Bearer test-token"},
+            params={"device_id": "watch-001", "request_id": "no-such-request"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["sessions"] == []
+        assert body["active_count"] == 0
+
+
+@pytest.mark.anyio
+async def test_session_endpoint_rejects_invalid_auth(watch_app):
+    """session 端点应拒绝无效认证。"""
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/v1/watch/session",
+            params={"device_id": "watch-001"},
+        )
+        assert resp.status_code == 401
