@@ -1,0 +1,480 @@
+\documentclass[UTF8,a4paper,12pt]{ctexart}
+
+\usepackage[a4paper,left=2.5cm,right=2.5cm,top=3.0cm,bottom=2.5cm,headheight=34pt,headsep=0.6cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{ragged2e}
+\usepackage{seqsplit}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue,
+  citecolor=black
+}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\renewcommand{\arraystretch}{1.25}
+\setlist[itemize]{leftmargin=2.5em}
+\setlist[enumerate]{leftmargin=2.8em}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\includegraphics[height=0.75cm]{figures/official_header.png}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+\titleformat{\section}{\zihao{3}\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\zihao{4}\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\zihao{-4}\bfseries}{\thesubsubsection}{1em}{}
+\tikzset{
+  block/.style={draw, rounded corners=3pt, align=center, text width=2.8cm, minimum height=1.0cm, inner sep=5pt, fill=blue!10, draw=blue!50!black, font=\small},
+  coreblock/.style={draw, rounded corners=3pt, align=center, text width=3.0cm, minimum height=1.05cm, inner sep=5pt, fill=cyan!15, draw=cyan!55!black, font=\small},
+  serviceblock/.style={draw, rounded corners=3pt, align=center, text width=2.9cm, minimum height=1.05cm, inner sep=5pt, fill=green!12, draw=green!50!black, font=\small},
+  warnblock/.style={draw, rounded corners=3pt, align=center, text width=2.8cm, minimum height=1.0cm, inner sep=5pt, fill=red!12, draw=red!50!black, font=\small},
+  cloudblock/.style={draw, rounded corners=3pt, align=center, text width=2.9cm, minimum height=1.05cm, inner sep=5pt, fill=purple!12, draw=purple!50!black, font=\small},
+  datablk/.style={draw, rounded corners=3pt, align=center, text width=2.8cm, minimum height=1.0cm, inner sep=5pt, fill=orange!12, draw=orange!50!black, font=\small},
+  arr/.style={-{Stealth[length=2.5mm]}, thick, draw=gray!70!black},
+  darr/.style={-{Stealth[length=2.3mm]}, thick, dashed, draw=gray!60!black},
+  groupbox/.style={draw, rounded corners=5pt, inner sep=10pt, fill=gray!6, draw=gray!40}
+}
+
+\newcommand{\placeholderfig}[1]{
+  \begin{center}
+    \fbox{\begin{minipage}{0.88\linewidth}
+      \centering
+      \vspace{1.2em}
+      \textbf{#1}
+      \vspace{1.2em}
+    \end{minipage}}
+  \end{center}
+}
+
+\begin{document}
+
+\begin{center}
+  {\zihao{3}\bfseries 作品名称}\\[0.5em]
+  {\zihao{2}\bfseries 聆安 Watch：基于 ESP32-S3 与 Hermes 的听障辅助边缘 AI 智能手表}
+\end{center}
+
+\section*{摘要}
+
+本作品面向听障人群在日常出行和公共场所中难以及时感知危险声音的问题，设计一款基于 ESP32-S3 的边缘 AI 智能手表。系统通过麦克风采集环境声音，在手表端利用 ESP-DL 部署轻量化危险声识别模型，对鸣笛、警笛、报警声等高价值危险声学信号进行本地判断，并通过高对比度屏幕提示和提醒策略将模型输出转化为用户可感知的安全提示。为降低单个音频窗口误判造成的打扰，系统设计了连续窗口确认、告警保持和冷却机制，使危险提醒从简单分类结果进一步转化为稳定的产品状态。
+
+同时，手表作为 Hermes 个人助手的随身操控设备端，支持用户通过语音或文本将想法、提醒、问题和任务提交给 Hermes，并在手表端获得简短回执。系统采用手表端、watch endpoint、Hermes 和电脑端协同的端云分工：ESP32-S3 负责随身输入、状态展示和本地安全闭环，服务器负责鉴权、语音桥接和请求超时控制，Hermes 负责长期记忆、任务整理、信息查询和跨设备协同。作品将端侧危险声识别、本地提醒和个人 AI 助手入口结合，形成“安全提醒 + 随身 AI 操控”的复合型嵌入式边缘 AI 应用。
+
+\section*{第一部分\quad 作品概述}
+\addcontentsline{toc}{section}{第一部分 作品概述}
+
+\subsection*{1.1 功能与特性}
+
+本作品的核心功能由危险声识别、本地提醒、Hermes 随身操控和数据闭环四部分构成。手表端通过麦克风采集环境声音，经音频滑窗、特征处理和 ESP-DL 推理后判断当前环境是否存在危险声音，首版主线聚焦鸣笛、警笛、报警声等高价值声学信号。系统不将单个模型输出直接暴露给用户，而是通过风险状态机进行连续确认、告警保持和冷却处理，在危险证据达到确认条件后触发屏幕高对比提示和震动提醒。与此同时，手表作为 Hermes 的低摩擦随身入口，支持用户提交记录、提醒、问题和任务，并在手表端获得处理回执。系统还预留危险事件记录和样本优化路径，为后续抗噪能力和场景适应能力提升提供基础。
+
+\placeholderfig{图 1\quad 作品功能总览图：听障危险提醒、Hermes 随身操控与数据闭环}
+
+\subsection*{1.2 应用领域}
+
+本作品主要面向听障辅助、可穿戴设备、嵌入式边缘 AI 和 AIoT 场景。对于听障用户，交通和公共场所中的鸣笛、警笛、报警声具有较高安全价值，但用户可能无法及时获得声音线索。本作品通过端侧识别和本地提醒，将危险声学信号转化为视觉或触觉等可感知提示。在边缘 AI 方向上，作品将声音识别和风险决策部署到 ESP32-S3 手表端，使核心安全提醒不依赖云端推理链路；在个人助手方向上，作品通过 Hermes 扩展手表的交互价值，使其不仅能提醒危险，也能成为用户随时记录和调度任务的入口。
+
+\placeholderfig{图 2\quad 典型应用场景图：出行安全提醒、公共场所报警感知、Hermes 语音任务入口}
+
+\subsection*{1.3 主要技术特点}
+
+\noindent\begin{tabularx}{\linewidth}{>{\bfseries}p{3.3cm}>{\RaggedRight\arraybackslash}X}
+\toprule
+技术特点 & 说明 \\
+\midrule
+ESP32-S3 端侧部署 & 手表端承担音频采集、模型推理、本地状态展示和轻量通信。 \\
+ESP-DL 轻量推理 & 使用 Espressif 端侧深度学习能力部署危险声识别模型。 \\
+风险状态机 & 通过 Suspicious、Alerting、Cooldown 等状态降低误报和抖动。 \\
+LVGL 界面 & 在手表屏幕上展示危险识别状态、Hermes 页面和回执信息。 \\
+watch endpoint & 提供 ESP32 面向 Hermes 的窄接口，避免设备端直接持有 Hermes API 密钥。 \\
+Hermes 协同 & Hermes 负责长期记忆、任务整理、查询和跨设备协同。 \\
+\bottomrule
+\end{tabularx}
+
+\subsection*{1.4 主要性能指标}
+
+\noindent\begin{tabularx}{\linewidth}{p{3.2cm}>{\RaggedRight\arraybackslash}X p{2.2cm}}
+\toprule
+指标 & 目标/说明 & 实测值 \\
+\midrule
+危险声识别触发 & 播放 horn/siren/alarm 样本可触发危险状态 & 已触发 \\
+本地提醒响应时间 & 从首次 danger 推断到进入 ALERTING 的时间 & 约 380--400 ms \\
+离线可用性 & 断网后核心危险声识别与本地提醒仍可工作 & 待补视频 \\
+模型大小 & 当前 active ESP-DL 模型文件大小 & 31.4 KB \\
+内存占用 & 推理运行时内部 RAM/PSRAM/flash 占用 & 约 6.5 KB / 202.5 KB / 25.8 KB (V3.4) \\
+Hermes 请求超时 & watch endpoint 与手表等待窗口匹配 & 120 s；文本/语音命令已通 \\
+\bottomrule
+\end{tabularx}
+
+\subsection*{1.5 主要创新点}
+
+\begin{enumerate}
+  \item 将端侧危险声识别用于听障安全提醒场景，强调低延迟、本地判断和可长期运行。
+  \item 用风险状态机将模型输出转化为稳定提醒，避免单窗尖峰直接触发强告警。
+  \item 将手表设计为 Hermes 的随身操控设备端，实现安全提醒和个人助手入口的结合。
+  \item 通过 watch endpoint 隔离 ESP32 与 Hermes API，使设备端只面对受控的窄接口。
+  \item 预留危险事件记录和样本优化闭环，为后续提升模型抗噪能力提供路径。
+\end{enumerate}
+
+\subsection*{1.6 设计流程}
+
+本作品的设计流程为：首先分析听障用户在公共场所和交通环境中的危险声音感知需求；然后确定 ESP32-S3 手表端、watch endpoint、Hermes 和电脑端的系统分工；接着设计端侧音频采集、ESP-DL 推理和风险状态机；随后实现本地提醒、LVGL 界面和 Hermes 页面；最后通过板端日志、服务器接口测试和演示视频验证系统功能，并根据误报、资源占用和交互体验继续优化。
+
+\placeholderfig{图 3\quad 设计流程图：需求分析 -> 系统架构 -> 端侧识别 -> 状态机与提醒 -> Hermes 联动 -> 测试优化}
+
+\section*{第二部分\quad 系统组成及功能说明}
+\addcontentsline{toc}{section}{第二部分 系统组成及功能说明}
+
+本部分从整体架构、硬件组成、软件组成、边缘 AI 识别流程、风险状态机、Hermes 联动流程和数据闭环等方面阐述系统设计细节。
+
+\subsection*{2.1 整体介绍}
+
+系统由手表端、服务器端 watch endpoint、Hermes 服务和电脑端协同能力组成。手表端负责随身输入、本地安全提醒和状态展示；watch endpoint 负责设备鉴权、请求幂等、超时控制和 Hermes 转接；Hermes 负责长期记忆、任务整理、提醒创建、信息查询和跨设备协同；电脑端用于承接资料查询、文件整理、内容生成等更复杂事务。危险声音链路从环境声音进入手表端麦克风，经端侧特征处理、ESP-DL 推理和风险状态机后触发本地提醒；Hermes 链路则从用户语音或文本输入开始，经服务器侧 ASR 和 Hermes 处理后返回手表端显示。
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.92\linewidth}{!}{
+\begin{tikzpicture}[x=1cm,y=1cm,font=\small]
+  \node[block] (sound) at (0,1.6) {环境危险声\\鸣笛/警笛/报警};
+  \node[coreblock] (watch) at (3.3,1.6) {ESP32-S3 手表\\采集/推理/显示};
+  \node[serviceblock] (endpoint) at (6.6,1.6) {watch endpoint\\鉴权/ASR/超时};
+  \node[cloudblock] (hermes) at (9.9,1.6) {Hermes\\记忆/任务};
+  \node[block] (pc) at (13.2,1.6) {电脑端协同\\资料/文件/日程};
+  \node[warnblock] (alert) at (3.3,-1.2) {本地提醒\\屏幕/震动};
+  \node[datablk] (data) at (8.25,-1.2) {事件数据\\日志/置信度/场景};
+
+  \draw[arr] (sound) -- (watch);
+  \draw[arr] (watch) -- (endpoint);
+  \draw[arr] (endpoint) -- (hermes);
+  \draw[arr] (hermes) -- (pc);
+  \draw[arr] (watch) -- (alert);
+  \draw[darr] (watch) -- (data);
+  \draw[darr] (data) -| (endpoint.south);
+  \draw[darr] (hermes) |- (data.north);
+  \draw[darr] (endpoint.south west) -- (watch.south east);
+\end{tikzpicture}
+}
+\caption{系统整体框图}
+\end{figure}
+
+\subsection*{2.2 硬件系统介绍}
+
+\subsubsection*{2.2.1 硬件整体介绍}
+
+本作品硬件侧以 ESP32-S3 为核心控制器，配合麦克风、屏幕、触摸输入、电源管理和提醒通道构成可穿戴终端。ESP32-S3 负责运行固件主程序、管理外设资源、执行端侧推理并驱动屏幕显示。麦克风用于采集环境声音和用户语音输入，屏幕用于展示危险提醒、Hermes 状态和回执信息，电源管理模块用于支撑可穿戴设备的续航和运行状态监测。
+
+\placeholderfig{图 5\quad 手表硬件整体照片：正面与斜 45 度视角（后续补拍，注意匿名）}
+
+\subsubsection*{2.2.2 机械设计介绍}
+
+机械设计部分用于说明手表外形、屏幕位置、麦克风开孔、按键或触摸交互位置和佩戴方式。最终版本建议从整体到局部逐级展示：先给出手表整体外观，再标注屏幕、麦克风、触摸区域和提醒器件位置；如有外壳或结构件设计，可补充 CAD 截图或手绘结构图。
+
+\placeholderfig{图 6\quad 机械结构与交互区域标注图（后续补拍 CAD 或实物标注图）}
+
+\subsubsection*{2.2.3 电路各模块介绍}
+
+电路设计部分用于说明 ESP32-S3 主控、音频输入、显示触摸、电源管理、提醒器件等模块之间的连接关系。报告最终版应从整体到局部展示关键模块，并标记输入输出信号线，例如麦克风音频输入、屏幕显示接口、触摸中断、电源状态检测和提醒控制信号。
+
+\noindent\begin{tabularx}{\linewidth}{p{3cm}>{\RaggedRight\arraybackslash}X p{3cm}p{3cm}}
+\toprule
+模块 & 作用 & 关键输入 & 关键输出 \\
+\midrule
+ESP32-S3 主控 & 运行固件、管理外设和执行推理 & 电源、音频、触摸输入 & 屏幕、网络、提醒控制 \\
+麦克风模块 & 采集环境声和用户语音 & 环境声音 & 音频信号 \\
+显示触摸模块 & 展示状态和接收交互 & UI 帧数据、触摸事件 & 屏幕显示、触摸坐标 \\
+电源管理模块 & 电池、电量和供电状态管理 & 电池/USB & 电源状态、电量读数 \\
+提醒模块 & 向用户输出危险提示 & 告警状态 & 屏幕/震动/声音提醒 \\
+\bottomrule
+\end{tabularx}
+
+\subsection*{2.3 软件系统介绍}
+
+\subsubsection*{2.3.1 软件整体介绍}
+
+软件系统分为手表端固件和服务器端服务两部分。手表端基于 ESP-IDF 组织工程，负责 UI、音频采集、模型推理、风险融合、提醒管理、网络通信和 Hermes 页面状态。服务器端 watch endpoint 作为 ESP32-S3 与 Hermes 之间的窄桥接层，负责设备鉴权、请求幂等、超时控制、ASR/Hermes 转接和固定字段回执。
+
+\placeholderfig{图 7\quad 软件整体架构图：手表端固件层与服务器/Hermes 层}
+
+\subsubsection*{2.3.2 软件各模块介绍}
+
+\noindent\begin{longtable}{>{\raggedright\arraybackslash}p{3.8cm}>{\RaggedRight\arraybackslash}p{4.0cm}>{\RaggedRight\arraybackslash}p{2.9cm}>{\RaggedRight\arraybackslash}p{2.9cm}}
+\toprule
+模块 & 职责 & 输入 & 输出 \\
+\midrule
+UI 显示层 & 展示危险识别状态、Hermes 页面和操作反馈 & 状态快照、触摸/按键 & 页面显示和用户命令 \\
+音频采集层 & 管理麦克风输入和音频资源 & 麦克风音频 & PCM 音频流 \\
+端侧推理层 & 执行音频滑窗、特征处理和 ESP-DL 推理 & PCM 音频窗口 & 模型输出 \\
+风险融合服务 & 将单窗模型输出融合为稳定风险状态 & danger 概率/标签 & 风险状态快照 \\
+提醒管理服务 & 触发用户提醒和危险提示 & 告警状态 & 屏幕/提醒动作 \\
+Hermes 页面服务 & 维护页面命令、状态快照和回执 & UI 命令、endpoint 结果 & Hermes 页面状态 \\
+Hermes 请求客户端 & 上传语音或文本请求到 watch endpoint & 录音/文本、设备状态 & JSON 响应 \\
+watch endpoint & 设备鉴权、请求处理、Hermes 转接 & 手表请求 & 固定字段 JSON \\
+\bottomrule
+\end{longtable}
+
+\subsubsection*{2.3.3 端侧危险声识别流程}
+
+危险声识别流程为：麦克风采集后进入音频重采样与滑动窗口处理，生成 Fbank 等特征表示，再由 ESP-DL 模型推理得到 danger/\allowbreak non\_danger 输出。随后风险融合层进行连续窗口确认、告警保持和冷却处理，最终由提醒层转化为屏幕或震动等用户可感知反馈。
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.92\linewidth}{!}{
+\begin{tikzpicture}[x=1cm,y=1cm,font=\small]
+  \node[block] (mic) at (0,1.5) {麦克风\\采集};
+  \node[block] (window) at (3.2,1.5) {滑窗\\重采样};
+  \node[block] (feature) at (6.4,1.5) {特征\\Fbank};
+  \node[coreblock] (model) at (9.6,1.5) {ESP-DL\\推理};
+  \node[block] (binary) at (9.6,-1.0) {单窗输出\\danger};
+  \node[serviceblock] (fusion) at (6.4,-1.0) {证据融合\\确认/保持/冷却};
+  \node[warnblock] (notify) at (3.2,-1.0) {本地提醒\\屏幕/震动};
+
+  \draw[arr] (mic) -- (window);
+  \draw[arr] (window) -- (feature);
+  \draw[arr] (feature) -- (model);
+  \draw[arr] (model) -- (binary);
+  \draw[arr] (binary) -- (fusion);
+  \draw[arr] (fusion) -- (notify);
+\end{tikzpicture}
+}
+\caption{端侧危险声识别流程图}
+\end{figure}
+
+\subsubsection*{2.3.4 风险状态机设计}
+
+风险状态机用于把单窗模型结果转换为稳定的产品状态。系统默认不把一次 danger 输出直接等同为危险事件，而是经过连续证据确认、最短告警保持和冷却抑制，减少普通噪声或短促误判造成的打扰。
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.92\linewidth}{!}{
+\begin{tikzpicture}[x=1cm,y=1cm,font=\small]
+  \node[block] (off) at (0,0) {Off\\功能关闭};
+  \node[serviceblock] (mon) at (3.4,0) {Monitoring\\正常监听};
+  \node[datablk] (sus) at (6.8,0) {Suspicious\\可疑证据};
+  \node[warnblock] (alert) at (10.2,0) {Alerting\\正式提醒};
+  \node[block] (cool) at (6.8,-2.2) {Cooldown\\冷却抑制};
+
+  \draw[arr] (off) -- (mon);
+  \draw[arr] (mon) -- (sus);
+  \draw[arr] (sus) -- (alert);
+  \draw[arr] (alert) -- (cool);
+  \draw[arr] (cool) -- (mon);
+  \draw[darr] (sus) to[bend left=22] (mon);
+  \draw[darr] (mon) to[bend left=22] (off);
+\end{tikzpicture}
+}
+\caption{风险状态机图}
+\end{figure}
+
+\noindent{\small 状态迁移说明：Monitoring 检测到单窗 danger 后进入 Suspicious；连续确认后进入 Alerting；告警保持结束且环境安全后进入 Cooldown；冷却结束后回到 Monitoring；证据不足时从 Suspicious 回退。}
+
+\subsubsection*{2.3.5 Hermes 联动流程}
+
+Hermes 语音任务流程为：用户按住手表说话，手表录音并上传 Ogg Opus 音频，watch endpoint 完成鉴权和检查请求，服务器侧 ASR/Hermes 处理后返回固定字段 JSON，手表显示简短回执。该链路使 ESP32-S3 保持轻量边界，复杂记忆、任务整理和电脑端事务交给 Hermes 与服务器处理。
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.92\linewidth}{!}{
+\begin{tikzpicture}[x=1cm,y=1cm,font=\small]
+  \node[block] (user) at (0,1.5) {用户\\语音/文本};
+  \node[coreblock] (watch) at (3.2,1.5) {手表端\\录音/文本};
+  \node[serviceblock] (endpoint) at (6.4,1.5) {watch endpoint\\鉴权/幂等/超时};
+  \node[block] (asr) at (9.6,1.5) {ASR\\语音转文本};
+  \node[cloudblock] (hermes) at (12.8,1.5) {Hermes\\记忆/任务/协同};
+  \node[block] (pc) at (12.8,-1.2) {电脑端工具\\资料/文件/日程};
+  \node[datablk] (json) at (6.4,-1.2) {固定字段 JSON\\回执/动作/状态};
+
+  \draw[arr] (user) -- (watch);
+  \draw[arr] (watch) -- (endpoint);
+  \draw[arr] (endpoint) -- (asr);
+  \draw[arr] (asr) -- (hermes);
+  \draw[arr] (hermes) -- (pc);
+  \draw[darr] (pc) -- (json);
+  \draw[arr] (json.west) -| (watch.south);
+\end{tikzpicture}
+}
+\caption{Hermes 联动流程图}
+\end{figure}
+
+\subsubsection*{2.3.6 数据闭环与模型优化流程}
+
+系统设计了危险事件数据闭环：当手表端检测到危险事件后，可记录事件时间、识别结果、置信度、状态变化和用户反馈，用于后续样本积累、误报分析和模型优化。该闭环可帮助系统从工程原型逐步演进为更可靠的听障辅助产品。
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.92\linewidth}{!}{
+\begin{tikzpicture}[x=1cm,y=1cm,font=\small]
+  \node[warnblock] (event) at (0,1.5) {危险事件\\三类危险声};
+  \node[datablk] (record) at (3.2,1.5) {事件记录\\时间/置信度};
+  \node[serviceblock] (upload) at (6.4,1.5) {上传服务器\\样本/元数据};
+  \node[datablk] (dataset) at (9.6,1.5) {样本积累\\正样本/负样本};
+  \node[block] (analysis) at (9.6,-1.0) {误报分析\\场景/噪声};
+  \node[cloudblock] (train) at (6.4,-1.0) {训练优化\\阈值/特征};
+  \node[coreblock] (deploy) at (3.2,-1.0) {量化部署\\ESP-DL};
+  \node[block] (watch) at (0,-1.0) {手表更新\\下一轮识别};
+
+  \draw[arr] (event) -- (record);
+  \draw[arr] (record) -- (upload);
+  \draw[arr] (upload) -- (dataset);
+  \draw[arr] (dataset) -- (analysis);
+  \draw[arr] (analysis) -- (train);
+  \draw[arr] (train) -- (deploy);
+  \draw[arr] (deploy) -- (watch);
+  \draw[darr] (watch) to[bend left=22] (event);
+\end{tikzpicture}
+}
+\caption{数据闭环与模型优化流程图}
+\end{figure}
+
+\section*{第三部分\quad 完成情况及性能参数}
+\addcontentsline{toc}{section}{第三部分 完成情况及性能参数}
+
+本部分用于展示最终实现成果。除已补入的 TikZ 架构图外，本轮从板端日志、模型文件和接口契约中整理出可验证的测试数据，并在第 3.5 小节给出关键证据整理。最终提交版仍需补拍实物照片、界面截图和服务器测试截图，以符合官方“作品演示为主”的评分导向。
+
+\subsection*{3.1 整体介绍}
+
+当前项目已形成 ESP32-S3 固件、危险识别服务、Hermes 手表页面、watch endpoint 和接口契约等基础模块。最终提交版需要用手表实物正面照片、斜 45 度全局照片、危险识别页面截图、Hermes 回执页面、串口日志和服务器接口测试日志证明系统实际可运行。
+
+\placeholderfig{图 9\quad 系统实物正面与斜 45 度全局照片（后续补拍，注意匿名）}
+
+\subsection*{3.2 工程成果}
+
+\subsubsection*{3.2.1 机械成果}
+
+机械成果部分展示手表整体外观、佩戴形态、屏幕区域、麦克风位置和交互区域。后续应补充实物照片，并在图片中标注关键交互区域。
+
+\subsubsection*{3.2.2 电路成果}
+
+电路成果部分展示主控与外设连接、电源管理、显示触摸链路和提醒通道。若最终不展示完整原理图，也应至少用模块图说明主控、麦克风、屏幕、电源和提醒模块之间的关系。
+
+\subsubsection*{3.2.3 软件成果}
+
+\noindent\begin{tabularx}{\linewidth}{p{3.2cm}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}p{4.2cm}}
+\toprule
+成果类别 & 当前内容 & 证据状态 \\
+\midrule
+端侧推理 & ESP-DL 推理组件、音频 runtime、模型 runner & 已补 2026-06-06 运行日志 \\
+风险融合 & 连续确认、告警保持、冷却和状态快照 & 已补状态机流转日志 \\
+危险识别界面 & 展示监听、危险提醒和状态变化 & 待补界面截图 \\
+Hermes 手表页面 & 支持语音/文本任务和回执展示 & 已补文本/语音回执日志 \\
+watch endpoint & 提供 health、voice-command、text-command、cancel 接口 & 已有接口契约，待补测试截图 \\
+安全边界 & ESP32 不直接保存 Hermes API key & 已有接口契约和 README \\
+\bottomrule
+\end{tabularx}
+
+\subsection*{3.3 特性成果}
+
+\noindent\begin{longtable}{p{3cm}>{\RaggedRight\arraybackslash}p{4cm}>{\RaggedRight\arraybackslash}p{4cm}p{2.5cm}}
+\toprule
+功能 & 测试方法 & 预期结果 & 当前状态 \\
+\midrule
+危险声识别 & 播放鸣笛、警笛、报警声样本 & 进入危险提醒状态 & 已触发 \\
+本地提醒 & 断网后播放危险声 & 手表仍可触发本地提醒 & 待补视频 \\
+风险状态机 & 连续危险/非危险窗口测试 & 出现确认、保持、清除和冷却过程 & 已观测完整流转 \\
+Hermes 语音交互 & 手表录音上传任务 & 手表端显示回执 & 已通，待补截图 \\
+Hermes 文本联调 & 发送文本命令 & endpoint 返回固定 JSON 字段 & 已返回 status=done \\
+事件上传 & 上传危险事件记录 & 服务器保存事件数据 & 待确认 \\
+电脑端协同 & Hermes 执行文件整理、查询或内容生成 & 返回任务结果 & 待补演示 \\
+\bottomrule
+\end{longtable}
+
+\subsection*{3.4 性能参数汇总}
+
+\noindent\begin{tabularx}{\linewidth}{p{3.4cm}p{3cm}p{2.5cm}>{\RaggedRight\arraybackslash}X}
+\toprule
+性能项 & 测试条件 & 实测结果 & 说明 \\
+\midrule
+识别响应时间 & 播放 danger 样本并观测状态机日志 & 约 380--400 ms & 从首次 danger 推断到 ALERTING \\
+模型文件大小 & 统计 active \texttt{.espdl} 文件 & 31.4 KB & V59 softdistill T90 模型文件 \\
+RAM/PSRAM 占用 & 读取 ESP-DL 初始化日志 & 约 6.5 KB / 202.5 KB / 25.8 KB & 内部 RAM / PSRAM / flash (V3.4 实测) \\
+Hermes 语音请求耗时 & 手表录音到 WS 返回回执 & 约 8.2 s & 2026-06-27 语音对话日志，含 ASR/Hermes \\
+断网本地提醒 & Wi-Fi 断开 & 待补 & 证明安全提醒不依赖网络 \\
+连续运行稳定性 & 默认安全监听 90 s 测试 & 未出现 panic / watchdog / OOM & 2026-06-06 默认安全监听日志 \\
+\bottomrule
+\end{tabularx}
+
+\subsection*{3.5 关键测试证据整理}
+
+为把报告从设计说明转化为可验证的工程成果，本小节整理已获取的板端日志与接口证据。完整日志见仓库 \verb|board_logs/| 与 \verb|server/watch_voice_endpoint/tests/|。
+
+\subsubsection*{3.5.1 危险声识别与状态机流转}
+
+根据 2026-06-06 默认安全监听日志，环境安静时模型输出 \texttt{label=non\_danger, confidence=0.9991} 等高置信度安全结果；在危险声样本触发后，状态机出现如下完整流转：
+\begin{quote}
+\texttt{MONITORING -> SUSPICIOUS (prob=0.9604)}\\
+\texttt{SUSPICIOUS -> ALERTING (prob=0.9099)}\\
+\texttt{ALERTING -> COOLDOWN (prob=0.0000)}\\
+\texttt{COOLDOWN -> MONITORING (prob=0.0117)}
+\end{quote}
+从首次 \texttt{danger} 推断到进入 \texttt{ALERTING} 的时间差约 380 ms，符合“一次状态机确认”的延迟预期。该链路不依赖网络，证明核心安全提醒可在端侧闭环。
+
+\placeholderfig{图 10\quad 危险提醒界面截图：显示 ALERTING 高对比提示（后续补拍）}
+
+\subsubsection*{3.5.2 Hermes 文本与语音回执}
+
+2026-06-09 本地开发环境日志显示，文本命令成功返回：
+\begin{quote}
+\texttt{status=done, action=memory\_saved, asr\_chars=40, reply\_chars=10}
+\end{quote}
+2026-06-27 真实 ASR/Hermes 链路日志显示，语音命令在录音约 2100 ms 后通过 WebSocket 上传，最终返回：
+\begin{quote}
+\small
+\texttt{status=done, action=conversation\_reply, asr\_chars=18, reply\_chars=9}
+\end{quote}
+上述日志证明手表端与 watch endpoint、Hermes 之间的语音/文本回执链路已通。
+
+\placeholderfig{图 11\quad Hermes 页面/回执截图：显示录音、上传、回执（后续补拍）}
+
+\subsubsection*{3.5.3 模型与资源占用}
+
+当前 active 模型文件为：
+\begin{quote}
+\small
+\texttt{edge\_mix\_teacher\_dscnn\_medium\_v59\_v54\_anchor\_}\\
+\texttt{softdistill\_t90\_20260608.espdl}
+\end{quote}
+大小 32,160 B（约 31.4 KB）。同系列 V3.4 模型运行时日志显示：
+\begin{quote}
+\texttt{internal 6,516 B / PSRAM 202,488 B / flash 25,808 B}
+\end{quote}
+V3.4 单窗推理耗时约 90 ms，Fbank 处理约 32 ms。V59 为当前 active 模型，运行时内存与推理耗时待补一次专门的 V59 app-flash 日志。
+
+\section*{第四部分\quad 总结}
+\addcontentsline{toc}{section}{第四部分 总结}
+
+\subsection*{4.1 可扩展之处}
+
+后续工作可从五个方向继续完善：一是增强危险声模型的抗噪能力，补充中文大声人声、电视外放、衣物摩擦、公交地铁等 hard negative 样本，降低误报；二是完善听障用户提醒策略，将提醒层推进到震动优先、持续提醒和用户可配置；三是补齐危险事件记录与复盘能力，为模型优化提供样本依据；四是优化低功耗策略，使安全监听、Hermes 录音、网络服务和屏幕刷新在可穿戴功耗预算内协同运行；五是扩展 Hermes 电脑端工具，使手表提交的任务能更自然地联动资料查询、文件整理、日程管理和内容生成。
+
+\subsection*{4.2 心得体会}
+
+本作品的研发过程表明，嵌入式 AI 作品不能只停留在模型推理成功，还必须把模型输出接入稳定的工程状态、用户可感知的提醒方式和可验证的测试证据。对于听障辅助场景，真正重要的不是显示一个分类标签，而是让用户在合适时间收到可信、低打扰的提醒。
+
+本轮报告收尾过程中，已整理出可验证的模型大小、推理耗时、状态机流转、Hermes 文本/语音回执等证据，并填入官方模板要求的性能指标表和特性成果表中。但仍需补拍实物照片、危险提醒界面截图、Hermes 回执截图、断网本地提醒视频和服务器接口测试截图，才能使报告从“设计说明”变成“可验证的工程作品报告”。
+
+同时，手表与 Hermes 的端云分工也体现了嵌入式系统设计中的边界意识。ESP32-S3 适合承担随身输入、端侧识别、状态显示和轻量请求，而长期记忆、复杂任务整理和跨设备工具调用更适合放到 Hermes 与服务器端。这样的分工既能保持手表端轻量稳定，也能让个人助手能力自然扩展。后续提交前，应继续补齐上述证据，并检查报告、视频、代码包中不出现学校、指导老师和敏感信息。
+
+\section*{第五部分\quad 参考文献}
+\addcontentsline{toc}{section}{第五部分 参考文献}
+
+\begin{enumerate}
+  \item 全国大学生嵌入式芯片与系统设计竞赛官网，应用赛道作品上传要求（2026-06-04）。
+  \item 2026 年全国大学生嵌入式芯片与系统设计竞赛应用赛道作品报告模板。
+  \item Espressif Systems. ESP32-S3 技术参考手册与 ESP-IDF 编程指南。
+  \item Espressif Systems. ESP-DL 官方文档。
+  \item LVGL 官方文档。
+  \item WHO 或 NIDCD 关于听力损失和辅助设备的公开资料。
+\end{enumerate}
+
+\end{document}
