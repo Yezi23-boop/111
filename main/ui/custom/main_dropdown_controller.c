@@ -3,17 +3,22 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "network_manager.h"
 #include "wifi_management_controller.h"
 #include "watch_notification_center.h"
 #include "memory_watch_controller.h"
 #include "services/memory_watch_service.h"
 #include "features/danger_detection/danger_detection_service.h"
+#include "services/background_https_gate.h"
 #include "services/background_service_manager.h"
+#include "services/foreground_runtime_gate.h"
 
 static const char *TAG = "main_dropdown";
 static const uint32_t kStatusSyncPeriodMs = 250U;
 static const uint32_t kToastDurationMs = 1800U;
+static const uint32_t kBleQuietRetryMs = 800U;
 
 static lv_ui *s_ui = NULL;
 static lv_timer_t *s_status_sync_timer = NULL;
@@ -417,7 +422,32 @@ void main_dropdown_controller_handle_bluetooth_click(void)
         return;
     }
 
+    ret = foreground_runtime_gate_acquire(
+        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING, 0U);
+    if (ret != ESP_OK)
+    {
+        main_dropdown_controller_show_toast("BLE switch update failed");
+        ESP_LOGW(TAG, "enable BLE gate acquire failed: %s",
+                 esp_err_to_name(ret));
+        main_dropdown_controller_sync_bluetooth_button();
+        return;
+    }
+    (void)background_service_manager_notify_foreground_runtime_changed();
+
+    background_https_gate_quiet_for(kBleQuietRetryMs,
+                                    "main_ble_enable_start");
     ret = network_manager_set_ble_enabled(true);
+    if (ret == ESP_ERR_NO_MEM)
+    {
+        background_https_gate_quiet_for(kBleQuietRetryMs,
+                                        "main_ble_enable_retry");
+        vTaskDelay(pdMS_TO_TICKS(kBleQuietRetryMs));
+        ret = network_manager_set_ble_enabled(true);
+    }
+    (void)foreground_runtime_gate_release(
+        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING);
+    (void)background_service_manager_notify_foreground_runtime_changed();
+
     if (ret != ESP_OK)
     {
         main_dropdown_controller_show_toast("BLE switch update failed");

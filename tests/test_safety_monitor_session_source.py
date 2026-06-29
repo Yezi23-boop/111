@@ -36,10 +36,15 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED", header)
         self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY", header)
         self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO", header)
+        self.assertIn(
+            "BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_RUNTIME", header
+        )
         self.assertIn("danger_should_run", header)
         self.assertIn("danger_block_reason", header)
         self.assertIn("danger_blocked_by_foreground_audio", header)
+        self.assertIn("danger_blocked_by_foreground_runtime", header)
         self.assertIn(".danger_enabled_by_user = false", source)
+        self.assertIn('#include "services/foreground_runtime_gate.h"', source)
         self.assertIn(
             "background_service_manager_set_foreground_audio_active",
             header,
@@ -49,6 +54,12 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("audio_codec_owner_to_text", source)
         self.assertIn("AUDIO_CODEC_OWNER_HERMES", source)
         self.assertIn("resource_blocked_change: resource=mic", source)
+        self.assertIn(
+            "resource_blocked_change: resource=foreground_runtime", source
+        )
+        self.assertIn("foreground_runtime_gate_is_active()", source)
+        self.assertIn("foreground_runtime_gate_current_owner()", source)
+        self.assertIn("foreground_runtime_gate_owner_text(foreground_owner)", source)
         self.assertIn("background_target_change: danger_should_run=%d", source)
         self.assertIn("background_service_manager_resolve_danger_block_reason", source)
         self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE", source)
@@ -62,6 +73,8 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertNotIn("danger_detection_service_stop(", source)
         self.assertNotIn("DANGER_DETECTION_BACKEND_ESPDL", source)
         self.assertNotIn("DANGER_DETECTION_STATE_ERROR", source)
+        self.assertNotIn("vTaskSuspend", source)
+        self.assertNotIn("vTaskDelete", source)
 
     def test_background_manager_uses_notify_plus_periodic_fallback(self) -> None:
         header = BACKGROUND_SERVICE_MANAGER_HEADER.read_text(encoding="utf-8")

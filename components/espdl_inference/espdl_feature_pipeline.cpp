@@ -13,6 +13,7 @@
 
 #include "dl_fbank.hpp"
 #include "dl_speech_features.hpp"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 
 static const char *TAG = "espdl_feature";
@@ -86,6 +87,21 @@ esp_err_t espdl_feature_build_fbank(const float *pcm,
         ESP_LOGE(TAG, "PCM 长度必须为 %d，实际为 %u",
                  ESPDL_WINDOW_SAMPLES, static_cast<unsigned>(sample_count));
         return ESP_ERR_INVALID_ARG;
+    }
+
+    /* 预检 internal RAM：Fbank 构造函数用 MALLOC_CAP_INTERNAL 分配 m_cache(2KB,
+     * 16B 对齐)、fft_config、mel_filter、win_func。高压并发时 internal RAM 不足
+     * 会导致 heap_caps_aligned_alloc 返回 NULL，而 esp-dl Fbank 构造函数不检查
+     * 返回值（同库 Spectrogram 类有 assert 但 Fbank 没有），后续 process_frame
+     * 中 memcpy(m_cache=NULL) 触发 StoreProhibited 崩溃。
+     * 阈值 6144B 覆盖 m_cache(2KB) + fft_config + mel_filter + win_func + 余量。 */
+    const size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    const size_t internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    if (internal_free < 6144U || internal_largest < 4096U) {
+        ESP_LOGE(TAG, "internal RAM 不足，跳过 Fbank 提取: free=%u largest=%u",
+                 static_cast<unsigned>(internal_free),
+                 static_cast<unsigned>(internal_largest));
+        return ESP_ERR_NO_MEM;
     }
 
     dl::audio::Fbank fbank(make_fbank_config());

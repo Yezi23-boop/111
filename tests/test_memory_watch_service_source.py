@@ -424,6 +424,11 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
 
         self.assertIn("memory_watch_service_set_foreground", header)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND", source)
+        self.assertIn('#include "services/foreground_runtime_gate.h"', source)
+        self.assertIn("FOREGROUND_RUNTIME_OWNER_HERMES", source)
+        self.assertIn("foreground_runtime_gate_acquire", source)
+        self.assertIn("foreground_runtime_gate_release", source)
+        self.assertIn("background_service_manager_notify_foreground_runtime_changed", source)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE", source)
         self.assertIn("kConversationPollIntervalMs = 5000", source)
         self.assertIn("kConversationPollTimeoutMs = 4000U", source)

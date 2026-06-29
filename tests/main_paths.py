@@ -27,6 +27,16 @@ BOARD_IMU_HEADER = APP_DIR / "board_imu.h"
 
 NETWORK_SERVICE_SOURCE = SERVICES_DIR / "network_service.c"
 NETWORK_SERVICE_HEADER = SERVICES_DIR / "network_service.h"
+BACKGROUND_HTTPS_GATE_SOURCE = SERVICES_DIR / "background_https_gate.c"
+BACKGROUND_HTTPS_GATE_HEADER = SERVICES_DIR / "background_https_gate.h"
+FOREGROUND_RUNTIME_GATE_SOURCE = SERVICES_DIR / "foreground_runtime_gate.c"
+FOREGROUND_RUNTIME_GATE_HEADER = SERVICES_DIR / "foreground_runtime_gate.h"
+RUNTIME_RESOURCE_GATE_BOARD_TEST_SOURCE = (
+    SERVICES_DIR / "runtime_resource_gate_board_test.c"
+)
+RUNTIME_RESOURCE_GATE_BOARD_TEST_HEADER = (
+    SERVICES_DIR / "runtime_resource_gate_board_test.h"
+)
 OFFICIAL_CHAT_SERVICE_SOURCE = SERVICES_DIR / "official_chat_service.c"
 OFFICIAL_CHAT_SERVICE_HEADER = SERVICES_DIR / "official_chat_service.h"
 MEMORY_WATCH_SERVICE_SOURCE = SERVICES_DIR / "memory_watch_service.c"

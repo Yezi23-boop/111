@@ -314,6 +314,20 @@ void runtime_task(void *arg)
                                             &feature_out);
             const int64_t feature_us = esp_timer_get_time() - feature_start;
             if (ret != ESP_OK) {
+                if (ret == ESP_ERR_NO_MEM) {
+                    /* internal RAM 瞬时不足（AI 对话+SSL 并发），跳过本窗不退出。
+                     * 避免高压下 Fbank 构造分配 NULL 导致 runtime 永久退出。 */
+                    ESP_LOGW(TAG, "Fbank 提取跳过(内存不足): %s", esp_err_to_name(ret));
+                    /* 仍需步进滑窗，否则下一轮还是同一窗口 */
+                    const size_t skip_remaining = pcm_buffer.size() - kStrideSamples;
+                    if (skip_remaining > 0) {
+                        std::memmove(pcm_buffer.data(),
+                                     pcm_buffer.data() + kStrideSamples,
+                                     skip_remaining * sizeof(int16_t));
+                    }
+                    pcm_buffer.resize(skip_remaining);
+                    continue;
+                }
                 ESP_LOGE(TAG, "Fbank 提取失败: %s", esp_err_to_name(ret));
                 break;
             }

@@ -1,12 +1,12 @@
 ---
 id: context-current-task
 tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox, thin-watch-client, thick-watch-endpoint
-summary: 记录 AI Memory Watch / Hermes V1/V2/V2.1/V2.2/V2.3 状态，以及当前 V2.4 ESP32 真实瘦身计划阶段 6 真机验收进展。
-last_reviewed: 2026-06-28
+summary: 记录 AI Memory Watch / Hermes V1-V2.4 状态，以及 Watch Runtime Resource Gate 阶段 1-5 完成、阶段 6 板端自动高压回归部分完成。
+last_reviewed: 2026-06-29
 memory_type: task
 scope: task
 owners: docs/context/handoffs
-triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive, v2-archive, inbox, websocket, conversation_polling, thin_watch_client, thick_watch_endpoint, server_session
+triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive, v2-archive, inbox, websocket, conversation_polling, thin_watch_client, thick_watch_endpoint, server_session, runtime_resource_gate, foreground_runtime_gate, background_https_gate
 evidence_level: observed
 ---
 
@@ -46,6 +46,7 @@ evidence_level: observed
 - V2.4 active plan 已新增并开始执行：`docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md`。
 - V2.4 阶段 0/1/1.5/2/3/4/5 已完成：基线复核、ESP32 职责审计、server `/v1/watch/sync` 契约测试与 endpoint、ESP32 `/sync` 窄客户端、后台 pending/foreground reconcile sync 换芯、WS client 意图级收口、旧 `/conversation` poll client 删除和 `done` 空回复兜底修正已落地。当前验证：server tests `140 passed`，ESP32 Memory Watch source tests `40 passed`，`idf.py build` 通过（`111.bin` `0xabef80`，最小 app 分区剩余 `0x341080`/23%）。
 - V2.4 阶段 6 已完成部分真机验收：用户修复 Mihomo/Fake-IP DNS 后，COM3 日志显示手表联网到 `192.168.103.11`、进入 `SERVICE_READY`、SNTP 同步成功、Hermes health online、inbox poll 正常；watch endpoint 容器重建后 `/v1/watch/sync` 路由已部署，本机/公网未授权请求返回 401，真机日志出现 `conversation: sync ok messages=0 session=none terminal=0`；前台 WSS 真麦克风链路再次成功，返回 `status=done/action=conversation_reply/error_code=none`，`mw_upload` high-water 约 `3172` words。
+- Runtime Resource Gate active plan：`docs/context/plans/active/2026-06-29-watch-runtime-resource-gate-plan.md`。阶段 1-5 代码已完成：强前台 owner、Safety Monitor/ESP-DL 让路、Hermes 前台 acquire/release、后台 HTTPS gate、Bluetooth quiet-window 单次重试均已接入；阶段 6 已完成板端自动 gate/BLE fail-closed 回归，公网 HTTPS 成功路径和 ESP-DL running -> 强前台让路仍待 Wi-Fi 可用后补测。
 - 新版 watch endpoint 在本机 `127.0.0.1:8787` 暴露 `/v1/watch/inbox` 和 `/v1/watch/inbox/{notification_id}/read`；旧 LAN 调试容器 `8788` 曾无 inbox，后续调试优先走公网或新版 `8787`。
 - 开发阶段允许本机 `sdkconfig` 或 NVS 持有 watch device token 进行联调；提交前必须确认 `sdkconfig`、文档、日志和 diff 不包含真实 token。
 
@@ -72,6 +73,13 @@ evidence_level: observed
 - V2.4 后台 `/sync` 数据面已脚本化验证：容器内注入 `codex-stage6-sync-bg-20260628` 测试 session/conversation 后，本机和公网 `/sync?mode=background&pending_request_id=...` 均返回 `session_state=done` 与 user/assistant messages；带 `after_message_id=<user message>` 时公网 `/sync` 只返回 assistant 增量。该验证不打印真实 token。
 - V2.4 真机发现新的离页时序问题并已代码修复：日志 `board_logs/2026-06-28-19-52-48-hermes-v24-stage6-background-sync-bubble-60s-retry.log` 中，ESP32 在 `audio_end` 后立即关闭 WS 并开始后台 polling，但 server 侧该 request 的 session/conversation 计数均为 0，导致 `/sync` 持续 `session=none/messages=0`，UI 一直“思考中”。已改为收到 `TURN_ASR_READY` 后设置 `kWsWaitAsrReadyBit`，离页时只有 `asr_ready_seen=true` 才关闭 WS 并切后台 `/sync`。验证：Memory Watch source tests `40 passed`，server `test_sync.py` `14 passed`，`idf.py build` 通过（`111.bin` `0xabef90`，app free `0x341070`/23%），`idf.py -p COM3 app-flash` 成功。
 - V2.4 阶段 6 用户真机复测已完成：重新执行“Hermes 页面按住说，松手后立刻离开页面”后，后台 `/sync` 不再长期 `session=none`，此前离页后一直“思考中”的阻塞解除。
+- Watch Runtime Resource Gate 阶段 1 已完成最小地基：`foreground_runtime_gate` 使用 `portMUX_TYPE` 保护当前强前台 owner 和 quiet window，无动态内存、无 task、无 queue、无 callback，不直接 stop Wi-Fi/BLE/ESP-DL/Hermes；source test 已用 `python -m unittest tests.test_foreground_runtime_gate_source` 通过，`idf.py build` 通过（`111.bin` `0xabc140`，最小 app 分区剩余 `0x343ec0`/23%）。
+- Watch Runtime Resource Gate 阶段 2 已接入 Safety Monitor / ESP-DL 让路：`background_service_manager` 在合成 Safety Monitor 目标态时读取 `foreground_runtime_gate`，强前台 active 时阻塞原因为 `FOREGROUND_RUNTIME`，ESP-DL 不启动或恢复；gate 仍不直接 suspend/delete ESP-DL task。
+- Watch Runtime Resource Gate 阶段 3-5 已完成：Hermes 前台通过 `memory_watch_service_set_foreground_active()` 持有 `FOREGROUND_RUNTIME_OWNER_HERMES`；后台 Memory Watch health、`/sync`、inbox poll、mark-read 和天气 HTTPS 通过 `background_https_gate` 串行/quiet window 错峰；主界面 Bluetooth 显式点击路径增加 BLE 前台 owner、后台 HTTPS quiet window 和 `ESP_ERR_NO_MEM` 单次重试。
+- Watch Runtime Resource Gate 阶段 6 板端自动测试入口已落地并默认关闭：`CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST` 默认 `n`，正常固件中 `runtime_resource_gate_board_test_start()` 空返回；开启后可自动触发 Hermes foreground、background HTTPS busy/quiet、Memory Watch health/inbox、BLE owner 和可选真实 BLE toggle。
+- Watch Runtime Resource Gate 阶段 6 COM3 自动 gate 压测已通过：`board_logs/2026-06-29-10-18-11-runtime-resource-gate-board-test-auto.log` 完整跑完，无 Guru/panic/stack overflow/NO_MEM；验证强前台 owner、后台 HTTPS busy/quiet 拒绝和 BLE owner acquire/release。
+- Watch Runtime Resource Gate 阶段 6 真实 BLE toggle 首轮发现 PSRAM task stack + NVS/flash 写入 cache-disabled 断言，已修复为真实 BLE toggle 测试模式使用 internal stack；修复后日志 `board_logs/2026-06-29-10-31-09-runtime-resource-gate-board-test-real-ble-internal-stack.log` 未见崩溃，BLE guard 以 `ESP_ERR_NO_MEM` fail closed。
+- Watch Runtime Resource Gate 收尾已刷回默认关闭测试的正常固件：`board_logs/2026-06-29-10-42-20-runtime-resource-gate-normal-after-test.log` 显示 45 秒监控通过，无 `runtime_gate_test` 自动压测、Guru、panic 或 stack overflow。
 
 ## Decision Log
 
@@ -94,6 +102,7 @@ evidence_level: observed
 - 最新 V2.4 阶段 6 部分验证：用户已修复 Mihomo/Fake-IP DNS 影响；watch endpoint 容器重建后 `/v1/watch/sync` 本机/公网路由存在；COM3 证明 health、inbox、`conversation: sync ok` 和前台 WSS 真麦克风请求成功。
 - 最新 V2.4 服务器数据面验证：后台 `/sync` 对 pending done session 能返回 assistant reply；带 `after_message_id` 时只返回 assistant 增量，满足离页 pending 的数据契约。
 - 最新 V2.4 代码与真机验证：修复 WS 过早 detach 后，source tests、`idf.py build`、`idf.py -p COM3 app-flash` 均已通过；用户复测确认后台 `/sync` 不再长期 `session=none`。
+- 最新 Runtime Resource Gate 代码验证：阶段 1-5 相关 source tests `75 passed`；阶段 6 板端测试相关 source tests `39 passed`；收尾时已恢复 `sdkconfig` 为 `# CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST is not set`，并执行 `idf.py fullclean; idf.py build` 通过（`111.bin` `0xabcc80`，最小 app 分区剩余 `0x343380`/23%），COM3 `app-flash-monitor` 45 秒通过。
 
 ## 当前风险
 
@@ -107,6 +116,9 @@ evidence_level: observed
 
 ## 下一步
 
+- **2026-06-29 IMU 关闭 + internal RAM 调优已完成**：`imu_service_start()` 用 `#if 0` 暂时关闭；`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` 从 65536 降到 4096。真机验证 internal_free=47.5KB / largest=24KB，系统稳定。恢复 IMU 只需取消 `#if 0`。attempt log：`docs/context/runs/2026-06-29-attempt-imu-disable-and-psram-alwaysinternal-tune.md`。
+- **internal RAM 后续优化方向（未执行）**：方案 B 将网络型任务栈（official_chat main_loop 8KB、danger_detection 12KB、network_service、power_* 等，共约 83KB）用 `xTaskCreateWithCaps`+`MALLOC_CAP_SPIRAM` 迁到 PSRAM；方案 C 将 lvgl_task 10KB 栈迁 PSRAM（需测 UI 帧率）。不可迁移：oa_input/oa_output/RecTask（音频 DMA 路径）。
+- **DMA 回归待验证**：ALWAYSINTERNAL=4096 后未做音频录放回归，若发现 I2S DMA 异常可回退为 8192。
 - ~~跑 V2.2 收尾后的 context 校验~~ 已完成，light 级别通过。
 - 提交前检查密钥卫生：`sdkconfig`、`memory_watch_dev_endpoint_local.h`、日志和文档都不能带真实 token/key。
 - **V2.3 阶段 0 已完成**（2026-06-27）：V2.2 RAM/栈基线已记录。internal RAM 316/338 KB (93.5%), PSRAM 1395/8192 KB (17%), mw_upload stack high-water 3172 words。基线数据已写入计划文件和 CHANGELOG。
@@ -115,6 +127,7 @@ evidence_level: observed
 - **下一步**：server 公网部署验证 + COM3 真机 Hermes 前台/离页链路复测（Stage 0 冷启动基线已确认，Stage 2-3 主要为 server 增量，预期无回归）。
 - **V2.4 下一步**：可按用户节奏归档 V2.4 active plan，或继续做体验微调/低功耗参数微调；不要再回到旧的“离页后 session=none 一直思考中”排查路线，除非新日志再次复现。
 - 如果继续 BLE 问题，下一步不是放宽 guard，而是单独做 internal RAM 预算收敛；当前已证明普通运行态下手动 Bluetooth 会因 internal heap 不足 fail closed。
+- **Runtime Resource Gate 下一步**：阶段 6 只剩补测，不要重复已经完成的自动 gate 压测。Wi-Fi 可用后重点补测公网 HTTPS 成功路径（weather/inbox/health/sync 在 gate 下可延后但能成功）和 ESP-DL running -> 强前台让路；目标是无 panic/Guru/stack overflow/`esp-aes` 分配失败，BLE 失败路径可解释，Hermes 前台优先，后台 HTTPS 可延后。
 - 不要回退到“离页保持 WS 等最终回复”的旧口径，也不要把多设备、多入口或完整多 agent 编排提前塞进 V2.3。
 
 ## 证据入口
@@ -127,4 +140,9 @@ evidence_level: observed
 - 产品定位：`docs/context/knowledge/project/ai-memory-watch-product-positioning.md`
 - V2.3 completed plan：`docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.3-thin-watch-client-thick-watch-endpoint-plan.md`
 - V2.4 active plan：`docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md`
+- Runtime Resource Gate active plan：`docs/context/plans/active/2026-06-29-watch-runtime-resource-gate-plan.md`
+- Runtime Resource Gate 阶段 1 run：`docs/context/runs/2026-06-29-attempt-foreground-runtime-gate.md`
+- Runtime Resource Gate 阶段 2 run：`docs/context/runs/2026-06-29-attempt-espdl-foreground-runtime-yield.md`
+- Runtime Resource Gate 阶段 3-5 run：`docs/context/runs/2026-06-29-attempt-runtime-resource-gate-hermes-https-ble.md`
+- Runtime Resource Gate 阶段 6 板端自动回归 run：`docs/context/runs/2026-06-29-attempt-runtime-resource-gate-board-stress.md`
 - 变更记录：`docs/context/CHANGELOG.md`

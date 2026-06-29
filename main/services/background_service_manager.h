@@ -32,6 +32,7 @@ extern "C"
         BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED, /**< 用户未开启安全监听。 */
         BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY, /**< power_policy 当前不允许运行。 */
         BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO, /**< 前台音频占用麦克风。 */
+        BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_RUNTIME, /**< 强前台重任务要求 Safety Monitor 让路。 */
     } background_service_manager_danger_block_reason_t;
 
     /** 后台服务管理器对外快照。 */
@@ -44,6 +45,7 @@ extern "C"
         bool danger_runtime_running;     /**< Safety Monitor session 最近一次确认的运行状态。 */
         background_service_manager_danger_block_reason_t danger_block_reason; /**< 目标态未运行的主原因。 */
         bool danger_blocked_by_foreground_audio; /**< 前台录音/语音是否正在占用麦克风。 */
+        bool danger_blocked_by_foreground_runtime; /**< Hermes/BLE/OTA 等强前台是否要求让路。 */
         power_policy_state_t policy_state; /**< 最近一次使用的整机策略状态。 */
         uint32_t policy_flags;          /**< 最近一次预算 flag，使用 power_policy_flag_t 位图。 */
         esp_err_t last_error;            /**< 最近一次 session 启动、停止或恢复错误码。 */
@@ -85,6 +87,17 @@ extern "C"
      */
     esp_err_t background_service_manager_set_foreground_audio_active(
         bool active, const char *reason);
+
+    /**
+     * @brief 通知后台管理器强前台 runtime gate 可能已经变化。
+     *
+     * Hermes 页面、BLE/OTA 等强前台 owner acquire/release 后调用本函数；
+     * manager task 会重新读取 `foreground_runtime_gate` 快照并合成 Safety Monitor
+     * 目标态。gate 本身仍不直接 stop ESP-DL。
+     *
+     * @return ESP_OK 表示通知已发送或管理器尚未启动无需处理。
+     */
+    esp_err_t background_service_manager_notify_foreground_runtime_changed(void);
 
     /**
      * @brief 通知后台管理器 power_policy 预算可能已经变化。

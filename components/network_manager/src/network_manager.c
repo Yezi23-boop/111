@@ -523,7 +523,8 @@ static esp_err_t network_manager_ensure_monitor_task(void)
         return ESP_OK;
     }
 
-    task_ret = xTaskCreate(network_manager_task, "network_mgr", 4096, NULL, 5,
+    /* 栈缩为 3072B：高压实测 free=3192B（78% 空闲），缩 1KB 仍有余量。 */
+    task_ret = xTaskCreate(network_manager_task, "network_mgr", 3072, NULL, 5,
                            &s_monitor_task);
     return task_ret == pdPASS ? ESP_OK : ESP_FAIL;
 }

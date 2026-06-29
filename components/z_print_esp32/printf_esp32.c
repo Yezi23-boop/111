@@ -152,3 +152,67 @@ void printf_esp32_task_stack_stats(TaskHandle_t task_handle, uint32_t stack_size
         ESP_LOGW("STACK", "⚡ 注意: 任务 '%s' 栈使用率较高 (%.1f%%)，建议监控", task_name, stack_usage_percent);
     }
 }
+
+void printf_esp32_all_task_stack_stats(void)
+{
+    /* 遍历所有 FreeRTOS 任务，打印栈剩余空间（高水位）。
+     * TaskStatus_t 不含栈总大小，只输出 free(bytes)；
+     * 各 owner 的栈总大小在 xTaskCreate 调用处已知，可对照计算使用率。
+     * 用 pvPortMalloc 临时缓冲，采样完即释放，不驻留。 */
+    UBaseType_t task_count = uxTaskGetNumberOfTasks();
+    if (task_count == 0)
+    {
+        ESP_LOGW("STACK", "no tasks to report");
+        return;
+    }
+
+    TaskStatus_t *task_stats = (TaskStatus_t *)pvPortMalloc(task_count * sizeof(TaskStatus_t));
+    if (task_stats == NULL)
+    {
+        ESP_LOGE("STACK", "alloc task stats buffer failed");
+        return;
+    }
+
+    /* configRUN_TIME_COUNTER_TYPE 在 v5.5 默认为 uint32_t；传 NULL 表示不采集总运行时间。 */
+    UBaseType_t got = uxTaskGetSystemState(task_stats, task_count, NULL);
+    if (got == 0)
+    {
+        ESP_LOGW("STACK", "uxTaskGetSystemState returned 0");
+        vPortFree(task_stats);
+        return;
+    }
+
+    /* 同时打印 internal heap 快照，便于对照栈水位判断资源压力。 */
+    ESP_LOGI("STACK", "=== all task stack high-water mark (free bytes) ===");
+    ESP_LOGI("STACK", "internal_free=%u largest=%u psram_free=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    ESP_LOGI("STACK", "%-16s %10s %6s", "name", "free(B)", "prio");
+
+    /* 按剩余空间升序排序，剩余最少的（最危险的）排在最前。 */
+    for (UBaseType_t i = 0; i < got; i++)
+    {
+        for (UBaseType_t j = i + 1; j < got; j++)
+        {
+            if (task_stats[j].usStackHighWaterMark < task_stats[i].usStackHighWaterMark)
+            {
+                TaskStatus_t tmp = task_stats[i];
+                task_stats[i] = task_stats[j];
+                task_stats[j] = tmp;
+            }
+        }
+    }
+
+    for (UBaseType_t i = 0; i < got; i++)
+    {
+        /* usStackHighWaterMark 单位是 StackType_t words，× sizeof(StackType_t) 得字节。 */
+        ESP_LOGI("STACK", "%-16s %10u %6u",
+                 task_stats[i].pcTaskName,
+                 (unsigned)(task_stats[i].usStackHighWaterMark * sizeof(StackType_t)),
+                 (unsigned)task_stats[i].uxCurrentPriority);
+    }
+    ESP_LOGI("STACK", "=== end task stack stats ===");
+
+    vPortFree(task_stats);
+}

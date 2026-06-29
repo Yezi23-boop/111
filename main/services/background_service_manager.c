@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
+#include "services/foreground_runtime_gate.h"
 #include "services/power_policy.h"
 #include "services/safety_monitor_session.h"
 #include "services/startup_readiness.h"
@@ -20,6 +21,7 @@ typedef enum
     BACKGROUND_SERVICE_MANAGER_NOTIFY_POWER_BUDGET = 1u << 2,
     BACKGROUND_SERVICE_MANAGER_NOTIFY_STARTUP = 1u << 3,
     BACKGROUND_SERVICE_MANAGER_NOTIFY_PERIODIC = 1u << 4,
+    BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_RUNTIME = 1u << 5,
 } background_service_manager_notify_reason_t;
 
 typedef struct
@@ -33,6 +35,7 @@ typedef struct
     background_service_manager_danger_block_reason_t danger_block_reason; /**< 目标态未运行的主原因。 */
     bool foreground_audio_active;      /**< 前台录音/语音是否正在占用麦克风。 */
     bool danger_blocked_by_foreground_audio; /**< 当前麦克风 owner 是否阻塞危险识别。 */
+    bool danger_blocked_by_foreground_runtime; /**< 强前台重任务是否要求 ESP-DL 让路。 */
     power_policy_state_t policy_state; /**< 最近一次策略状态。 */
     uint32_t policy_flags;             /**< 最近一次预算 flag。 */
     esp_err_t last_error;              /**< 最近一次 session 启动、停止或恢复错误码。 */
@@ -51,6 +54,7 @@ static background_service_manager_state_t s_manager = {
         BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY,
     .foreground_audio_active = false,
     .danger_blocked_by_foreground_audio = false,
+    .danger_blocked_by_foreground_runtime = false,
     .policy_state = POWER_POLICY_STATE_ACTIVE,
     .policy_flags = POWER_POLICY_FLAG_NONE,
     .last_error = ESP_OK,
@@ -68,6 +72,10 @@ static const char *background_service_manager_notify_reason_text(
     if ((reasons & BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_AUDIO) != 0U)
     {
         return "foreground_audio";
+    }
+    if ((reasons & BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_RUNTIME) != 0U)
+    {
+        return "foreground_runtime";
     }
     if ((reasons & BACKGROUND_SERVICE_MANAGER_NOTIFY_POWER_BUDGET) != 0U)
     {
@@ -99,6 +107,8 @@ static const char *background_service_manager_block_reason_text(
         return "policy";
     case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO:
         return "foreground_audio";
+    case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_RUNTIME:
+        return "foreground_runtime";
     default:
         return "unknown";
     }
@@ -109,7 +119,8 @@ background_service_manager_resolve_danger_block_reason(
     bool manager_started,
     bool user_enabled,
     bool policy_allowed,
-    bool foreground_audio_blocked)
+    bool foreground_audio_blocked,
+    bool foreground_runtime_blocked)
 {
     if (!manager_started)
     {
@@ -122,6 +133,10 @@ background_service_manager_resolve_danger_block_reason(
     if (foreground_audio_blocked)
     {
         return BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO;
+    }
+    if (foreground_runtime_blocked)
+    {
+        return BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_RUNTIME;
     }
     if (!policy_allowed)
     {
@@ -235,6 +250,7 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
         BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_MANAGER_NOT_READY;
     bool previous_running = false;
     bool previous_audio_blocked = false;
+    bool previous_runtime_blocked = false;
 
     taskENTER_CRITICAL(&s_manager.lock);
     user_enabled = s_manager.danger_enabled_by_user;
@@ -244,6 +260,8 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
     previous_block_reason = s_manager.danger_block_reason;
     previous_running = s_manager.danger_runtime_running;
     previous_audio_blocked = s_manager.danger_blocked_by_foreground_audio;
+    previous_runtime_blocked =
+        s_manager.danger_blocked_by_foreground_runtime;
     s_manager.policy_state = budget.state;
     s_manager.policy_flags = budget.flags;
     s_manager.danger_allowed_by_policy = budget.danger_detection_allowed;
@@ -255,17 +273,24 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
     const bool foreground_audio_blocked =
         background_service_manager_audio_blocks_danger(
             explicit_foreground_audio, &blocking_audio_owner);
+    const bool foreground_runtime_blocked =
+        foreground_runtime_gate_is_active();
+    const foreground_runtime_owner_t foreground_owner =
+        foreground_runtime_gate_current_owner();
     const background_service_manager_danger_block_reason_t block_reason =
         background_service_manager_resolve_danger_block_reason(
             true,
             user_enabled,
             budget.danger_detection_allowed,
-            foreground_audio_blocked);
+            foreground_audio_blocked,
+            foreground_runtime_blocked);
     const bool should_run =
         block_reason == BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE;
 
     taskENTER_CRITICAL(&s_manager.lock);
     s_manager.danger_blocked_by_foreground_audio = foreground_audio_blocked;
+    s_manager.danger_blocked_by_foreground_runtime =
+        foreground_runtime_blocked;
     s_manager.danger_should_run = should_run;
     s_manager.danger_block_reason = block_reason;
     taskEXIT_CRITICAL(&s_manager.lock);
@@ -285,6 +310,15 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
                  "resource_blocked_change: resource=mic danger=%d owner=%s reason=%s",
                  foreground_audio_blocked ? 1 : 0,
                  blocking_audio_owner != NULL ? blocking_audio_owner : "none",
+                 reason != NULL ? reason : "unknown");
+    }
+
+    if (previous_runtime_blocked != foreground_runtime_blocked)
+    {
+        ESP_LOGI(TAG,
+                 "resource_blocked_change: resource=foreground_runtime danger=%d owner=%s reason=%s",
+                 foreground_runtime_blocked ? 1 : 0,
+                 foreground_runtime_gate_owner_text(foreground_owner),
                  reason != NULL ? reason : "unknown");
     }
 
@@ -466,7 +500,8 @@ esp_err_t background_service_manager_set_danger_detection_enabled(bool enabled)
                 false,
                 s_manager.danger_enabled_by_user,
                 s_manager.danger_allowed_by_policy,
-                s_manager.danger_blocked_by_foreground_audio);
+                s_manager.danger_blocked_by_foreground_audio,
+                s_manager.danger_blocked_by_foreground_runtime);
         taskEXIT_CRITICAL(&s_manager.lock);
         return ESP_ERR_INVALID_STATE;
     }
@@ -512,6 +547,13 @@ esp_err_t background_service_manager_notify_policy_changed(void)
     return ret == ESP_ERR_INVALID_STATE ? ESP_OK : ret;
 }
 
+esp_err_t background_service_manager_notify_foreground_runtime_changed(void)
+{
+    const esp_err_t ret = background_service_manager_notify(
+        BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_RUNTIME);
+    return ret == ESP_ERR_INVALID_STATE ? ESP_OK : ret;
+}
+
 background_service_manager_snapshot_t
 background_service_manager_get_snapshot(void)
 {
@@ -526,6 +568,8 @@ background_service_manager_get_snapshot(void)
     snapshot.danger_block_reason = s_manager.danger_block_reason;
     snapshot.danger_blocked_by_foreground_audio =
         s_manager.danger_blocked_by_foreground_audio;
+    snapshot.danger_blocked_by_foreground_runtime =
+        s_manager.danger_blocked_by_foreground_runtime;
     snapshot.policy_state = s_manager.policy_state;
     snapshot.policy_flags = s_manager.policy_flags;
     snapshot.last_error = s_manager.last_error;

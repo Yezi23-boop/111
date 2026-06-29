@@ -27,9 +27,11 @@
 #include "services/imu_service.h"
 #include "services/background_service_manager.h"
 #include "services/startup_readiness.h"
+#include "services/runtime_resource_gate_board_test.h"
 
 static const char *TAG = "MAIN";
-static const uint32_t kTimeWeatherTaskStackBytes = 8192;
+/* 栈缩为 6144B：高压实测 free=4996B（61% 空闲），缩 2KB PSRAM 仍有余量。 */
+static const uint32_t kTimeWeatherTaskStackBytes = 6144;
 
 /**
  * @brief AP 门户保存 AI Memory Watch endpoint 配置的桥接回调。
@@ -261,10 +263,17 @@ static void start_deferred_services(void)
         ESP_LOGI(TAG, "boot_stage: memory_watch_ready");
     }
 
+    if (runtime_resource_gate_board_test_start() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Runtime resource gate board test start failed");
+    }
+
     /*
-     * QMI8658C 内部 WoM/INT1 第一版只做事件日志验证。它不直接点亮屏幕，
-     * 不调用 sleep API，也不让 UI getter 访问 QMI8658C。
+     * [暂时关闭] QMI8658C 内部 WoM/INT1 第一版只做事件日志验证。
+     * 原因：用户要求暂时关闭 IMU 服务以节省资源或调试其他功能。
+     * 恢复方法：取消下方 imu_service_start() 调用的注释即可。
      */
+#if 0
     if (imu_service_start() != ESP_OK)
     {
         ESP_LOGW(TAG, "IMU service start failed");
@@ -273,6 +282,7 @@ static void start_deferred_services(void)
     {
         ESP_LOGI(TAG, "boot_stage: imu_service_ready");
     }
+#endif
 }
 
 /**

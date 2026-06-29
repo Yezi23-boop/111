@@ -18,6 +18,8 @@
 #include "network_service.h"
 #include "nvs.h"
 #include "esp_timer.h"
+#include "services/background_service_manager.h"
+#include "services/foreground_runtime_gate.h"
 #include "power_policy.h"
 #include "services/memory_watch_recorder.h"
 #include "services/memory_watch_voice_client.h"
@@ -52,11 +54,15 @@ static const UBaseType_t kCommandQueueLength = 8;
 static const UBaseType_t kWorkerQueueLength = 1;
 static const UBaseType_t kCancelQueueLength = 1;
 static const UBaseType_t kHealthQueueLength = 1;
+/* 栈大小按 bytes 计（xTaskCreateWithCaps 单位为 bytes，见 idf_additions.h）。
+ * 下列常量名保留 *Words 后缀属历史命名，实际单位为 bytes。
+ * kHealthWorkerStackWords/kConversationWorkerStackWords 经高压实测扩栈
+ * （health check 后 free=208B，AI 对话后 free=200B，3.3%~3.4% 接近溢出）。 */
 static const uint32_t kTaskStackWords = 6144;
 static const uint32_t kUploadWorkerStackWords = 24576;
 static const uint32_t kCancelWorkerStackWords = 3072;
-static const uint32_t kHealthWorkerStackWords = 6144;
-static const uint32_t kConversationWorkerStackWords = 6144;
+static const uint32_t kHealthWorkerStackWords = 10240;
+static const uint32_t kConversationWorkerStackWords = 10240;
 static const size_t kAudioBufferInitialBytes = 8192U;
 static const size_t kWsAudioChunkBytes = 16U * 1024U;
 static const int64_t kConversationPollIntervalMs = 5000;
@@ -232,6 +238,7 @@ static bool s_record_discard_requested = false;
 static bool s_wait_cancel_requested = false;
 static bool s_upload_worker_busy = false;
 static bool s_foreground_active = false;
+static bool s_foreground_runtime_gate_held = false;
 static bool s_conversation_worker_busy = false;
 static bool s_conversation_poll_active = false;
 static int64_t s_conversation_poll_next_due_ms = 0;
@@ -482,9 +489,55 @@ static void memory_watch_service_append_server_conversation_message(
 
 static void memory_watch_service_set_foreground_active(bool foreground)
 {
+    bool should_acquire = false;
+    bool should_release = false;
+
     portENTER_CRITICAL(&s_foreground_lock);
     s_foreground_active = foreground;
+    if (foreground && !s_foreground_runtime_gate_held)
+    {
+        should_acquire = true;
+    }
+    else if (!foreground && s_foreground_runtime_gate_held)
+    {
+        s_foreground_runtime_gate_held = false;
+        should_release = true;
+    }
     portEXIT_CRITICAL(&s_foreground_lock);
+
+    if (should_acquire)
+    {
+        const esp_err_t err = foreground_runtime_gate_acquire(
+            FOREGROUND_RUNTIME_OWNER_HERMES, 0U);
+        if (err == ESP_OK)
+        {
+            portENTER_CRITICAL(&s_foreground_lock);
+            s_foreground_runtime_gate_held = s_foreground_active;
+            const bool release_immediately = !s_foreground_active;
+            if (release_immediately)
+            {
+                s_foreground_runtime_gate_held = false;
+            }
+            portEXIT_CRITICAL(&s_foreground_lock);
+            if (release_immediately)
+            {
+                (void)foreground_runtime_gate_release(
+                    FOREGROUND_RUNTIME_OWNER_HERMES);
+            }
+            (void)background_service_manager_notify_foreground_runtime_changed();
+        }
+        else
+        {
+            ESP_LOGW(TAG, "Hermes foreground gate acquire failed: %s",
+                     esp_err_to_name(err));
+        }
+    }
+
+    if (should_release)
+    {
+        (void)foreground_runtime_gate_release(FOREGROUND_RUNTIME_OWNER_HERMES);
+        (void)background_service_manager_notify_foreground_runtime_changed();
+    }
 }
 
 static bool memory_watch_service_is_foreground_active(void)
@@ -698,7 +751,7 @@ static bool memory_watch_service_try_kconfig_endpoint_default(void)
  * @brief 从 NVS 读取 watch endpoint 运行期配置。
  *
  * 这里仅读取 ESP32-S3 到 voice endpoint 的 device token，不读取也不保存
- * Hermes / MiMo / API Server key。缺失配置只让页面保持“未配置”，不阻塞启动。
+ * Hermes / MiMo / API Server key。缺失配置只让页面保持"未配置"，不阻塞启动。
  */
 static esp_err_t memory_watch_service_load_endpoint_from_nvs(void)
 {

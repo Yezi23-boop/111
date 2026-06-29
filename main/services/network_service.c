@@ -547,9 +547,10 @@ esp_err_t network_service_start(void)
         return ret;
     }
 
+    /* 栈缩为 4096B：高压实测 free=3804B（62% 空闲），缩 2KB 仍有余量。 */
     const BaseType_t result =
         xTaskCreatePinnedToCore(network_service_task, "network_service",
-                                1024 * 6, NULL, 5, &s_network_task_handle, 0);
+                                1024 * 4, NULL, 5, &s_network_task_handle, 0);
     if (result != pdPASS)
     {
         s_network_task_handle = NULL;

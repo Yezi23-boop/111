@@ -34,6 +34,7 @@ class DangerDetectionControllerSourceTests(unittest.TestCase):
         self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED", source)
         self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY", source)
         self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO", source)
+        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_RUNTIME", source)
         self.assertIn('return "资源占用，暂时等待";', source)
         self.assertIn('return "正在启动";', source)
         self.assertIn('return "正在停止";', source)

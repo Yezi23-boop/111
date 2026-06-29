@@ -49,6 +49,16 @@ static void cpu_monitor_task(void *arg)
 {
     (void)arg;
 
+    /*
+     * 冷启动稳态采样：首次循环打印一次内存全景与全任务栈高水位，
+     * 供资源实测阶段建立基线。之后保持静默，避免高频刷屏。
+     * 延迟 8 秒让所有 deferred service 完成初始化后再采样，数据更准。
+     */
+    vTaskDelay(pdMS_TO_TICKS(8000));
+    printf_esp32_memory_stats();
+    printf_esp32_all_task_stack_stats();
+    ESP_LOGI(TAG, "boot_stage: cold_boot_resource_snapshot_done");
+
     while (1)
     {
         vTaskDelay(pdMS_TO_TICKS(5000));

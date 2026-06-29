@@ -9,6 +9,8 @@
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "services/background_https_gate.h"
 
 static const char *TAG = "memory_watch_http";
 
@@ -1227,6 +1229,34 @@ static esp_err_t memory_watch_voice_client_perform_http_json(
     return err;
 }
 
+static esp_err_t memory_watch_voice_client_perform_background_http_json(
+    background_https_gate_reason_t gate_reason,
+    const memory_watch_voice_client_config_t *config,
+    const char *path,
+    esp_http_client_method_t method,
+    const char *content_type,
+    size_t body_len,
+    memory_watch_voice_client_http_writer_t writer,
+    void *writer_ctx,
+    int *out_http_status,
+    char *response,
+    size_t response_size,
+    size_t *out_response_len)
+{
+    const esp_err_t gate_err =
+        background_https_gate_acquire(gate_reason, pdMS_TO_TICKS(250U));
+    if (gate_err != ESP_OK)
+    {
+        return gate_err;
+    }
+
+    const esp_err_t err = memory_watch_voice_client_perform_http_json(
+        config, path, method, content_type, body_len, writer, writer_ctx,
+        out_http_status, response, response_size, out_response_len);
+    background_https_gate_release(gate_reason);
+    return err;
+}
+
 typedef struct
 {
     const char *boundary;
@@ -1298,7 +1328,8 @@ esp_err_t memory_watch_voice_client_get_health(
     }
 
     size_t response_len = 0;
-    err = memory_watch_voice_client_perform_http_json(
+    err = memory_watch_voice_client_perform_background_http_json(
+        BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_HEALTH,
         config, path, HTTP_METHOD_GET, NULL, 0U, NULL, NULL,
         &out_health->http_status, response, kMaxResponseBytes + 1U,
         &response_len);
@@ -2283,7 +2314,8 @@ esp_err_t memory_watch_voice_client_inbox_poll(
     }
 
     size_t response_len = 0;
-    err = memory_watch_voice_client_perform_http_json(
+    err = memory_watch_voice_client_perform_background_http_json(
+        BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_INBOX,
         config, path, HTTP_METHOD_GET, NULL, 0U, NULL, NULL,
         &out_result->http_status, response,
         MEMORY_WATCH_INBOX_RESPONSE_MAX_BYTES + 1U, &response_len);
@@ -2342,7 +2374,8 @@ esp_err_t memory_watch_voice_client_inbox_mark_read(
     char response[256]; /* 已读响应体很小，栈上即可 */
     size_t response_len = 0;
     /* POST body 为空（无 Content-Type），服务端只看 URL 参数 */
-    err = memory_watch_voice_client_perform_http_json(
+    err = memory_watch_voice_client_perform_background_http_json(
+        BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_MARK_READ,
         config, path, HTTP_METHOD_POST, NULL, 0U, NULL, NULL,
         &out_result->http_status, response, sizeof(response), &response_len);
 
@@ -2429,7 +2462,8 @@ esp_err_t memory_watch_voice_client_sync(
     }
 
     size_t response_len = 0;
-    err = memory_watch_voice_client_perform_http_json(
+    err = memory_watch_voice_client_perform_background_http_json(
+        BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_SYNC,
         config, path, HTTP_METHOD_GET, NULL, 0U, NULL, NULL,
         &out_result->http_status, response,
         MEMORY_WATCH_SYNC_RESPONSE_MAX_BYTES + 1U, &response_len);

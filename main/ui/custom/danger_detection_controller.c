@@ -52,6 +52,8 @@ static const char *danger_detection_status_text(
                 return "未开启";
             case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO:
                 return "资源占用，暂时等待";
+            case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_RUNTIME:
+                return "前台任务中，暂时等待";
             case BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY:
                 if ((manager_snapshot->policy_flags &
                      POWER_POLICY_FLAG_MAINTENANCE) != 0U) {

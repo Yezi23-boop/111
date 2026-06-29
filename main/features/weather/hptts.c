@@ -17,6 +17,7 @@
 #include "esp_http_client.h"
 #include "cJSON.h"
 #include "hptts.h"
+#include "services/background_https_gate.h"
 #include "time_weather.h"
 
 #define MAX_HTTP_OUTPUT_BUFFER 1024 // HTTP响应缓冲区最大长度
@@ -110,6 +111,14 @@ esp_err_t http_rest_with_url(void)
 {
     s_last_weather_parse_ok = false;
 
+    esp_err_t gate_err = background_https_gate_acquire(
+        BACKGROUND_HTTPS_GATE_REASON_WEATHER, pdMS_TO_TICKS(250U));
+    if (gate_err != ESP_OK) {
+        ESP_LOGI(TAG, "Weather HTTPS skipped by background gate: %s",
+                 esp_err_to_name(gate_err));
+        return gate_err;
+    }
+
     esp_http_client_config_t config = {
         .url = "https://api.seniverse.com/v3/weather/now.json?key=SYEUrFRiIVQow_1OX&location=guangzhou&language=zh-Hans&unit=c",
         .method = HTTP_METHOD_GET,
@@ -121,6 +130,7 @@ esp_err_t http_rest_with_url(void)
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (client == NULL) {
         ESP_LOGE(TAG, "HTTP client init failed");
+        background_https_gate_release(BACKGROUND_HTTPS_GATE_REASON_WEATHER);
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -129,6 +139,7 @@ esp_err_t http_rest_with_url(void)
     int content_length = esp_http_client_get_content_length(client);
     ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %d", status_code, content_length);
     esp_http_client_cleanup(client); // 清理HTTP客户端
+    background_https_gate_release(BACKGROUND_HTTPS_GATE_REASON_WEATHER);
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "HTTP request failed: %s", esp_err_to_name(err));

@@ -804,8 +804,10 @@ esp_err_t official_chat_service_init(void)
         return ESP_FAIL;
     }
 
+    /* 栈缩为 4096B：该 task 只做命令分发与生命周期管理，重活由动态子任务承担，
+     * 高压实测 free=7440B（90.8% 空闲），缩半仍有充裕余量。 */
     BaseType_t result = xTaskCreatePinnedToCore(
-        official_chat_service_task, "official_chat_service", 1024 * 8, NULL, 5,
+        official_chat_service_task, "official_chat_service", 1024 * 4, NULL, 5,
         &s_service_task_handle, 0);
     if (result != pdPASS)
     {

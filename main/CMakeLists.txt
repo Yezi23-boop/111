@@ -20,6 +20,12 @@ set(service_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/services/network_service.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/services/background_https_gate.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/foreground_runtime_gate.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/runtime_resource_gate_board_test.c
+
     ${CMAKE_CURRENT_LIST_DIR}/services/official_chat_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_service.c
