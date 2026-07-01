@@ -166,6 +166,8 @@ idf_component_register(
 
         qmi8658c
 
+        ds2413
+
         touch_ft5x06
 
         ble_control
