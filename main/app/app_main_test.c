@@ -13,6 +13,7 @@
  *   8.  SD 卡：mount + 根目录列表 + 写/读测试文件验证
  *   9.  Wi-Fi：AP 扫描，打印 SSID/RSSI/channel/安全类型
  *   10. BLE：NimBLE 广播 5 秒，验证 2.4GHz 射频链路可见性
+ *   11. MOTOR（GPIO18）：GPIO 输出控制震动马达，3 次 500ms 脉冲
  *
  * 还原方法：把 CMakeLists.txt 中的 app_main_test.c 换回 app_main.c
  *           并恢复原 service_srcs / feature_srcs / ui_runtime_srcs 列表。
@@ -70,6 +71,7 @@ typedef struct {
     bool sd;         /* SD 卡 mount + 读写 */
     bool wifi;       /* Wi-Fi AP 扫描 */
     bool ble;        /* BLE 广播可见性验证 */
+    bool motor;      /* GPIO18 震动马达测试 */
 } test_results_t;
 
 /* =========================================================
@@ -91,7 +93,7 @@ static void print_sep(const char *title)
  * ========================================================= */
 static bool test_i2c_scan(void)
 {
-    print_sep("[1/9] I2C 总线扫描  SCL=GPIO14  SDA=GPIO15");
+    print_sep("[1/11] I2C 总线扫描  SCL=GPIO14  SDA=GPIO15");
 
     esp_err_t ret = i2c_manager_init();
     if (ret != ESP_OK) {
@@ -123,7 +125,7 @@ static bool test_i2c_scan(void)
  * ========================================================= */
 static bool test_axp2101(void)
 {
-    print_sep("[2/9] AXP2101 PMIC  I2C addr=0x34");
+    print_sep("[2/11] AXP2101 PMIC  I2C addr=0x34");
 
     /* init 会复用已初始化的 i2c_manager 总线 */
     esp_err_t ret = axp2101_init();
@@ -194,7 +196,7 @@ static bool test_axp2101(void)
  * ========================================================= */
 static bool test_pcf85063(void)
 {
-    print_sep("[3/9] PCF85063 RTC  I2C addr=0x51");
+    print_sep("[3/11] PCF85063 RTC  I2C addr=0x51");
 
     esp_err_t ret = pcf85063atl_init();
     if (ret != ESP_OK) {
@@ -275,7 +277,7 @@ static bool test_pcf85063(void)
  * ========================================================= */
 static bool test_qmi8658c(void)
 {
-    print_sep("[4/9] QMI8658C IMU  I2C addr=0x6B");
+    print_sep("[4/11] QMI8658C IMU  I2C addr=0x6B");
 
     esp_err_t ret = qmi8658c_init();
     if (ret != ESP_OK) {
@@ -376,7 +378,7 @@ static bool test_qmi8658c(void)
  * ========================================================= */
 static bool test_ft5x06(void)
 {
-    print_sep("[5/9] FT5x06 触摸  I2C addr=0x38  RST=GPIO9  INT=GPIO38");
+    print_sep("[5/11] FT5x06 触摸  I2C addr=0x38  RST=GPIO9  INT=GPIO38");
 
     esp_err_t ret = touch_ft5x06_init();
     if (ret != ESP_OK) {
@@ -453,7 +455,7 @@ static void fill_screen_color(esp_lcd_panel_handle_t panel,
  * ========================================================= */
 static bool test_display(void)
 {
-    print_sep("[6/9] CO5300 显示  QSPI SPI2  RST=GPIO8  CS=GPIO12");
+    print_sep("[6/11] CO5300 显示  QSPI SPI2  RST=GPIO8  CS=GPIO12");
 
     esp_err_t ret = co5300_panel_init();
     if (ret != ESP_OK) {
@@ -516,7 +518,7 @@ static bool test_display(void)
  * ========================================================= */
 static bool test_audio(void)
 {
-    print_sep("[7/9] 音频 Codec  I2S0  MCLK=16  BCLK=41  LRCK=45  PA=46");
+    print_sep("[7/11] 音频 Codec  I2S0  MCLK=16  BCLK=41  LRCK=45  PA=46");
 
     esp_err_t ret = audio_codec_init();
     if (ret != ESP_OK) {
@@ -566,7 +568,7 @@ static bool test_audio(void)
  * ========================================================= */
 static bool test_sd(void)
 {
-    print_sep("[8/9] SD 卡  SPI3  MOSI=GPIO1  MISO=GPIO3  CLK=GPIO2  CS=GPIO17");
+    print_sep("[8/11] SD 卡  SPI3  MOSI=GPIO1  MISO=GPIO3  CLK=GPIO2  CS=GPIO17");
 
     esp_err_t ret = sd_manager_init();
     if (ret != ESP_OK) {
@@ -626,7 +628,7 @@ static bool test_sd(void)
  * ========================================================= */
 static bool test_wifi(void)
 {
-    print_sep("[9/9] Wi-Fi AP 扫描");
+    print_sep("[9/11] Wi-Fi AP 扫描");
 
     esp_err_t ret;
 
@@ -758,7 +760,7 @@ static void nimble_host_task(void *param)
 
 static bool test_ble(void)
 {
-    print_sep("[10/10] BLE 广播可见性（NimBLE）");
+    print_sep("[10/11] BLE 广播可见性（NimBLE）");
 
     /* 初始化 NimBLE HCI 传输层 */
     esp_err_t ret = esp_nimble_hci_init();
@@ -844,7 +846,47 @@ static bool test_ble(void)
 }
 
 /* =========================================================
- * 主测试任务：顺序执行 9 项测试并打印汇总
+ * 》测试 11《 GPIO18 震动马达（MOTOR）
+ * 验证：GPIO18 输出控制 → 3 次 500ms 脉冲，手摸/听马达确认是否震动
+ * ========================================================= */
+static bool test_motor(void)
+{
+    print_sep("[11/11] GPIO18 震动马达  MOTOR");
+
+    const gpio_num_t kMotorGpio = GPIO_NUM_18;
+
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << kMotorGpio),
+        .mode         = GPIO_MODE_OUTPUT,
+        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+
+    esp_err_t ret = gpio_config(&cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO18 配置失败: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    /* 初始拉低 */
+    gpio_set_level(kMotorGpio, 0);
+    ESP_LOGI(TAG, "GPIO18 输出已配置，开始 3 次脉冲测试（500ms ON / 500ms OFF）...");
+
+    for (int i = 0; i < 3; i++) {
+        gpio_set_level(kMotorGpio, 1);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        gpio_set_level(kMotorGpio, 0);
+        ESP_LOGI(TAG, "  脉冲 %d/3 OK", i + 1);
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    ESP_LOGI(TAG, "GPIO18 马达测试完成 — 请确认马达是否震动 3 次");
+    return true;
+}
+
+/* =========================================================
+ * 主测试任务：顺序执行 11 项测试并打印汇总
  * ========================================================= */
 static void comm_test_task(void *arg)
 {
@@ -859,6 +901,7 @@ static void comm_test_task(void *arg)
     ESP_LOGI(TAG, "           TX=GPIO40  RX=GPIO42  PA=GPIO46");
     ESP_LOGI(TAG, "    SD   : MOSI=GPIO1  MISO=GPIO3  CLK=GPIO2  CS=GPIO17");
     ESP_LOGI(TAG, "    Touch: RST=GPIO9  INT=GPIO38");
+    ESP_LOGI(TAG, "    Motor: GPIO18");
 
     test_results_t r = {0};
 
@@ -872,29 +915,31 @@ static void comm_test_task(void *arg)
     r.sd       = test_sd();
     r.wifi     = test_wifi();
     r.ble      = test_ble();
+    r.motor    = test_motor();
 
     /* ── 汇总 ── */
     print_sep("PCB 通讯测试结果汇总");
-    ESP_LOGI(TAG, "  [ 1/10] I2C 总线扫描              : %s", r.i2c_scan ? "PASS" : "FAIL");
-    ESP_LOGI(TAG, "  [ 2/10] AXP2101 PMIC (0x34)       : %s", r.axp2101  ? "PASS" : "FAIL");
-    ESP_LOGI(TAG, "  [ 3/10] PCF85063 RTC (0x51)       : %s", r.pcf85063 ? "PASS" : "FAIL");
-    ESP_LOGI(TAG, "  [ 4/10] QMI8658C IMU (0x6B)       : %s", r.qmi8658c ? "PASS" : "FAIL");
-    ESP_LOGI(TAG, "  [ 5/10] FT5x06 触摸  (0x38)       : %s", r.ft5x06   ? "PASS" : "FAIL ← 检查 RST/INT 引脚");
-    ESP_LOGI(TAG, "  [ 6/10] CO5300 显示  (QSPI SPI2)  : %s", r.display  ? "PASS" : "FAIL ← 检查 D0-D3/CLK/RST");
-    ESP_LOGI(TAG, "  [ 7/10] 音频 Codec   (I2S0)        : %s", r.audio    ? "PASS" : "FAIL ← 检查 MCLK/I2C");
-    ESP_LOGI(TAG, "  [ 8/10] SD 卡        (SPI3)        : %s", r.sd       ? "PASS" : "FAIL ← 检查 SPI 引脚/FAT32");
-    ESP_LOGI(TAG, "  [ 9/10] Wi-Fi AP 扫描              : %s", r.wifi     ? "PASS" : "FAIL ← 检查天线/射频电路");
-    ESP_LOGI(TAG, "  [10/10] BLE 广播可见性             : %s", r.ble      ? "PASS" : "FAIL ← 检查 BLE 射频/天线");
+    ESP_LOGI(TAG, "  [ 1/11] I2C 总线扫描              : %s", r.i2c_scan ? "PASS" : "FAIL");
+    ESP_LOGI(TAG, "  [ 2/11] AXP2101 PMIC (0x34)       : %s", r.axp2101  ? "PASS" : "FAIL");
+    ESP_LOGI(TAG, "  [ 3/11] PCF85063 RTC (0x51)       : %s", r.pcf85063 ? "PASS" : "FAIL");
+    ESP_LOGI(TAG, "  [ 4/11] QMI8658C IMU (0x6B)       : %s", r.qmi8658c ? "PASS" : "FAIL");
+    ESP_LOGI(TAG, "  [ 5/11] FT5x06 触摸  (0x38)       : %s", r.ft5x06   ? "PASS" : "FAIL ← 检查 RST/INT 引脚");
+    ESP_LOGI(TAG, "  [ 6/11] CO5300 显示  (QSPI SPI2)  : %s", r.display  ? "PASS" : "FAIL ← 检查 D0-D3/CLK/RST");
+    ESP_LOGI(TAG, "  [ 7/11] 音频 Codec   (I2S0)        : %s", r.audio    ? "PASS" : "FAIL ← 检查 MCLK/I2C");
+    ESP_LOGI(TAG, "  [ 8/11] SD 卡        (SPI3)        : %s", r.sd       ? "PASS" : "FAIL ← 检查 SPI 引脚/FAT32");
+    ESP_LOGI(TAG, "  [ 9/11] Wi-Fi AP 扫描              : %s", r.wifi     ? "PASS" : "FAIL ← 检查天线/射频电路");
+    ESP_LOGI(TAG, "  [10/11] BLE 广播可见性             : %s", r.ble      ? "PASS" : "FAIL ← 检查 BLE 射频/天线");
+    ESP_LOGI(TAG, "  [11/11] GPIO18 马达                : %s", r.motor    ? "PASS" : "FAIL ← 检查 GPIO18 焊接/马达");
 
     int pass_cnt = (r.i2c_scan + r.axp2101 + r.pcf85063 + r.qmi8658c +
                     r.ft5x06   + r.display  + r.audio    + r.sd +
-                    r.wifi     + r.ble);
+                    r.wifi     + r.ble      + r.motor);
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "  总计：%d / 10 项通过", pass_cnt);
-    if (pass_cnt == 10) {
+    ESP_LOGI(TAG, "  总计：%d / 11 项通过", pass_cnt);
+    if (pass_cnt == 11) {
         ESP_LOGI(TAG, "  ★ 全部通过！新 PCB 通讯验证 OK ★");
     } else {
-        ESP_LOGW(TAG, "  ！有 %d 项失败，请根据上方日志逐项排查", 10 - pass_cnt);
+        ESP_LOGW(TAG, "  ！有 %d 项失败，请根据上方日志逐项排查", 11 - pass_cnt);
     }
     print_sep(NULL);
 
