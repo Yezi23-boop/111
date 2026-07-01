@@ -1,16 +1,27 @@
 ---
 id: context-current-task
 tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox, thin-watch-client, thick-watch-endpoint
-summary: 记录 AI Memory Watch / Hermes V1-V2.4 状态，以及 Watch Runtime Resource Gate 阶段 1-5 完成、阶段 6 板端自动高压回归部分完成。
-last_reviewed: 2026-06-29
+summary: 记录 AI Memory Watch / Hermes V1-V2.4 状态、Watch Runtime Resource Gate 状态，以及 2026-07-01 表情表盘代码回退后的重执行计划入口。
+last_reviewed: 2026-07-01
 memory_type: task
 scope: task
 owners: docs/context/handoffs
-triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive, v2-archive, inbox, websocket, conversation_polling, thin_watch_client, thick_watch_endpoint, server_session, runtime_resource_gate, foreground_runtime_gate, background_https_gate
+triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive, v2-archive, inbox, websocket, conversation_polling, thin_watch_client, thick_watch_endpoint, server_session, runtime_resource_gate, foreground_runtime_gate, background_https_gate, watchface, 表盘
 evidence_level: observed
 ---
 
 # AI Memory Watch / Hermes 当前任务交接
+
+> **2026-07-01 插入：表情表盘重执行状态**
+>
+> - 用户已回退上一轮表情表盘代码；当前不要继续修补旧实现。
+> - 当前事实：`main/ui/custom/watchface_view.c` 不存在，`resources/watchface/` 与 `scripts/watchface/` 仍存在，`partitions.csv` 中 `resources` 分区为 `4M`。
+> - active plan 已重写为 `docs/context/plans/active/2026-06-30-watchface-emoji-root-ui-plan.md`。
+> - 用户最新决策：先做 `resources` / LittleFS 板端测试，过了再考虑 SD 卡；允许按测量结果扩大 `resources` 分区。
+> - 当前表盘资源路径口径：第一阶段 `resources/watchface` 是板端表盘动画仓库，`resources/watchface/frames` 是电脑端预览/生成中间产物。
+> - 2026-07-01 最新结果：`scripts/watchface/pack_watchface_rawanim.py` 已完成，按 8MB resources 上限实测 raw animation 总量 `22,238,518 bytes`，超过用户阈值，因此已自动生成到 `sdcard/watchface/` staging；下一步按 SD 卡路线实现 cache loader。
+> - 后续实现硬约束：LVGL draw 阶段不能直接从 resources/SD/LittleFS 流式读取全屏表盘资源；必须先加载到 PSRAM，再通过内存 `lv_image_dsc_t` 渲染。
+> - 上一轮崩溃签名是 `Cache disabled but cached memory region accessed`，回溯涉及 LittleFS/flash 读取和 `lv_bin_decoder_get_area`；Wi-Fi 只是触发时序，不是根因。resources 测试也不能让 LVGL 直接读文件绘制。
 
 > **2026-06-28 插入：全国嵌入式比赛报告收尾状态**
 >

@@ -1,0 +1,364 @@
+{
+  "format": "rawanim",
+  "magic": "RAWANIM1",
+  "version": 1,
+  "target": "sdcard",
+  "canvas": [
+    410,
+    502
+  ],
+  "background": "#ffffff",
+  "fit": "contain",
+  "states": {
+    "idle": {
+      "file": "idle.rawanim",
+      "path": "D:\\esp32S3\\111\\sdcard\\watchface\\idle.rawanim",
+      "state": "idle",
+      "source": "空闲.gif",
+      "width": 410,
+      "height": 502,
+      "format": "rgb565_le",
+      "frame_count": 12,
+      "fps": 6.0,
+      "delay_ms": 167,
+      "frame_size": 411640,
+      "file_size": 4939828,
+      "frames": [
+        {
+          "file": "idle/frame_000.png",
+          "source_index": 0,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_001.png",
+          "source_index": 2,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_002.png",
+          "source_index": 5,
+          "source_delay_ms": 80
+        },
+        {
+          "file": "idle/frame_003.png",
+          "source_index": 7,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_004.png",
+          "source_index": 10,
+          "source_delay_ms": 80
+        },
+        {
+          "file": "idle/frame_005.png",
+          "source_index": 12,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_006.png",
+          "source_index": 15,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_007.png",
+          "source_index": 18,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_008.png",
+          "source_index": 20,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_009.png",
+          "source_index": 23,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_010.png",
+          "source_index": 25,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "idle/frame_011.png",
+          "source_index": 28,
+          "source_delay_ms": 40
+        }
+      ]
+    },
+    "thinking": {
+      "file": "thinking.rawanim",
+      "path": "D:\\esp32S3\\111\\sdcard\\watchface\\thinking.rawanim",
+      "state": "thinking",
+      "source": "思考.gif",
+      "width": 410,
+      "height": 502,
+      "format": "rgb565_le",
+      "frame_count": 8,
+      "fps": 6.0,
+      "delay_ms": 167,
+      "frame_size": 411640,
+      "file_size": 3293228,
+      "frames": [
+        {
+          "file": "thinking/frame_000.png",
+          "source_index": 0,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "thinking/frame_001.png",
+          "source_index": 1,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "thinking/frame_002.png",
+          "source_index": 3,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "thinking/frame_003.png",
+          "source_index": 4,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "thinking/frame_004.png",
+          "source_index": 6,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "thinking/frame_005.png",
+          "source_index": 8,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "thinking/frame_006.png",
+          "source_index": 9,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "thinking/frame_007.png",
+          "source_index": 11,
+          "source_delay_ms": 40
+        }
+      ]
+    },
+    "working": {
+      "file": "working.rawanim",
+      "path": "D:\\esp32S3\\111\\sdcard\\watchface\\working.rawanim",
+      "state": "working",
+      "source": "工作中.gif",
+      "width": 410,
+      "height": 502,
+      "format": "rgb565_le",
+      "frame_count": 12,
+      "fps": 6.0,
+      "delay_ms": 167,
+      "frame_size": 411640,
+      "file_size": 4939828,
+      "frames": [
+        {
+          "file": "working/frame_000.png",
+          "source_index": 0,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_001.png",
+          "source_index": 5,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_002.png",
+          "source_index": 10,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_003.png",
+          "source_index": 15,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_004.png",
+          "source_index": 20,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_005.png",
+          "source_index": 25,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_006.png",
+          "source_index": 30,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_007.png",
+          "source_index": 35,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_008.png",
+          "source_index": 40,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_009.png",
+          "source_index": 45,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_010.png",
+          "source_index": 50,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "working/frame_011.png",
+          "source_index": 55,
+          "source_delay_ms": 40
+        }
+      ]
+    },
+    "message": {
+      "file": "message.rawanim",
+      "path": "D:\\esp32S3\\111\\sdcard\\watchface\\message.rawanim",
+      "state": "message",
+      "source": "来信息.gif",
+      "width": 410,
+      "height": 502,
+      "format": "rgb565_le",
+      "frame_count": 12,
+      "fps": 6.0,
+      "delay_ms": 167,
+      "frame_size": 411640,
+      "file_size": 4939828,
+      "frames": [
+        {
+          "file": "message/frame_000.png",
+          "source_index": 0,
+          "source_delay_ms": 80
+        },
+        {
+          "file": "message/frame_001.png",
+          "source_index": 4,
+          "source_delay_ms": 80
+        },
+        {
+          "file": "message/frame_002.png",
+          "source_index": 8,
+          "source_delay_ms": 80
+        },
+        {
+          "file": "message/frame_003.png",
+          "source_index": 12,
+          "source_delay_ms": 80
+        },
+        {
+          "file": "message/frame_004.png",
+          "source_index": 16,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "message/frame_005.png",
+          "source_index": 20,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "message/frame_006.png",
+          "source_index": 25,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "message/frame_007.png",
+          "source_index": 29,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "message/frame_008.png",
+          "source_index": 33,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "message/frame_009.png",
+          "source_index": 37,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "message/frame_010.png",
+          "source_index": 41,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "message/frame_011.png",
+          "source_index": 45,
+          "source_delay_ms": 40
+        }
+      ]
+    },
+    "error": {
+      "file": "error.rawanim",
+      "path": "D:\\esp32S3\\111\\sdcard\\watchface\\error.rawanim",
+      "state": "error",
+      "source": "失败.gif",
+      "width": 410,
+      "height": 502,
+      "format": "rgb565_le",
+      "frame_count": 10,
+      "fps": 6.0,
+      "delay_ms": 167,
+      "frame_size": 411640,
+      "file_size": 4116528,
+      "frames": [
+        {
+          "file": "error/frame_000.png",
+          "source_index": 0,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_001.png",
+          "source_index": 4,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_002.png",
+          "source_index": 8,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_003.png",
+          "source_index": 12,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_004.png",
+          "source_index": 16,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_005.png",
+          "source_index": 20,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_006.png",
+          "source_index": 24,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_007.png",
+          "source_index": 28,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_008.png",
+          "source_index": 32,
+          "source_delay_ms": 40
+        },
+        {
+          "file": "error/frame_009.png",
+          "source_index": 36,
+          "source_delay_ms": 40
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,270 @@
+{"kind":"deck","id":"pr/5cczg2","name":"Deck"}
+{"kind":"layout","layoutId":"05e73440-43f3-4114-b508-784f1a6a1903","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"34b366c7-1897-4e4e-b0c0-1bac5f106f69","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/5aperu","slide":1,"title":"聆安 Watch","textShapes":7}
+{"kind":"textbox","id":"sh/a1gvy90j","slide":1,"text":"聆安 Watch","textPreview":"聆安 Watch","textChars":8,"textLines":1,"bbox":[56,122,660,82]}
+{"kind":"textbox","id":"sh/hoza1gvy","slide":1,"text":"基于 ESP32-S3 与 Hermes 的听障辅助边缘 AI 智能手表","textPreview":"基于 ESP32-S3 与 Hermes 的听障辅助边缘 AI 智能手表","textChars":36,"textLines":1,"bbox":[56,220,760,70]}
+{"kind":"textbox","id":"sh/s36hcrmh","slide":1,"text":"全国大学生嵌入式设计大赛 / 嵌入式边缘 AI 应用","textPreview":"全国大学生嵌入式设计大赛 / 嵌入式边缘 AI 应用","textChars":26,"textLines":1,"bbox":[56,316,720,34]}
+{"kind":"shape","id":"sh/za1gvy90","slide":1,"bbox":[830,86,330,500]}
+{"kind":"textbox","id":"sh/ap4r65wj","slide":1,"text":"安全提醒\n+\n随身 AI 操控","textPreview":"安全提醒 | + | 随身 AI 操控","textChars":15,"textLines":3,"bbox":[870,210,250,180]}
+{"kind":"textbox","id":"sh/hgn29gr2","slide":1,"text":"ESP-DL 端侧识别","textPreview":"ESP-DL 端侧识别","textChars":11,"textLines":1,"bbox":[56,500,210,44]}
+{"kind":"textbox","id":"sh/svu9knih","slide":1,"text":"Hermes 个人助手","textPreview":"Hermes 个人助手","textChars":11,"textLines":1,"bbox":[286,500,220,44]}
+{"kind":"textbox","id":"sh/3ylc7u54","slide":1,"text":"微信通知栏告警","textPreview":"微信通知栏告警","textChars":7,"textLines":1,"bbox":[532,500,230,44]}
+{"kind":"notes","id":"nt/5aperu","slide":1,"text":""}
+{"kind":"slide","id":"sl/q6athc","slide":2,"title":"从听不见危险声，到可感知的安全提醒","textShapes":10}
+{"kind":"textbox","id":"sh/72x4nap4","slide":2,"text":"从听不见危险声，到可感知的安全提醒","textPreview":"从听不见危险声，到可感知的安全提醒","textChars":17,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/0nuxc3yl","slide":2,"text":"项目起点：听障用户在出行和公共场所缺少实时声音线索","textPreview":"项目起点：听障用户在出行和公共场所缺少实时声音线索","textChars":25,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/p8nqxs72","slide":2,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/itgfmlkj","slide":2,"text":"问题不是“识别一个声音标签”，而是把危险声变成及时、稳定、低打扰的提醒。","textPreview":"问题不是“识别一个声音标签”，而是把危险声变成及时、稳定、低打扰的提醒。","textChars":36,"textLines":1,"bbox":[56,190,760,80]}
+{"kind":"shape","id":"sh/7ed8bat4","slide":2,"bbox":[56,342,9,9]}
+{"kind":"textbox","id":"sh/0z61032l","slide":2,"text":"鸣笛：车辆近距离接近，但用户可能无法获得声源线索","textPreview":"鸣笛：车辆近距离接近，但用户可能无法获得声源线索","textChars":24,"textLines":1,"bbox":[82,334,760,42]}
+{"kind":"shape","id":"sh/pkzupwb2","slide":2,"bbox":[56,406,9,9]}
+{"kind":"textbox","id":"sh/i5sneloj","slide":2,"text":"警笛：紧急车辆通行，需要快速避让提示","textPreview":"警笛：紧急车辆通行，需要快速避让提示","textChars":18,"textLines":1,"bbox":[82,398,760,42]}
+{"kind":"shape","id":"sh/7qpg3ex0","slide":2,"bbox":[56,470,9,9]}
+{"kind":"textbox","id":"sh/fu18jqh0","slide":2,"text":"报警声：公共场所安全事件，需要转化为视觉/触觉提醒","textPreview":"报警声：公共场所安全事件，需要转化为视觉/触觉提醒","textChars":25,"textLines":1,"bbox":[82,462,760,42]}
+{"kind":"shape","id":"sh/m94fu18j","slide":2,"bbox":[890,192,270,330]}
+{"kind":"textbox","id":"sh/x0nuxc3y","slide":2,"text":"核心判断","textPreview":"核心判断","textChars":4,"textLines":1,"bbox":[918,226,210,32]}
+{"kind":"textbox","id":"sh/4fu18jqh","slide":2,"text":"安全提醒必须优先本地闭环。\n网络、手机通知和云端优化只能增强，不能成为核心依赖。","textPreview":"安全提醒必须优先本地闭环。 | 网络、手机通知和云端优化只能增强，不能成为核心依赖。","textChars":40,"textLines":2,"bbox":[922,288,206,150]}
+{"kind":"textbox","id":"sh/fil0rqd4","slide":2,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/qxs72x4n","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/q6athc","slide":2,"text":""}
+{"kind":"slide","id":"sl/6kfrxj","slide":3,"title":"作品定位：听障辅助手表优先，Hermes 作为服务中枢","textShapes":10}
+{"kind":"textbox","id":"sh/5kb6xkf6","slide":3,"text":"作品定位：听障辅助手表优先，Hermes 作为服务中枢","textPreview":"作品定位：听障辅助手表优先，Hermes 作为服务中枢","textChars":27,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/ytsvu9kn","slide":3,"text":"比赛表达上先讲清“安全辅助”，再展开个人助手能力","textPreview":"比赛表达上先讲清“安全辅助”，再展开个人助手能力","textChars":24,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/neloj2t8","slide":3,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/cbulwval","slide":3,"text":"端侧危险声识别\nESP32-S3 + ESP-DL","textPreview":"端侧危险声识别 | ESP32-S3 + ESP-DL","textChars":25,"textLines":2,"bbox":[82,216,250,118]}
+{"kind":"textbox","id":"sh/5sneloj2","slide":3,"text":"本地提醒\n屏幕高对比 + 震动","textPreview":"本地提醒 | 屏幕高对比 + 震动","textChars":15,"textLines":2,"bbox":[374,216,250,118]}
+{"kind":"textbox","id":"sh/u54zidon","slide":3,"text":"Hermes 随身入口\n语音/文本任务","textPreview":"Hermes 随身入口 | 语音/文本任务","textChars":19,"textLines":2,"bbox":[666,216,250,118]}
+{"kind":"textbox","id":"sh/nqxs72x4","slide":3,"text":"数据闭环\n样本积累 + 模型优化","textPreview":"数据闭环 | 样本积累 + 模型优化","textChars":16,"textLines":2,"bbox":[958,216,250,118]}
+{"kind":"shape","id":"sh/gbq1oryt","slide":3,"bbox":[332,275,42,0]}
+{"kind":"shape","id":"sh/5wjudg7a","slide":3,"bbox":[624,275,42,0]}
+{"kind":"shape","id":"sh/54zidony","slide":3,"bbox":[916,275,42,0]}
+{"kind":"textbox","id":"sh/cj6tovah","slide":3,"text":"一句话讲法","textPreview":"一句话讲法","textChars":5,"textLines":1,"bbox":[100,430,220,34]}
+{"kind":"textbox","id":"sh/nyd0z610","slide":3,"text":"聆安 Watch 是一款面向听障人群的边缘 AI 安全提醒手表，同时也是 Hermes 个人助手的随身操控入口。","textPreview":"聆安 Watch 是一款面向听障人群的边缘 AI 安全提醒手表，同时也是 Hermes 个人助手的随身操控入口。","textChars":56,"textLines":1,"bbox":[100,478,980,76]}
+{"kind":"textbox","id":"sh/udg7adsj","slide":3,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/5gbq1ory","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/6kfrxj","slide":3,"text":""}
+{"kind":"slide","id":"sl/yaj9cm","slide":4,"title":"系统总体架构：端侧安全闭环 + 云端助手协同","textShapes":11}
+{"kind":"textbox","id":"sh/v6psfil0","slide":4,"text":"系统总体架构：端侧安全闭环 + 云端助手协同","textPreview":"系统总体架构：端侧安全闭环 + 云端助手协同","textChars":22,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/knih4byh","slide":4,"text":"手表端只做随身输入、本地判断和状态展示；复杂服务交给 endpoint 与 Hermes","textPreview":"手表端只做随身输入、本地判断和状态展示；复杂服务交给 endpoint 与 Hermes","textChars":44,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/d8bat47y","slide":4,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/29gr2p8n","slide":4,"text":"环境危险声\n鸣笛/警笛/报警","textPreview":"环境危险声 | 鸣笛/警笛/报警","textChars":14,"textLines":2,"bbox":[52,265,190,100]}
+{"kind":"textbox","id":"sh/vu9knih4","slide":4,"text":"ESP32-S3 手表\n采集/推理/显示","textPreview":"ESP32-S3 手表 | 采集/推理/显示","textChars":20,"textLines":2,"bbox":[300,265,190,100]}
+{"kind":"textbox","id":"sh/kf6dcbul","slide":4,"text":"watch endpoint\n鉴权/ASR/超时","textPreview":"watch endpoint | 鉴权/ASR/超时","textChars":24,"textLines":2,"bbox":[548,265,190,100]}
+{"kind":"textbox","id":"sh/d0z61032","slide":4,"text":"Hermes\n记忆/任务/协同","textPreview":"Hermes | 记忆/任务/协同","textChars":15,"textLines":2,"bbox":[796,265,190,100]}
+{"kind":"textbox","id":"sh/2x4nap4r","slide":4,"text":"电脑端协同\n资料/文件/日程","textPreview":"电脑端协同 | 资料/文件/日程","textChars":14,"textLines":2,"bbox":[1044,265,190,100]}
+{"kind":"shape","id":"sh/vixczed8","slide":4,"bbox":[242,315,58,0]}
+{"kind":"shape","id":"sh/vmtwra5g","slide":4,"bbox":[490,315,58,0]}
+{"kind":"shape","id":"sh/61032lsz","slide":4,"bbox":[738,315,58,0]}
+{"kind":"shape","id":"sh/dsji5sne","slide":4,"bbox":[986,315,58,0]}
+{"kind":"textbox","id":"sh/o7qpg3ex","slide":4,"text":"本地提醒\n屏幕/震动","textPreview":"本地提醒 | 屏幕/震动","textChars":10,"textLines":2,"bbox":[300,455,190,88]}
+{"kind":"textbox","id":"sh/vy90je9c","slide":4,"text":"事件数据\n日志/置信度/场景","textPreview":"事件数据 | 日志/置信度/场景","textChars":14,"textLines":2,"bbox":[672,455,220,88]}
+{"kind":"shape","id":"sh/6dcbulwv","slide":4,"bbox":[395,365,0,90]}
+{"kind":"shape","id":"sh/d4vmtwra","slide":4,"bbox":[395,365,277,134]}
+{"kind":"shape","id":"sh/oj2t83it","slide":4,"bbox":[643,365,139,90]}
+{"kind":"textbox","id":"sh/z25kb6xk","slide":4,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/6hcrmhk3","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/yaj9cm","slide":4,"text":""}
+{"kind":"slide","id":"sl/aydn5b","slide":5,"title":"端侧危险声识别：只把最关键的安全判断放在本地","textShapes":13}
+{"kind":"textbox","id":"sh/zupwb2hw","slide":5,"text":"端侧危险声识别：只把最关键的安全判断放在本地","textPreview":"端侧危险声识别：只把最关键的安全判断放在本地","textChars":22,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/sfil0rqd","slide":5,"text":"首版主线聚焦 siren / horn / alarm 三类高价值危险声","textPreview":"首版主线聚焦 siren / horn / alarm 三类高价值危险声","textChars":36,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/h0fepkzu","slide":5,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/al87ed8b","slide":5,"text":"麦克风采集","textPreview":"麦克风采集","textChars":5,"textLines":1,"bbox":[74,250,148,84]}
+{"kind":"textbox","id":"sh/z61032ls","slide":5,"text":"滑窗重采样","textPreview":"滑窗重采样","textChars":5,"textLines":1,"bbox":[274,250,148,84]}
+{"kind":"textbox","id":"sh/orytsvu9","slide":5,"text":"Fbank 特征","textPreview":"Fbank 特征","textChars":8,"textLines":1,"bbox":[474,250,148,84]}
+{"kind":"textbox","id":"sh/hcrmhk3q","slide":5,"text":"ESP-DL 推理","textPreview":"ESP-DL 推理","textChars":9,"textLines":1,"bbox":[674,250,148,84]}
+{"kind":"textbox","id":"sh/6xkf6dcb","slide":5,"text":"风险融合","textPreview":"风险融合","textChars":4,"textLines":1,"bbox":[874,250,148,84]}
+{"kind":"textbox","id":"sh/zed8v6ps","slide":5,"text":"屏幕/震动","textPreview":"屏幕/震动","textChars":5,"textLines":1,"bbox":[1074,250,148,84]}
+{"kind":"shape","id":"sh/n29gr2p8","slide":5,"bbox":[222,292,52,0]}
+{"kind":"shape","id":"sh/yhgn29gr","slide":5,"bbox":[422,292,52,0]}
+{"kind":"shape","id":"sh/58z25kb6","slide":5,"bbox":[622,292,52,0]}
+{"kind":"shape","id":"sh/gn29gr2p","slide":5,"bbox":[822,292,52,0]}
+{"kind":"shape","id":"sh/nuxc3ylc","slide":5,"bbox":[1022,292,52,0]}
+{"kind":"shape","id":"sh/y90je9cv","slide":5,"bbox":[116,446,9,9]}
+{"kind":"textbox","id":"sh/5wjudg7a","slide":5,"text":"核心安全提醒不依赖网络，断网后仍能本地判断与提示","textPreview":"核心安全提醒不依赖网络，断网后仍能本地判断与提示","textChars":24,"textLines":1,"bbox":[142,438,920,42]}
+{"kind":"shape","id":"sh/gbq1oryt","slide":5,"bbox":[116,500,9,9]}
+{"kind":"textbox","id":"sh/nqxs72x4","slide":5,"text":"单窗推理不是最终提醒，必须经过连续证据确认","textPreview":"单窗推理不是最终提醒，必须经过连续证据确认","textChars":21,"textLines":1,"bbox":[142,492,920,42]}
+{"kind":"shape","id":"sh/u54zidon","slide":5,"bbox":[116,554,9,9]}
+{"kind":"textbox","id":"sh/29gr2p8n","slide":5,"text":"模型文件约 31.4 KB，适配 ESP32-S3 资源预算","textPreview":"模型文件约 31.4 KB，适配 ESP32-S3 资源预算","textChars":30,"textLines":1,"bbox":[142,546,920,42]}
+{"kind":"textbox","id":"sh/vu9knih4","slide":5,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/kf6dcbul","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/aydn5b","slide":5,"text":""}
+{"kind":"slide","id":"sl/efuanf","slide":6,"title":"风险状态机：把模型输出变成稳定产品状态","textShapes":10}
+{"kind":"textbox","id":"sh/tsvu9kni","slide":6,"text":"风险状态机：把模型输出变成稳定产品状态","textPreview":"风险状态机：把模型输出变成稳定产品状态","textChars":19,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/m1cfa9w3","slide":6,"text":"避免一次尖峰误判直接触发强告警","textPreview":"避免一次尖峰误判直接触发强告警","textChars":15,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/bm58z25k","slide":6,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/4vmtwra5","slide":6,"text":"Off\n关闭","textPreview":"Off | 关闭","textChars":6,"textLines":2,"bbox":[100,255,166,88]}
+{"kind":"textbox","id":"sh/tgfmlkjm","slide":6,"text":"Monitoring\n正常监听","textPreview":"Monitoring | 正常监听","textChars":15,"textLines":2,"bbox":[326,255,190,88]}
+{"kind":"textbox","id":"sh/mp0bi9s3","slide":6,"text":"Suspicious\n可疑证据","textPreview":"Suspicious | 可疑证据","textChars":15,"textLines":2,"bbox":[576,255,190,88]}
+{"kind":"textbox","id":"sh/bat47y1k","slide":6,"text":"Alerting\n正式提醒","textPreview":"Alerting | 正式提醒","textChars":13,"textLines":2,"bbox":[826,255,190,88]}
+{"kind":"textbox","id":"sh/4nap4r65","slide":6,"text":"Cooldown\n冷却抑制","textPreview":"Cooldown | 冷却抑制","textChars":13,"textLines":2,"bbox":[576,430,190,88]}
+{"kind":"shape","id":"sh/t83itgfm","slide":6,"bbox":[266,299,60,0]}
+{"kind":"shape","id":"sh/9gr2p8nq","slide":6,"bbox":[516,299,60,0]}
+{"kind":"shape","id":"sh/gvy90je9","slide":6,"bbox":[766,299,60,0]}
+{"kind":"shape","id":"sh/ra5gbq1o","slide":6,"bbox":[766,343,155,131]}
+{"kind":"shape","id":"sh/2p8nqxs7","slide":6,"bbox":[421,343,155,131]}
+{"kind":"textbox","id":"sh/94fu18jq","slide":6,"text":"实测流转：MONITORING → SUSPICIOUS → ALERTING → COOLDOWN → MONITORING","textPreview":"实测流转：MONITORING → SUSPICIOUS → ALERTING → COOLDOWN → MONITORING","textChars":63,"textLines":1,"bbox":[110,570,980,36]}
+{"kind":"textbox","id":"sh/kjm1cfa9","slide":6,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/r2p8nqxs","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/efuanf","slide":6,"text":""}
+{"kind":"slide","id":"sl/o69q6o","slide":7,"title":"Hermes 联动：手表是个人助手的随身操控设备端","textShapes":11}
+{"kind":"textbox","id":"sh/a5gbq1or","slide":7,"text":"Hermes 联动：手表是个人助手的随身操控设备端","textPreview":"Hermes 联动：手表是个人助手的随身操控设备端","textChars":25,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/lszqtcj6","slide":7,"text":"ESP32-S3 保持轻量，长期记忆和复杂任务交给 Hermes","textPreview":"ESP32-S3 保持轻量，长期记忆和复杂任务交给 Hermes","textChars":32,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/s72x4nap","slide":7,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/3ylc7u54","slide":7,"text":"用户\n语音/文本","textPreview":"用户 | 语音/文本","textChars":8,"textLines":2,"bbox":[66,260,168,92]}
+{"kind":"textbox","id":"sh/adsji5sn","slide":7,"text":"手表端\n录音/文本","textPreview":"手表端 | 录音/文本","textChars":9,"textLines":2,"bbox":[286,260,168,92]}
+{"kind":"textbox","id":"sh/h4byhgn2","slide":7,"text":"watch endpoint\n鉴权/幂等/超时","textPreview":"watch endpoint | 鉴权/幂等/超时","textChars":23,"textLines":2,"bbox":[506,260,200,92]}
+{"kind":"textbox","id":"sh/sji5snel","slide":7,"text":"ASR\n语音转文本","textPreview":"ASR | 语音转文本","textChars":9,"textLines":2,"bbox":[758,260,168,92]}
+{"kind":"textbox","id":"sh/za1gvy90","slide":7,"text":"Hermes\n记忆/任务/协同","textPreview":"Hermes | 记忆/任务/协同","textChars":15,"textLines":2,"bbox":[978,260,200,92]}
+{"kind":"shape","id":"sh/ap4r65wj","slide":7,"bbox":[234,306,52,0]}
+{"kind":"shape","id":"sh/0je9cvix","slide":7,"bbox":[454,306,52,0]}
+{"kind":"shape","id":"sh/t47y1kre","slide":7,"bbox":[706,306,52,0]}
+{"kind":"shape","id":"sh/idonyd0z","slide":7,"bbox":[926,306,52,0]}
+{"kind":"textbox","id":"sh/byhgn29g","slide":7,"text":"电脑端工具\n文件/查询/内容生成","textPreview":"电脑端工具 | 文件/查询/内容生成","textChars":16,"textLines":2,"bbox":[978,440,200,88]}
+{"kind":"textbox","id":"sh/0rqd4vmt","slide":7,"text":"固定 JSON\n回执/动作/状态","textPreview":"固定 JSON | 回执/动作/状态","textChars":16,"textLines":2,"bbox":[506,440,200,88]}
+{"kind":"shape","id":"sh/tcj6tova","slide":7,"bbox":[1078,352,0,88]}
+{"kind":"shape","id":"sh/il0rqd4v","slide":7,"bbox":[706,484,272,0]}
+{"kind":"shape","id":"sh/b6xkf6dc","slide":7,"bbox":[370,352,136,132]}
+{"kind":"textbox","id":"sh/032lszqt","slide":7,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/tovahoza","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/o69q6o","slide":7,"text":""}
+{"kind":"slide","id":"sl/vh33ok","slide":8,"title":"手机通知栏告警：复用 OneNET + 微信订阅消息","textShapes":12}
+{"kind":"textbox","id":"sh/4vmtwra5","slide":8,"text":"手机通知栏告警：复用 OneNET + 微信订阅消息","textPreview":"手机通知栏告警：复用 OneNET + 微信订阅消息","textChars":26,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/bat47y1k","slide":8,"text":"不加 EMQX，不让小程序直连 MQTT，先跑通最小闭环","textPreview":"不加 EMQX，不让小程序直连 MQTT，先跑通最小闭环","textChars":28,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/mp0bi9s3","slide":8,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/tsvu9kni","slide":8,"text":"ESP32-S3\n危险识别","textPreview":"ESP32-S3 | 危险识别","textChars":13,"textLines":2,"bbox":[72,250,172,88]}
+{"kind":"textbox","id":"sh/47y1kre1","slide":8,"text":"OneNET\nMQTT 上报","textPreview":"OneNET | MQTT 上报","textChars":14,"textLines":2,"bbox":[298,250,172,88]}
+{"kind":"textbox","id":"sh/bm58z25k","slide":8,"text":"规则引擎\nHTTP 转发","textPreview":"规则引擎 | HTTP 转发","textChars":12,"textLines":2,"bbox":[524,250,172,88]}
+{"kind":"textbox","id":"sh/m1cfa9w3","slide":8,"text":"云服务器\n绑定/鉴权","textPreview":"云服务器 | 绑定/鉴权","textChars":10,"textLines":2,"bbox":[750,250,172,88]}
+{"kind":"textbox","id":"sh/twra5gbq","slide":8,"text":"微信订阅消息\n手机通知栏","textPreview":"微信订阅消息 | 手机通知栏","textChars":12,"textLines":2,"bbox":[976,250,190,88]}
+{"kind":"shape","id":"sh/4byhgn29","slide":8,"bbox":[244,294,54,0]}
+{"kind":"shape","id":"sh/m58z25kb","slide":8,"bbox":[470,294,54,0]}
+{"kind":"shape","id":"sh/bq1oryts","slide":8,"bbox":[696,294,54,0]}
+{"kind":"shape","id":"sh/4byhgn29","slide":8,"bbox":[922,294,54,0]}
+{"kind":"shape","id":"sh/twra5gbq","slide":8,"bbox":[124,450,9,9]}
+{"kind":"textbox","id":"sh/mhk3q5o7","slide":8,"text":"手表端代码基本不改：按现有 MQTT 链路上报告警","textPreview":"手表端代码基本不改：按现有 MQTT 链路上报告警","textChars":25,"textLines":1,"bbox":[150,442,940,42]}
+{"kind":"shape","id":"sh/b2hwfyxo","slide":8,"bbox":[124,502,9,9]}
+{"kind":"textbox","id":"sh/4nap4r65","slide":8,"text":"开发阶段可先用公网 IP + 端口完成 OneNET 到云服务器转发","textPreview":"开发阶段可先用公网 IP + 端口完成 OneNET 到云服务器转发","textChars":34,"textLines":1,"bbox":[150,494,940,42]}
+{"kind":"shape","id":"sh/t83itgfm","slide":8,"bbox":[124,554,9,9]}
+{"kind":"textbox","id":"sh/mp0bi9s3","slide":8,"text":"正式上线再补合法域名、模板审核、用户授权和设备绑定","textPreview":"正式上线再补合法域名、模板审核、用户授权和设备绑定","textChars":25,"textLines":1,"bbox":[150,546,940,42]}
+{"kind":"textbox","id":"sh/bat47y1k","slide":8,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/3ex0nuxc","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/vh33ok","slide":8,"text":""}
+{"kind":"slide","id":"sl/fg3jgj","slide":9,"title":"数据闭环：让模型从演示样机走向可持续优化","textShapes":12}
+{"kind":"textbox","id":"sh/re1w7mp0","slide":9,"text":"数据闭环：让模型从演示样机走向可持续优化","textPreview":"数据闭环：让模型从演示样机走向可持续优化","textChars":20,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/kzupwb2h","slide":9,"text":"危险事件不是只提醒一次，也可以成为后续训练和误报分析的数据来源","textPreview":"危险事件不是只提醒一次，也可以成为后续训练和误报分析的数据来源","textChars":31,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/9knih4by","slide":9,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/25kb6xkf","slide":9,"text":"危险事件","textPreview":"危险事件","textChars":4,"textLines":1,"bbox":[140,210,170,76]}
+{"kind":"textbox","id":"sh/rqd4vmtw","slide":9,"text":"事件记录","textPreview":"事件记录","textChars":4,"textLines":1,"bbox":[390,210,170,76]}
+{"kind":"textbox","id":"sh/kb6xkf6d","slide":9,"text":"上传服务器","textPreview":"上传服务器","textChars":5,"textLines":1,"bbox":[640,210,170,76]}
+{"kind":"textbox","id":"sh/9w3m94fu","slide":9,"text":"样本积累","textPreview":"样本积累","textChars":4,"textLines":1,"bbox":[890,210,170,76]}
+{"kind":"textbox","id":"sh/2hwfyxob","slide":9,"text":"误报分析","textPreview":"误报分析","textChars":4,"textLines":1,"bbox":[890,425,170,76]}
+{"kind":"textbox","id":"sh/r2p8nqxs","slide":9,"text":"训练优化","textPreview":"训练优化","textChars":4,"textLines":1,"bbox":[640,425,170,76]}
+{"kind":"textbox","id":"sh/7ed8bat4","slide":9,"text":"量化部署","textPreview":"量化部署","textChars":4,"textLines":1,"bbox":[390,425,170,76]}
+{"kind":"textbox","id":"sh/itgfmlkj","slide":9,"text":"手表更新","textPreview":"手表更新","textChars":4,"textLines":1,"bbox":[140,425,170,76]}
+{"kind":"shape","id":"sh/pkzupwb2","slide":9,"bbox":[310,248,80,0]}
+{"kind":"shape","id":"sh/0z61032l","slide":9,"bbox":[560,248,80,0]}
+{"kind":"shape","id":"sh/72x4nap4","slide":9,"bbox":[810,248,80,0]}
+{"kind":"shape","id":"sh/ih4byhgn","slide":9,"bbox":[975,286,0,139]}
+{"kind":"shape","id":"sh/p8nqxs72","slide":9,"bbox":[810,463,80,0]}
+{"kind":"shape","id":"sh/0nuxc3yl","slide":9,"bbox":[560,463,80,0]}
+{"kind":"shape","id":"sh/7y1kre1w","slide":9,"bbox":[310,463,80,0]}
+{"kind":"shape","id":"sh/ed8v6psf","slide":9,"bbox":[225,286,0,139]}
+{"kind":"textbox","id":"sh/mlkjm1cf","slide":9,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/f6dcbulw","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/fg3jgj","slide":9,"text":""}
+{"kind":"slide","id":"sl/7t6uk4","slide":10,"title":"当前完成情况：核心链路已形成，证据截图继续补齐","textShapes":22}
+{"kind":"textbox","id":"sh/9gr2p8nq","slide":10,"text":"当前完成情况：核心链路已形成，证据截图继续补齐","textPreview":"当前完成情况：核心链路已形成，证据截图继续补齐","textChars":23,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/2p8nqxs7","slide":10,"text":"适合初赛/校内答辩先讲“系统已打通 + 后续证据位明确”","textPreview":"适合初赛/校内答辩先讲“系统已打通 + 后续证据位明确”","textChars":28,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/ra5gbq1o","slide":10,"bbox":[56,145,1168,0]}
+{"kind":"shape","id":"sh/kjm1cfa9","slide":10,"bbox":[76,190,1128,364]}
+{"kind":"textbox","id":"sh/94fu18jq","slide":10,"text":"模块","textPreview":"模块","textChars":2,"textLines":1,"bbox":[104,212,180,28]}
+{"kind":"textbox","id":"sh/2hwfyxob","slide":10,"text":"说明","textPreview":"说明","textChars":2,"textLines":1,"bbox":[320,212,600,28]}
+{"kind":"textbox","id":"sh/r2p8nqxs","slide":10,"text":"状态","textPreview":"状态","textChars":2,"textLines":1,"bbox":[1010,212,120,28]}
+{"kind":"shape","id":"sh/kb6xkf6d","slide":10,"bbox":[96,248,1088,0]}
+{"kind":"textbox","id":"sh/9w3m94fu","slide":10,"text":"端侧推理","textPreview":"端侧推理","textChars":4,"textLines":1,"bbox":[104,260,180,30]}
+{"kind":"textbox","id":"sh/xczed8v6","slide":10,"text":"ESP-DL 模型、音频处理、danger/non-danger 输出","textPreview":"ESP-DL 模型、音频处理、danger/non-danger 输出","textChars":35,"textLines":1,"bbox":[320,260,620,30]}
+{"kind":"textbox","id":"sh/8v6psfil","slide":10,"text":"已触发","textPreview":"已触发","textChars":3,"textLines":1,"bbox":[1010,260,130,30]}
+{"kind":"shape","id":"sh/fa9w3m94","slide":10,"bbox":[96,304,1088,0]}
+{"kind":"textbox","id":"sh/qpg3ex0n","slide":10,"text":"风险状态机","textPreview":"风险状态机","textChars":5,"textLines":1,"bbox":[104,316,180,30]}
+{"kind":"textbox","id":"sh/x4nap4r6","slide":10,"text":"连续确认、Alerting、Cooldown 流转","textPreview":"连续确认、Alerting、Cooldown 流转","textChars":25,"textLines":1,"bbox":[320,316,620,30]}
+{"kind":"textbox","id":"sh/8jqh0fep","slide":10,"text":"已观测","textPreview":"已观测","textChars":3,"textLines":1,"bbox":[1010,316,130,30]}
+{"kind":"shape","id":"sh/fyxobm58","slide":10,"bbox":[96,360,1088,0]}
+{"kind":"textbox","id":"sh/qd4vmtwr","slide":10,"text":"Hermes 联动","textPreview":"Hermes 联动","textChars":9,"textLines":1,"bbox":[104,372,180,30]}
+{"kind":"textbox","id":"sh/xs72x4na","slide":10,"text":"文本/语音请求经 endpoint 返回固定 JSON","textPreview":"文本/语音请求经 endpoint 返回固定 JSON","textChars":27,"textLines":1,"bbox":[320,372,620,30]}
+{"kind":"textbox","id":"sh/87ed8bat","slide":10,"text":"已联调","textPreview":"已联调","textChars":3,"textLines":1,"bbox":[1010,372,130,30]}
+{"kind":"shape","id":"sh/4fu18jqh","slide":10,"bbox":[96,416,1088,0]}
+{"kind":"textbox","id":"sh/x0nuxc3y","slide":10,"text":"手机通知栏","textPreview":"手机通知栏","textChars":5,"textLines":1,"bbox":[104,428,180,30]}
+{"kind":"textbox","id":"sh/m94fu18j","slide":10,"text":"OneNET → 云服务器 → 微信订阅消息","textPreview":"OneNET → 云服务器 → 微信订阅消息","textChars":22,"textLines":1,"bbox":[320,428,620,30]}
+{"kind":"textbox","id":"sh/fu18jqh0","slide":10,"text":"待联调","textPreview":"待联调","textChars":3,"textLines":1,"bbox":[1010,428,130,30]}
+{"kind":"shape","id":"sh/83itgfml","slide":10,"bbox":[96,472,1088,0]}
+{"kind":"textbox","id":"sh/xobm58z2","slide":10,"text":"实物/截图","textPreview":"实物/截图","textChars":5,"textLines":1,"bbox":[104,484,180,30]}
+{"kind":"textbox","id":"sh/qxs72x4n","slide":10,"text":"手表照片、危险提醒界面、Hermes 回执、通知栏","textPreview":"手表照片、危险提醒界面、Hermes 回执、通知栏","textChars":25,"textLines":1,"bbox":[320,484,620,30]}
+{"kind":"textbox","id":"sh/fil0rqd4","slide":10,"text":"待补拍","textPreview":"待补拍","textChars":3,"textLines":1,"bbox":[1010,484,130,30]}
+{"kind":"textbox","id":"sh/4zidonyd","slide":10,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/xkf6dcbu","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/7t6uk4","slide":10,"text":""}
+{"kind":"slide","id":"sl/vznzdi","slide":11,"title":"关键指标：先用可验证数据支撑“能跑起来”","textShapes":15}
+{"kind":"textbox","id":"sh/byhgn29g","slide":11,"text":"关键指标：先用可验证数据支撑“能跑起来”","textPreview":"关键指标：先用可验证数据支撑“能跑起来”","textChars":20,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/0je9cvix","slide":11,"text":"最终版继续补断网提醒、手机通知耗时和 V59 专项日志","textPreview":"最终版继续补断网提醒、手机通知耗时和 V59 专项日志","textChars":27,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/t47y1kre","slide":11,"bbox":[56,145,1168,0]}
+{"kind":"shape","id":"sh/il0rqd4v","slide":11,"bbox":[76,206,250,142]}
+{"kind":"textbox","id":"sh/b6xkf6dc","slide":11,"text":"31.4 KB","textPreview":"31.4 KB","textChars":7,"textLines":1,"bbox":[98,222,206,58]}
+{"kind":"textbox","id":"sh/0rqd4vmt","slide":11,"text":"当前 active ESP-DL 模型文件大小","textPreview":"当前 active ESP-DL 模型文件大小","textChars":23,"textLines":1,"bbox":[98,292,206,42]}
+{"kind":"shape","id":"sh/tcj6tova","slide":11,"bbox":[366,206,250,142]}
+{"kind":"textbox","id":"sh/ixczed8v","slide":11,"text":"380-400\nms","textPreview":"380-400 | ms","textChars":10,"textLines":2,"bbox":[388,222,206,76]}
+{"kind":"textbox","id":"sh/bi9s36hc","slide":11,"text":"首次 danger 到 ALERTING","textPreview":"首次 danger 到 ALERTING","textChars":20,"textLines":1,"bbox":[388,302,206,42]}
+{"kind":"shape","id":"sh/rytsvu9k","slide":11,"bbox":[656,206,250,142]}
+{"kind":"textbox","id":"sh/yd0z6103","slide":11,"text":"约 8.2 s","textPreview":"约 8.2 s","textChars":7,"textLines":1,"bbox":[678,222,206,58]}
+{"kind":"textbox","id":"sh/90je9cvi","slide":11,"text":"Hermes 语音请求到回执","textPreview":"Hermes 语音请求到回执","textChars":14,"textLines":1,"bbox":[678,292,206,42]}
+{"kind":"shape","id":"sh/gfmlkjm1","slide":11,"bbox":[946,206,250,142]}
+{"kind":"textbox","id":"sh/rmhk3q5o","slide":11,"text":"90 s","textPreview":"90 s","textChars":4,"textLines":1,"bbox":[968,222,206,58]}
+{"kind":"textbox","id":"sh/y1kre1w7","slide":11,"text":"安全监听稳定性测试","textPreview":"安全监听稳定性测试","textChars":9,"textLines":1,"bbox":[968,292,206,42]}
+{"kind":"shape","id":"sh/9s36hcrm","slide":11,"bbox":[118,454,9,9]}
+{"kind":"textbox","id":"sh/g7adsji5","slide":11,"text":"V3.4 日志：internal 6.5 KB / PSRAM 202.5 KB / flash 25.8 KB","textPreview":"V3.4 日志：internal 6.5 KB / PSRAM 202.5 KB / flash 25.8 KB","textChars":56,"textLines":1,"bbox":[144,446,960,42]}
+{"kind":"shape","id":"sh/nih4byhg","slide":11,"bbox":[118,504,9,9]}
+{"kind":"textbox","id":"sh/yxobm58z","slide":11,"text":"状态机日志已观测完整流转，未出现 panic / watchdog / OOM","textPreview":"状态机日志已观测完整流转，未出现 panic / watchdog / OOM","textChars":39,"textLines":1,"bbox":[144,496,960,42]}
+{"kind":"shape","id":"sh/61032lsz","slide":11,"bbox":[118,554,9,9]}
+{"kind":"textbox","id":"sh/vmtwra5g","slide":11,"text":"待补：断网本地提醒视频、OneNET 到微信通知栏端到端耗时","textPreview":"待补：断网本地提醒视频、OneNET 到微信通知栏端到端耗时","textChars":30,"textLines":1,"bbox":[144,546,960,42]}
+{"kind":"textbox","id":"sh/o7qpg3ex","slide":11,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/dsji5sne","slide":11,"text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/vznzdi","slide":11,"text":""}
+{"kind":"slide","id":"sl/3zajrl","slide":12,"title":"演示素材清单：这些图补上，答辩说服力会明显提升","textShapes":16}
+{"kind":"textbox","id":"sh/qtcj6tov","slide":12,"text":"演示素材清单：这些图补上，答辩说服力会明显提升","textPreview":"演示素材清单：这些图补上，答辩说服力会明显提升","textChars":23,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/1gvy90je","slide":12,"text":"不伪造证据，全部用真实拍摄或真实截图替换","textPreview":"不伪造证据，全部用真实拍摄或真实截图替换","textChars":20,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/8z25kb6x","slide":12,"bbox":[56,145,1168,0]}
+{"kind":"shape","id":"sh/fmlkjm1c","slide":12,"bbox":[76,190,330,160]}
+{"kind":"textbox","id":"sh/q1orytsv","slide":12,"text":"待补真实证据","textPreview":"待补真实证据","textChars":6,"textLines":1,"bbox":[76,242,330,28]}
+{"kind":"textbox","id":"sh/xs72x4na","slide":12,"text":"手表实物：正面 + 斜 45 度","textPreview":"手表实物：正面 + 斜 45 度","textChars":16,"textLines":1,"bbox":[104,292,274,34]}
+{"kind":"shape","id":"sh/87ed8bat","slide":12,"bbox":[476,190,330,160]}
+{"kind":"textbox","id":"sh/fyxobm58","slide":12,"text":"待补真实证据","textPreview":"待补真实证据","textChars":6,"textLines":1,"bbox":[476,242,330,28]}
+{"kind":"textbox","id":"sh/qd4vmtwr","slide":12,"text":"危险提醒界面：ALERTING","textPreview":"危险提醒界面：ALERTING","textChars":15,"textLines":1,"bbox":[504,292,274,34]}
+{"kind":"shape","id":"sh/sfil0rqd","slide":12,"bbox":[876,190,330,160]}
+{"kind":"textbox","id":"sh/h0fepkzu","slide":12,"text":"待补真实证据","textPreview":"待补真实证据","textChars":6,"textLines":1,"bbox":[876,242,330,28]}
+{"kind":"textbox","id":"sh/a9w3m94f","slide":12,"text":"Hermes 回执页面","textPreview":"Hermes 回执页面","textChars":11,"textLines":1,"bbox":[904,292,274,34]}
+{"kind":"shape","id":"sh/zupwb2hw","slide":12,"bbox":[76,410,330,150]}
+{"kind":"textbox","id":"sh/orytsvu9","slide":12,"text":"待补真实证据","textPreview":"待补真实证据","textChars":6,"textLines":1,"bbox":[76,457,330,28]}
+{"kind":"textbox","id":"sh/hcrmhk3q","slide":12,"text":"手机通知栏：微信订阅消息","textPreview":"手机通知栏：微信订阅消息","textChars":12,"textLines":1,"bbox":[104,502,274,34]}
+{"kind":"shape","id":"sh/al87ed8b","slide":12,"bbox":[476,410,330,150]}
+{"kind":"textbox","id":"sh/z61032ls","slide":12,"text":"待补真实证据","textPreview":"待补真实证据","textChars":6,"textLines":1,"bbox":[476,457,330,28]}
+{"kind":"textbox","id":"sh/oza1gvy9","slide":12,"text":"OneNET 规则命中 + 云服务器日志","textPreview":"OneNET 规则命中 + 云服务器日志","textChars":20,"textLines":1,"bbox":[504,502,274,34]}
+{"kind":"shape","id":"sh/hk3q5o7q","slide":12,"bbox":[876,410,330,150]}
+{"kind":"textbox","id":"sh/1w7mp0bi","slide":12,"text":"待补真实证据","textPreview":"待补真实证据","textChars":6,"textLines":1,"bbox":[876,457,330,28]}
+{"kind":"textbox","id":"sh/8bat47y1","slide":12,"text":"断网本地提醒视频关键帧","textPreview":"断网本地提醒视频关键帧","textChars":11,"textLines":1,"bbox":[904,502,274,34]}
+{"kind":"textbox","id":"sh/jqh0fepk","slide":12,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/q5o7qpg3","slide":12,"text":"12","textPreview":"12","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/3zajrl","slide":12,"text":""}
+{"kind":"slide","id":"sl/5abmo0","slide":13,"title":"总结：把边缘 AI 做成真正可用的安全辅助入口","textShapes":8}
+{"kind":"textbox","id":"sh/m58z25kb","slide":13,"text":"总结：把边缘 AI 做成真正可用的安全辅助入口","textPreview":"总结：把边缘 AI 做成真正可用的安全辅助入口","textChars":23,"textLines":1,"bbox":[56,42,1120,58]}
+{"kind":"textbox","id":"sh/twra5gbq","slide":13,"text":"项目价值 = 本地安全闭环 + Hermes 长期服务 + 数据持续优化","textPreview":"项目价值 = 本地安全闭环 + Hermes 长期服务 + 数据持续优化","textChars":36,"textLines":1,"bbox":[56,104,780,30]}
+{"kind":"shape","id":"sh/4byhgn29","slide":13,"bbox":[56,145,1168,0]}
+{"kind":"textbox","id":"sh/b2hwfyxo","slide":13,"text":"聆安 Watch 的核心不是“跑模型”，而是把危险声识别、稳定提醒、个人助手和数据闭环合成一个面向听障用户的可穿戴安全辅助系统。","textPreview":"聆安 Watch 的核心不是“跑模型”，而是把危险声识别、稳定提醒、个人助手和数据闭环合成一个面向听障用户的可穿戴安全辅助系统。","textChars":64,"textLines":1,"bbox":[96,192,980,126]}
+{"kind":"shape","id":"sh/mhk3q5o7","slide":13,"bbox":[140,398,9,9]}
+{"kind":"textbox","id":"sh/t83itgfm","slide":13,"text":"比赛主线：听障辅助边缘 AI 智能手表","textPreview":"比赛主线：听障辅助边缘 AI 智能手表","textChars":19,"textLines":1,"bbox":[166,390,940,42]}
+{"kind":"shape","id":"sh/4nap4r65","slide":13,"bbox":[140,456,9,9]}
+{"kind":"textbox","id":"sh/bat47y1k","slide":13,"text":"技术亮点：ESP32-S3 端侧识别、风险状态机、Hermes 跨设备协同","textPreview":"技术亮点：ESP32-S3 端侧识别、风险状态机、Hermes 跨设备协同","textChars":37,"textLines":1,"bbox":[166,448,940,42]}
+{"kind":"shape","id":"sh/mp0bi9s3","slide":13,"bbox":[140,514,9,9]}
+{"kind":"textbox","id":"sh/4byhgn29","slide":13,"text":"后续收尾：补齐真实截图、手机通知联调和演示视频","textPreview":"后续收尾：补齐真实截图、手机通知联调和演示视频","textChars":23,"textLines":1,"bbox":[166,506,940,42]}
+{"kind":"textbox","id":"sh/twra5gbq","slide":13,"text":"聆安 Watch / 嵌入式边缘 AI 应用","textPreview":"聆安 Watch / 嵌入式边缘 AI 应用","textChars":22,"textLines":1,"bbox":[56,664,420,24]}
+{"kind":"textbox","id":"sh/m58z25kb","slide":13,"text":"13","textPreview":"13","textChars":2,"textLines":1,"bbox":[1160,662,64,24]}
+{"kind":"notes","id":"nt/5abmo0","slide":13,"text":""}

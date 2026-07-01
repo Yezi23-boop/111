@@ -1,0 +1,45 @@
+{
+  "target": "sdcard",
+  "reason": "estimated raw animation output exceeds resources budget; generated SD-card staging output",
+  "resources_budget": 8388608,
+  "input": "D:\\esp32S3\\111\\resources\\watchface\\frames",
+  "output": "D:\\esp32S3\\111\\sdcard\\watchface",
+  "raw_payload_bytes": 22228560,
+  "rawanim_files_bytes": 22229240,
+  "manifest_bytes": 9278,
+  "total_bytes": 22238518,
+  "state_payload_estimates": {
+    "idle": 4939680,
+    "thinking": 3293120,
+    "working": 4939680,
+    "message": 4939680,
+    "error": 4116400
+  },
+  "states": {
+    "idle": {
+      "file": "idle.rawanim",
+      "frame_count": 12,
+      "file_size": 4939828
+    },
+    "thinking": {
+      "file": "thinking.rawanim",
+      "frame_count": 8,
+      "file_size": 3293228
+    },
+    "working": {
+      "file": "working.rawanim",
+      "frame_count": 12,
+      "file_size": 4939828
+    },
+    "message": {
+      "file": "message.rawanim",
+      "frame_count": 12,
+      "file_size": 4939828
+    },
+    "error": {
+      "file": "error.rawanim",
+      "frame_count": 10,
+      "file_size": 4116528
+    }
+  }
+}

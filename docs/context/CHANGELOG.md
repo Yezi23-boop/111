@@ -1,5 +1,17 @@
 # 上下文库变更记录
 
+- 2026-07-01：完成表情表盘 raw animation 打包器 `scripts/watchface/pack_watchface_rawanim.py`。脚本从 `resources/watchface/frames` 打包 RGB565 little-endian raw animation，带 `8M` resources 阈值；实测 5 个状态 raw 总量 `22,238,518 bytes`（含 manifest），超过用户指定“超过 8M 就直接 SD 卡”的阈值，因此输出到 `sdcard/watchface/` staging，而不是写入 `resources/watchface`。
+
+- 2026-07-01：表情表盘资源路线再次调整：先做 `resources` / LittleFS 板端测试，过了再考虑 SD 卡；允许按测量结果扩大 `resources` 分区，但必须记录新分区布局并全量刷新相关分区。SD 卡保留为体积、刷写或读取性能不理想时的第二阶段备选。
+
+- 2026-07-01：表情表盘板端资源路线改为 SD 卡优先。`/sdcard/watchface` 作为最终动画资源仓库，`resources/watchface/frames` 仅保留为电脑端预览/生成中间产物；运行时仍必须先把当前动画帧加载到 PSRAM，再通过内存 `lv_image_dsc_t` 给 LVGL 绘制，不开启 LVGL FATFS 直读路径，不为表盘扩大 `resources` 分区。
+
+- 2026-07-01：完成表情表盘电脑端离线拆帧预览。新增 `scripts/watchface/extract_watchface_frames.py`，从 `D:\esp32S3\表情包` 的 V1 五个 GIF 生成 `resources/watchface/frames/` 下的 `410x502` 白底 PNG 检查帧、`manifest.json` 和 `contact_sheet.png`；当前输出是视觉检查中间产物，不是最终板端动画包。
+
+- 2026-07-01：表情表盘计划从“V1 单帧状态图”升级为“V1 低帧率短循环动画”。active plan 明确采用 SD 卡 `rawanim` 或等价动画包、PSRAM 多帧槽、后台加载/解码、LVGL timer 只切 ready 帧；禁止因资源压力退回半尺寸拉伸或静态单帧。
+
+- 2026-07-01：重写 active plan `docs/context/plans/active/2026-06-30-watchface-emoji-root-ui-plan.md`。用户已回退上一轮表情表盘代码，当前计划改为“从干净架构重执行”：正式 UI 不继续修补旧 `watchface_view`，禁止 LVGL draw 阶段直接从文件系统流式读取全屏大图；后续必须先把活动帧加载到 PSRAM，并通过内存 `lv_image_dsc_t` 渲染，以规避上一轮 `Cache disabled but cached memory region accessed` 崩溃。
+
 - 2026-06-30：新增 active plan `docs/context/plans/active/2026-06-30-watchface-emoji-root-ui-plan.md`，固定表情表盘作为新的根首页：GIF 离线分帧生成 LVGL RGB565 bin，放入 resources/LittleFS，按 Hermes/inbox 状态全屏播放表情包；交互为点表情进现有功能主界面、左滑进 Hermes、小时间浮层不遮挡表情。
 
 - 2026-06-30：补充 `main/ui/agent_preview/README.md` 和 GUI Guider host preview 工作流卡中的截图说明，固定当前模拟器截图路线为 `agent_preview_host.exe --capture <png>` 内部 SDL renderer 读回像素；明确不要回退到 `PowerShell + C# + PrintWindow`，也不要使用 LVGL 集成版 `lodepng_encode32_file()` 写 Windows 文件。
