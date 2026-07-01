@@ -6,6 +6,7 @@
 
 #include "axp2101.h"
 #include "driver/gpio.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -232,12 +233,14 @@ esp_err_t wakeup_evidence_service_start(void)
         return ESP_OK;
     }
 
-    BaseType_t ok = xTaskCreate(wakeup_evidence_task,
-                                "wakeup_evidence",
-                                4096,
-                                NULL,
-                                4,
-                                &s_task_handle);
+    /* 栈迁 PSRAM：省 internal RAM，该任务不直接操作 flash/NVS/sleep 入口。 */
+    BaseType_t ok = xTaskCreateWithCaps(wakeup_evidence_task,
+                                        "wakeup_evidence",
+                                        4096,
+                                        NULL,
+                                        4,
+                                        &s_task_handle,
+                                        MALLOC_CAP_SPIRAM);
     if (ok != pdPASS)
     {
         s_task_handle = NULL;

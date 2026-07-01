@@ -81,6 +81,10 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("bool official_chat_service_is_shutdown_pending(void);",
                       header)
         self.assertIn("esp_err_t official_chat_service_shutdown(void);", header)
+        self.assertIn("esp_err_t official_chat_service_start_listening(void);",
+                      header)
+        self.assertIn("esp_err_t official_chat_service_stop_listening(void);",
+                      header)
         self.assertIn("official_chat_service_snapshot_t", header)
         self.assertIn("esp_err_t official_chat_service_get_snapshot(",
                       header)
@@ -106,6 +110,24 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("pdMS_TO_TICKS(kShutdownTransportQuietPeriodMs)", source)
         self.assertIn("official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_STOPPED);",
                       source)
+
+    def test_service_exposes_press_to_talk_commands_with_release_wait(self) -> None:
+        source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
+        ui_source = AI_UI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_START_LISTENING", source)
+        self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_STOP_LISTENING", source)
+        self.assertIn("official_chat_start_listening(s_chat_handle)", source)
+        self.assertIn("official_chat_stop_listening(s_chat_handle)", source)
+        self.assertIn(
+            "OFFICIAL_CHAT_SERVICE_CMD_STOP_LISTENING, pdMS_TO_TICKS(50)",
+            source,
+        )
+        self.assertIn("return ret;", source)
+        self.assertIn("official_chat_service_start_listening();", ui_source)
+        self.assertIn("official_chat_service_stop_listening();", ui_source)
+        self.assertIn("ai_chat_view_set_voice_button_visible(", ui_source)
+        self.assertNotIn("network_service_request_portal()", ui_source)
 
     def test_service_releases_partial_session_when_start_fails(self) -> None:
         source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")

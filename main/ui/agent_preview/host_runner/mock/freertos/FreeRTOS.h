@@ -13,3 +13,4 @@ typedef uint32_t BaseType_t;
 #define pdFAIL 0
 #define portMAX_DELAY 0xFFFFFFFF
 #define portTICK_PERIOD_MS 1
+#define pdMS_TO_TICKS(ms) ((TickType_t)(ms))

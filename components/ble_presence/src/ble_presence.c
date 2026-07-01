@@ -193,6 +193,9 @@ static esp_err_t ble_presence_start_advertising(void)
     }
 
     ESP_LOGI(TAG, "BLE presence advertising: %s", kBlePresenceDeviceName);
+    ESP_LOGI(TAG, "BLE adv internal_free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
     return ESP_OK;
 }
 

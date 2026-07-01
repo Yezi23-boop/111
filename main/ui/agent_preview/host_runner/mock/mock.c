@@ -81,6 +81,7 @@ static memory_watch_service_snapshot_t s_memory_watch_snapshot = {
     .clarification_id = "",
     .asr_text = "帮我记住下午三点去取快递",
     .reply_text = "已记录: 下午三点取快递, 需要时我会提醒你",
+    .conversation_generation = 1,
 };
 
 esp_err_t memory_watch_service_cancel_waiting(void) {
@@ -173,26 +174,42 @@ const lv_font_t *ui_font_assets_body(void) { return &lv_font_montserrat_lxgw_tgh
 const lv_font_t *ui_font_assets_meta(void) { return &lv_font_montserrat_lxgw_tghz_level1_3500_16_4; }
 const lv_font_t *ui_font_assets_icon(void) { return &lv_font_montserratMedium_16; }
 
-/* Mock official_chat_service.h with 8 conversation messages */
+/* Mock official_chat_service.h with a small interactive conversation state. */
 #include "services/official_chat_service.h"
 
-static official_chat_service_message_t s_mock_messages[] = {
+static official_chat_service_state_t s_mock_chat_state =
+    OFFICIAL_CHAT_SERVICE_STATE_IDLE;
+static official_chat_service_message_t s_mock_messages[12] = {
     { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "你好, 小智!" },
     { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "你好! 我是小智, 你的个人 AI 语音助手. 很高兴为你服务." },
     { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "今天天气怎么样?" },
     { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "今天北京天气晴朗, 气温 18 到 28 度, 非常适合户外出行. 建议注意防晒." },
-    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "北京有什么好玩的地方推荐吗?" },
-    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "北京有许多景点! 如果您喜欢历史, 可以去故宫和长城; 如果偏好现代, 可以逛逛 798 艺术区. 您偏好哪种?" },
-    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "我更偏好历史古迹." },
-    { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "那推荐您先去故宫博物院, 建议提前预约门票. 之后可以沿着景山公园俯瞰紫禁城全景, 非常壮观!" }
 };
+static size_t s_mock_message_count = 4;
+
+static void official_chat_mock_append(official_chat_service_message_role_t role,
+                                      const char *text) {
+    if (s_mock_message_count >= sizeof(s_mock_messages) / sizeof(s_mock_messages[0])) {
+        memmove(&s_mock_messages[0], &s_mock_messages[2],
+                (sizeof(s_mock_messages) / sizeof(s_mock_messages[0]) - 2) *
+                    sizeof(s_mock_messages[0]));
+        s_mock_message_count -= 2;
+    }
+
+    s_mock_messages[s_mock_message_count].role = role;
+    strncpy(s_mock_messages[s_mock_message_count].text, text,
+            sizeof(s_mock_messages[s_mock_message_count].text) - 1);
+    s_mock_messages[s_mock_message_count].text[
+        sizeof(s_mock_messages[s_mock_message_count].text) - 1] = '\0';
+    s_mock_message_count++;
+}
 
 size_t official_chat_service_get_message_count(void) {
-    return sizeof(s_mock_messages) / sizeof(s_mock_messages[0]);
+    return s_mock_message_count;
 }
 
 esp_err_t official_chat_service_get_message(size_t index, official_chat_service_message_t *out_message) {
-    if (index >= sizeof(s_mock_messages) / sizeof(s_mock_messages[0])) {
+    if (index >= s_mock_message_count) {
         return ESP_ERR_INVALID_ARG;
     }
     if (out_message != NULL) {
@@ -202,34 +219,78 @@ esp_err_t official_chat_service_get_message(size_t index, official_chat_service_
 }
 
 esp_err_t official_chat_service_get_last_user_text(char *buffer, size_t size) {
-    if (buffer != NULL && size > 0) {
-        strncpy(buffer, "我更偏好历史古迹.", size - 1);
-        buffer[size - 1] = '\0';
+    if (buffer == NULL || size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    buffer[0] = '\0';
+    for (size_t i = s_mock_message_count; i > 0; --i) {
+        const official_chat_service_message_t *msg = &s_mock_messages[i - 1];
+        if (msg->role == OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER) {
+            strncpy(buffer, msg->text, size - 1);
+            buffer[size - 1] = '\0';
+            break;
+        }
     }
     return ESP_OK;
 }
 
 esp_err_t official_chat_service_get_last_assistant_text(char *buffer, size_t size) {
-    if (buffer != NULL && size > 0) {
-        strncpy(buffer, "那推荐您先去故宫博物院, 建议提前预约门票. 之后可以沿着景山公园俯瞰紫禁城全景, 非常壮观!", size - 1);
-        buffer[size - 1] = '\0';
+    if (buffer == NULL || size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    buffer[0] = '\0';
+    for (size_t i = s_mock_message_count; i > 0; --i) {
+        const official_chat_service_message_t *msg = &s_mock_messages[i - 1];
+        if (msg->role == OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT) {
+            strncpy(buffer, msg->text, size - 1);
+            buffer[size - 1] = '\0';
+            break;
+        }
     }
     return ESP_OK;
 }
 
 bool official_chat_service_is_shutdown_pending(void) { return false; }
-void official_chat_service_leave_foreground(void) {}
-void official_chat_service_enter_foreground(void) {}
-official_chat_service_state_t official_chat_service_get_state(void) { return OFFICIAL_CHAT_SERVICE_STATE_IDLE; }
+void official_chat_service_leave_foreground(void) { s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED; }
+void official_chat_service_enter_foreground(void) { s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_IDLE; }
+official_chat_service_state_t official_chat_service_get_state(void) { return s_mock_chat_state; }
+esp_err_t official_chat_service_start_listening(void) {
+    s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_LISTENING;
+    return ESP_OK;
+}
+esp_err_t official_chat_service_stop_listening(void) {
+    if (s_mock_chat_state == OFFICIAL_CHAT_SERVICE_STATE_LISTENING) {
+        official_chat_mock_append(OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER,
+                                  "帮我规划今晚的安排");
+        official_chat_mock_append(
+            OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT,
+            "可以. 我建议先吃饭, 再留 30 分钟处理手表 UI 验证, 最后把明早要做的事列成三条.");
+    }
+    s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_IDLE;
+    return ESP_OK;
+}
 
 void network_service_request_portal(void) {}
-network_service_state_t network_service_get_state(void) { return NETWORK_SERVICE_STATE_OFFLINE; }
+network_service_state_t network_service_get_state(void) { return NETWORK_SERVICE_STATE_SERVICE_READY; }
 
 void app_alert_manager_set_traffic_audio_overlay_enabled(int enabled) {}
 
 void background_service_manager_set_danger_detection_enabled(int enabled) {}
 void *background_service_manager_get_snapshot(void) { return NULL; }
 void background_service_manager_init(void) {}
+esp_err_t background_service_manager_notify_foreground_runtime_changed(void) { return ESP_OK; }
+
+#include "services/foreground_runtime_gate.h"
+esp_err_t foreground_runtime_gate_acquire(foreground_runtime_owner_t owner,
+                                          uint32_t timeout_ms) {
+    return ESP_OK;
+}
+esp_err_t foreground_runtime_gate_release(foreground_runtime_owner_t owner) {
+    return ESP_OK;
+}
+
+#include "services/background_https_gate.h"
+void background_https_gate_quiet_for(uint32_t duration_ms, const char *reason) {}
 
 void *danger_detection_service_get_snapshot(void) { return NULL; }
 
@@ -264,11 +325,39 @@ lv_ui guider_ui;
 esp_err_t memory_watch_service_get_inbox_meta(memory_watch_inbox_meta_t *out_meta)
 {
     if (out_meta == NULL) return ESP_ERR_INVALID_ARG;
-    out_meta->generation = 1;
-    out_meta->unread_count = 1;
-    out_meta->item_count = 1;
+    out_meta->generation = 0;
+    out_meta->unread_count = 0;
+    out_meta->item_count = 0;
     out_meta->sync_state = 0; // MEMORY_WATCH_INBOX_SYNC_STATE_IDLE
     out_meta->last_success_ms = 0;
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_set_foreground(bool foreground)
+{
+    return ESP_OK;
+}
+
+esp_err_t memory_watch_service_copy_conversation_items(
+    memory_watch_service_conversation_item_t *out_items,
+    size_t capacity,
+    size_t *out_count)
+{
+    if (out_items == NULL || out_count == NULL) return ESP_ERR_INVALID_ARG;
+    size_t cnt = 0;
+    if (capacity > cnt) {
+        out_items[cnt].role = MEMORY_WATCH_SERVICE_CONVERSATION_USER;
+        strncpy(out_items[cnt].request_id, "preview-request", sizeof(out_items[cnt].request_id) - 1);
+        strncpy(out_items[cnt].text, "帮我记住下午三点去取快递", sizeof(out_items[cnt].text) - 1);
+        cnt++;
+    }
+    if (capacity > cnt) {
+        out_items[cnt].role = MEMORY_WATCH_SERVICE_CONVERSATION_HERMES;
+        strncpy(out_items[cnt].request_id, "preview-request", sizeof(out_items[cnt].request_id) - 1);
+        strncpy(out_items[cnt].text, "已记录: 下午三点取快递, 需要时我会提醒你", sizeof(out_items[cnt].text) - 1);
+        cnt++;
+    }
+    *out_count = cnt;
     return ESP_OK;
 }
 
@@ -278,14 +367,8 @@ esp_err_t memory_watch_service_copy_inbox_summaries(
     size_t *out_count)
 {
     if (out_summaries == NULL || out_count == NULL) return ESP_ERR_INVALID_ARG;
-    size_t cnt = 0;
-    if (capacity > cnt) {
-        strncpy(out_summaries[cnt].notification_id, "preview-006", sizeof(out_summaries[cnt].notification_id) - 1);
-        strncpy(out_summaries[cnt].title, "下午三点取快递", sizeof(out_summaries[cnt].title) - 1);
-        strncpy(out_summaries[cnt].preview, "包裹已到达南门驿站（取件码8821），请于22:00前凭取件码前往取件，超时需收保管费", sizeof(out_summaries[cnt].preview) - 1);
-        out_summaries[cnt].read = false;
-        cnt++;
-    }
-    *out_count = cnt;
+    (void)out_summaries;
+    (void)capacity;
+    *out_count = 0;
     return ESP_OK;
 }

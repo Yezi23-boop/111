@@ -12,6 +12,7 @@
 #include "ap_portal_adapter.h"
 #include "ble_control.h"
 #include "ble_presence.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/semphr.h"
@@ -523,9 +524,10 @@ static esp_err_t network_manager_ensure_monitor_task(void)
         return ESP_OK;
     }
 
-    /* 栈缩为 3072B：高压实测 free=3192B（78% 空闲），缩 1KB 仍有余量。 */
-    task_ret = xTaskCreate(network_manager_task, "network_mgr", 3072, NULL, 5,
-                           &s_monitor_task);
+    /* 栈缩为 3072B：高压实测 free=3192B（78% 空闲），缩 1KB 仍有余量。
+     * 栈迁 PSRAM：省 internal RAM，该任务不直接做 NVS/flash 写操作。 */
+    task_ret = xTaskCreateWithCaps(network_manager_task, "network_mgr", 3072, NULL, 5,
+                                   &s_monitor_task, MALLOC_CAP_SPIRAM);
     return task_ret == pdPASS ? ESP_OK : ESP_FAIL;
 }
 

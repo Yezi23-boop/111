@@ -3,6 +3,8 @@
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "gui_guider.h"
@@ -16,6 +18,7 @@
 #include "drivers/sdl/lv_sdl_window.h"
 #include "watch_notification_center.h"
 #include "lvgl.h"
+#include "libs/lodepng/lodepng.h"
 
 #define PREVIEW_W 410
 #define PREVIEW_H 502
@@ -25,6 +28,14 @@ static uint8_t s_screen_mask_data[PREVIEW_W * PREVIEW_H * 4];
 static lv_image_dsc_t s_screen_mask_dsc;
 static lv_obj_t *s_screen_mask = NULL;
 static SDL_atomic_t s_preview_quit_requested;
+
+typedef struct {
+    bool open_hermes;
+    bool open_hermes_inbox;
+    bool open_hermes_detail;
+    bool open_ai;
+    const char *capture_path;
+} preview_args_t;
 
 static int preview_sdl_event_watch(void *userdata, SDL_Event *event)
 {
@@ -102,10 +113,120 @@ static void preview_create_screen_mask(void)
     lv_obj_move_foreground(s_screen_mask);
 }
 
+static preview_args_t preview_parse_args(int argc, char **argv)
+{
+    preview_args_t args = {0};
+
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--open-hermes") == 0)
+        {
+            args.open_hermes = true;
+        }
+        else if (strcmp(argv[i], "--open-hermes-inbox") == 0)
+        {
+            args.open_hermes_inbox = true;
+        }
+        else if (strcmp(argv[i], "--open-hermes-detail") == 0)
+        {
+            args.open_hermes_detail = true;
+        }
+        else if (strcmp(argv[i], "--open-ai") == 0)
+        {
+            args.open_ai = true;
+        }
+        else if (strcmp(argv[i], "--capture") == 0 && i + 1 < argc)
+        {
+            args.capture_path = argv[++i];
+        }
+    }
+
+    return args;
+}
+
+static void preview_tick_once(uint32_t *last_tick)
+{
+    SDL_Delay(5);
+    uint32_t now = SDL_GetTicks();
+    lv_tick_inc(now - *last_tick);
+    *last_tick = now;
+    lv_timer_handler();
+    memory_watch_controller_poll_ui();
+    mini_games_controller_poll_ui();
+    watch_nc_poll(false, false);
+    if (s_screen_mask != NULL && lv_obj_is_valid(s_screen_mask))
+    {
+        lv_obj_move_foreground(s_screen_mask);
+    }
+}
+
+static bool preview_capture_png(lv_display_t *display, const char *path)
+{
+    if (display == NULL || path == NULL)
+    {
+        return false;
+    }
+
+    SDL_Renderer *renderer = (SDL_Renderer *)lv_sdl_window_get_renderer(display);
+    if (renderer == NULL)
+    {
+        return false;
+    }
+
+    uint8_t *pixels = malloc(PREVIEW_W * PREVIEW_H * 4);
+    if (pixels == NULL)
+    {
+        return false;
+    }
+
+    /*
+     * SDL_PIXELFORMAT_ABGR8888 stores bytes as R,G,B,A on little-endian Windows,
+     * which is the exact raw order expected by lodepng_encode32_file().
+     */
+    bool ok = SDL_RenderReadPixels(renderer, NULL, SDL_PIXELFORMAT_ABGR8888,
+                                   pixels, PREVIEW_W * 4) == 0;
+    if (!ok)
+    {
+        fprintf(stderr, "SDL_RenderReadPixels failed: %s\n", SDL_GetError());
+    }
+    if (ok)
+    {
+        unsigned char *png = NULL;
+        size_t png_size = 0;
+        unsigned png_error = lodepng_encode32(&png, &png_size, pixels, PREVIEW_W, PREVIEW_H);
+        if (png_error != 0)
+        {
+            fprintf(stderr, "lodepng_encode32 failed: %u\n", png_error);
+            ok = false;
+        }
+        else
+        {
+            FILE *fp = fopen(path, "wb");
+            if (fp == NULL)
+            {
+                fprintf(stderr, "fopen failed for capture path: %s\n", path);
+                ok = false;
+            }
+            else
+            {
+                ok = fwrite(png, 1, png_size, fp) == png_size;
+                if (!ok)
+                {
+                    fprintf(stderr, "fwrite failed for capture path: %s\n", path);
+                }
+                fclose(fp);
+            }
+        }
+        lv_free(png);
+    }
+
+    free(pixels);
+    return ok;
+}
+
 int main(int argc, char **argv)
 {
-    (void)argc;
-    (void)argv;
+    preview_args_t args = preview_parse_args(argc, argv);
 
     lv_init();
 
@@ -127,27 +248,47 @@ int main(int argc, char **argv)
     preview_create_screen_mask();
     static const watch_nc_config_t kMockNcCfg = {0};
     watch_nc_init(&kMockNcCfg);
-    if (argc > 1 && strcmp(argv[1], "--open-hermes") == 0)
+    if (args.open_hermes)
     {
         memory_watch_controller_open();
     }
+    else if (args.open_hermes_inbox)
+    {
+        memory_watch_controller_open_via_notification(WATCH_NC_NAV_INBOX_LIST, NULL);
+    }
+    else if (args.open_hermes_detail)
+    {
+        memory_watch_controller_open_via_notification(WATCH_NC_NAV_INBOX_DETAIL,
+                                                      "preview-006");
+    }
+    else if (args.open_ai)
+    {
+        ai_ui_open();
+    }
 
     uint32_t last_tick = SDL_GetTicks();
+    if (args.capture_path != NULL)
+    {
+        for (int i = 0; i < 240; ++i)
+        {
+            preview_tick_once(&last_tick);
+        }
+
+        bool captured = preview_capture_png(display, args.capture_path);
+        SDL_DelEventWatch(preview_sdl_event_watch, NULL);
+        lv_sdl_quit();
+        if (!captured)
+        {
+            fprintf(stderr, "Failed to capture preview PNG: %s\n", args.capture_path);
+            return 1;
+        }
+        return 0;
+    }
+
     bool running = true;
     while (running)
     {
-        SDL_Delay(5);
-        uint32_t now = SDL_GetTicks();
-        lv_tick_inc(now - last_tick);
-        last_tick = now;
-        lv_timer_handler();
-        memory_watch_controller_poll_ui();
-        mini_games_controller_poll_ui();
-        watch_nc_poll(false, false);
-        if (s_screen_mask != NULL && lv_obj_is_valid(s_screen_mask))
-        {
-            lv_obj_move_foreground(s_screen_mask);
-        }
+        preview_tick_once(&last_tick);
 
         /*
          * LVGL SDL 驱动内部已经用 SDL_PollEvent 分发鼠标、滚轮和键盘事件。

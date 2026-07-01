@@ -86,11 +86,16 @@ static void ai_ui_back_event(void *user_data) {
     ai_ui_refresh_status();
 }
 
-static void ai_ui_portal_event(void *user_data) {
+static void ai_ui_voice_press_event(void *user_data) {
     (void)user_data;
+    ESP_LOGI(TAG, "voice button pressed: start listening");
+    official_chat_service_start_listening();
+}
 
-    network_service_request_portal();
-    ai_ui_refresh_status();
+static void ai_ui_voice_release_event(void *user_data) {
+    (void)user_data;
+    ESP_LOGI(TAG, "voice button released: stop listening");
+    official_chat_service_stop_listening();
 }
 
 static void ai_ui_refresh_status(void) {
@@ -109,8 +114,8 @@ static void ai_ui_refresh_status(void) {
             s_view, ai_chat_view_network_badge_text(network_state),
             ai_chat_view_network_badge_color(network_state), "正在退出 AI",
             ai_chat_view_service_title(service_state));
-        ai_chat_view_set_primary_action(s_view, "网络设置", false);
         ai_chat_view_set_secondary_action(s_view, "正在退出", true, false);
+        ai_chat_view_set_voice_button_visible(s_view, false);
         ai_chat_view_reload_messages(s_view, "正在安全退出 AI，请稍候。");
         return;
     }
@@ -127,11 +132,11 @@ static void ai_ui_refresh_status(void) {
             ai_chat_view_network_badge_color(network_state),
             ai_chat_view_service_title(service_state),
             ai_chat_view_service_hint(service_state));
-        ai_chat_view_set_primary_action(
-            s_view,
-            network_state == NETWORK_SERVICE_STATE_SERVICE_READY ? "网络设置"
-                                                                 : "进入配网",
-            true);
+        ai_chat_view_set_secondary_action(s_view, "返回主页", true, true);
+        const bool voice_visible =
+            (service_state == OFFICIAL_CHAT_SERVICE_STATE_IDLE ||
+             service_state == OFFICIAL_CHAT_SERVICE_STATE_LISTENING);
+        ai_chat_view_set_voice_button_visible(s_view, voice_visible);
     } else {
         s_foreground_requested = false;
         ai_chat_view_set_top_status(
@@ -139,10 +144,10 @@ static void ai_ui_refresh_status(void) {
             ai_chat_view_network_badge_color(network_state),
             ai_chat_view_network_title(network_state),
             ai_chat_view_network_hint(network_state));
-        ai_chat_view_set_primary_action(s_view, "进入配网", true);
+        ai_chat_view_set_secondary_action(s_view, "返回主页", true, true);
+        ai_chat_view_set_voice_button_visible(s_view, false);
     }
 
-    ai_chat_view_set_secondary_action(s_view, "返回主页", true, true);
     ai_chat_view_reload_messages(s_view, "还没有真实消息，先说一句试试。");
 }
 
@@ -198,10 +203,10 @@ static void ai_ui_ensure_screen_created(void) {
         .badge_color_hex = 0x64748b,
         .status_text = "正在准备",
         .hint_text = "",
-        .primary_action_text = "进入配网",
         .secondary_action_text = "返回主页",
-        .primary_action_cb = ai_ui_portal_event,
         .secondary_action_cb = ai_ui_back_event,
+        .voice_press_cb = ai_ui_voice_press_event,
+        .voice_release_cb = ai_ui_voice_release_event,
         .user_data = NULL,
     };
 

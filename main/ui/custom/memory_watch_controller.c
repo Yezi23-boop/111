@@ -77,6 +77,32 @@ static memory_watch_view_inbox_item_t s_preview_inbox_items[] = {
 static uint32_t s_inbox_generation  = 0;
 static memory_watch_inbox_item_t s_inbox_detail;
 static bool s_inbox_detail_valid = false;
+
+static void memory_watch_controller_set_preview_detail(size_t index)
+{
+    if (index >= (sizeof(s_preview_inbox_items) /
+                  sizeof(s_preview_inbox_items[0])))
+    {
+        s_inbox_detail_valid = false;
+        return;
+    }
+
+    const memory_watch_view_inbox_item_t *item = &s_preview_inbox_items[index];
+    memset(&s_inbox_detail, 0, sizeof(s_inbox_detail));
+    snprintf(s_inbox_detail.notification_id, sizeof(s_inbox_detail.notification_id),
+             "%s", item->notification_id != NULL ? item->notification_id : "");
+    snprintf(s_inbox_detail.created_at, sizeof(s_inbox_detail.created_at),
+             "%s", item->created_at != NULL ? item->created_at : "");
+    snprintf(s_inbox_detail.title, sizeof(s_inbox_detail.title), "Hermes 提示");
+    snprintf(s_inbox_detail.preview, sizeof(s_inbox_detail.preview), "%s",
+             item->text != NULL ? item->text : "");
+    snprintf(s_inbox_detail.body, sizeof(s_inbox_detail.body),
+             "%s\n\n这是 host 预览里的完整正文区域. 打开详情会本地标记已读, "
+             "但不会回复、删除或调用真实服务器.",
+             item->text != NULL ? item->text : "");
+    s_inbox_detail.read = true;
+    s_inbox_detail_valid = true;
+}
 #else
 /* 板端：summary 缓冲区，controller 在 generation 变化时刷新 */
 static memory_watch_inbox_summary_t
@@ -670,6 +696,7 @@ static void memory_watch_controller_open_inbox_item(size_t index,
     s_selected_inbox_index = index;
 #ifdef AGENT_PREVIEW_HOST
     s_preview_inbox_items[index].read = true;
+    memory_watch_controller_set_preview_detail(index);
 #else
     /* 本地立即标记已读，异步上报服务器 */
     const char *nid =
@@ -902,6 +929,7 @@ void memory_watch_controller_open_via_notification(watch_nc_nav_target_t target,
                 break;
             }
         }
+        memory_watch_controller_set_preview_detail(s_selected_inbox_index);
 #else
         memory_watch_controller_sync_inbox();
         s_selected_inbox_index = 0;

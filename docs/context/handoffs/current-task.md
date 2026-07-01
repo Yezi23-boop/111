@@ -80,6 +80,7 @@ evidence_level: observed
 - Watch Runtime Resource Gate 阶段 6 COM3 自动 gate 压测已通过：`board_logs/2026-06-29-10-18-11-runtime-resource-gate-board-test-auto.log` 完整跑完，无 Guru/panic/stack overflow/NO_MEM；验证强前台 owner、后台 HTTPS busy/quiet 拒绝和 BLE owner acquire/release。
 - Watch Runtime Resource Gate 阶段 6 真实 BLE toggle 首轮发现 PSRAM task stack + NVS/flash 写入 cache-disabled 断言，已修复为真实 BLE toggle 测试模式使用 internal stack；修复后日志 `board_logs/2026-06-29-10-31-09-runtime-resource-gate-board-test-real-ble-internal-stack.log` 未见崩溃，BLE guard 以 `ESP_ERR_NO_MEM` fail closed。
 - Watch Runtime Resource Gate 收尾已刷回默认关闭测试的正常固件：`board_logs/2026-06-29-10-42-20-runtime-resource-gate-normal-after-test.log` 显示 45 秒监控通过，无 `runtime_gate_test` 自动压测、Guru、panic 或 stack overflow。
+- 2026-06-30 处理 `official_chat` 前台 SR 崩溃：全量刷入 291KB wake word 模型后仍在 `esp_srmodel_init("model") -> srmodel_load` 崩溃，已证伪“打开模型即可解决”。当前产品不需要本地唤醒词，已改为 `official_chat` 启动时跳过本地 SR model loader，并关闭 `CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS`；同时把 AFE 兜底改成模型表为空时直接透传，不再偷偷回到 SR loader。构建和全量 flash 通过，90 秒 COM3 启动监控未见 `MODEL_LOADER`/Guru/panic。
 
 ## Decision Log
 
@@ -113,11 +114,12 @@ evidence_level: observed
 - 不要继续把 Mihomo/Fake-IP DNS 当作当前阻塞点；用户已修复，后续只有在同网络再次出现 `ESP_ERR_HTTP_CONNECT`、公网域名连不上或解析异常时，才把 fake-ip DNS 作为复发线索。
 - V2.4 当前可收尾归档：服务器 `/sync` 数据面已验证，WS 过早 detach 已修复并刷入，用户真机复测确认离页后不再长期 `session=none`。
 - app 分区余量曾接近 4%，后续新增 V2.1/V3 功能前要继续关注二进制体积。
+- 不要再把 `official_chat` 的前台崩溃归因于“模型分区没刷”；`CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y` + 291KB `srmodels.bin` 已实测仍会触发 ESP-SR loader 崩溃。当前路线是显式页面/按键触发，不需要本地 wake word，AFE 也不再兜底回 loader。
 
 ## 下一步
 
 - **2026-06-29 IMU 关闭 + internal RAM 调优已完成**：`imu_service_start()` 用 `#if 0` 暂时关闭；`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` 从 65536 降到 4096。真机验证 internal_free=47.5KB / largest=24KB，系统稳定。恢复 IMU 只需取消 `#if 0`。attempt log：`docs/context/runs/2026-06-29-attempt-imu-disable-and-psram-alwaysinternal-tune.md`。
-- **internal RAM 后续优化方向（未执行）**：方案 B 将网络型任务栈（official_chat main_loop 8KB、danger_detection 12KB、network_service、power_* 等，共约 83KB）用 `xTaskCreateWithCaps`+`MALLOC_CAP_SPIRAM` 迁到 PSRAM；方案 C 将 lvgl_task 10KB 栈迁 PSRAM（需测 UI 帧率）。不可迁移：oa_input/oa_output/RecTask（音频 DMA 路径）。
+- **internal RAM 后续优化方向（方案 B 已完成）**：9 个任务栈已迁 PSRAM（official_chat_service/network_mgr/background_mgr/network_service/power_policy/power_service/wakeup_evidence + time/mw_* 已在 PSRAM）。internal free=73,982 B / largest=49,152 B，BLE 门槛已越过。剩余方向：方案 C 将 lvgl_task 10KB 栈迁 PSRAM（需测 UI 帧率）。不可迁移：oa_input/oa_output/RecTask（音频 DMA 路径）。
 - **DMA 回归待验证**：ALWAYSINTERNAL=4096 后未做音频录放回归，若发现 I2S DMA 异常可回退为 8192。
 - ~~跑 V2.2 收尾后的 context 校验~~ 已完成，light 级别通过。
 - 提交前检查密钥卫生：`sdkconfig`、`memory_watch_dev_endpoint_local.h`、日志和文档都不能带真实 token/key。
@@ -126,7 +128,8 @@ evidence_level: observed
 - **V2.3 复查修复**（2026-06-27）：`SessionRepo` 允许 `accepted -> error/timeout`，避免 ASR 前置失败导致 session 假 active/pending；server pytest `126 passed`。
 - **下一步**：server 公网部署验证 + COM3 真机 Hermes 前台/离页链路复测（Stage 0 冷启动基线已确认，Stage 2-3 主要为 server 增量，预期无回归）。
 - **V2.4 下一步**：可按用户节奏归档 V2.4 active plan，或继续做体验微调/低功耗参数微调；不要再回到旧的“离页后 session=none 一直思考中”排查路线，除非新日志再次复现。
-- 如果继续 BLE 问题，下一步不是放宽 guard，而是单独做 internal RAM 预算收敛；当前已证明普通运行态下手动 Bluetooth 会因 internal heap 不足 fail closed。
+- ~~如果继续 BLE 问题，下一步不是放宽 guard，而是单独做 internal RAM 预算收敛~~（已通过方案 B 越过门槛）。
+- **2026-06-29 方案 B（任务栈迁 PSRAM）全部完成**：9 个任务栈迁 PSRAM，COM3 冷启动 internal free=**73,982 B (72.3 KB)**、largest=**49,152 B (48 KB)**，BLE presence preflight 门槛（64 KB / 40 KB）已越过。累计释放 ~43 KB internal RAM（290 KB → 264 KB，78.3%）。**下一优先级：真机测试 BLE presence 启动与确认广播/配网流程**。attempt log：`docs/context/runs/2026-06-29-attempt-planb-task-stack-psram.md`。日志：`board_logs/2026-06-29-planb-task-stack-psram-cold-boot.log`。
 - **Runtime Resource Gate 下一步**：阶段 6 只剩补测，不要重复已经完成的自动 gate 压测。Wi-Fi 可用后重点补测公网 HTTPS 成功路径（weather/inbox/health/sync 在 gate 下可延后但能成功）和 ESP-DL running -> 强前台让路；目标是无 panic/Guru/stack overflow/`esp-aes` 分配失败，BLE 失败路径可解释，Hermes 前台优先，后台 HTTPS 可延后。
 - 不要回退到“离页保持 WS 等最终回复”的旧口径，也不要把多设备、多入口或完整多 agent 编排提前塞进 V2.3。
 

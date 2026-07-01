@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -338,10 +339,11 @@ esp_err_t power_service_start(void)
     }
 
     /* 电源状态变化不要求极低延迟，普通优先级后台任务即可。 */
-    /* 栈缩为 3072B：高压实测 free=2624B（64% 空闲），缩 1KB 仍有余量。 */
+    /* 栈缩为 3072B：高压实测 free=2624B（64% 空闲），缩 1KB 仍有余量。
+       栈迁 PSRAM：省 internal RAM，该任务不直接操作 flash/NVS/sleep 入口。 */
     BaseType_t ok =
-        xTaskCreate(power_service_task, "power_service", 3072, NULL, 5,
-                    &s_task_handle);
+        xTaskCreateWithCaps(power_service_task, "power_service", 3072, NULL, 5,
+                            &s_task_handle, MALLOC_CAP_SPIRAM);
     if (ok != pdPASS)
     {
         s_task_handle = NULL;

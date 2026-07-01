@@ -79,6 +79,34 @@ host / `pc_sim` 预览用于快速判断：
 - LVGL host runner 默认关闭不需要的 ThorVG internal/external，减少 MinGW C++ 子库构建问题。
 - 如需包含 LVGL SDL driver 头文件，runner target 需要能 include 到 LVGL `src`。
 
+## 当前截图脚本机制
+
+当前仓库的稳定截图入口是：
+
+```powershell
+& "D:\esp32S3\111\main\ui\agent_preview\scripts\capture_apple_watch_s5_preview.ps1"
+```
+
+Hermes 首屏截图可加 `-OpenHermes`。脚本默认输出：
+
+```text
+D:\esp32S3\111\main\ui\agent_preview\artifacts\wifi-management-image-to-code.png
+```
+
+不要把截图链路改回 `PowerShell + C# + EnumWindows + PrintWindow`。该路线在当前 Windows/SDL2 host 下曾出现 `agent_preview_host.exe` 进程存在但拿不到可靠顶层 HWND，导致脚本超时；同时 `System.Drawing` 在 PowerShell/.NET 组合下也有程序集兼容风险。
+
+当前稳定路线是 host 内部截图：
+
+- PowerShell 调用 `agent_preview_host.exe --capture <png>`。
+- host runner 跑若干帧完成 LVGL 首屏渲染。
+- host runner 通过 `lv_sdl_window_get_renderer()` 获取 SDL renderer。
+- host runner 用 `SDL_RenderReadPixels()` 读回像素。
+- host runner 用 `lodepng_encode32()` 编码 PNG，再用 C 标准库 `fopen/fwrite` 写入文件。
+
+不要使用 `lodepng_encode32_file()` 写 Windows 文件。LVGL 集成版 lodepng 的 file helper 走 `lv_fs_open()`，host runner 默认没有挂 PC filesystem driver，会返回 `failed to open file for writing`。`lodepng_encode32()` 返回的 buffer 由 LVGL allocator 分配，释放必须用 `lv_free()`。
+
+就近操作说明见 `main/ui/agent_preview/README.md`。
+
 ## 中文字体边界
 
 英文/数字预览可先用 Montserrat 快速验证布局。

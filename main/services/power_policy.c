@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "app/board_power.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -468,9 +469,10 @@ esp_err_t power_policy_start(void)
         return ESP_OK;
     }
 
+    /* 栈迁 PSRAM：省 internal RAM，该任务不直接操作 flash/NVS/sleep 入口。 */
     const BaseType_t ok =
-        xTaskCreate(power_policy_task, "power_policy", 4096, NULL, 4,
-                    &s_task_handle);
+        xTaskCreateWithCaps(power_policy_task, "power_policy", 4096, NULL, 4,
+                            &s_task_handle, MALLOC_CAP_SPIRAM);
     if (ok != pdPASS)
     {
         s_task_handle = NULL;

@@ -179,6 +179,18 @@ class OfficialChatSourceTests(unittest.TestCase):
         self.assertIn("http tls diagnostics stage=", source)
         self.assertIn("mbedtls -0x2700 usually means certificate validation failed", source)
 
+    def test_official_chat_skips_local_sr_model_loader(self) -> None:
+        source = OFFICIAL_CHAT_APPLICATION.read_text(encoding="utf-8")
+
+        init_body = source[
+            source.index("esp_err_t Application::InitializeAudioService()")
+            : source.index("}  // namespace official_chat")
+        ]
+        self.assertIn("models_list_.reset();", init_body)
+        self.assertIn("不需要本地 wake word", init_body)
+        self.assertNotIn('esp_srmodel_init("model")', init_body)
+        self.assertNotIn("OfficialChatSrModelPartitionLooksLoadable", source)
+
 
 if __name__ == "__main__":
     unittest.main()

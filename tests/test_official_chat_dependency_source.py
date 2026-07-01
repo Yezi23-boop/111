@@ -21,18 +21,18 @@ class OfficialChatDependencySourceTests(unittest.TestCase):
         self.assertIn("CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=16", source)
         self.assertIn("CONFIG_LWIP_UDP_RECVMBOX_SIZE=6", source)
 
-    def test_sdkconfig_contains_aec_and_wake_word_model_keys(self) -> None:
+    def test_sdkconfig_keeps_local_wake_word_model_disabled(self) -> None:
         source = SDKCONFIG.read_text(encoding="utf-8")
 
         self.assertIn("# CONFIG_USE_DEVICE_AEC is not set", source)
-        self.assertIn("CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y", source)
+        self.assertIn("# CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS is not set", source)
 
     def test_sdkconfig_contains_low_risk_ai_memory_strategy_keys(self) -> None:
         source = SDKCONFIG.read_text(encoding="utf-8")
 
         self.assertIn("CONFIG_SPIRAM_USE_MALLOC=y", source)
         self.assertIn("# CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP is not set", source)
-        self.assertIn("CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=65536", source)
+        self.assertIn("CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384", source)
         self.assertIn("CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=131072", source)
         self.assertIn("CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y", source)
         self.assertIn("CONFIG_MBEDTLS_DYNAMIC_BUFFER=y", source)

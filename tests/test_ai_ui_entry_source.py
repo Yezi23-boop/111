@@ -41,7 +41,7 @@ class AiUiEntrySourceTests(unittest.TestCase):
         self.assertIn("void ai_ui_controller_init(lv_ui *ui);", ai_header)
         self.assertIn("void ai_ui_open(void);", ai_header)
 
-    def test_ai_ui_controller_reads_network_service_and_can_request_portal(self) -> None:
+    def test_ai_ui_controller_reads_network_service_without_portal_entry(self) -> None:
         self.assertTrue(AI_UI_SOURCE.exists())
         source = AI_UI_SOURCE.read_text(encoding="utf-8")
 
@@ -51,9 +51,14 @@ class AiUiEntrySourceTests(unittest.TestCase):
         self.assertIn('#include "services/network_service.h"', source)
         self.assertIn('#include "services/official_chat_service.h"', source)
         self.assertIn("network_service_get_state()", source)
-        self.assertIn("network_service_request_portal()", source)
+        self.assertNotIn("network_service_request_portal()", source)
+        self.assertNotIn("ai_ui_portal_event", source)
+        self.assertNotIn("进入配网", source)
+        self.assertNotIn("网络设置", source)
+        self.assertNotIn("ai_chat_view_set_primary_action", source)
+        self.assertNotIn("primary_action_text", source)
+        self.assertNotIn("primary_action_cb", source)
         self.assertIn("lv_timer_create(", source)
-        self.assertIn("进入配网", source)
         self.assertIn("ai_chat_view_create(", source)
         self.assertIn("ai_chat_view_reload_messages(", source)
         self.assertIn("official_chat_service_leave_foreground(", source)

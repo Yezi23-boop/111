@@ -22,10 +22,10 @@ typedef struct {
     uint32_t badge_color_hex;
     const char *status_text;
     const char *hint_text;
-    const char *primary_action_text;
     const char *secondary_action_text;
-    void (*primary_action_cb)(void *user_data);
     void (*secondary_action_cb)(void *user_data);
+    void (*voice_press_cb)(void *user_data);
+    void (*voice_release_cb)(void *user_data);
     void *user_data;
 } ai_chat_view_config_t;
 
@@ -37,14 +37,14 @@ void ai_chat_view_set_top_status(ai_chat_view_t *view, const char *badge_text,
                                  lv_color_t badge_color,
                                  const char *status_text,
                                  const char *hint_text);
-void ai_chat_view_set_primary_action(ai_chat_view_t *view,
-                                     const char *action_text, bool enabled);
 void ai_chat_view_set_secondary_action(ai_chat_view_t *view,
                                        const char *action_text, bool visible,
                                        bool enabled);
 void ai_chat_view_reload_messages(ai_chat_view_t *view,
                                   const char *empty_placeholder_text);
 void ai_chat_view_scroll_to_bottom(ai_chat_view_t *view);
+
+void ai_chat_view_set_voice_button_visible(ai_chat_view_t *view, bool visible);
 
 const char *ai_chat_view_network_badge_text(network_service_state_t state);
 lv_color_t ai_chat_view_network_badge_color(network_service_state_t state);

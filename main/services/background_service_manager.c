@@ -1,6 +1,7 @@
 #include "services/background_service_manager.h"
 
 #include "audio_codec.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -435,12 +436,14 @@ esp_err_t background_service_manager_start(void)
         return ESP_OK;
     }
 
-    BaseType_t ok = xTaskCreate(background_service_manager_task,
-                                "background_mgr",
-                                4096,
-                                NULL,
-                                4,
-                                &s_manager.task_handle);
+    /* 栈迁 PSRAM：省 internal RAM，该任务只做调度/协调，不直接操作 flash/NVS。 */
+    BaseType_t ok = xTaskCreateWithCaps(background_service_manager_task,
+                                        "background_mgr",
+                                        4096,
+                                        NULL,
+                                        4,
+                                        &s_manager.task_handle,
+                                        MALLOC_CAP_SPIRAM);
     if (ok != pdPASS)
     {
         s_manager.task_handle = NULL;

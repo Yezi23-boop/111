@@ -44,6 +44,8 @@ extern "C"
         OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP,
         OFFICIAL_CHAT_SERVICE_CMD_NETWORK_READY,
         OFFICIAL_CHAT_SERVICE_CMD_BUDGET_CHANGED,
+        OFFICIAL_CHAT_SERVICE_CMD_START_LISTENING,
+        OFFICIAL_CHAT_SERVICE_CMD_STOP_LISTENING,
     } official_chat_service_cmd_type_t;
 
     /* 单条消息历史快照，供 UI 直接读取展示。 */
@@ -103,6 +105,12 @@ extern "C"
     /* 获取最近一条助手文本。 */
     esp_err_t official_chat_service_get_last_assistant_text(char *buffer,
                                                             size_t size);
+
+    /* 供 UI 按键触发开始聆听。 */
+    esp_err_t official_chat_service_start_listening(void);
+
+    /* 供 UI 按键触发停止聆听。 */
+    esp_err_t official_chat_service_stop_listening(void);
 
     /* 供日志或 UI 文本展示使用的状态字符串。 */
     const char *official_chat_service_state_to_string(

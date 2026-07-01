@@ -14,16 +14,16 @@ struct ai_chat_view {
     lv_obj_t *screen;
     lv_obj_t *badge;
     lv_obj_t *badge_label;
-    lv_obj_t *icon_ring;
     lv_obj_t *status_label;
     lv_obj_t *hint_label;
     lv_obj_t *chat_card;
     lv_obj_t *chat_scroll;
     lv_obj_t *chat_content;
-    lv_obj_t *primary_btn;
-    lv_obj_t *primary_label;
     lv_obj_t *secondary_btn;
     lv_obj_t *secondary_label;
+    lv_obj_t *voice_btn;
+    lv_obj_t *voice_label;
+    bool voice_pressed;
     const ai_chat_view_config_t *config;
 };
 
@@ -44,11 +44,47 @@ static void ai_chat_view_button_event_cb(lv_event_t *e) {
     }
 
     lv_obj_t *target = lv_event_get_target(e);
-    if (target == view->primary_btn && view->config->primary_action_cb != NULL) {
-        view->config->primary_action_cb(view->config->user_data);
-    } else if (target == view->secondary_btn &&
-               view->config->secondary_action_cb != NULL) {
+    if (target == view->secondary_btn &&
+        view->config->secondary_action_cb != NULL) {
         view->config->secondary_action_cb(view->config->user_data);
+    }
+}
+
+static void ai_chat_view_set_voice_pressed(ai_chat_view_t *view, bool pressed) {
+    if (view == NULL || view->voice_btn == NULL || view->voice_label == NULL) {
+        return;
+    }
+
+    view->voice_pressed = pressed;
+    if (pressed) {
+        lv_obj_set_style_bg_color(view->voice_btn, lv_color_hex(0xb3261e), 0);
+        lv_obj_set_style_border_color(view->voice_btn, lv_color_hex(0x8f1f19), 0);
+        lv_label_set_text(view->voice_label, "松开发送");
+    } else {
+        lv_obj_set_style_bg_color(view->voice_btn, lv_color_hex(0x111111), 0);
+        lv_obj_set_style_border_color(view->voice_btn, lv_color_hex(0x111111), 0);
+        lv_label_set_text(view->voice_label, "按住说话");
+    }
+}
+
+static void ai_chat_view_voice_event_cb(lv_event_t *e) {
+    ai_chat_view_t *view = lv_event_get_user_data(e);
+    if (view == NULL || view->config == NULL) {
+        return;
+    }
+
+    const lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_PRESSED) {
+        ai_chat_view_set_voice_pressed(view, true);
+        if (view->config->voice_press_cb != NULL) {
+            view->config->voice_press_cb(view->config->user_data);
+        }
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        const bool was_pressed = view->voice_pressed;
+        ai_chat_view_set_voice_pressed(view, false);
+        if (was_pressed && view->config->voice_release_cb != NULL) {
+            view->config->voice_release_cb(view->config->user_data);
+        }
     }
 }
 
@@ -328,14 +364,13 @@ const char *ai_chat_view_service_hint(official_chat_service_state_t state) {
 }
 
 static void ai_chat_view_apply_footer_layout(ai_chat_view_t *view) {
-    if (view == NULL || view->primary_btn == NULL || view->secondary_btn == NULL) {
+    if (view == NULL || view->secondary_btn == NULL) {
         return;
     }
 
     if (lv_obj_has_flag(view->secondary_btn, LV_OBJ_FLAG_HIDDEN)) {
-        lv_obj_set_flex_grow(view->primary_btn, 1);
+        return;
     } else {
-        lv_obj_set_flex_grow(view->primary_btn, 1);
         lv_obj_set_flex_grow(view->secondary_btn, 1);
     }
 }
@@ -368,10 +403,10 @@ ai_chat_view_t *ai_chat_view_create(const ai_chat_view_config_t *config) {
         .badge_color_hex = 0x956400,
         .status_text = "正在准备",
         .hint_text = "",
-        .primary_action_text = "进入配网",
         .secondary_action_text = NULL,
-        .primary_action_cb = NULL,
         .secondary_action_cb = NULL,
+        .voice_press_cb = NULL,
+        .voice_release_cb = NULL,
         .user_data = NULL,
     };
     view->config = config != NULL ? config : &kDefaultConfig;
@@ -387,37 +422,22 @@ ai_chat_view_t *ai_chat_view_create(const ai_chat_view_config_t *config) {
     view->status_label = NULL;
     view->hint_label = NULL;
 
-    view->icon_ring = lv_obj_create(view->screen);
-    lv_obj_set_size(view->icon_ring, 44, 44);
-    lv_obj_align(view->icon_ring, LV_ALIGN_TOP_MID, 0, 14);
-    lv_obj_set_style_radius(view->icon_ring, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(view->icon_ring, lv_color_hex(0xf4f4f3), 0);
-    lv_obj_set_style_bg_opa(view->icon_ring, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(view->icon_ring, 0, 0);
-    lv_obj_set_style_pad_all(view->icon_ring, 0, 0);
-    lv_obj_set_style_shadow_width(view->icon_ring, 0, 0);
-    lv_obj_clear_flag(view->icon_ring, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *icon = lv_image_create(view->icon_ring);
-    lv_image_set_src(icon, &_ai_RGB565A8_70x70);
-    lv_image_set_scale(icon, 161);
-    lv_obj_center(icon);
-
+    // 顶部不再放置图标，聊天区上移并保留底部语音按钮安全区。
     view->chat_card = lv_obj_create(view->screen);
-    lv_obj_set_pos(view->chat_card, 40, 68);
-    lv_obj_set_size(view->chat_card, 330, 374);
+    lv_obj_set_pos(view->chat_card, 40, 28);
+    lv_obj_set_size(view->chat_card, 330, 332);
     ai_chat_view_style_card(view->chat_card);
+    lv_obj_set_style_bg_opa(view->chat_card, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(view->chat_card, 0, 0);
 
     view->chat_scroll = lv_obj_create(view->chat_card);
     lv_obj_set_pos(view->chat_scroll, 8, 8);
-    lv_obj_set_size(view->chat_scroll, 314, 358);
+    lv_obj_set_size(view->chat_scroll, 314, 316);
     lv_obj_set_scroll_dir(view->chat_scroll, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(view->chat_scroll, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_radius(view->chat_scroll, 8, 0);
-    lv_obj_set_style_bg_color(view->chat_scroll, lv_color_hex(0xfbfbfa), 0);
-    lv_obj_set_style_bg_opa(view->chat_scroll, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(view->chat_scroll, 1, 0);
-    lv_obj_set_style_border_color(view->chat_scroll, lv_color_hex(0xeaeaea), 0);
+    lv_obj_set_style_bg_opa(view->chat_scroll, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(view->chat_scroll, 0, 0);
     lv_obj_set_style_pad_all(view->chat_scroll, 0, 0);
     lv_obj_set_style_pad_top(view->chat_scroll, 8, 0);
     lv_obj_set_style_pad_bottom(view->chat_scroll, 8, 0);
@@ -437,9 +457,35 @@ ai_chat_view_t *ai_chat_view_create(const ai_chat_view_config_t *config) {
     lv_obj_set_flex_align(view->chat_content, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
+    view->voice_btn = lv_btn_create(view->screen);
+    lv_obj_set_pos(view->voice_btn, 55, 384);
+    lv_obj_set_size(view->voice_btn, 300, 54);
+    lv_obj_set_style_radius(view->voice_btn, 10, 0);
+    lv_obj_set_style_bg_color(view->voice_btn, lv_color_hex(0x111111), 0);
+    lv_obj_set_style_bg_opa(view->voice_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(view->voice_btn, 1, 0);
+    lv_obj_set_style_border_color(view->voice_btn, lv_color_hex(0x111111), 0);
+    lv_obj_set_style_shadow_width(view->voice_btn, 0, 0);
+    lv_obj_set_style_pad_all(view->voice_btn, 0, 0);
+    lv_obj_clear_flag(view->voice_btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(view->voice_btn, ai_chat_view_voice_event_cb,
+                        LV_EVENT_PRESSED, view);
+    lv_obj_add_event_cb(view->voice_btn, ai_chat_view_voice_event_cb,
+                        LV_EVENT_RELEASED, view);
+    lv_obj_add_event_cb(view->voice_btn, ai_chat_view_voice_event_cb,
+                        LV_EVENT_PRESS_LOST, view);
+
+    view->voice_label = lv_label_create(view->voice_btn);
+    lv_label_set_text(view->voice_label, "按住说话");
+    lv_obj_set_style_text_color(view->voice_label, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(view->voice_label, ui_font_assets_body(), 0);
+    lv_obj_center(view->voice_label);
+
+    lv_obj_add_flag(view->voice_btn, LV_OBJ_FLAG_HIDDEN);
+
     lv_obj_t *footer = lv_obj_create(view->screen);
-    lv_obj_set_pos(footer, 30, 446);
-    lv_obj_set_size(footer, 350, 34);
+    lv_obj_set_pos(footer, 40, 446);
+    lv_obj_set_size(footer, 330, 34);
     lv_obj_set_style_bg_opa(footer, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(footer, 0, 0);
     lv_obj_set_style_shadow_width(footer, 0, 0);
@@ -449,25 +495,6 @@ ai_chat_view_t *ai_chat_view_create(const ai_chat_view_config_t *config) {
     lv_obj_set_flex_flow(footer, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(footer, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    view->primary_btn = lv_btn_create(footer);
-    lv_obj_set_height(view->primary_btn, 34);
-    lv_obj_set_flex_grow(view->primary_btn, 1);
-    lv_obj_set_style_radius(view->primary_btn, 6, 0);
-    lv_obj_set_style_bg_color(view->primary_btn, lv_color_hex(0x111111), 0);
-    lv_obj_set_style_bg_opa(view->primary_btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_shadow_width(view->primary_btn, 0, 0);
-    lv_obj_add_event_cb(view->primary_btn, ai_chat_view_button_event_cb,
-                        LV_EVENT_CLICKED, view);
-
-    view->primary_label = lv_label_create(view->primary_btn);
-    lv_label_set_text(view->primary_label,
-                      view->config->primary_action_text != NULL
-                          ? view->config->primary_action_text
-                          : "进入配网");
-    lv_obj_set_style_text_color(view->primary_label, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(view->primary_label, ui_font_assets_body(), 0);
-    lv_obj_center(view->primary_label);
 
     view->secondary_btn = lv_btn_create(footer);
     lv_obj_set_height(view->secondary_btn, 34);
@@ -551,60 +578,12 @@ void ai_chat_view_set_top_status(ai_chat_view_t *view, const char *badge_text,
                                         lv_color_hex(0x956400), 0);
         }
     }
-    if (view->icon_ring != NULL && status_text != NULL) {
-        if (strcmp(status_text, "聆听中") == 0) {
-            lv_obj_set_style_bg_color(view->icon_ring, lv_color_hex(0xe1f3fe),
-                                      0);
-            lv_obj_set_style_border_width(view->icon_ring, 1, 0);
-            lv_obj_set_style_border_color(view->icon_ring,
-                                          lv_color_hex(0xd0e8ff), 0);
-        } else if (strcmp(status_text, "回答中") == 0) {
-            lv_obj_set_style_bg_color(view->icon_ring, lv_color_hex(0xedf3ec),
-                                      0);
-            lv_obj_set_style_border_width(view->icon_ring, 1, 0);
-            lv_obj_set_style_border_color(view->icon_ring,
-                                          lv_color_hex(0xd4ead4), 0);
-        } else if (strcmp(status_text, "待唤醒") == 0) {
-            lv_obj_set_style_bg_color(view->icon_ring, lv_color_hex(0xf4f4f3),
-                                      0);
-            lv_obj_set_style_border_width(view->icon_ring, 0, 0);
-        } else if (strcmp(status_text, "AI 异常") == 0 ||
-                   strcmp(status_text, "网络异常") == 0 ||
-                   strcmp(status_text, "未联网") == 0) {
-            lv_obj_set_style_bg_color(view->icon_ring, lv_color_hex(0xfdebec),
-                                      0);
-            lv_obj_set_style_border_width(view->icon_ring, 1, 0);
-            lv_obj_set_style_border_color(view->icon_ring,
-                                          lv_color_hex(0xfbd2d2), 0);
-        } else {
-            lv_obj_set_style_bg_color(view->icon_ring, lv_color_hex(0xfbf3db),
-                                      0);
-            lv_obj_set_style_border_width(view->icon_ring, 1, 0);
-            lv_obj_set_style_border_color(view->icon_ring,
-                                          lv_color_hex(0xebd8a8), 0);
-        }
-    }
     if (view->status_label != NULL) {
         lv_label_set_text(view->status_label,
                           status_text != NULL ? status_text : "");
     }
     if (view->hint_label != NULL) {
         lv_label_set_text(view->hint_label, hint_text != NULL ? hint_text : "");
-    }
-}
-
-void ai_chat_view_set_primary_action(ai_chat_view_t *view,
-                                     const char *action_text, bool enabled) {
-    if (view == NULL || view->primary_btn == NULL || view->primary_label == NULL) {
-        return;
-    }
-
-    lv_label_set_text(view->primary_label,
-                      action_text != NULL ? action_text : "");
-    if (enabled) {
-        lv_obj_clear_state(view->primary_btn, LV_STATE_DISABLED);
-    } else {
-        lv_obj_add_state(view->primary_btn, LV_STATE_DISABLED);
     }
 }
 
@@ -631,6 +610,24 @@ void ai_chat_view_set_secondary_action(ai_chat_view_t *view,
     }
 
     ai_chat_view_apply_footer_layout(view);
+}
+
+void ai_chat_view_set_voice_button_visible(ai_chat_view_t *view, bool visible) {
+    if (view == NULL || view->voice_btn == NULL) {
+        return;
+    }
+
+    if (visible) {
+        lv_obj_clear_flag(view->voice_btn, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        const bool was_pressed = view->voice_pressed;
+        ai_chat_view_set_voice_pressed(view, false);
+        lv_obj_add_flag(view->voice_btn, LV_OBJ_FLAG_HIDDEN);
+        if (was_pressed && view->config != NULL &&
+            view->config->voice_release_cb != NULL) {
+            view->config->voice_release_cb(view->config->user_data);
+        }
+    }
 }
 
 void ai_chat_view_reload_messages(ai_chat_view_t *view,

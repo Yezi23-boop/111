@@ -37,7 +37,6 @@ constexpr TickType_t kWakeWordEnableAfterActivationDelayTicks =
 constexpr int kMaxActivationAttempts = 10;
 constexpr int64_t kGracefulButtonStopTimeoutUs = 3000000;
 constexpr int kGracefulButtonStopDrainQuietMs = 200;
-
 const char *DeviceStateToString(DeviceState state) {
   switch (state) {
     case DeviceState::kActivating:
@@ -1410,13 +1409,13 @@ void Application::InitializeProtocol() {
 }
 
 esp_err_t Application::InitializeAudioService() {
-  if (!models_list_) {
-    models_list_.reset(esp_srmodel_init("model"));
-    if (!models_list_) {
-      ESP_LOGW(kTag, "failed to load SR models from model partition");
-    }
-  }
-
+  /*
+   * 当前产品入口由页面/按键显式触发，不需要本地 wake word。跳过 ESP-SR
+   * model loader 可以避免官方 managed component 在模型 mmap/解析阶段因为
+   * 内存压力或模型表兼容问题触发整机 panic。AudioService 已能接受空模型表，
+   * 后续若误开唤醒词检测会降级为日志告警。
+   */
+  models_list_.reset();
   audio_service_.Initialize(codec_.get());
   audio_service_.SetModelsList(models_list_.get());
   AudioServiceCallbacks callbacks = {};

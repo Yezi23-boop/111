@@ -71,12 +71,11 @@ void AfeAudioProcessor::Initialize(AudioCodecIface *codec, int frame_duration_ms
 
   srmodel_list_t *models = models_list;
   if (models == nullptr) {
-    models = esp_srmodel_init("model");
-    owns_models_ = true;
-    owned_models_ = models;
+    ESP_LOGI(kTag, "SR models disabled, fallback to passthrough");
+    return;
   }
-  if (models == nullptr || models->num == -1) {
-    ESP_LOGE(kTag, "failed to initialize SR models, fallback to passthrough");
+  if (models->num == -1) {
+    ESP_LOGE(kTag, "invalid SR model list, fallback to passthrough");
     return;
   }
 

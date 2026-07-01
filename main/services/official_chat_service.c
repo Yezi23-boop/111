@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -384,6 +385,30 @@ static void official_chat_service_handle_command(
     case OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP:
         official_chat_service_begin_shutdown_from_task();
         ESP_LOGI(TAG, "command: leave_foreground_and_stop");
+        break;
+    case OFFICIAL_CHAT_SERVICE_CMD_START_LISTENING:
+        if (s_chat_handle != NULL && !s_shutdown_requested)
+        {
+            const esp_err_t ret = official_chat_start_listening(s_chat_handle);
+            if (ret != ESP_OK)
+            {
+                ESP_LOGW(TAG, "start_listening failed: %s",
+                         esp_err_to_name(ret));
+            }
+        }
+        ESP_LOGI(TAG, "command: start_listening");
+        break;
+    case OFFICIAL_CHAT_SERVICE_CMD_STOP_LISTENING:
+        if (s_chat_handle != NULL)
+        {
+            const esp_err_t ret = official_chat_stop_listening(s_chat_handle);
+            if (ret != ESP_OK)
+            {
+                ESP_LOGW(TAG, "stop_listening failed: %s",
+                         esp_err_to_name(ret));
+            }
+        }
+        ESP_LOGI(TAG, "command: stop_listening");
         break;
     case OFFICIAL_CHAT_SERVICE_CMD_NETWORK_READY:
     case OFFICIAL_CHAT_SERVICE_CMD_BUDGET_CHANGED:
@@ -804,11 +829,13 @@ esp_err_t official_chat_service_init(void)
         return ESP_FAIL;
     }
 
-    /* 栈缩为 4096B：该 task 只做命令分发与生命周期管理，重活由动态子任务承担，
-     * 高压实测 free=7440B（90.8% 空闲），缩半仍有充裕余量。 */
-    BaseType_t result = xTaskCreatePinnedToCore(
+    /* 栈 4096B：该 task 只做命令分发与生命周期管理，重活由动态子任务承担，
+     * 高压实测 free=7440B（90.8% 空闲），缩半仍有充裕余量。
+     * 栈必须放 internal RAM：其调用链会触发 esp_partition_mmap（SR 模型加载），
+     * flash mmap 期间 cache 冻结会导致 PSRAM 栈不可访问，引发 cache-freeze ASSERT。 */
+    BaseType_t result = xTaskCreatePinnedToCoreWithCaps(
         official_chat_service_task, "official_chat_service", 1024 * 4, NULL, 5,
-        &s_service_task_handle, 0);
+        &s_service_task_handle, 0, MALLOC_CAP_INTERNAL);
     if (result != pdPASS)
     {
         s_service_task_handle = NULL;
@@ -1019,5 +1046,35 @@ esp_err_t official_chat_service_get_last_assistant_text(char *buffer,
     esp_err_t ret = official_chat_service_copy_text_locked(
         s_last_assistant_text, buffer, size);
     official_chat_service_unlock();
+    return ret;
+}
+
+/**
+ * @brief 供 UI 按键触发开始聆听。
+ */
+esp_err_t official_chat_service_start_listening(void)
+{
+    const esp_err_t ret = official_chat_service_post_command(
+        OFFICIAL_CHAT_SERVICE_CMD_START_LISTENING, 0);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "start_listening command failed: %s",
+                 esp_err_to_name(ret));
+    }
+    return ret;
+}
+
+/**
+ * @brief 供 UI 按键触发停止聆听。
+ */
+esp_err_t official_chat_service_stop_listening(void)
+{
+    const esp_err_t ret = official_chat_service_post_command(
+        OFFICIAL_CHAT_SERVICE_CMD_STOP_LISTENING, pdMS_TO_TICKS(50));
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "stop_listening command failed: %s",
+                 esp_err_to_name(ret));
+    }
     return ret;
 }
