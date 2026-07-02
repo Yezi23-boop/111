@@ -3,8 +3,9 @@
 The packer is intentionally conservative:
 
 - It first estimates the raw RGB565 payload size.
-- If the total output would exceed the resources budget, it writes the files
-  to a local SD-card staging directory instead of bloating resources/.
+- By default it reads preview frames from the SD-card staging tree and writes
+  runtime packages to the SD-card staging directory instead of bloating
+  resources/.
 - The runtime format is simple enough for an ESP32 loader to validate and load
   into PSRAM without giving LVGL a file path as an image source.
 """
@@ -25,8 +26,8 @@ VERSION = 1
 HEADER_STRUCT = struct.Struct("<8sHHHHHHII")
 FRAME_STRUCT = struct.Struct("<IIH")
 FORMAT_RGB565_LE = 1
-DEFAULT_INPUT = Path("resources/watchface/frames")
-DEFAULT_RESOURCES_OUTPUT = Path("resources/watchface")
+DEFAULT_INPUT = Path("sdcard/watchface/frames")
+DEFAULT_RESOURCES_OUTPUT = Path("tmp/watchface/resources")
 DEFAULT_SD_OUTPUT = Path("sdcard/watchface")
 DEFAULT_BUDGET = 8 * 1024 * 1024
 

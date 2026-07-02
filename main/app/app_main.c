@@ -18,6 +18,7 @@
 #include "hardware_init.h"
 #include "services/network_service.h"
 #include "services/memory_watch_service.h"
+#include "services/watch_endpoint_service.h"
 #include "services/official_chat_service.h"
 #include "services/power_service.h"
 #include "services/power_policy.h"
@@ -261,6 +262,15 @@ static void start_deferred_services(void)
     else
     {
         ESP_LOGI(TAG, "boot_stage: memory_watch_ready");
+    }
+
+    if (watch_endpoint_service_init() != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Watch endpoint service init failed");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "boot_stage: watch_endpoint_ready");
     }
 
     if (runtime_resource_gate_board_test_start() != ESP_OK)

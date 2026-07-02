@@ -27,6 +27,9 @@ tmp/
 *.temp
 *.log
 
+# 表情表盘电脑端预览帧，不进入 LittleFS resources 镜像
+sdcard/watchface/frames/
+
 # 本机 ESP32-S3 / AI Memory Watch 开发期密钥配置
 main/services/memory_watch_dev_endpoint_local.h
 

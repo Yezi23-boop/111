@@ -40,6 +40,7 @@ ENDPOINT_AUTH_NAMES = {
     "voice": "voice_command",
     "text": "text_command",
     "cancel": "cancel",
+    "alerts": "watch_alerts",
 }
 
 
@@ -122,6 +123,17 @@ async def _call_watch_endpoint(
             f"/v1/watch/request/{device_id}-auth-0001/cancel",
             headers=headers,
             data={"device_id": device_id},
+        )
+    if endpoint == "alerts":
+        return await client.post(
+            "/v1/watch/alerts",
+            headers=headers,
+            json={
+                "device_id": device_id,
+                "danger_type": "horn",
+                "danger_prob": 0.93,
+                "message": "检测到疑似鸣笛声，请注意周围环境",
+            },
         )
     raise AssertionError(f"unknown endpoint: {endpoint}")
 
@@ -256,7 +268,7 @@ async def test_voice_command_rejects_unknown_device(watch_app):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("endpoint", ["health", "voice", "text", "cancel"])
+@pytest.mark.parametrize("endpoint", ["health", "voice", "text", "cancel", "alerts"])
 @pytest.mark.parametrize(
     "case_name,authorization,device_id,expected_status,expected_detail",
     AUTH_FAILURE_CASES,
@@ -305,6 +317,31 @@ async def test_watch_endpoints_reject_auth_failures(
     assert "Bearer" not in rendered_health
     assert "test-token" not in rendered_health
     assert "wrong-token" not in rendered_health
+
+
+@pytest.mark.anyio
+async def test_watch_alerts_accepts_valid_device_token(watch_app):
+    transport = httpx.ASGITransport(app=watch_app.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/watch/alerts",
+            headers={"Authorization": "Bearer test-token"},
+            json={
+                "device_id": "watch-001",
+                "danger_type": "horn",
+                "danger_prob": 0.93,
+                "message": "检测到疑似鸣笛声，请注意周围环境",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["sent"] == 0
+    assert payload["event"]["type"] == "danger_alert"
+    assert payload["event"]["device_id"] == "watch-001"
+    assert payload["event"]["danger_type"] == "horn"
+    assert payload["event"]["danger_prob"] == 0.93
 
 
 @pytest.mark.anyio

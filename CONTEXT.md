@@ -18,6 +18,10 @@ Stable architecture boundaries and project decisions live in:
 The watch's long-idle runtime standby mode. It keeps the ESP32 application running, but treats the screen, refresh cadence, networking, and pausable background work as power-budget consumers that should degrade until user activity or a high-priority alert wakes the UI.
 _Avoid_: IDLE_DIM as a separate user-facing power state, Light Sleep, Deep Sleep.
 
+**表情表盘**:
+The animated emoji watchface shown first when the screen wakes/turns on or the UI boots. It is the first visual entry surface, not the universal back-stack root; subpage back navigation returns to the existing main screen.
+_Avoid_: Treating it as a lock screen, a Hermes-only page, or the default target for every back action.
+
 ## Flagged Ambiguities
 
 **IDLE_DIM vs STANDBY**:

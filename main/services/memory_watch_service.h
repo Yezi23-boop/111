@@ -103,6 +103,21 @@ extern "C"
     } memory_watch_service_endpoint_config_t;
 
     /**
+     * @brief watch endpoint 运行期配置快照。
+     *
+     * 字符串存放在结构体内部，调用方可以把该结构体按值投递到自己的
+     * FreeRTOS queue；不要把 `device_token` 打印到日志。
+     */
+    typedef struct
+    {
+        char base_url[MEMORY_WATCH_SERVICE_URL_MAX_BYTES]; /**< endpoint 基础地址。 */
+        char device_id[MEMORY_WATCH_SERVICE_DEVICE_ID_MAX_BYTES]; /**< 设备 ID。 */
+        char device_token[MEMORY_WATCH_SERVICE_DEVICE_TOKEN_MAX_BYTES]; /**< 设备 token。 */
+        uint32_t timeout_ms;      /**< 默认请求等待预算；调用方可按业务覆盖。 */
+        bool allow_insecure_http; /**< 是否允许本地开发用明文 HTTP。 */
+    } memory_watch_service_endpoint_snapshot_t;
+
+    /**
      * @brief 初始化 AI Memory Watch owner task。
      * @return `ESP_OK` 表示已初始化或本次初始化成功。
      */
@@ -132,6 +147,18 @@ extern "C"
      */
     esp_err_t memory_watch_service_save_endpoint_to_nvs(
         const memory_watch_service_endpoint_config_t *config);
+
+    /**
+     * @brief 复制当前 watch endpoint 配置快照。
+     *
+     * 该接口只读 `memory_watch_service` 已持有的 endpoint 配置，不触发网络请求；
+     * 中性 watch endpoint 业务服务可用它复用现有配置入口和 NVS 存储。
+     *
+     * @param[out] out_config 输出配置快照，不能为空。
+     * @return `ESP_OK` 表示已配置并复制成功。
+     */
+    esp_err_t memory_watch_service_copy_endpoint_config(
+        memory_watch_service_endpoint_snapshot_t *out_config);
 
     /**
      * @brief 请求 owner task 检查 `/v1/watch/health`。

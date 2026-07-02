@@ -107,6 +107,30 @@ extern "C"
     } memory_watch_voice_client_health_t;
 
     /**
+     * @brief 危险声音手机通知上报请求。
+     *
+     * 该结构只面向 watch endpoint 的 `/v1/watch/alerts`，用于把本机已经确认的
+     * `Alerting` 事件转发给手机 App 通知链路；不得在模型单窗回调里同步调用。
+     */
+    typedef struct
+    {
+        const char *danger_type;    /**< 危险类型，例如 `danger`、`horn`、`siren`。 */
+        float danger_prob;          /**< 进入 Alerting 时的 danger 概率，范围 0..1。 */
+        uint32_t alert_sequence;    /**< 本机告警序号，用于云端日志去重与排查。 */
+        const char *message;        /**< 给手机端展示的短提示文案。 */
+        const char *firmware_version; /**< 可选固件版本。 */
+    } memory_watch_voice_client_danger_alert_request_t;
+
+    /**
+     * @brief `/v1/watch/alerts` 上报结果。
+     */
+    typedef struct
+    {
+        int http_status;           /**< HTTP 状态码，传输失败时为 0。 */
+        esp_err_t transport_error; /**< 最近一次 HTTP 错误。 */
+    } memory_watch_voice_client_danger_alert_response_t;
+
+    /**
      * @brief 进入 Hermes 页面时检查 watch endpoint 与 Hermes 在线状态。
      *
      * 该函数同步执行 HTTP GET，只允许 service/worker task 调用；UI 只能读取
@@ -153,6 +177,23 @@ extern "C"
         const memory_watch_voice_client_config_t *config,
         const memory_watch_voice_client_text_request_t *request,
         memory_watch_voice_client_response_t *out_response);
+
+    /**
+     * @brief POST 一条危险声音告警给 watch endpoint 手机通知链路。
+     *
+     * 该函数同步执行 HTTPS POST，只允许 service/worker task 调用。服务器当前可
+     * 先不校验 device token，但 client 仍复用 endpoint 配置发送 Authorization
+     * 头，后续打开鉴权不需要再改手表侧主流程。
+     *
+     * @param[in] config HTTP client 配置。
+     * @param[in] request 告警请求。
+     * @param[out] out_response HTTP 结果。
+     * @return `ESP_OK` 表示 HTTP 2xx。
+     */
+    esp_err_t memory_watch_voice_client_post_danger_alert(
+        const memory_watch_voice_client_config_t *config,
+        const memory_watch_voice_client_danger_alert_request_t *request,
+        memory_watch_voice_client_danger_alert_response_t *out_response);
 
     /**
      * @brief 通知服务器取消当前等待请求。

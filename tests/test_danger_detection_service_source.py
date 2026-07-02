@@ -19,6 +19,8 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
         )
         self.assertIn("app_alert_manager_raise", service_source)
         self.assertIn("app_alert_manager_clear", service_source)
+        self.assertIn("watch_endpoint_service_post_danger_alert", service_source)
+        self.assertNotIn('#include "services/memory_watch_service.h"', service_source)
         self.assertIn("audio_alert_player_play_warning_once", alert_source)
 
     def test_espdl_backend_is_single_model_default(self) -> None:
@@ -79,6 +81,22 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn(
             "danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);\n    (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);",
             service_source,
+        )
+
+    def test_alerting_posts_cloud_alert_once_per_confirmed_raise(self) -> None:
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+        espdl_callback = service_source[
+            service_source.index("static void danger_detection_on_espdl_result") :
+            service_source.index("/**\n * @brief 初始化危险检测服务。")
+        ]
+
+        self.assertIn("danger_detection_post_cloud_alert", service_source)
+        self.assertIn("kDangerAlertCloudMessage", service_source)
+        self.assertIn("alert_sequence = s_service_state.snapshot.alert_sequence", espdl_callback)
+        self.assertIn('danger_detection_post_cloud_alert("danger", danger_prob', espdl_callback)
+        self.assertLess(
+            espdl_callback.index("should_raise_alert = true;"),
+            espdl_callback.index('danger_detection_post_cloud_alert("danger", danger_prob'),
         )
 
 

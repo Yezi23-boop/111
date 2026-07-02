@@ -915,6 +915,39 @@ static esp_err_t memory_watch_service_copy_client_config(
     return ESP_OK;
 }
 
+esp_err_t memory_watch_service_copy_endpoint_config(
+    memory_watch_service_endpoint_snapshot_t *out_config)
+{
+    if (out_config == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memory_watch_service_endpoint_state_t endpoint_config;
+    portENTER_CRITICAL(&s_endpoint_lock);
+    endpoint_config = s_endpoint_config;
+    portEXIT_CRITICAL(&s_endpoint_lock);
+
+    if (!endpoint_config.configured)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memset(out_config, 0, sizeof(*out_config));
+    memory_watch_service_copy_text(out_config->base_url,
+                                   sizeof(out_config->base_url),
+                                   endpoint_config.base_url);
+    memory_watch_service_copy_text(out_config->device_id,
+                                   sizeof(out_config->device_id),
+                                   endpoint_config.device_id);
+    memory_watch_service_copy_text(out_config->device_token,
+                                   sizeof(out_config->device_token),
+                                   endpoint_config.device_token);
+    out_config->timeout_ms = endpoint_config.timeout_ms;
+    out_config->allow_insecure_http = endpoint_config.allow_insecure_http;
+    return ESP_OK;
+}
+
 static void memory_watch_service_rebind_client_config(
     memory_watch_service_client_config_snapshot_t *config)
 {

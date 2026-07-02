@@ -50,6 +50,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_voice_client_get_health", header)
         self.assertIn("memory_watch_voice_client_post_voice_command", header)
         self.assertIn("memory_watch_voice_client_post_text_command", header)
+        self.assertIn("memory_watch_voice_client_post_danger_alert", header)
         self.assertIn("memory_watch_voice_client_cancel_request", header)
 
     def test_voice_client_posts_contract_multipart_fields(self) -> None:
@@ -97,6 +98,27 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn('"/v1/watch/text-command"', source)
         self.assertIn('"text"', source)
         self.assertIn("memory_watch_voice_client_perform_http_json", source)
+
+    def test_voice_client_posts_danger_alert_contract(self) -> None:
+        source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")
+        header = MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_voice_client_danger_alert_request_t", header)
+        self.assertIn("memory_watch_voice_client_danger_alert_response_t", header)
+        self.assertIn("memory_watch_voice_client_post_danger_alert", header)
+        self.assertIn('"/v1/watch/alerts"', source)
+        self.assertIn("memory_watch_voice_client_validate_danger_alert_request", source)
+        self.assertIn("memory_watch_voice_client_write_json_body", source)
+        self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_ALERT", source)
+        for field in [
+            "device_id",
+            "danger_type",
+            "danger_prob",
+            "alert_sequence",
+            "message",
+            "firmware_version",
+        ]:
+            self.assertIn(f'\\"{field}\\":', source)
 
     def test_voice_client_supports_health_and_cancel_contract(self) -> None:
         source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")

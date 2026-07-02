@@ -1,5 +1,15 @@
 # 上下文库变更记录
 
+- 2026-07-03：`POST /v1/watch/alerts` 已从免鉴权演示接口收口为设备 token 鉴权接口。server route 复用 `_require_device()`，按 body `device_id` 校验 `Authorization: Bearer <device_token>`，未授权不广播到 Android App；新增/扩展 `tests/test_app.py` 覆盖 alerts 缺 token、错 token、未知设备和合法 token 成功路径。验证：watch endpoint server tests `144 passed`；Docker 容器重建成功；公网无 token POST 返回 `401 missing_bearer_token`，合法 token 公网 smoke 返回 `HTTP 200 ok=True`，验证未打印真实 token。
+
+- 2026-07-03：危险识别手机通知第一版完成真机端到端确认。用户反馈“真机测试没问题”，确认 `ESP32 Alerting -> watch_endpoint_service -> HTTPS POST /v1/watch/alerts -> watch_voice_endpoint -> Android App WSS -> 手机通知栏` 链路可用；未保存原始串口日志、设备 token 或手机截图。`docs/context/runs/2026-07-02-attempt-danger-alert-cloud-post.md` 状态更新为 `completed` / `observed`。后续正式化重点：`/v1/watch/alerts` 设备 token 鉴权、Android App 断线重连与前台服务状态提示。
+
+- 2026-07-02：修复表情预览帧进入 LittleFS `resources` 分区导致 `idf.py build` 在 `resources.bin` 生成阶段报 `LFS_ERR_NOSPC`。删除 tracked `resources/watchface`，将 `extract_watchface_frames.py` 默认输出改为 `sdcard/watchface/frames`，将 `pack_watchface_rawanim.py` 默认输入改为 `sdcard/watchface/frames`，并用 `.gitignore` 忽略预览帧。验证：`resources/` 当前约 `3.07 MiB`，`tests/test_watchface_resource_boundary_source.py` `2 passed`，`idf.py build` 通过，LittleFS 创建日志只包含 `fonts` 和 `weather`。attempt log：`docs/context/runs/2026-07-02-attempt-watchface-resources-nospc.md`。
+
+- 2026-07-02：ESP32 危险识别 `Alerting` 接入云端手机通知链路，并将危险告警 worker 从 `memory_watch_service` 迁到中性 `watch_endpoint_service`。`danger_detection_service` 在 Edge raise / ESP-DL 连续窗口确认首次进入告警时投递 `watch_endpoint_service_post_danger_alert()`；`watch_endpoint_service` 现在自己持有单槽静态 FreeRTOS queue 和 `watch_alert` PSRAM worker，复用 `memory_watch_service_copy_endpoint_config()` 读取 endpoint 配置快照后异步调用 `memory_watch_voice_client_post_danger_alert()`；`memory_watch_service` 不再暴露 `memory_watch_service_post_danger_alert()`，只继续作为 endpoint 配置/NVS owner。验证：相关 source tests `44 passed`；`. export.ps1; ninja -C build __idf_main` 通过；完整 `idf.py build` 通过，`111.bin` `0xabde50`，最小 app 分区剩余 `0x3421b0`/23%。attempt log：`docs/context/runs/2026-07-02-attempt-danger-alert-cloud-post.md`。
+
+- 2026-07-01：补齐 SD manager 文件 API。`components/sd_card/sd_manager.c` 现在实现头文件已有声明的 `sd_manager_read_file/write_file/create_dir/delete_file/get_file_size`，基于 VFS `fopen/fread/fwrite/mkdir/remove/stat` 操作 `/sdcard`；新增 `tests/test_sd_manager_source.py` 锁定声明与实现一致。验证：新增 source test `2 passed`；`idf.py build` 未进入编译阶段，CMake component manager 拉取 `esp_codec_dev.json` 返回空/非法 JSON，与本次代码改动无关。attempt log：`docs/context/runs/2026-07-01-attempt-sd-manager-file-api.md`。
+
 - 2026-07-01：完成表情表盘 raw animation 打包器 `scripts/watchface/pack_watchface_rawanim.py`。脚本从 `resources/watchface/frames` 打包 RGB565 little-endian raw animation，带 `8M` resources 阈值；实测 5 个状态 raw 总量 `22,238,518 bytes`（含 manifest），超过用户指定“超过 8M 就直接 SD 卡”的阈值，因此输出到 `sdcard/watchface/` staging，而不是写入 `resources/watchface`。
 
 - 2026-07-01：表情表盘资源路线再次调整：先做 `resources` / LittleFS 板端测试，过了再考虑 SD 卡；允许按测量结果扩大 `resources` 分区，但必须记录新分区布局并全量刷新相关分区。SD 卡保留为体积、刷写或读取性能不理想时的第二阶段备选。

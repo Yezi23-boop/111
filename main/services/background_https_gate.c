@@ -36,6 +36,8 @@ const char *background_https_gate_reason_text(
         return "memory_watch_inbox";
     case BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_MARK_READ:
         return "memory_watch_mark_read";
+    case BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_ALERT:
+        return "memory_watch_alert";
     case BACKGROUND_HTTPS_GATE_REASON_WEATHER:
         return "weather";
     default:

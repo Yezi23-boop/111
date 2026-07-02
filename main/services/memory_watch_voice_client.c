@@ -16,6 +16,7 @@ static const char *TAG = "memory_watch_http";
 
 static const char kVoiceCommandPath[] = "/v1/watch/voice-command";
 static const char kTextCommandPath[] = "/v1/watch/text-command";
+static const char kDangerAlertPath[] = "/v1/watch/alerts";
 static const char kHealthPathPrefix[] = "/v1/watch/health?device_id=";
 static const char kCancelPathPrefix[] = "/v1/watch/request/";
 static const char kCancelPathSuffix[] = "/cancel";
@@ -89,6 +90,23 @@ static bool memory_watch_voice_client_is_request_id_valid(
 
         ++len;
         if (len > MEMORY_WATCH_VOICE_CLIENT_REQUEST_ID_MAX_LEN)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool memory_watch_voice_client_is_safe_json_string(const char *value)
+{
+    if (value == NULL)
+    {
+        return true;
+    }
+    for (const char *p = value; *p != '\0'; ++p)
+    {
+        const unsigned char c = (unsigned char)*p;
+        if (c < 0x20U || *p == '"' || *p == '\\')
         {
             return false;
         }
@@ -198,6 +216,26 @@ static esp_err_t memory_watch_voice_client_validate_text_request(
         !memory_watch_voice_client_is_safe_form_text(
             request->firmware_version) ||
         !memory_watch_voice_client_is_safe_form_text(request->ui_state))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t memory_watch_voice_client_validate_danger_alert_request(
+    const memory_watch_voice_client_danger_alert_request_t *request)
+{
+    if (request == NULL || request->danger_type == NULL ||
+        request->message == NULL || request->danger_type[0] == '\0' ||
+        request->message[0] == '\0' || request->danger_prob < 0.0f ||
+        request->danger_prob > 1.0f)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!memory_watch_voice_client_is_safe_json_string(request->danger_type) ||
+        !memory_watch_voice_client_is_safe_json_string(request->message) ||
+        !memory_watch_voice_client_is_safe_json_string(
+            request->firmware_version))
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1270,6 +1308,12 @@ typedef struct
     const memory_watch_voice_client_text_request_t *request;
 } memory_watch_voice_client_text_body_t;
 
+typedef struct
+{
+    const char *json;
+    size_t json_len;
+} memory_watch_voice_client_json_body_t;
+
 static esp_err_t memory_watch_voice_client_write_cancel_body(
     esp_http_client_handle_t client, void *user_ctx)
 {
@@ -1291,6 +1335,15 @@ static esp_err_t memory_watch_voice_client_write_text_command_body(
         (const memory_watch_voice_client_text_body_t *)user_ctx;
     return memory_watch_voice_client_write_text_body(
         client, ctx->config, ctx->request, ctx->boundary);
+}
+
+static esp_err_t memory_watch_voice_client_write_json_body(
+    esp_http_client_handle_t client, void *user_ctx)
+{
+    const memory_watch_voice_client_json_body_t *ctx =
+        (const memory_watch_voice_client_json_body_t *)user_ctx;
+    return memory_watch_voice_client_write_all(
+        client, (const uint8_t *)ctx->json, ctx->json_len);
 }
 
 esp_err_t memory_watch_voice_client_get_health(
@@ -1717,6 +1770,81 @@ esp_err_t memory_watch_voice_client_post_text_command(
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "text command failed: status=%d err=%s",
+                 out_response->http_status, esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t memory_watch_voice_client_post_danger_alert(
+    const memory_watch_voice_client_config_t *config,
+    const memory_watch_voice_client_danger_alert_request_t *request,
+    memory_watch_voice_client_danger_alert_response_t *out_response)
+{
+    if (out_response == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out_response, 0, sizeof(*out_response));
+
+    esp_err_t err = memory_watch_voice_client_validate_config(config);
+    if (err == ESP_OK)
+    {
+        err = memory_watch_voice_client_validate_danger_alert_request(request);
+    }
+    if (err != ESP_OK)
+    {
+        out_response->transport_error = err;
+        return err;
+    }
+
+    char json[512];
+    const int json_len = snprintf(
+        json, sizeof(json),
+        "{\"device_id\":\"%s\",\"danger_type\":\"%s\","
+        "\"danger_prob\":%.4f,\"alert_sequence\":%lu,"
+        "\"message\":\"%s\",\"firmware_version\":\"%s\"}",
+        config->device_id,
+        request->danger_type,
+        (double)request->danger_prob,
+        (unsigned long)request->alert_sequence,
+        request->message,
+        request->firmware_version != NULL ? request->firmware_version : "");
+    if (json_len < 0 || (size_t)json_len >= sizeof(json))
+    {
+        out_response->transport_error = ESP_ERR_INVALID_SIZE;
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char *response =
+        (char *)memory_watch_voice_client_alloc(kMaxResponseBytes + 1U);
+    if (response == NULL)
+    {
+        out_response->transport_error = ESP_ERR_NO_MEM;
+        return ESP_ERR_NO_MEM;
+    }
+
+    memory_watch_voice_client_json_body_t writer_ctx = {
+        .json = json,
+        .json_len = (size_t)json_len,
+    };
+    size_t response_len = 0;
+    err = memory_watch_voice_client_perform_background_http_json(
+        BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_ALERT,
+        config, kDangerAlertPath, HTTP_METHOD_POST, "application/json",
+        (size_t)json_len, memory_watch_voice_client_write_json_body,
+        &writer_ctx, &out_response->http_status, response,
+        kMaxResponseBytes + 1U, &response_len);
+    if (err == ESP_OK && (out_response->http_status < 200 ||
+                          out_response->http_status >= 300))
+    {
+        err = ESP_FAIL;
+    }
+
+    memory_watch_voice_client_free(response);
+    out_response->transport_error = err;
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "danger alert post failed: status=%d err=%s",
                  out_response->http_status, esp_err_to_name(err));
     }
     return err;

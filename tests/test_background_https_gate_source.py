@@ -16,6 +16,7 @@ class BackgroundHttpsGateSourceTests(unittest.TestCase):
         self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_SYNC", header)
         self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_INBOX", header)
         self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_MARK_READ", header)
+        self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_ALERT", header)
         self.assertIn("BACKGROUND_HTTPS_GATE_REASON_WEATHER", header)
         self.assertIn("background_https_gate_acquire", header)
         self.assertIn("background_https_gate_release", header)
@@ -57,6 +58,7 @@ class BackgroundHttpsGateSourceTests(unittest.TestCase):
         self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_SYNC", client_source)
         self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_INBOX", client_source)
         self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_MARK_READ", client_source)
+        self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_ALERT", client_source)
         self.assertIn('#include "services/background_https_gate.h"', weather_source)
         self.assertIn("BACKGROUND_HTTPS_GATE_REASON_WEATHER", weather_source)
 
@@ -68,7 +70,7 @@ class BackgroundHttpsGateSourceTests(unittest.TestCase):
         )[1].split("esp_err_t memory_watch_voice_client_post_voice_command", 1)[0]
         text_body = client_source.split(
             "esp_err_t memory_watch_voice_client_post_text_command", 1
-        )[1].split("/* ── 以下为 inbox 窄 HTTP client", 1)[0]
+        )[1].split("esp_err_t memory_watch_voice_client_post_danger_alert", 1)[0]
 
         self.assertNotIn("memory_watch_voice_client_perform_background_http_json", voice_body)
         self.assertNotIn("memory_watch_voice_client_perform_background_http_json", cancel_body)

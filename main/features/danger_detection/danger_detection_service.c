@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
+#include "services/watch_endpoint_service.h"
 #include "traffic_audio_runtime.h"
 #include "traffic_inference_postprocess.h"
 #include "espdl_audio_runtime.h"
@@ -15,6 +16,8 @@
 
 #define TAG "danger_detection"
 #define DANGER_DETECTION_STOP_TIMEOUT_MS 2000U /**< 默认停止等待时间，单位为毫秒。 */
+static const char kDangerAlertCloudMessage[] =
+    "检测到危险声音，请注意周围环境";
 
 /*
  * 危险检测服务实现说明：
@@ -97,6 +100,39 @@ static bool danger_detection_service_allows_alert_commit(void)
     return runtime_started &&
            state != DANGER_DETECTION_STATE_STOPPING &&
            state != DANGER_DETECTION_STATE_ERROR;
+}
+
+static const char *danger_detection_cloud_type_from_stable_label(
+    traffic_inference_postprocess_stable_label_t label)
+{
+    switch (label)
+    {
+    case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_HORN:
+        return "horn";
+    case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_SIREN:
+        return "siren";
+    case TRAFFIC_INFERENCE_POSTPROCESS_STABLE_LABEL_NONE:
+    default:
+        return "danger";
+    }
+}
+
+static void danger_detection_post_cloud_alert(const char *danger_type,
+                                              float danger_prob,
+                                              uint32_t alert_sequence)
+{
+    const watch_endpoint_danger_alert_t alert = {
+        .danger_type = danger_type != NULL ? danger_type : "danger",
+        .danger_prob = danger_prob,
+        .alert_sequence = alert_sequence,
+        .message = kDangerAlertCloudMessage,
+    };
+    const esp_err_t err = watch_endpoint_service_post_danger_alert(&alert);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "danger cloud alert dispatch skipped: %s",
+                 esp_err_to_name(err));
+    }
 }
 
 const char *danger_detection_risk_state_text(
@@ -228,6 +264,7 @@ static void danger_detection_on_alert(
 
     if (alert->action == TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_RAISE)
     {
+        uint32_t alert_sequence = 0U;
         app_alert_request_t request = {
             .source = APP_ALERT_SOURCE_TRAFFIC_AUDIO,
             .severity = APP_ALERT_SEVERITY_DANGER,
@@ -248,8 +285,13 @@ static void danger_detection_on_alert(
         s_service_state.snapshot.last_detected_confidence =
             alert->confidence_score;
         s_service_state.snapshot.alert_sequence += 1U;
+        alert_sequence = s_service_state.snapshot.alert_sequence;
         s_service_state.snapshot.danger_overlay_active = true;
         taskEXIT_CRITICAL(&s_service_state.lock);
+        danger_detection_post_cloud_alert(
+            danger_detection_cloud_type_from_stable_label(alert->label),
+            alert->confidence_score,
+            alert_sequence);
     }
     else if (alert->action ==
              TRAFFIC_INFERENCE_POSTPROCESS_ALERT_ACTION_CLEAR)
@@ -305,6 +347,7 @@ static void danger_detection_on_espdl_result(
     const TickType_t cooldown_ticks = pdMS_TO_TICKS(profile->cooldown_ms);
     bool should_raise_alert = false;
     bool should_clear_alert = false;
+    uint32_t alert_sequence = 0U;
     danger_detection_risk_state_t old_risk_state =
         DANGER_DETECTION_RISK_OFF;
     danger_detection_risk_state_t new_risk_state =
@@ -357,6 +400,7 @@ static void danger_detection_on_espdl_result(
         s_service_state.snapshot.last_detected_label = DANGER_DETECTION_LABEL_DANGER;
         s_service_state.snapshot.last_detected_confidence = danger_prob;
         s_service_state.snapshot.alert_sequence += 1U;
+        alert_sequence = s_service_state.snapshot.alert_sequence;
         s_service_state.snapshot.danger_overlay_active = true;
         should_raise_alert = true;
     }
@@ -435,6 +479,8 @@ static void danger_detection_on_espdl_result(
             .label = APP_ALERT_LABEL_DANGER,
         };
         (void)app_alert_manager_raise(&request);
+        danger_detection_post_cloud_alert("danger", danger_prob,
+                                          alert_sequence);
 
         ESP_LOGW(TAG,
                  "ESPDL danger 检测: profile=%s, class=%s, danger_prob=%.4f, windows=%lu",

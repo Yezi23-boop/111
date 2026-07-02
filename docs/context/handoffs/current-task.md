@@ -2,7 +2,7 @@
 id: context-current-task
 tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox, thin-watch-client, thick-watch-endpoint
 summary: 记录 AI Memory Watch / Hermes V1-V2.4 状态、Watch Runtime Resource Gate 状态，以及 2026-07-01 表情表盘代码回退后的重执行计划入口。
-last_reviewed: 2026-07-01
+last_reviewed: 2026-07-03
 memory_type: task
 scope: task
 owners: docs/context/handoffs
@@ -12,14 +12,27 @@ evidence_level: observed
 
 # AI Memory Watch / Hermes 当前任务交接
 
+> **2026-07-03 更新：危险 Alerting 手机通知链路已真机跑通**
+>
+> - ESP32 固件已接入首版危险告警云端 POST：`danger_detection_service` 在 `Alerting` 首次确认时投递中性 `watch_endpoint_service_post_danger_alert()`，不再直接依赖 Memory Watch / Hermes 命名。
+> - 固件 POST 目标复用当前 watch endpoint 配置，路径为 `/v1/watch/alerts`；服务器已在 2026-07-03 打开设备 token 鉴权，固件端 `device_token` 必须与 server `WATCH_DEVICE_TOKENS` 匹配。
+> - `watch_endpoint_service` 已接管危险告警 worker queue/task：自己创建单槽静态 FreeRTOS queue 和 `watch_alert` PSRAM worker；HTTPS 在该 worker 内执行，危险识别回调只投递队列，不阻塞 ESP-DL 音频推理路径。
+> - `memory_watch_service` 不再暴露 `memory_watch_service_post_danger_alert()`，只继续作为 endpoint 配置/NVS owner，并通过 `memory_watch_service_copy_endpoint_config()` 给中性服务提供只读配置快照。
+> - 验证：相关 source tests `44 passed`；`. D:\esp-idf\v5.5.3\esp-idf\export.ps1; ninja -C build __idf_main` 通过，`main` 组件链接成功；完整 `idf.py build` 通过，`111.bin` `0xabde50`，最小 app 分区剩余 `0x3421b0`/23%。
+> - 真机证据：2026-07-03 用户反馈“真机测试没问题”，确认 `Alerting -> HTTPS POST -> Android App -> 手机通知栏` 第一版链路可用；未保存原始串口日志、设备 token 或手机截图。
+> - 鉴权验证：watch endpoint server tests `144 passed`；Docker 容器已重建；公网无 token POST 返回 `401 missing_bearer_token`，合法 token 公网 smoke 返回 `HTTP 200 ok=True`，验证未打印真实 token。
+> - 后续正式化：Android App 补电池优化白名单提示、最近告警历史和断线状态更醒目的提醒。
+> - 2026-07-02 更新：`resources` LittleFS `LFS_ERR_NOSPC` 阻塞已解除；删除 `resources/watchface` 后完整 `idf.py build` 已通过。
+
 > **2026-07-01 插入：表情表盘重执行状态**
 >
 > - 用户已回退上一轮表情表盘代码；当前不要继续修补旧实现。
-> - 当前事实：`main/ui/custom/watchface_view.c` 不存在，`resources/watchface/` 与 `scripts/watchface/` 仍存在，`partitions.csv` 中 `resources` 分区为 `4M`。
+> - 当前事实：`main/ui/custom/watchface_view.c` 不存在，`scripts/watchface/` 仍存在，`resources/watchface/` 已删除，`partitions.csv` 中 `resources` 分区为 `4M`。
 > - active plan 已重写为 `docs/context/plans/active/2026-06-30-watchface-emoji-root-ui-plan.md`。
-> - 用户最新决策：先做 `resources` / LittleFS 板端测试，过了再考虑 SD 卡；允许按测量结果扩大 `resources` 分区。
-> - 当前表盘资源路径口径：第一阶段 `resources/watchface` 是板端表盘动画仓库，`resources/watchface/frames` 是电脑端预览/生成中间产物。
-> - 2026-07-01 最新结果：`scripts/watchface/pack_watchface_rawanim.py` 已完成，按 8MB resources 上限实测 raw animation 总量 `22,238,518 bytes`，超过用户阈值，因此已自动生成到 `sdcard/watchface/` staging；下一步按 SD 卡路线实现 cache loader。
+> - 用户最新决策：SD 卡已经从电脑拔下并放进手表；当前直接走 SD 卡路径，电脑端目录 `E:\watchface` 对应板端 `/sdcard/watchface`。
+> - 当前表盘资源路径口径：`/sdcard/watchface` 是板端表盘动画仓库，电脑端预览帧默认生成到 `sdcard/watchface/frames`，不能进入 `resources/`。
+> - 2026-07-01 最新结果：`scripts/watchface/pack_watchface_rawanim.py` 已完成，按 8MB resources 上限实测 raw animation 总量 `22,238,518 bytes`，超过用户阈值，因此已生成 SD 卡 staging。`components/sd_card/sd_manager.c` 已补齐头文件声明的通用文件 API，后续按 SD 卡路线实现 cache loader。
+> - 2026-07-02 最新修复：删除 tracked `resources/watchface`，修复 `LFS_ERR_NOSPC`；当前 `resources/` 约 `3.07 MiB`，`idf.py build` 已通过。
 > - 后续实现硬约束：LVGL draw 阶段不能直接从 resources/SD/LittleFS 流式读取全屏表盘资源；必须先加载到 PSRAM，再通过内存 `lv_image_dsc_t` 渲染。
 > - 上一轮崩溃签名是 `Cache disabled but cached memory region accessed`，回溯涉及 LittleFS/flash 读取和 `lv_bin_decoder_get_area`；Wi-Fi 只是触发时序，不是根因。resources 测试也不能让 LVGL 直接读文件绘制。
 

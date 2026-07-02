@@ -5,6 +5,7 @@
  */
 
 #include "sd_manager.h"
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -199,4 +200,170 @@ bool sd_manager_file_exists(const char *file_path)
         return true;
     }
     return false;
+}
+
+/**
+ * @brief 从 SD 卡读取文件内容。
+ * @param[in] file_path 文件路径。
+ * @param[out] buffer 接收数据的缓冲区。
+ * @param[in] buffer_size 缓冲区大小，单位为字节。
+ * @param[out] bytes_read 实际读取的字节数，可为 NULL。
+ * @return `ESP_OK` 表示成功；其他错误表示参数、打开文件或读取失败。
+ */
+esp_err_t sd_manager_read_file(const char *file_path, void *buffer, size_t buffer_size, size_t *bytes_read)
+{
+    if (bytes_read != NULL)
+    {
+        *bytes_read = 0;
+    }
+
+    if (file_path == NULL || buffer == NULL || buffer_size == 0)
+    {
+        ESP_LOGW(TAG, "读取文件参数无效");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *file = fopen(file_path, "rb");
+    if (file == NULL)
+    {
+        ESP_LOGE(TAG, "打开文件失败: %s", file_path);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    size_t read_len = fread(buffer, 1, buffer_size, file);
+    if (ferror(file))
+    {
+        ESP_LOGE(TAG, "读取文件失败: %s", file_path);
+        fclose(file);
+        return ESP_FAIL;
+    }
+
+    fclose(file);
+
+    if (bytes_read != NULL)
+    {
+        *bytes_read = read_len;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief 将数据写入 SD 卡文件。
+ * @param[in] file_path 文件路径。
+ * @param[in] data 要写入的数据。
+ * @param[in] data_size 数据大小，单位为字节。
+ * @return `ESP_OK` 表示成功；其他错误表示参数、打开文件或写入失败。
+ */
+esp_err_t sd_manager_write_file(const char *file_path, const void *data, size_t data_size)
+{
+    if (file_path == NULL || (data == NULL && data_size > 0))
+    {
+        ESP_LOGW(TAG, "写入文件参数无效");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *file = fopen(file_path, "wb");
+    if (file == NULL)
+    {
+        ESP_LOGE(TAG, "打开写入文件失败: %s", file_path);
+        return ESP_FAIL;
+    }
+
+    if (data_size > 0)
+    {
+        size_t written = fwrite(data, 1, data_size, file);
+        if (written != data_size || ferror(file))
+        {
+            ESP_LOGE(TAG, "写入文件失败: %s", file_path);
+            fclose(file);
+            return ESP_FAIL;
+        }
+    }
+
+    if (fclose(file) != 0)
+    {
+        ESP_LOGE(TAG, "关闭写入文件失败: %s", file_path);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief 创建新目录。
+ * @param[in] dir_path 目录路径。
+ * @return `ESP_OK` 表示成功；其他错误表示创建失败。
+ */
+esp_err_t sd_manager_create_dir(const char *dir_path)
+{
+    if (dir_path == NULL)
+    {
+        ESP_LOGW(TAG, "创建目录参数无效");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (mkdir(dir_path, 0775) == 0)
+    {
+        return ESP_OK;
+    }
+
+    if (errno == EEXIST)
+    {
+        struct stat st;
+        if (stat(dir_path, &st) == 0 && S_ISDIR(st.st_mode))
+        {
+            return ESP_OK;
+        }
+    }
+
+    ESP_LOGE(TAG, "创建目录失败: %s", dir_path);
+    return ESP_FAIL;
+}
+
+/**
+ * @brief 删除文件。
+ * @param[in] file_path 文件路径。
+ * @return `ESP_OK` 表示成功；其他错误表示删除失败。
+ */
+esp_err_t sd_manager_delete_file(const char *file_path)
+{
+    if (file_path == NULL)
+    {
+        ESP_LOGW(TAG, "删除文件参数无效");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (remove(file_path) == 0)
+    {
+        return ESP_OK;
+    }
+
+    ESP_LOGE(TAG, "删除文件失败: %s", file_path);
+    return ESP_FAIL;
+}
+
+/**
+ * @brief 获取文件大小。
+ * @param[in] file_path 文件路径。
+ * @param[out] file_size 用于接收文件大小的指针。
+ * @return `ESP_OK` 表示成功；其他错误表示参数或查询失败。
+ */
+esp_err_t sd_manager_get_file_size(const char *file_path, size_t *file_size)
+{
+    if (file_path == NULL || file_size == NULL)
+    {
+        ESP_LOGW(TAG, "获取文件大小参数无效");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    struct stat st;
+    if (stat(file_path, &st) != 0)
+    {
+        ESP_LOGE(TAG, "获取文件大小失败: %s", file_path);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    *file_size = (size_t)st.st_size;
+    return ESP_OK;
 }

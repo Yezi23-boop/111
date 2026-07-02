@@ -76,6 +76,17 @@ class HealthResponse(BaseModel):
     device_id: str
 
 
+class DangerAlertIn(BaseModel):
+    type: str = "danger_alert"
+    event_id: str | None = None
+    device_id: str = "watch-001"
+    danger_type: str = "danger"
+    danger_prob: float | None = None
+    probability: float | None = None
+    occurred_at: str | None = None
+    message: str | None = None
+
+
 app = FastAPI(title="AI Memory Watch Endpoint", version="0.1.0")
 _canceled_requests: set[tuple[str, str]] = set()
 _completed_requests: dict[tuple[str, str], WatchResponse] = {}
@@ -89,6 +100,8 @@ _inbox_repo: InboxRepo | None = None
 _conversation_repo: ConversationRepo | None = None
 _session_repo: SessionRepo | None = None
 _ws_background_tasks: set[asyncio.Task[None]] = set()
+_alert_ws_clients: set[WebSocket] = set()
+_alert_ws_lock = asyncio.Lock()
 
 
 @dataclass
@@ -859,6 +872,64 @@ async def _ws_finish_audio(
 def _ws_track_background_task(task: asyncio.Task[None]) -> None:
     _ws_background_tasks.add(task)
     task.add_done_callback(_ws_background_tasks.discard)
+
+
+def _normalize_danger_alert(alert: DangerAlertIn) -> dict[str, object]:
+    payload = alert.dict(exclude_none=True)
+    device_id = str(payload.get("device_id") or "watch-001")
+    danger_type = str(payload.get("danger_type") or "danger")
+    message = str(payload.get("message") or f"检测到危险声音：{danger_type}")
+    event: dict[str, object] = {
+        "type": "danger_alert",
+        "event_id": str(payload.get("event_id") or f"{device_id}-{int(time.time())}"),
+        "device_id": device_id,
+        "danger_type": danger_type,
+        "message": message,
+    }
+    probability = payload.get("danger_prob", payload.get("probability"))
+    if probability is not None:
+        event["danger_prob"] = probability
+    if payload.get("occurred_at"):
+        event["occurred_at"] = str(payload["occurred_at"])
+    return event
+
+
+@app.websocket("/v1/watch/alerts/ws")
+async def watch_alerts_websocket(websocket: WebSocket) -> None:
+    device_id = websocket.query_params.get("device_id", "watch-001")
+    await websocket.accept()
+    async with _alert_ws_lock:
+        _alert_ws_clients.add(websocket)
+    await _ws_send_json(websocket, {"type": "connected", "device_id": device_id})
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        async with _alert_ws_lock:
+            _alert_ws_clients.discard(websocket)
+
+
+@app.post("/v1/watch/alerts")
+async def watch_alerts_create(
+    alert: DangerAlertIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    _require_device(alert.device_id, authorization, "watch_alerts")
+    event = _normalize_danger_alert(alert)
+    dead_clients: list[WebSocket] = []
+    sent = 0
+    async with _alert_ws_lock:
+        for client in list(_alert_ws_clients):
+            try:
+                await _ws_send_json(client, event)
+                sent += 1
+            except Exception:
+                dead_clients.append(client)
+        for client in dead_clients:
+            _alert_ws_clients.discard(client)
+    return {"ok": True, "sent": sent, "event": event}
 
 
 @app.websocket("/v1/watch/ws")

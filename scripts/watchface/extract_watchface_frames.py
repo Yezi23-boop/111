@@ -1,8 +1,8 @@
 """Extract watchface GIFs into screen-sized preview frames.
 
 The generated PNG frames are an intermediate artifact for visual review. They
-are not the final board runtime format; a later packer should turn the selected
-frames into a compact animation package.
+are not part of the firmware LittleFS resources partition; a later packer turns
+the selected frames into SD-card raw animation packages.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ CANVAS_W = 410
 CANVAS_H = 502
 
 DEFAULT_SOURCE_DIR = Path("D:/esp32S3") / "\u8868\u60c5\u5305"
-DEFAULT_OUTPUT_DIR = Path("resources/watchface/frames")
+DEFAULT_OUTPUT_DIR = Path("sdcard/watchface/frames")
 DEFAULT_BACKGROUND = "#ffffff"
 
 STATE_SOURCES = {
