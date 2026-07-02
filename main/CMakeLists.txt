@@ -7,6 +7,7 @@ set(app_srcs
 
     # [测试模式] 使用测试入口，去掉 LVGL/UI/业务服务依赖
     ${CMAKE_CURRENT_LIST_DIR}/app/app_main_test.c
+    ${CMAKE_CURRENT_LIST_DIR}/app/board_ds2413_motor.c
 
     # app_main.c 暂时注释掉，测试完成后换回
     # ${CMAKE_CURRENT_LIST_DIR}/app/app_main.c
@@ -167,6 +168,8 @@ idf_component_register(
         qmi8658c
 
         ds2413
+
+        espressif__onewire_bus
 
         touch_ft5x06
 

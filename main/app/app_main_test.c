@@ -13,7 +13,7 @@
  *   8.  SD 卡：mount + 根目录列表 + 写/读测试文件验证
  *   9.  Wi-Fi：AP 扫描，打印 SSID/RSSI/channel/安全类型
  *   10. BLE：NimBLE 广播 5 秒，验证 2.4GHz 射频链路可见性
- *   11. DS2413（GPIO18）：1-Wire 枚举 + PIOA/PIOB 锁存释放验证
+ *   11. DS2413（GPIO18）：1-Wire 枚举 + PIOA 马达控制
  *
  * 还原方法：把 CMakeLists.txt 中的 app_main_test.c 换回 app_main.c
  *           并恢复原 service_srcs / feature_srcs / ui_runtime_srcs 列表。
@@ -1013,9 +1013,7 @@ static esp_err_t probe_ds2413_on_bus(onewire_bus_handle_t bus,
                  backend_name, (unsigned)found_count,
                  rom[0], rom[1], rom[2], rom[3], rom[4], rom[5], rom[6], rom[7],
                  rom[0]);
-        if (rom[0] == DS2413_FAMILY_CODE ||
-            rom[0] == DS2413_CLONE_FAMILY_CODE ||
-            rom[0] == DS2413_BOARD_FAMILY_CODE)
+        if (rom[0] == DS2413_BOARD_FAMILY_CODE)
         {
             device->bus = bus;
             device->address = next.address;
@@ -1030,9 +1028,8 @@ static esp_err_t probe_ds2413_on_bus(onewire_bus_handle_t bus,
     }
     else if (result != ESP_OK)
     {
-        ESP_LOGW(TAG, "%s: 已枚举到 %u 个 1-Wire 器件，但没有 DS2413 family 0x%02X/0x%02X/0x%02X",
+        ESP_LOGW(TAG, "%s: 已枚举到 %u 个 1-Wire 器件，但没有当前板卡 DS2413 family 0x%02X",
                  backend_name, (unsigned)found_count,
-                 DS2413_FAMILY_CODE, DS2413_CLONE_FAMILY_CODE,
                  DS2413_BOARD_FAMILY_CODE);
     }
 
@@ -1048,7 +1045,7 @@ static esp_err_t probe_ds2413_on_bus(onewire_bus_handle_t bus,
 
 /* =========================================================
  * 》测试 11《 DS2413 1-Wire 双路开漏 IO（GPIO18）
- * 验证：枚举器件 + 读 PIOA/PIOB + 释放 PIOA/PIOB 锁存
+ * 验证：枚举器件 + PIOA 马达脉冲控制
  * ========================================================= */
 static bool test_ds2413(void)
 {
@@ -1149,76 +1146,103 @@ static bool test_ds2413(void)
              backend_name,
              rom[0], rom[1], rom[2], rom[3], rom[4], rom[5], rom[6], rom[7]);
 
-    ret = ds2413_read_state(&device, &initial_state);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "DS2413 初始状态读取失败: %s", esp_err_to_name(ret));
-        goto cleanup;
-    }
-
-    ESP_LOGI(TAG, "DS2413 初始状态: raw=0x%02X  PIOA(state=%d latch=%d)  PIOB(state=%d latch=%d)",
-             initial_state.raw,
-             initial_state.pioa_state, initial_state.pioa_latch,
-             initial_state.piob_state, initial_state.piob_latch);
-
-    ds2413_latch_state_t initial_latch = {
-        .pioa_release = initial_state.pioa_latch,
-        .piob_release = initial_state.piob_latch,
-    };
-
     /*
-     * GPIO18 作为 1-Wire IO 已由 R22 外部上拉；PIOA/PIOB 是另外两路开漏
-     * IO，当前原理图中 R23/R50 标为 NC，没有独立上拉或负载。这里不能
-     * 主动拉低某一路做功能测试，否则选装电阻版本可能把 1-Wire 总线一起拖低。
+     * 当前硬件把 R9 改为上拉后：
+     * - PIOA release：R9 将 Q1 基极拉高，马达导通；
+     * - PIOA pull-low：DS2413 拉低 Q1 基极，马达关闭；
+     * - PIOB 当前未使用，测试期间始终 release。
      */
-    ds2413_latch_state_t test_latch = {
+    const ds2413_latch_state_t motor_off_latch = {
+        .pioa_release = false,
+        .piob_release = true,
+    };
+    const ds2413_latch_state_t motor_on_latch = {
         .pioa_release = true,
         .piob_release = true,
     };
 
-    ESP_LOGI(TAG, "写入安全释放状态: PIOA=%s PIOB=%s",
-             test_latch.pioa_release ? "release" : "pull-low",
-             test_latch.piob_release ? "release" : "pull-low");
-
-    ret = ds2413_write_latch(&device, &test_latch, &verified_state);
+    ESP_LOGI(TAG, "设置默认关闭状态: PIOA=pull-low PIOB=release");
+    ret = ds2413_write_latch(&device, &motor_off_latch, &verified_state);
     if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "DS2413 写入安全释放状态失败: %s", esp_err_to_name(ret));
-        goto restore;
+        ESP_LOGE(TAG, "DS2413 写入默认关闭状态失败: %s", esp_err_to_name(ret));
+        goto cleanup;
     }
-
-    ESP_LOGI(TAG, "DS2413 写入回读: raw=0x%02X  PIOA(state=%d latch=%d)  PIOB(state=%d latch=%d)",
+    ESP_LOGI(TAG, "默认关闭回读: raw=0x%02X  PIOA(state=%d latch=%d)  PIOB(state=%d latch=%d)",
              verified_state.raw,
              verified_state.pioa_state, verified_state.pioa_latch,
              verified_state.piob_state, verified_state.piob_latch);
 
-    ret = ds2413_read_state(&device, &readback_state);
+    ret = ds2413_read_state(&device, &initial_state);
     if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "DS2413 二次读取失败: %s", esp_err_to_name(ret));
-        goto restore;
+        ESP_LOGE(TAG, "DS2413 默认关闭后状态读取失败: %s", esp_err_to_name(ret));
+        goto cleanup;
     }
 
-    ESP_LOGI(TAG, "DS2413 二次读取: raw=0x%02X  PIOA(state=%d latch=%d)  PIOB(state=%d latch=%d)",
-             readback_state.raw,
-             readback_state.pioa_state, readback_state.pioa_latch,
-             readback_state.piob_state, readback_state.piob_latch);
+    ESP_LOGI(TAG, "DS2413 默认关闭后状态: raw=0x%02X  PIOA(state=%d latch=%d)  PIOB(state=%d latch=%d)",
+             initial_state.raw,
+             initial_state.pioa_state, initial_state.pioa_latch,
+             initial_state.piob_state, initial_state.piob_latch);
+
+    const int kMotorPulseCount = 3;
+    const int kMotorPulseOnMs = 300;
+    const int kMotorPulseOffMs = 500;
+    ESP_LOGI(TAG, "开始马达脉冲测试：%d 次，%dms ON / %dms OFF",
+             kMotorPulseCount, kMotorPulseOnMs, kMotorPulseOffMs);
+    for (int i = 0; i < kMotorPulseCount; i++)
+    {
+        ret = ds2413_write_latch(&device, &motor_on_latch, &verified_state);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "第 %d 次马达开启失败: %s", i + 1, esp_err_to_name(ret));
+            goto motor_off;
+        }
+        ESP_LOGI(TAG, "马达 ON %d/%d: raw=0x%02X  PIOA(state=%d latch=%d)  PIOB(state=%d latch=%d)",
+                 i + 1, kMotorPulseCount,
+                 verified_state.raw,
+                 verified_state.pioa_state, verified_state.pioa_latch,
+                 verified_state.piob_state, verified_state.piob_latch);
+        vTaskDelay(pdMS_TO_TICKS(kMotorPulseOnMs));
+
+        ret = ds2413_write_latch(&device, &motor_off_latch, &verified_state);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "第 %d 次马达关闭失败: %s", i + 1, esp_err_to_name(ret));
+            goto motor_off;
+        }
+        ESP_LOGI(TAG, "马达 OFF %d/%d: raw=0x%02X  PIOA(state=%d latch=%d)  PIOB(state=%d latch=%d)",
+                 i + 1, kMotorPulseCount,
+                 verified_state.raw,
+                 verified_state.pioa_state, verified_state.pioa_latch,
+                 verified_state.piob_state, verified_state.piob_latch);
+        vTaskDelay(pdMS_TO_TICKS(kMotorPulseOffMs));
+    }
 
     ok = true;
 
-restore:
-    if (initial_latch.pioa_release != test_latch.pioa_release ||
-        initial_latch.piob_release != test_latch.piob_release)
+motor_off:
+    if (bus != NULL)
     {
-        ds2413_state_t restore_state = {0};
-        esp_err_t restore_ret = ds2413_write_latch(&device, &initial_latch, &restore_state);
-        if (restore_ret == ESP_OK)
+        const int kMotorOffHoldCount = 5;
+        for (int i = 0; i < kMotorOffHoldCount; i++)
         {
-            ESP_LOGI(TAG, "DS2413 已恢复初始锁存状态");
-        }
-        else
-        {
-            ESP_LOGW(TAG, "DS2413 恢复初始锁存状态失败: %s", esp_err_to_name(restore_ret));
+            ds2413_state_t off_state = {0};
+            esp_err_t off_ret = ds2413_write_latch(&device, &motor_off_latch, &off_state);
+            if (off_ret == ESP_OK)
+            {
+                ESP_LOGI(TAG, "DS2413 保持马达关闭 %d/%d: raw=0x%02X  PIOA(state=%d latch=%d)  PIOB(state=%d latch=%d)",
+                         i + 1, kMotorOffHoldCount,
+                         off_state.raw,
+                         off_state.pioa_state, off_state.pioa_latch,
+                         off_state.piob_state, off_state.piob_latch);
+            }
+            else
+            {
+                ESP_LOGW(TAG, "DS2413 保持马达关闭 %d/%d 失败: %s",
+                         i + 1, kMotorOffHoldCount, esp_err_to_name(off_ret));
+            }
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
     }
 

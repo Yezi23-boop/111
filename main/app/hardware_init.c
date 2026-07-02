@@ -4,6 +4,7 @@
 #include "features/audio/audio_app.h"
 #include "sd_manager.h"
 #include "audio_codec.h"
+#include "board_ds2413_motor.h"
 #include "board_button.h"
 #include "board_power.h"
 #include "resource_fs.h"
@@ -88,6 +89,13 @@ esp_err_t hardware_init(void)
     {
         ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(ret));
         return ret;
+    }
+
+    ESP_LOGI(TAG, "Initializing DS2413 Motor...");
+    ret = board_ds2413_motor_init();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "DS2413 motor init failed: %s", esp_err_to_name(ret));
     }
 
     /* 音频应用层先准备目录和控制入口；即使失败，也不阻断整机启动。 */
