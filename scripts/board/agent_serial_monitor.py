@@ -46,13 +46,45 @@ EVIDENCE_PATTERNS: dict[str, str] = {
     "light_sleep_skipped": r"light_sleep_test_skipped:",
 }
 
-FATAL_PATTERNS: dict[str, str] = {
+PRESET_PATTERNS: dict[str, dict[str, str]] = {
+    "standby": {
+        "standby_budget": r"power_budget_change: state=STANDBY",
+        "standby_brightness_zero": r"apply brightness state=standby.*target=0%",
+        "standby_wifi_ps": r"Wi-Fi power save enabled by power budget",
+        "standby_network_paused": r"network state: SERVICE_READY -> WIFI_READY",
+    },
+    "system-time": {
+        "system_time_boot": r"system_time_boot:",
+        "rtc_bootstrap_done": r"rtc bootstrap done|rtc bootstrap ok",
+        "sntp_sync_ok": r"sntp sync ok source=SNTP",
+        "rtc_writeback": r"rtc_writeback=1",
+    },
+    "runtime-gate": {
+        "runtime_gate_test": r"runtime_gate_test",
+        "foreground_runtime": r"foreground_runtime|foreground_audio_active",
+        "background_https": r"background_https",
+        "memory_watch": r"memory_watch",
+    },
+    "wifi": {
+        "wifi_connected": r"wifi:connected with",
+        "wifi_disconnect_reason": r"reason=[0-9]+",
+        "wifi_service_ready": r"network state: WIFI_READY -> SERVICE_READY",
+        "wifi_power_save": r"Wi-Fi power save (enabled|disabled) by power budget",
+    },
+}
+
+HARD_FATAL_PATTERNS: dict[str, str] = {
     "guru_meditation": r"Guru Meditation",
     "panic": r"\bpanic\b|PANIC",
     "abort": r"\babort\(\)|abort was called",
-    "no_mem": r"ESP_ERR_NO_MEM|NO_MEM",
     "watchdog": r"watchdog|Task watchdog|WDT",
     "flash_checksum_mismatch": r"checksum mismatch",
+}
+
+DIAGNOSTIC_PATTERNS: dict[str, str] = {
+    "no_mem": r"ESP_ERR_NO_MEM|NO_MEM",
+    "stack_overflow": r"stack overflow",
+    "wifi_disconnect_reason": r"reason=[0-9]+",
 }
 
 
@@ -249,12 +281,40 @@ def tail_lines(lines: list[str], limit: int) -> list[dict[str, object]]:
     ]
 
 
-def decide_status(evidence: dict[str, dict[str, object]], fatal: dict[str, dict[str, object]]) -> str:
-    if any(int(item["count"]) > 0 for item in fatal.values()):
+def match_count(matches: dict[str, dict[str, object]], name: str) -> int:
+    return int(matches.get(name, {}).get("count", 0))
+
+
+def total_match_count(matches: dict[str, dict[str, object]]) -> int:
+    return sum(int(item["count"]) for item in matches.values())
+
+
+def flash_completed(lines: list[str]) -> bool | None:
+    if not any("Executing action: app-flash" in line for line in lines):
+        return None
+    return any("Hash of data verified" in line or re.search(r"Wrote \d+ bytes", line) for line in lines)
+
+
+def observation_complete(capture: dict[str, object]) -> bool:
+    if not bool(capture["observe_started"]):
+        return False
+    if not bool(capture["timed_out"]):
+        return True
+    return capture["timed_out_phase"] == "observe"
+
+
+def decide_status(
+    args: argparse.Namespace,
+    evidence: dict[str, dict[str, object]],
+    hard_fatal: dict[str, dict[str, object]],
+) -> str:
+    if total_match_count(hard_fatal) > 0:
         return "fail"
-    if int(evidence["boot_rom_seen"]["count"]) == 0:
-        return "no_boot_seen"
-    if int(evidence["startup_done"]["count"]) == 0:
+    if match_count(evidence, "boot_rom_seen") == 0:
+        if args.action == "app-flash-monitor":
+            return "boot_missing_after_flash"
+        return "observed_no_boot"
+    if match_count(evidence, "startup_done") == 0:
         return "partial"
     return "ok"
 
@@ -268,11 +328,15 @@ def write_summary(
 ) -> dict[str, object]:
     lines = list(capture["lines"])
     evidence = collect_matches(lines, EVIDENCE_PATTERNS)
-    fatal = collect_matches(lines, FATAL_PATTERNS)
+    hard_fatal = collect_matches(lines, HARD_FATAL_PATTERNS)
+    diagnostic_events = collect_matches(lines, DIAGNOSTIC_PATTERNS)
     custom_evidence = collect_matches(lines, args.custom_patterns)
+    boot_seen = match_count(evidence, "boot_rom_seen") > 0
+    app_started = match_count(evidence, "app_main_called") > 0
+    startup_done = match_count(evidence, "startup_done") > 0
     summary = {
         "tool": "agent_serial_monitor",
-        "status": decide_status(evidence, fatal),
+        "status": decide_status(args, evidence, hard_fatal),
         "action": args.action,
         "port": args.port,
         "baud": args.baud,
@@ -286,6 +350,13 @@ def write_summary(
         "observe_started": capture["observe_started"],
         "observe_trigger": capture["observe_trigger"],
         "observe_started_at": capture["observe_started_at"],
+        "flash_completed": flash_completed(lines),
+        "boot_seen": boot_seen,
+        "app_started": app_started,
+        "startup_done": startup_done,
+        "observation_complete": observation_complete(capture),
+        "hard_fatal_count": total_match_count(hard_fatal),
+        "diagnostic_event_count": total_match_count(diagnostic_events),
         "started_at": capture["started_at"],
         "ended_at": capture["ended_at"],
         "command": command,
@@ -293,7 +364,9 @@ def write_summary(
         "summary_path": str(summary_path),
         "evidence": evidence,
         "custom_evidence": custom_evidence,
-        "fatal": fatal,
+        "fatal": hard_fatal,
+        "hard_fatal": hard_fatal,
+        "diagnostic_events": diagnostic_events,
         "important_events": important_events(lines, args.max_events),
         "tail": tail_lines(lines, args.tail_lines),
     }
@@ -352,6 +425,14 @@ def parse_custom_patterns(raw_patterns: list[str], raw_literal_patterns: list[st
     return patterns
 
 
+def preset_patterns(presets: list[str]) -> dict[str, str]:
+    patterns: dict[str, str] = {}
+    for preset in presets:
+        for name, pattern in PRESET_PATTERNS[preset].items():
+            add_pattern(patterns, name, pattern)
+    return patterns
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Bounded ESP-IDF serial monitor capture for agents.",
@@ -387,6 +468,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--idf-export-ps1", default=DEFAULT_IDF_EXPORT_PS1)
     parser.add_argument("--max-events", type=int, default=80)
     parser.add_argument(
+        "--preset",
+        action="append",
+        choices=tuple(PRESET_PATTERNS.keys()),
+        default=[],
+        help="Add a built-in evidence preset. Can be passed multiple times.",
+    )
+    parser.add_argument(
         "--pattern",
         action="append",
         default=[],
@@ -419,7 +507,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--quiet-console",
         action="store_true",
+        default=None,
         help="Do not stream captured serial output to stdout; still writes full log and summary.",
+    )
+    parser.add_argument(
+        "--stream-console",
+        action="store_false",
+        dest="quiet_console",
+        help="Stream captured serial output to stdout even for app-flash-monitor.",
+    )
+    parser.add_argument(
+        "--allow-no-boot",
+        action="store_true",
+        help="Return success even when no boot evidence is observed.",
     )
     args = parser.parse_args()
     if args.duration_seconds <= 0:
@@ -429,9 +529,13 @@ def parse_args() -> argparse.Namespace:
     if args.tail_lines < 0:
         parser.error("--tail-lines must be >= 0")
     try:
-        args.custom_patterns = parse_custom_patterns(args.pattern, args.literal_pattern)
+        args.custom_patterns = preset_patterns(args.preset)
+        for name, pattern in parse_custom_patterns(args.pattern, args.literal_pattern).items():
+            add_pattern(args.custom_patterns, name, pattern)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.quiet_console is None:
+        args.quiet_console = args.action == "app-flash-monitor"
     return args
 
 
@@ -454,7 +558,11 @@ def main() -> int:
     print(f"AGENT_SERIAL_MONITOR_STATUS={summary['status']}")
     print(f"AGENT_SERIAL_MONITOR_LOG={log_path}")
     print(f"AGENT_SERIAL_MONITOR_SUMMARY={summary_path}")
-    return 0 if summary["status"] in ("ok", "partial", "no_boot_seen") else 2
+    if summary["status"] in ("ok", "partial"):
+        return 0
+    if args.allow_no_boot and summary["status"] in ("observed_no_boot", "boot_missing_after_flash"):
+        return 0
+    return 2
 
 
 if __name__ == "__main__":

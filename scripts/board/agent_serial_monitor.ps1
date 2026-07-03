@@ -8,11 +8,15 @@ param(
     [string]$LogDir = "board_logs",
     [string]$Python = "python",
     [string]$IdfExportPs1 = "D:\esp-idf\v5.5.3\esp-idf\export.ps1",
+    [ValidateSet("standby", "system-time", "runtime-gate", "wifi")]
+    [string[]]$Preset = @(),
     [string[]]$Pattern = @(),
     [string[]]$LiteralPattern = @(),
     [int]$TailLines = 120,
     [switch]$NoReset,
     [switch]$QuietConsole,
+    [switch]$StreamConsole,
+    [switch]$AllowNoBoot,
     [switch]$ListPorts
 )
 
@@ -78,6 +82,10 @@ $arguments = @(
     "--tail-lines", $TailLines.ToString()
 )
 
+foreach ($item in $Preset) {
+    $arguments += @("--preset", $item)
+}
+
 foreach ($item in $Pattern) {
     $arguments += @("--pattern", $item)
 }
@@ -92,6 +100,14 @@ if ($NoReset) {
 
 if ($QuietConsole) {
     $arguments += "--quiet-console"
+}
+
+if ($StreamConsole) {
+    $arguments += "--stream-console"
+}
+
+if ($AllowNoBoot) {
+    $arguments += "--allow-no-boot"
 }
 
 & $Python @arguments

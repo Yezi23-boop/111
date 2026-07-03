@@ -1,0 +1,300 @@
+{
+  "generated_at": "2026-07-03T18:59:02.817856+00:00",
+  "safe_mode": {
+    "host_only": true,
+    "hardware_access": false,
+    "network_access": false,
+    "sd_card_access": false,
+    "firmware_mutation": false
+  },
+  "constants": {
+    "sample_rate_hz": 16000,
+    "window_samples": 16000,
+    "stride_samples": 4800,
+    "chunk_samples": 1600,
+    "ring_samples": 48000,
+    "pre_samples": 16000,
+    "post_samples": 16000,
+    "confirm_windows": 2
+  },
+  "summary": {
+    "status": "passed",
+    "total": 4,
+    "passed": 4,
+    "failed": 0
+  },
+  "scenarios": [
+    {
+      "name": "confirmed_alerting_capture",
+      "status": "passed",
+      "trigger_parameters": {
+        "danger_windows_required": 2,
+        "danger_probabilities": [
+          0.93,
+          0.96
+        ],
+        "window_end_sample_index": 25600
+      },
+      "response_details": {
+        "risk_transitions": [
+          "SUSPICIOUS",
+          "ALERTING"
+        ],
+        "app_alerts": [
+          {
+            "severity": "DANGER",
+            "label": "DANGER"
+          }
+        ],
+        "cloud_alerts": [
+          {
+            "danger_type": "danger",
+            "danger_prob": 0.96,
+            "alert_sequence": 1
+          }
+        ],
+        "capture_responses": [
+          {
+            "status": "pending",
+            "reason": "capture_started",
+            "details": {
+              "start_sample": 9600,
+              "window_end_sample_index": 25600,
+              "initial_post_samples": 0,
+              "target_samples": 32000,
+              "generation": 0
+            }
+          }
+        ],
+        "completed_requests": [
+          {
+            "start_sample": 9600,
+            "window_end_sample_index": 25600,
+            "samples": 32000,
+            "generation": 0
+          }
+        ]
+      },
+      "assertions": [
+        {
+          "name": "risk_reaches_alerting",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "name": "single_app_alert",
+          "expected": 1,
+          "actual": 1,
+          "passed": true
+        },
+        {
+          "name": "single_cloud_alert",
+          "expected": 1,
+          "actual": 1,
+          "passed": true
+        },
+        {
+          "name": "single_capture_completed",
+          "expected": 1,
+          "actual": 1,
+          "passed": true
+        },
+        {
+          "name": "capture_start_sample",
+          "expected": 9600,
+          "actual": 9600,
+          "passed": true
+        },
+        {
+          "name": "capture_total_samples",
+          "expected": 32000,
+          "actual": 32000,
+          "passed": true
+        },
+        {
+          "name": "pre_first_sample_value",
+          "expected": -23168,
+          "actual": -23168,
+          "passed": true
+        },
+        {
+          "name": "post_first_sample_value",
+          "expected": -7168,
+          "actual": -7168,
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "early_window_safe_skip",
+      "status": "passed",
+      "trigger_parameters": {
+        "window_end_sample_index": 8000,
+        "pre_samples_required": 16000
+      },
+      "response_details": {
+        "capture_response": {
+          "status": "skipped",
+          "reason": "pre_buffer_not_ready",
+          "details": {
+            "window_end_sample_index": 8000
+          }
+        }
+      },
+      "assertions": [
+        {
+          "name": "capture_status",
+          "expected": "skipped",
+          "actual": "skipped",
+          "passed": true
+        },
+        {
+          "name": "skip_reason",
+          "expected": "pre_buffer_not_ready",
+          "actual": "pre_buffer_not_ready",
+          "passed": true
+        },
+        {
+          "name": "no_completed_request",
+          "expected": 0,
+          "actual": 0,
+          "passed": true
+        },
+        {
+          "name": "no_pending_capture",
+          "expected": null,
+          "actual": null,
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "post_backfill_partial_chunk",
+      "status": "passed",
+      "trigger_parameters": {
+        "window_end_sample_index": 32000,
+        "existing_post_samples_before_capture": 3200
+      },
+      "response_details": {
+        "capture_response": {
+          "status": "pending",
+          "reason": "capture_started",
+          "details": {
+            "start_sample": 16000,
+            "window_end_sample_index": 32000,
+            "initial_post_samples": 3200,
+            "target_samples": 32000,
+            "generation": 0
+          }
+        },
+        "completed_request": {
+          "start_sample": 16000,
+          "window_end_sample_index": 32000,
+          "samples": 32000
+        }
+      },
+      "assertions": [
+        {
+          "name": "capture_initial_status",
+          "expected": "pending",
+          "actual": "pending",
+          "passed": true
+        },
+        {
+          "name": "initial_post_samples",
+          "expected": 3200,
+          "actual": 3200,
+          "passed": true
+        },
+        {
+          "name": "capture_completed",
+          "expected": 1,
+          "actual": 1,
+          "passed": true
+        },
+        {
+          "name": "backfilled_post_first_value",
+          "expected": -768,
+          "actual": -768,
+          "passed": true
+        },
+        {
+          "name": "backfilled_post_last_value",
+          "expected": 2431,
+          "actual": 2431,
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "service_stop_resets_pending_capture",
+      "status": "passed",
+      "trigger_parameters": {
+        "window_end_sample_index": 32000,
+        "reset_reason": "danger_service_stop"
+      },
+      "response_details": {
+        "capture_response": {
+          "status": "pending",
+          "reason": "capture_started",
+          "details": {
+            "start_sample": 16000,
+            "window_end_sample_index": 32000,
+            "initial_post_samples": 0,
+            "target_samples": 32000,
+            "generation": 0
+          }
+        },
+        "recorder_events": [
+          {
+            "event": "capture_started",
+            "start_sample": 16000,
+            "window_end_sample_index": 32000,
+            "initial_post_samples": 0,
+            "target_samples": 32000,
+            "generation": 0
+          },
+          {
+            "event": "session_reset",
+            "reason": "danger_service_stop",
+            "generation": 1
+          }
+        ],
+        "generation": 1
+      },
+      "assertions": [
+        {
+          "name": "capture_initial_status",
+          "expected": "pending",
+          "actual": "pending",
+          "passed": true
+        },
+        {
+          "name": "generation_after_reset",
+          "expected": 1,
+          "actual": 1,
+          "passed": true
+        },
+        {
+          "name": "pending_cancelled",
+          "expected": null,
+          "actual": null,
+          "passed": true
+        },
+        {
+          "name": "no_completed_request_after_reset",
+          "expected": 0,
+          "actual": 0,
+          "passed": true
+        },
+        {
+          "name": "ring_restarted_from_zero",
+          "expected": 16000,
+          "actual": 16000,
+          "passed": true
+        }
+      ]
+    }
+  ]
+}
