@@ -27,6 +27,14 @@ tmp/
 *.temp
 *.log
 
+# 比赛报告 LaTeX 编译与预览过程产物
+paper_rewriting_output/final_paper/*.aux
+paper_rewriting_output/final_paper/*.fls
+paper_rewriting_output/final_paper/*.xdv
+paper_rewriting_output/final_paper/main_check.pdf
+paper_rewriting_output/final_paper/main_preview.pdf
+paper_rewriting_output/final_paper/preview*/
+
 # 表情表盘电脑端预览帧，不进入 LittleFS resources 镜像
 sdcard/watchface/frames/
 
