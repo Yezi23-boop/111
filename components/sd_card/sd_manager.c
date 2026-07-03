@@ -367,3 +367,26 @@ esp_err_t sd_manager_get_file_size(const char *file_path, size_t *file_size)
     *file_size = (size_t)st.st_size;
     return ESP_OK;
 }
+
+/**
+ * @brief 重命名或移动文件。
+ * @param[in] old_path 原文件路径。
+ * @param[in] new_path 新文件路径。
+ * @return `ESP_OK` 表示成功；其他错误表示参数或重命名失败。
+ */
+esp_err_t sd_manager_rename_file(const char *old_path, const char *new_path)
+{
+    if (old_path == NULL || new_path == NULL)
+    {
+        ESP_LOGW(TAG, "重命名文件参数无效");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (rename(old_path, new_path) == 0)
+    {
+        return ESP_OK;
+    }
+
+    ESP_LOGE(TAG, "重命名文件失败: %s -> %s", old_path, new_path);
+    return ESP_FAIL;
+}

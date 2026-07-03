@@ -72,6 +72,8 @@ set(feature_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/features/danger_detection/danger_detection_service.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/features/danger_detection/danger_sample_recorder.c
+
     ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_2048.c
 
     ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_flappy.c

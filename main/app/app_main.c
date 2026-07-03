@@ -76,7 +76,7 @@ static bool app_memory_watch_portal_configured_cb(void *user_ctx)
 /*
  * 应用主入口说明：
  * - `app_main()` 只负责系统级启动编排，不承载长期业务循环；
- * - 启动顺序遵循“先硬件基础设施，再 UI，再后台服务”的原则；
+ * - 启动顺序遵循"先硬件基础设施，再 UI，再后台服务"的原则；
  * - 这样可以保证即便联网或聊天服务尚未就绪，设备也能尽快进入可交互状态。
  */
 
@@ -184,7 +184,7 @@ static void start_service_managers(void)
 
     /*
      * 后台服务管理器是系统级功能开关层。第一阶段先托管危险识别，
-     * 让它脱离“进入专页才运行、离开专页就停止”的页面生命周期。
+     * 让它脱离"进入专页才运行、离开专页就停止"的页面生命周期。
      */
     if (background_service_manager_start() != ESP_OK)
     {
@@ -299,7 +299,7 @@ static void start_deferred_services(void)
  * @brief 应用程序主入口。
  *
  * 该入口只做系统级启动编排，不承载长期业务循环。
- * 启动顺序遵循“先硬件基础能力，再 UI，再后台服务”，
+ * 启动顺序遵循"先硬件基础能力，再 UI，再后台服务"，
  * 这样即使联网链路暂未就绪，设备也能尽快进入可交互状态。
  *
  * @return 无返回值。
@@ -327,5 +327,6 @@ void app_main(void)
     start_core_policy();
     start_service_managers();
     start_deferred_services();
+
     ESP_LOGI(TAG, "boot_stage: startup_sequence_done");
 }

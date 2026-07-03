@@ -81,6 +81,14 @@ extern "C"
      */
     esp_err_t sd_manager_get_file_size(const char *file_path, size_t *file_size);
 
+    /**
+     * @brief 重命名或移动文件。
+     * @param[in] old_path 原文件路径。
+     * @param[in] new_path 新文件路径。
+     * @return `ESP_OK` 表示成功；其他错误表示参数或重命名失败。
+     */
+    esp_err_t sd_manager_rename_file(const char *old_path, const char *new_path);
+
 #ifdef __cplusplus
 }
 #endif

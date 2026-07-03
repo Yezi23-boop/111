@@ -13,6 +13,7 @@
 #include "traffic_inference_postprocess.h"
 #include "espdl_audio_runtime.h"
 #include "espdl_model_runner.h"
+#include "danger_sample_recorder.h"
 
 #define TAG "danger_detection"
 #define DANGER_DETECTION_STOP_TIMEOUT_MS 2000U /**< 默认停止等待时间，单位为毫秒。 */
@@ -482,6 +483,15 @@ static void danger_detection_on_espdl_result(
         danger_detection_post_cloud_alert("danger", danger_prob,
                                           alert_sequence);
 
+        /* 触发样本录制。 */
+        esp_err_t capture_ret = danger_sample_recorder_capture(
+            result->label_index, danger_prob);
+        if (capture_ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "样本录制失败: %s", esp_err_to_name(capture_ret));
+            /* 不阻止告警流程，录制失败不影响主功能。 */
+        }
+
         ESP_LOGW(TAG,
                  "ESPDL danger 检测: profile=%s, class=%s, danger_prob=%.4f, windows=%lu",
                  profile->deployment_profile_id,
@@ -518,6 +528,15 @@ esp_err_t danger_detection_service_init(void)
     {
         danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
         return ret;
+    }
+
+    /* 初始化危险样本录制器。 */
+    ret = danger_sample_recorder_init(NULL);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "危险样本录制器初始化失败，样本录制功能不可用: %s",
+                 esp_err_to_name(ret));
+        /* 不阻止服务启动，录制功能可选。 */
     }
 
     taskENTER_CRITICAL(&s_service_state.lock);
@@ -613,10 +632,22 @@ static esp_err_t start_espdl_backend(void)
     s_service_state.callback_registered = true;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
+    /* 注册 PCM tap 回调到 ESP-DL runtime（由 service 层桥接 recorder）。 */
+    ret = espdl_audio_runtime_set_pcm_tap_callback(
+        (espdl_audio_pcm_tap_callback_t)danger_sample_recorder_get_pcm_callback(),
+        NULL);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "PCM tap 回调注册失败，样本录制功能不可用: %s",
+                 esp_err_to_name(ret));
+        /* 不阻止服务启动，录制功能可选。 */
+    }
+
     ret = espdl_audio_runtime_start(&config);
     if (ret != ESP_OK)
     {
         (void)espdl_audio_runtime_set_result_callback(NULL, NULL);
+        (void)espdl_audio_runtime_set_pcm_tap_callback(NULL, NULL);
         taskENTER_CRITICAL(&s_service_state.lock);
         s_service_state.callback_registered = false;
         taskEXIT_CRITICAL(&s_service_state.lock);
@@ -712,6 +743,12 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     danger_detection_set_state(DANGER_DETECTION_STATE_STOPPING, ESP_OK);
     (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
 
+    /* 注销 PCM tap 回调（在 runtime stop 之前）。 */
+    if (backend == DANGER_DETECTION_BACKEND_ESPDL)
+    {
+        (void)espdl_audio_runtime_set_pcm_tap_callback(NULL, NULL);
+    }
+
     esp_err_t ret = ESP_OK;
     if (runtime_started)
     {
@@ -774,6 +811,9 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     s_service_state.snapshot.danger_overlay_active = false;
     danger_detection_reset_espdl_postprocess();
     taskEXIT_CRITICAL(&s_service_state.lock);
+
+    /* 反初始化危险样本录制器。 */
+    danger_sample_recorder_deinit();
 
     danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);
     (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);

@@ -80,7 +80,10 @@ struct RuntimeControl {
     espdl_model_runner_t *model_runner = nullptr;
     espdl_audio_runtime_result_callback_t result_callback = nullptr;
     void *callback_user_data = nullptr;
+    espdl_audio_pcm_tap_callback_t pcm_tap_callback = nullptr;
+    void *pcm_tap_user_data = nullptr;
     esp_err_t last_result = ESP_OK;
+    uint64_t absolute_sample_index = 0U;  /**< 已重采样输出的绝对样本计数。 */
 };
 
 RuntimeControl s_runtime = {};
@@ -207,6 +210,7 @@ void runtime_task(void *arg)
     (void)arg;
 
     s_runtime.state.store(ESPDL_AUDIO_RUNTIME_STATE_RUNNING);
+    s_runtime.absolute_sample_index = 0U;
 
     const size_t chunk_frames = s_runtime.config.input_chunk_frames != 0
                                     ? s_runtime.config.input_chunk_frames
@@ -288,6 +292,8 @@ void runtime_task(void *arg)
             for (int16_t sample : resampled_samples) {
                 pcm_buffer.push_back(sample);
             }
+            /* 更新绝对样本索引 */
+            s_runtime.absolute_sample_index += resampled_samples.size();
         }
 
         /* 当缓冲满一窗时执行推理 */
@@ -300,6 +306,19 @@ void runtime_task(void *arg)
             constexpr float kScale = 1.0f / 32768.0f;
             for (size_t i = 0; i < ESPDL_WINDOW_SAMPLES; ++i) {
                 pcm_float[i] = static_cast<float>(pcm_buffer[i]) * kScale;
+            }
+
+            /* 调用 PCM tap 回调（如果注册） */
+            if (s_runtime.pcm_tap_callback != nullptr) {
+                const espdl_audio_pcm_window_meta_t meta = {
+                    .absolute_sample_index = s_runtime.absolute_sample_index - pcm_buffer.size(),
+                    .window_samples = ESPDL_WINDOW_SAMPLES,
+                    .stride_samples = kStrideSamples,
+                };
+                s_runtime.pcm_tap_callback(pcm_buffer.data(),
+                                          ESPDL_WINDOW_SAMPLES,
+                                          &meta,
+                                          s_runtime.pcm_tap_user_data);
             }
 
             /* 提取 Fbank 特征 */
@@ -557,6 +576,15 @@ esp_err_t espdl_audio_runtime_set_result_callback(
 {
     s_runtime.result_callback = callback;
     s_runtime.callback_user_data = user_data;
+    return ESP_OK;
+}
+
+esp_err_t espdl_audio_runtime_set_pcm_tap_callback(
+    espdl_audio_pcm_tap_callback_t callback,
+    void *user_data)
+{
+    s_runtime.pcm_tap_callback = callback;
+    s_runtime.pcm_tap_user_data = user_data;
     return ESP_OK;
 }
 

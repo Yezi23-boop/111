@@ -57,6 +57,34 @@ typedef void (*espdl_audio_runtime_result_callback_t)(
     void *user_data);
 
 /**
+ * @brief PCM tap 窗口元数据。
+ *
+ * 包含当前推理窗口的绝对样本索引信息，用于危险样本录制器定位音频位置。
+ */
+typedef struct {
+    uint64_t absolute_sample_index;  /**< 窗口起始处的绝对样本索引（16kHz 单声道）。 */
+    uint32_t window_samples;         /**< 窗口大小（样本数）。 */
+    uint32_t stride_samples;         /**< 滑窗步长（样本数）。 */
+} espdl_audio_pcm_window_meta_t;
+
+/**
+ * @brief PCM tap 回调。
+ *
+ * 在每次推理窗口准备完成时调用，提供原始 PCM 数据和窗口元数据。
+ * 回调内应尽快完成处理，避免阻塞推理循环。
+ *
+ * @param[in] pcm_data 窗口 PCM 数据（int16_t 格式，16kHz 单声道）。
+ * @param[in] samples PCM 数据样本数。
+ * @param[in] meta 窗口元数据（绝对样本索引等）。
+ * @param[in] user_data 用户数据指针。
+ */
+typedef void (*espdl_audio_pcm_tap_callback_t)(
+    const int16_t *pcm_data,
+    size_t samples,
+    const espdl_audio_pcm_window_meta_t *meta,
+    void *user_data);
+
+/**
  * @brief 启动 ESP-DL 实时音频推理运行时。
  *
  * @param[in] config 运行时配置，NULL 使用默认值。
@@ -92,6 +120,20 @@ espdl_audio_runtime_state_t espdl_audio_runtime_get_state(void);
  */
 esp_err_t espdl_audio_runtime_set_result_callback(
     espdl_audio_runtime_result_callback_t callback,
+    void *user_data);
+
+/**
+ * @brief 注册 PCM tap 回调。
+ *
+ * 在每次推理窗口准备完成时调用，提供原始 PCM 数据和窗口元数据。
+ * 用于危险样本录制器捕获原始音频。
+ *
+ * @param[in] callback 回调函数，NULL 注销。
+ * @param[in] user_data 用户数据。
+ * @return ESP_OK 表示注册成功。
+ */
+esp_err_t espdl_audio_runtime_set_pcm_tap_callback(
+    espdl_audio_pcm_tap_callback_t callback,
     void *user_data);
 
 #ifdef __cplusplus
