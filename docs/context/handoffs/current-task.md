@@ -12,6 +12,15 @@ evidence_level: observed
 
 # AI Memory Watch / Hermes 当前任务交接
 
+> **2026-07-04 更新：DS2413 马达板级能力已合入主线**
+>
+> - 本轮按“板级能力”范围从 `59e29713` 抽取 DS2413 马达控制，不 cherry-pick `app_main_test.c` 或 `scratch/ds2413_motor_migration`。
+> - 新增 `components/ds2413` 最小 1-Wire 驱动和 `main/app/board_ds2413_motor.c/.h`；GPIO18 为 1-Wire 总线，只使用 RMT backend（已按用户要求删除 UART1 兜底），FreeRTOS mutex 串行化访问，PIOA pull-low 为马达关闭态。
+> - `hardware_init()` 已在 NVS 后、SD/codec 等较慢初始化前调用 `board_ds2413_motor_init()`；初始化失败只 warning，不阻断 Board Foundation。
+> - 已补充 DS2413 公开接口、RMT-only、FreeRTOS mutex、open-drain release/pull-low 和协议字节注释；这轮只改注释，不改变马达运行行为。
+> - 本轮未把马达接入 `app_alert_manager`、危险提醒、低电量提示、Hermes 通知或 UI；`power_policy.haptic_alert_allowed` 语义未变。
+> - 验证：`python -m unittest tests.test_board_ds2413_motor_source tests.test_nonblocking_boot_source tests.test_power_integration_source` 27 passed；`idf.py build` 通过，`111.bin` `0xac7aa0`，最小 app 分区剩余 `0x338560`/23%。尚未做 COM3 板端 `app-flash-monitor`，因此没有真实 DS2413 ROM / default off 串口证据。
+
 > **2026-07-03 更新：危险 Alerting 手机通知链路已真机跑通**
 >
 > - ESP32 固件已接入首版危险告警云端 POST：`danger_detection_service` 在 `Alerting` 首次确认时投递中性 `watch_endpoint_service_post_danger_alert()`，不再直接依赖 Memory Watch / Hermes 命名。

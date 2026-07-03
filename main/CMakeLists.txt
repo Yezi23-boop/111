@@ -6,6 +6,8 @@ set(app_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/app/board_button.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/app/board_ds2413_motor.c
+
     ${CMAKE_CURRENT_LIST_DIR}/app/board_power.c
 
     ${CMAKE_CURRENT_LIST_DIR}/app/board_imu.c
@@ -231,6 +233,10 @@ idf_component_register(
         official_chat
 
         axp2101
+
+        ds2413
+
+        espressif__onewire_bus
 
         pcf85063atl
 

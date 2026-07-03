@@ -5,6 +5,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAIN_DIR = REPO_ROOT / "main"
 MAIN_CMAKE = MAIN_DIR / "CMakeLists.txt"
 MAIN_KCONFIG = MAIN_DIR / "Kconfig.projbuild"
+MAIN_IDF_COMPONENT = MAIN_DIR / "idf_component.yml"
 
 APP_DIR = MAIN_DIR / "app"
 SERVICES_DIR = MAIN_DIR / "services"
@@ -171,6 +172,8 @@ BOARD_POWER_SOURCE = APP_DIR / "board_power.c"
 BOARD_POWER_HEADER = APP_DIR / "board_power.h"
 BOARD_BUTTON_SOURCE = APP_DIR / "board_button.c"
 BOARD_BUTTON_HEADER = APP_DIR / "board_button.h"
+BOARD_DS2413_MOTOR_SOURCE = APP_DIR / "board_ds2413_motor.c"
+BOARD_DS2413_MOTOR_HEADER = APP_DIR / "board_ds2413_motor.h"
 MINI_GAME_2048_SOURCE = MINI_GAMES_DIR / "mini_game_2048.c"
 MINI_GAME_2048_HEADER = MINI_GAMES_DIR / "mini_game_2048.h"
 
@@ -199,6 +202,11 @@ QMI8658C_HEADER = QMI8658C_DIR / "include" / "qmi8658c.h"
 QMI8658C_SOURCE = QMI8658C_DIR / "qmi8658c.c"
 QMI8658C_REGS_HEADER = QMI8658C_DIR / "qmi8658c_regs.h"
 QMI8658C_CMAKE = QMI8658C_DIR / "CMakeLists.txt"
+
+DS2413_DIR = REPO_ROOT / "components" / "ds2413"
+DS2413_HEADER = DS2413_DIR / "include" / "ds2413.h"
+DS2413_SOURCE = DS2413_DIR / "ds2413.c"
+DS2413_CMAKE = DS2413_DIR / "CMakeLists.txt"
 
 IMU_MOTION_DIR = REPO_ROOT / "components" / "imu_motion"
 IMU_MOTION_HEADER = IMU_MOTION_DIR / "include" / "imu_motion.h"

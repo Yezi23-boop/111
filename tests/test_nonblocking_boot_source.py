@@ -45,11 +45,12 @@ class NonblockingBootSourceTests(unittest.TestCase):
             'xTaskCreatePinnedToCore(lvgl_task, "lvgl_task"',
             source,
         )
-        self.assertIn("kTimeWeatherTaskStackBytes = 8192", source)
+        self.assertIn("kTimeWeatherTaskStackBytes = 6144", source)
         self.assertIn(
-            'xTaskCreatePinnedToCore(\n        time_and_weather, "time", kTimeWeatherTaskStackBytes',
+            'xTaskCreatePinnedToCoreWithCaps(\n        time_and_weather, "time", kTimeWeatherTaskStackBytes',
             source,
         )
+        self.assertIn("MALLOC_CAP_SPIRAM", source)
         self.assertIn("official_chat_service_init()", source)
         self.assertNotIn("official_chat_bootstrap_task", source)
         self.assertNotIn("network_service_is_service_ready()", source)

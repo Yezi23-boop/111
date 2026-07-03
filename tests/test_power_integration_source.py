@@ -421,7 +421,8 @@ class PowerIntegrationSourceTests(unittest.TestCase):
 
         self.assertIn('#include "freertos/task.h"', source)
         self.assertIn("static void power_policy_task(void *arg)", source)
-        self.assertIn("xTaskCreate(power_policy_task", source)
+        self.assertIn("xTaskCreateWithCaps(power_policy_task", source)
+        self.assertIn("MALLOC_CAP_SPIRAM", source)
         self.assertIn("xTaskNotifyWait", source)
         self.assertIn("xTaskNotify(task_handle, reason, eSetBits)", source)
         self.assertIn("k_policy_task_period_ticks = pdMS_TO_TICKS(1000)", source)
