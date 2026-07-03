@@ -21,6 +21,7 @@ def test_sd_manager_file_api_declarations_have_implementations() -> None:
         "sd_manager_create_dir",
         "sd_manager_delete_file",
         "sd_manager_get_file_size",
+        "sd_manager_rename_file",
     ):
         assert name in header
         assert f"esp_err_t {name}(" in source
@@ -36,3 +37,4 @@ def test_sd_manager_file_api_uses_vfs_stdio_and_stat() -> None:
     assert "mkdir(dir_path, 0775)" in source
     assert "remove(file_path)" in source
     assert "stat(file_path, &st)" in source
+    assert "rename(old_path, new_path)" in source

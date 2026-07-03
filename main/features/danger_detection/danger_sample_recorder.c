@@ -2,8 +2,8 @@
  * @file danger_sample_recorder.c
  * @brief 危险样本录制器实现。
  *
- * 通过 PCM tap 回调机制捕获音频数据，维护环形缓冲区，
- * 在 capture event 触发时将缓冲区内容通过队列发送到独立写入任务。
+ * 通过 PCM tap 回调机制捕获连续音频数据，维护环形缓冲区，
+ * 在 capture event 触发时按推理窗口末尾索引保存前 1 秒 + 后 1 秒。
  *
  * 文件命名规则：/{date}/{time}_{label}_{confidence}.pcm
  * 元数据文件：/{date}/{time}_{label}_{confidence}.meta
@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <sys/unistd.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -32,8 +33,10 @@
 static const char *TAG = "danger_recorder";
 
 /** 默认配置。 */
-static const uint32_t kDefaultBufferDurationMs = 5000U;  /**< 默认缓冲区时长 5 秒。 */
+static const uint32_t kDefaultBufferDurationMs = 3000U;  /**< 默认缓冲区时长 3 秒。 */
 static const uint32_t kDefaultSampleRateHz = 16000U;     /**< 默认采样率 16kHz。 */
+static const uint32_t kPreCaptureMs = 1000U;             /**< 保存触发窗口前 1 秒。 */
+static const uint32_t kPostCaptureMs = 1000U;            /**< 保存触发窗口后 1 秒。 */
 static const char *kDefaultOutputDir = "/sdcard/danger_samples";
 static const uint32_t kWriteTaskStackSize = 8192U;       /**< 写入任务栈大小。 */
 static const UBaseType_t kWriteTaskPriority = 3U;         /**< 写入任务优先级。 */
@@ -54,8 +57,24 @@ typedef struct {
     int16_t *pcm_data;           /**< PCM 数据缓冲区（由写入任务释放），NULL = 哨兵。 */
     size_t samples;              /**< 样本数。 */
     uint64_t start_sample;       /**< 起始样本索引。 */
+    uint64_t window_end_sample_index; /**< 触发窗口末尾样本索引。 */
     uint32_t generation;         /**< 创建时的 runtime_generation。 */
 } write_request_t;
+
+/** 待补后置 1 秒的捕获事件。 */
+typedef struct {
+    bool active;                  /**< 是否存在未完成 capture。 */
+    uint32_t label_index;         /**< 识别标签索引。 */
+    float confidence;             /**< 识别置信度。 */
+    int16_t *pcm_data;            /**< 前后 2 秒 PCM 缓冲，由写入任务释放。 */
+    size_t total_samples;         /**< 目标总样本数。 */
+    size_t pre_samples;           /**< 前置样本数。 */
+    size_t post_samples;          /**< 后置样本数。 */
+    size_t post_collected;        /**< 已收集后置样本数。 */
+    uint64_t start_sample;        /**< 样本文件起始绝对索引。 */
+    uint64_t window_end_sample_index; /**< 触发窗口末尾样本索引。 */
+    uint32_t generation;          /**< capture 创建时的 runtime_generation。 */
+} pending_capture_t;
 
 /** 录制器状态。 */
 typedef struct {
@@ -67,8 +86,9 @@ typedef struct {
     char output_dir[256];                /**< 输出目录。 */
     bool is_initialized;                 /**< 是否已初始化。 */
     bool is_recording;                   /**< 是否正在录制。 */
-    uint64_t last_window_start_sample;   /**< 上一个窗口起始样本索引。 */
+    uint64_t next_sample_index;          /**< ring 中下一次期望写入的绝对样本索引。 */
     uint32_t runtime_generation;         /**< 运行时代次，stop 时递增使旧事件失效。 */
+    pending_capture_t pending_capture;   /**< 等待后置样本的 capture。 */
 } recorder_state_t;
 
 /** 全局录制器状态。 */
@@ -81,8 +101,9 @@ static recorder_state_t s_recorder = {
     .output_dir = "",
     .is_initialized = false,
     .is_recording = false,
-    .last_window_start_sample = 0U,
+    .next_sample_index = 0U,
     .runtime_generation = 0U,
+    .pending_capture = {0},
 };
 
 /**
@@ -129,6 +150,18 @@ static void ring_buffer_deinit(ring_buffer_t *rb)
 }
 
 /**
+ * @brief 清空环形缓冲区但保留已分配存储。
+ */
+static void ring_buffer_reset(ring_buffer_t *rb)
+{
+    if (rb == NULL) {
+        return;
+    }
+    rb->write_pos = 0U;
+    rb->available = 0U;
+}
+
+/**
  * @brief 向环形缓冲区写入数据。
  *
  * @param[in] rb 环形缓冲区指针。
@@ -152,49 +185,129 @@ static void ring_buffer_write(ring_buffer_t *rb, const int16_t *data,
 }
 
 /**
- * @brief 从环形缓冲区读取数据（按时间顺序）。
- *
- * @param[in] rb 环形缓冲区指针。
- * @param[out] output 输出缓冲区。
- * @param[in] max_samples 最大读取样本数。
- * @return 实际读取的样本数。
+ * @brief 按绝对样本索引从 ring 中复制连续区间。
  */
-static size_t ring_buffer_read_ordered(const ring_buffer_t *rb,
-                                       int16_t *output,
-                                       size_t max_samples)
+static bool ring_buffer_copy_range(const ring_buffer_t *rb,
+                                   uint64_t oldest_sample_index,
+                                   uint64_t start_sample_index,
+                                   int16_t *output,
+                                   size_t samples)
 {
-    if (rb == NULL || rb->data == NULL || output == NULL || max_samples == 0U) {
-        return 0U;
+    if (rb == NULL || rb->data == NULL || output == NULL || samples == 0U) {
+        return false;
+    }
+    if (start_sample_index < oldest_sample_index) {
+        return false;
     }
 
-    const size_t to_read = (rb->available < max_samples) ? rb->available
-                                                          : max_samples;
-    if (to_read == 0U) {
-        return 0U;
+    const uint64_t offset64 = start_sample_index - oldest_sample_index;
+    if (offset64 > rb->available) {
+        return false;
     }
 
-    /* 计算起始读取位置（最旧的数据）。 */
-    size_t read_pos;
-    if (rb->available < rb->capacity) {
-        /* 缓冲区未满，从 0 开始。 */
-        read_pos = 0U;
-    } else {
-        /* 缓冲区已满，从 write_pos 开始（最旧的数据）。 */
-        read_pos = rb->write_pos;
+    const size_t offset = (size_t)offset64;
+    if (offset + samples > rb->available) {
+        return false;
     }
 
-    /* 读取数据。 */
-    for (size_t i = 0U; i < to_read; ++i) {
+    const size_t oldest_pos =
+        (rb->write_pos + rb->capacity - rb->available) % rb->capacity;
+    const size_t read_pos = (oldest_pos + offset) % rb->capacity;
+    for (size_t i = 0U; i < samples; ++i) {
         output[i] = rb->data[(read_pos + i) % rb->capacity];
     }
+    return true;
+}
 
-    return to_read;
+/**
+ * @brief 取消未完成 capture 并释放其 PSRAM 缓冲。
+ */
+static void clear_pending_capture_locked(void)
+{
+    if (s_recorder.pending_capture.pcm_data != NULL) {
+        heap_caps_free(s_recorder.pending_capture.pcm_data);
+    }
+    memset(&s_recorder.pending_capture, 0, sizeof(s_recorder.pending_capture));
+}
+
+/**
+ * @brief 根据当前 PCM chunk 补齐 pending capture 的后置样本。
+ */
+static bool collect_pending_post_samples_locked(const int16_t *pcm_data,
+                                                uint64_t chunk_start,
+                                                size_t samples,
+                                                write_request_t *request)
+{
+    pending_capture_t *pending = &s_recorder.pending_capture;
+    if (!pending->active || pcm_data == NULL || samples == 0U ||
+        request == NULL) {
+        return false;
+    }
+
+    const uint64_t chunk_end = chunk_start + samples;
+    const uint64_t post_start = pending->window_end_sample_index;
+    const uint64_t post_end = post_start + pending->post_samples;
+    if (chunk_end <= post_start || chunk_start >= post_end) {
+        return false;
+    }
+
+    const uint64_t copy_start =
+        chunk_start > post_start ? chunk_start : post_start;
+    const uint64_t copy_end = chunk_end < post_end ? chunk_end : post_end;
+    const size_t source_offset = (size_t)(copy_start - chunk_start);
+    const size_t post_offset = (size_t)(copy_start - post_start);
+    const size_t copy_samples = (size_t)(copy_end - copy_start);
+
+    memcpy(&pending->pcm_data[pending->pre_samples + post_offset],
+           &pcm_data[source_offset],
+           copy_samples * sizeof(int16_t));
+
+    const size_t collected = post_offset + copy_samples;
+    if (collected > pending->post_collected) {
+        pending->post_collected = collected;
+    }
+
+    if (pending->post_collected < pending->post_samples) {
+        return false;
+    }
+
+    *request = (write_request_t) {
+        .label_index = pending->label_index,
+        .confidence = pending->confidence,
+        .pcm_data = pending->pcm_data,
+        .samples = pending->total_samples,
+        .start_sample = pending->start_sample,
+        .window_end_sample_index = pending->window_end_sample_index,
+        .generation = pending->generation,
+    };
+    pending->pcm_data = NULL;
+    memset(pending, 0, sizeof(*pending));
+    return true;
+}
+
+/**
+ * @brief 把完成的样本投递给 SD 写入任务。
+ */
+static esp_err_t queue_completed_capture(write_request_t *request)
+{
+    if (request == NULL || request->pcm_data == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (xQueueSend(s_recorder.write_queue, request, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "写入队列已满，丢弃本次录制");
+        heap_caps_free(request->pcm_data);
+        request->pcm_data = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGI(TAG, "录制请求已提交: %u 样本", (unsigned)request->samples);
+    return ESP_OK;
 }
 
 /**
  * @brief PCM tap 回调函数。
  *
- * 在每次推理窗口准备完成时调用，将 PCM 数据写入环形缓冲区。
+ * 在每次重采样后调用，将连续 PCM chunk 写入环形缓冲区。
  * 此函数在推理任务上下文中执行，需尽快返回。
  *
  * @param[in] pcm_data 窗口 PCM 数据（int16_t 格式，16kHz 单声道）。
@@ -213,11 +326,29 @@ void pcm_tap_callback(const int16_t *pcm_data, size_t samples,
         return;
     }
 
+    write_request_t completed_request = {0};
+    bool should_queue = false;
+
     /* 使用互斥锁保护环形缓冲区写入，超时 10ms 避免阻塞推理循环。 */
     if (xSemaphoreTake(s_recorder.mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        const uint64_t chunk_start = meta->absolute_sample_index;
+        if (s_recorder.ring_buffer.available > 0U &&
+            chunk_start != s_recorder.next_sample_index) {
+            ESP_LOGW(TAG, "PCM sample index 不连续，重置 recorder 会话");
+            s_recorder.runtime_generation++;
+            ring_buffer_reset(&s_recorder.ring_buffer);
+            clear_pending_capture_locked();
+        }
+
         ring_buffer_write(&s_recorder.ring_buffer, pcm_data, samples);
-        s_recorder.last_window_start_sample = meta->absolute_sample_index;
+        s_recorder.next_sample_index = chunk_start + samples;
+        should_queue = collect_pending_post_samples_locked(
+            pcm_data, chunk_start, samples, &completed_request);
         xSemaphoreGive(s_recorder.mutex);
+    }
+
+    if (should_queue) {
+        (void)queue_completed_capture(&completed_request);
     }
 }
 
@@ -434,32 +565,39 @@ static esp_err_t write_wav_file(const char *filepath, const int16_t *data,
  */
 static esp_err_t write_json_file(const char *filepath, uint32_t label_index,
                                  float confidence, uint64_t start_sample,
-                                 size_t samples, uint32_t generation)
+                                 size_t samples,
+                                 uint64_t window_end_sample_index,
+                                 uint32_t generation)
 {
     if (filepath == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
     /* JSON 内容。 */
-    char json_content[512];
+    char json_content[768];
     int ret = snprintf(json_content, sizeof(json_content),
         "{\n"
         "  \"label_index\": %u,\n"
         "  \"confidence\": %.4f,\n"
         "  \"start_sample\": %llu,\n"
+        "  \"window_end_sample_index\": %llu,\n"
         "  \"samples\": %u,\n"
         "  \"sample_rate\": %u,\n"
         "  \"channels\": 1,\n"
         "  \"bits_per_sample\": 16,\n"
+        "  \"pre_ms\": %u,\n"
+        "  \"post_ms\": %u,\n"
         "  \"runtime_generation\": %u,\n"
-        "  \"window_overlap\": true,\n"
         "  \"uploaded\": false\n"
         "}\n",
         (unsigned)label_index,
         (double)confidence,
         (unsigned long long)start_sample,
+        (unsigned long long)window_end_sample_index,
         (unsigned)samples,
         (unsigned)s_recorder.sample_rate_hz,
+        (unsigned)kPreCaptureMs,
+        (unsigned)kPostCaptureMs,
         (unsigned)generation);
     if (ret < 0 || (size_t)ret >= sizeof(json_content)) {
         ESP_LOGE(TAG, "JSON 内容生成失败");
@@ -583,7 +721,9 @@ static void write_task(void *arg)
         /* 写入 JSON 元数据文件（.tmp → rename）。 */
         ret = write_json_file(json_filename, request.label_index,
                               request.confidence, request.start_sample,
-                              request.samples, request.generation);
+                              request.samples,
+                              request.window_end_sample_index,
+                              request.generation);
 
         /* 释放 PCM 数据缓冲区。 */
         heap_caps_free(request.pcm_data);
@@ -685,7 +825,8 @@ esp_err_t danger_sample_recorder_init(
 
     s_recorder.is_initialized = true;
     s_recorder.is_recording = false;
-    s_recorder.last_window_start_sample = 0U;
+    s_recorder.next_sample_index = 0U;
+    memset(&s_recorder.pending_capture, 0, sizeof(s_recorder.pending_capture));
 
     ESP_LOGI(TAG, "危险样本录制器已初始化: buffer=%ums, rate=%uHz, dir=%s",
              (unsigned)buffer_duration_ms,
@@ -716,6 +857,7 @@ void danger_sample_recorder_deinit(void)
             .pcm_data = NULL,
             .samples = 0U,
             .start_sample = 0U,
+            .window_end_sample_index = 0U,
         };
         if (xQueueSend(s_recorder.write_queue, &sentinel, pdMS_TO_TICKS(100)) != pdTRUE) {
             ESP_LOGW(TAG, "发送退出哨兵失败，强制删除写入任务");
@@ -736,6 +878,7 @@ void danger_sample_recorder_deinit(void)
     }
 
     ring_buffer_deinit(&s_recorder.ring_buffer);
+    clear_pending_capture_locked();
 
     s_recorder.is_initialized = false;
     s_recorder.is_recording = false;
@@ -743,8 +886,31 @@ void danger_sample_recorder_deinit(void)
     ESP_LOGI(TAG, "危险样本录制器已反初始化");
 }
 
+void danger_sample_recorder_reset_session(void)
+{
+    if (!s_recorder.is_initialized) {
+        return;
+    }
+
+    if (xSemaphoreTake(s_recorder.mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "重置 recorder 会话时获取互斥锁超时");
+        return;
+    }
+
+    s_recorder.runtime_generation++;
+    ring_buffer_reset(&s_recorder.ring_buffer);
+    clear_pending_capture_locked();
+    s_recorder.next_sample_index = 0U;
+    s_recorder.is_recording = false;
+
+    xSemaphoreGive(s_recorder.mutex);
+    ESP_LOGI(TAG, "危险样本录制器会话已重置: generation=%u",
+             (unsigned)s_recorder.runtime_generation);
+}
+
 esp_err_t danger_sample_recorder_capture(uint32_t label_index,
-                                         float confidence)
+                                         float confidence,
+                                         uint64_t window_end_sample_index)
 {
     if (!s_recorder.is_initialized) {
         ESP_LOGE(TAG, "录制器未初始化");
@@ -757,60 +923,117 @@ esp_err_t danger_sample_recorder_capture(uint32_t label_index,
         return ESP_ERR_TIMEOUT;
     }
 
-    /* 读取环形缓冲区数据。 */
-    const size_t available = s_recorder.ring_buffer.available;
-    if (available == 0U) {
+    write_request_t completed_request = {0};
+    bool should_queue = false;
+    const size_t pre_samples =
+        (s_recorder.sample_rate_hz * kPreCaptureMs) / 1000U;
+    const size_t post_samples =
+        (s_recorder.sample_rate_hz * kPostCaptureMs) / 1000U;
+    const size_t total_samples = pre_samples + post_samples;
+    if (window_end_sample_index < pre_samples) {
         xSemaphoreGive(s_recorder.mutex);
-        ESP_LOGW(TAG, "缓冲区为空，跳过录制");
+        ESP_LOGW(TAG, "前置样本不足，跳过录制");
         return ESP_OK;
     }
 
-    /* 记录当前 generation。 */
+    if (s_recorder.pending_capture.active) {
+        xSemaphoreGive(s_recorder.mutex);
+        ESP_LOGW(TAG, "已有未完成录制，丢弃本次 capture");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const uint64_t start_sample = window_end_sample_index - pre_samples;
+    const uint64_t oldest_sample =
+        s_recorder.next_sample_index - s_recorder.ring_buffer.available;
+    if (start_sample < oldest_sample ||
+        window_end_sample_index > s_recorder.next_sample_index) {
+        xSemaphoreGive(s_recorder.mutex);
+        ESP_LOGW(TAG,
+                 "ring 中没有完整前置样本: start=%llu, end=%llu, oldest=%llu, next=%llu",
+                 (unsigned long long)start_sample,
+                 (unsigned long long)window_end_sample_index,
+                 (unsigned long long)oldest_sample,
+                 (unsigned long long)s_recorder.next_sample_index);
+        return ESP_OK;
+    }
+
     const uint32_t generation = s_recorder.runtime_generation;
 
-    /* 分配临时缓冲区（使用 PSRAM）。 */
     int16_t *temp_buffer = (int16_t *)heap_caps_malloc(
-        available * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+        total_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     if (temp_buffer == NULL) {
         xSemaphoreGive(s_recorder.mutex);
         ESP_LOGE(TAG, "临时缓冲区内存分配失败");
         return ESP_ERR_NO_MEM;
     }
 
-    /* 读取数据。 */
-    const size_t samples_read = ring_buffer_read_ordered(
-        &s_recorder.ring_buffer, temp_buffer, available);
-
-    /* 计算起始样本索引：
-     * last_window_start_sample 是最新窗口的起始绝对样本索引，
-     * ring buffer 中的数据从最旧到最新排列，
-     * 所以最旧数据的绝对索引 = last_window_start_sample - (available - stride)。
-     * 这里简化为：start_sample = last_window_start_sample - (available - samples_read)。
-     */
-    const uint64_t start_sample =
-        s_recorder.last_window_start_sample -
-        (available - samples_read);
-
-    xSemaphoreGive(s_recorder.mutex);
-
-    /* 构造写入请求。 */
-    write_request_t request = {
-        .label_index = label_index,
-        .confidence = confidence,
-        .pcm_data = temp_buffer,
-        .samples = samples_read,
-        .start_sample = start_sample,
-        .generation = generation,
-    };
-
-    /* 发送到写入队列（非阻塞，队列满则丢弃）。 */
-    if (xQueueSend(s_recorder.write_queue, &request, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "写入队列已满，丢弃本次录制");
+    if (!ring_buffer_copy_range(&s_recorder.ring_buffer, oldest_sample,
+                                start_sample, temp_buffer, pre_samples)) {
         heap_caps_free(temp_buffer);
-        return ESP_ERR_NO_MEM;
+        xSemaphoreGive(s_recorder.mutex);
+        ESP_LOGW(TAG, "复制前置样本失败，跳过录制");
+        return ESP_OK;
     }
 
-    ESP_LOGI(TAG, "录制请求已提交: %u 样本", (unsigned)samples_read);
+    size_t initial_post_samples = 0U;
+    if (s_recorder.next_sample_index > window_end_sample_index) {
+        const uint64_t post_end_sample = window_end_sample_index + post_samples;
+        const uint64_t available_post_end =
+            s_recorder.next_sample_index < post_end_sample
+                ? s_recorder.next_sample_index
+                : post_end_sample;
+        initial_post_samples =
+            (size_t)(available_post_end - window_end_sample_index);
+        if (initial_post_samples > 0U &&
+            !ring_buffer_copy_range(&s_recorder.ring_buffer, oldest_sample,
+                                    window_end_sample_index,
+                                    &temp_buffer[pre_samples],
+                                    initial_post_samples)) {
+            heap_caps_free(temp_buffer);
+            xSemaphoreGive(s_recorder.mutex);
+            ESP_LOGW(TAG, "复制已存在后置样本失败，跳过录制");
+            return ESP_OK;
+        }
+    }
+
+    if (initial_post_samples >= post_samples) {
+        completed_request = (write_request_t) {
+            .label_index = label_index,
+            .confidence = confidence,
+            .pcm_data = temp_buffer,
+            .samples = total_samples,
+            .start_sample = start_sample,
+            .window_end_sample_index = window_end_sample_index,
+            .generation = generation,
+        };
+        should_queue = true;
+    } else {
+        s_recorder.pending_capture = (pending_capture_t) {
+            .active = true,
+            .label_index = label_index,
+            .confidence = confidence,
+            .pcm_data = temp_buffer,
+            .total_samples = total_samples,
+            .pre_samples = pre_samples,
+            .post_samples = post_samples,
+            .post_collected = initial_post_samples,
+            .start_sample = start_sample,
+            .window_end_sample_index = window_end_sample_index,
+            .generation = generation,
+        };
+    }
+    xSemaphoreGive(s_recorder.mutex);
+
+    if (should_queue) {
+        return queue_completed_capture(&completed_request);
+    }
+
+    ESP_LOGI(TAG,
+             "录制 capture 已进入 pending: start=%llu, window_end=%llu, post=%u/%u",
+             (unsigned long long)start_sample,
+             (unsigned long long)window_end_sample_index,
+             (unsigned)initial_post_samples,
+             (unsigned)post_samples);
     return ESP_OK;
 }
 

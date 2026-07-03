@@ -103,6 +103,40 @@ static bool danger_detection_service_allows_alert_commit(void)
            state != DANGER_DETECTION_STATE_ERROR;
 }
 
+/**
+ * @brief ESP-DL PCM tap 到 recorder PCM tap 的窄适配层。
+ *
+ * 两个模块的 meta 字段布局当前一致，但类型不相同；这里显式拷贝字段，
+ * 避免通过不兼容函数指针强转调用带来的 ABI 风险。
+ */
+static void danger_detection_on_espdl_pcm_tap(
+    const int16_t *pcm_data,
+    size_t samples,
+    const espdl_audio_pcm_window_meta_t *meta,
+    void *user_data)
+{
+    (void)user_data;
+
+    if (meta == NULL)
+    {
+        return;
+    }
+
+    danger_sample_pcm_tap_callback_t recorder_callback =
+        danger_sample_recorder_get_pcm_callback();
+    if (recorder_callback == NULL)
+    {
+        return;
+    }
+
+    const danger_sample_pcm_window_meta_t recorder_meta = {
+        .absolute_sample_index = meta->absolute_sample_index,
+        .window_samples = meta->window_samples,
+        .stride_samples = meta->stride_samples,
+    };
+    recorder_callback(pcm_data, samples, &recorder_meta, NULL);
+}
+
 static const char *danger_detection_cloud_type_from_stable_label(
     traffic_inference_postprocess_stable_label_t label)
 {
@@ -485,7 +519,8 @@ static void danger_detection_on_espdl_result(
 
         /* 触发样本录制。 */
         esp_err_t capture_ret = danger_sample_recorder_capture(
-            result->label_index, danger_prob);
+            result->label_index, danger_prob,
+            result->window_end_sample_index);
         if (capture_ret != ESP_OK)
         {
             ESP_LOGW(TAG, "样本录制失败: %s", esp_err_to_name(capture_ret));
@@ -633,9 +668,9 @@ static esp_err_t start_espdl_backend(void)
     taskEXIT_CRITICAL(&s_service_state.lock);
 
     /* 注册 PCM tap 回调到 ESP-DL runtime（由 service 层桥接 recorder）。 */
+    danger_sample_recorder_reset_session();
     ret = espdl_audio_runtime_set_pcm_tap_callback(
-        (espdl_audio_pcm_tap_callback_t)danger_sample_recorder_get_pcm_callback(),
-        NULL);
+        danger_detection_on_espdl_pcm_tap, NULL);
     if (ret != ESP_OK)
     {
         ESP_LOGW(TAG, "PCM tap 回调注册失败，样本录制功能不可用: %s",
@@ -736,6 +771,7 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
 
     if (!runtime_started && !callback_registered)
     {
+        danger_sample_recorder_reset_session();
         danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);
         return ESP_OK;
     }
@@ -812,8 +848,8 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     danger_detection_reset_espdl_postprocess();
     taskEXIT_CRITICAL(&s_service_state.lock);
 
-    /* 反初始化危险样本录制器。 */
-    danger_sample_recorder_deinit();
+    /* 普通后台开关 stop 只重置会话，不销毁 recorder worker/queue。 */
+    danger_sample_recorder_reset_session();
 
     danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);
     (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);

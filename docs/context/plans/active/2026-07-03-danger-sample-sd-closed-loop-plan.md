@@ -203,6 +203,17 @@ danger_sample_recorder -> danger_detection_service 内部状态
   - PCM tap 注册/注销移至 danger_detection_service.c
   - `danger_sample_recorder.c` 添加到 CMakeLists.txt
   - 文件格式从 PCM+meta 改为 WAV+JSON
+- `[x]` 语义修复（2026-07-04）：重新修复另一轮实现偏差，确认阶段 1A-1D 语义成立：
+  - ESP-DL PCM tap 改为发布 `resampled_samples` 连续 chunk，不再发布重叠推理滑窗。
+  - `espdl_model_result_t` 增加 `window_end_sample_index`，Alerting capture 按该 index 对齐。
+  - recorder capture 复制前 1 秒后进入 pending，由后续 PCM tap 收集后 1 秒，满 32000 样本后写入。
+  - 普通危险识别 stop 只 reset recorder session，不 deinit worker/queue。
+  - 子代理复查后补修：service 使用 PCM tap adapter，不再强转不兼容函数指针；capture 会回填 ring 中已存在的 post 样本。
+  - source tests `26 passed`，完整 `idf.py build` 通过。
+- `[x]` 无人值守 host 仿真脚本（2026-07-04）：新增 `scripts/danger_detection/simulate_danger_trigger.py`，安全模拟连续 danger 触发 Alerting、recorder capture、post backfill、早期窗口跳过和 stop/reset，生成 JSON 测试报告；新增 pytest 包装验证脚本可自动运行。相关危险识别测试 `28 passed`。
+- `[x]` 真机 SD 样本闭环确认（2026-07-04）：用户补充说明已经实测，不只是 host 仿真；`Alerting -> recorder capture -> /sdcard/danger_samples` 样本保存链路按用户反馈通过。本轮未保存原始串口日志、WAV/JSON 文件名或 SD 卡截图。
+- `[x]` 板端无人值守 recorder/SD 自测入口（2026-07-04）：新增默认关闭 `CONFIG_DANGER_SAMPLE_RECORDER_BOARD_TEST`，测试固件启动 60 秒后注入合成 16kHz PCM、模拟 `danger_sample_recorder_capture(1U, 0.95f, 32000ULL)`、等待 SD worker，并通过 `.wav/.json` 文件数量增量确认成功。COM3 日志 `board_logs/2026-07-04-03-21-14-danger-sample-recorder-board-test.log` 证明 `/sdcard/danger_samples/20260704/032222_1_95.wav/.json` 写入成功，`wav_before=3 -> wav_after=4`、`json_before=3 -> json_after=4`，未见 FAIL/Guru/panic；收尾已刷回默认关闭测试的正常固件。
+- `[x]` 临时板端自测代码清理（2026-07-04）：COM3 自测通过后按用户要求删除 `danger_sample_recorder_board_test.c/.h`、对应 Kconfig、`app_main` 调用、CMake 接线和自测 source test；正式 recorder 与真实 `Alerting` 保存链路保留。
 - `[ ]` 阶段 2A：服务器新增 `/v1/watch/danger-samples` 上传接口与测试。
 - `[ ]` 阶段 2B：固件新增未上传样本补传 worker。
 - `[ ]` 阶段 3：Android App 增加样本人工标注入口。
@@ -265,22 +276,10 @@ danger_sample_recorder -> danger_detection_service 内部状态
   - WAV 可播放，约 2 秒，采样率 16kHz 单声道。
   - JSON 字段与触发事件一致。
 - 当前实际结果：
-  - 自动化闭环测试通过（2026-07-04 01:56），测试结果：**9/9 PASS**
-  - 生成的文件：
-    - WAV: `/sdcard/danger_samples/20260704/015448_1_95.wav` (64044 bytes, 2秒@16kHz单声道)
-    - JSON: `/sdcard/danger_samples/20260704/015448_1_95.json` (233 bytes)
-  - 所有测试断言通过：
-    1. recorder 初始化: PASS
-    2. PCM 数据注入: PASS
-    3. capture 触发: PASS
-    4. 写入任务完成: PASS (400ms)
-    5. WAV 文件存在: PASS
-    6. JSON 文件存在: PASS
-    7. WAV 大小正确: PASS (64044 bytes)
-    8. WAV header 正确: PASS
-    9. JSON 字段完整: PASS
-  - 测试通过 DTR 重置实现冷启动，自动执行 10 秒后启动测试任务，无需人工干预
-  - 测试输出格式化为机器可读：`TEST_RESULT: 9/9 PASS wav=YES json=YES`
+  - 代码语义修复已完成（2026-07-04）：source tests `26 passed`，完整 `idf.py build` 通过。
+  - 构建产物：`111.bin` `0xabfea0`，最小 app 分区剩余 `0x340160` / 23%。
+  - 新增无人值守 host 仿真报告：`artifacts/danger_trigger_sim/report.json`，覆盖 4 个安全场景，脚本不访问硬件、网络或 SD 卡。
+  - 真机 SD 样本闭环：用户补充确认已实测通过；本轮未保存原始串口日志、WAV/JSON 文件名或 SD 卡截图。
 
 ## 风险与控制
 

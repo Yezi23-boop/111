@@ -66,6 +66,38 @@ class EspdlSingleModelRuntimeSourceTests(unittest.TestCase):
             source.index("while (!s_runtime.stop_requested.load())"),
         )
 
+    def test_pcm_tap_publishes_continuous_resampled_chunks(self) -> None:
+        header = ESPDL_AUDIO_RUNTIME_HEADER.read_text(encoding="utf-8")
+        source = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("espdl_audio_runtime_set_pcm_tap_callback", header)
+        self.assertIn("resample_24k_to_16k(mono_samples, &resample_state, &resampled_samples);", source)
+        self.assertIn("resampled_samples.data()", source)
+        self.assertIn("chunk_first_sample_index", source)
+        self.assertIn("s_runtime.absolute_sample_index += resampled_samples.size();", source)
+        self.assertNotIn("s_runtime.pcm_tap_callback(pcm_buffer.data()", source)
+        self.assertLess(
+            source.index("s_runtime.pcm_tap_callback(resampled_samples.data()"),
+            source.index("s_runtime.absolute_sample_index += resampled_samples.size();"),
+        )
+
+    def test_result_payload_carries_window_end_sample_index(self) -> None:
+        runner_header = ESPDL_MODEL_RUNNER_HEADER.read_text(encoding="utf-8")
+        source = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("uint64_t window_end_sample_index", runner_header)
+        self.assertIn("window_start_sample_index", source)
+        self.assertIn("window_end_sample_index", source)
+        self.assertIn("result.window_end_sample_index = window_end_sample_index;", source)
+
+    def test_espdl_component_does_not_depend_on_recorder_or_sd_manager(self) -> None:
+        header = ESPDL_AUDIO_RUNTIME_HEADER.read_text(encoding="utf-8")
+        source = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
+
+        combined = header + "\n" + source
+        self.assertNotIn("danger_sample_recorder", combined)
+        self.assertNotIn("sd_manager", combined)
+
 
 if __name__ == "__main__":
     unittest.main()

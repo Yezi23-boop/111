@@ -287,12 +287,27 @@ void runtime_task(void *arg)
         /* 24kHz → 16kHz 重采样 */
         resample_24k_to_16k(mono_samples, &resample_state, &resampled_samples);
 
-        /* 追加到滑窗缓冲 */
+        /* 发布连续 PCM chunk，再推进 absolute_sample_index。 */
         if (!resampled_samples.empty()) {
+            const uint64_t chunk_first_sample_index =
+                s_runtime.absolute_sample_index;
+            if (s_runtime.pcm_tap_callback != nullptr) {
+                const espdl_audio_pcm_window_meta_t meta = {
+                    .absolute_sample_index = chunk_first_sample_index,
+                    .window_samples =
+                        static_cast<uint32_t>(resampled_samples.size()),
+                    .stride_samples = 0U,
+                };
+                s_runtime.pcm_tap_callback(resampled_samples.data(),
+                                           resampled_samples.size(),
+                                           &meta,
+                                           s_runtime.pcm_tap_user_data);
+            }
+
+            /* 追加到滑窗缓冲 */
             for (int16_t sample : resampled_samples) {
                 pcm_buffer.push_back(sample);
             }
-            /* 更新绝对样本索引 */
             s_runtime.absolute_sample_index += resampled_samples.size();
         }
 
@@ -306,19 +321,6 @@ void runtime_task(void *arg)
             constexpr float kScale = 1.0f / 32768.0f;
             for (size_t i = 0; i < ESPDL_WINDOW_SAMPLES; ++i) {
                 pcm_float[i] = static_cast<float>(pcm_buffer[i]) * kScale;
-            }
-
-            /* 调用 PCM tap 回调（如果注册） */
-            if (s_runtime.pcm_tap_callback != nullptr) {
-                const espdl_audio_pcm_window_meta_t meta = {
-                    .absolute_sample_index = s_runtime.absolute_sample_index - pcm_buffer.size(),
-                    .window_samples = ESPDL_WINDOW_SAMPLES,
-                    .stride_samples = kStrideSamples,
-                };
-                s_runtime.pcm_tap_callback(pcm_buffer.data(),
-                                          ESPDL_WINDOW_SAMPLES,
-                                          &meta,
-                                          s_runtime.pcm_tap_user_data);
             }
 
             /* 提取 Fbank 特征 */
@@ -353,6 +355,10 @@ void runtime_task(void *arg)
 
             /* 单模型推理。 */
             const int64_t infer_start = esp_timer_get_time();
+            const uint64_t window_start_sample_index =
+                s_runtime.absolute_sample_index - pcm_buffer.size();
+            const uint64_t window_end_sample_index =
+                window_start_sample_index + ESPDL_WINDOW_SAMPLES;
             espdl_model_result_t result = {};
             ret = espdl_model_runner_run(s_runtime.model_runner, &feature_out,
                                          &result);
@@ -361,6 +367,7 @@ void runtime_task(void *arg)
                 ESP_LOGE(TAG, "ESP-DL 单模型推理失败: %s", esp_err_to_name(ret));
                 /* 不 break，继续下一个窗口 */
             } else {
+                result.window_end_sample_index = window_end_sample_index;
                 total_inferences++;
                 const bool is_danger = result.label_index == 1;
                 const int64_t now_us = esp_timer_get_time();

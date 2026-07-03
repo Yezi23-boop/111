@@ -22,11 +22,11 @@
 extern "C" {
 #endif
 
-/** PCM 窗口元数据（由 ESP-DL runtime 提供）。 */
+/** PCM chunk 元数据（由 ESP-DL runtime 提供）。 */
 typedef struct {
-    uint64_t absolute_sample_index;  /**< 窗口起始处的绝对样本索引（16kHz 单声道）。 */
-    uint32_t window_samples;         /**< 窗口大小（样本数）。 */
-    uint32_t stride_samples;         /**< 滑窗步长（样本数）。 */
+    uint64_t absolute_sample_index;  /**< chunk 首样本的绝对索引（16kHz 单声道）。 */
+    uint32_t window_samples;         /**< chunk 样本数；字段名保持与 ESP-DL tap 兼容。 */
+    uint32_t stride_samples;         /**< PCM chunk 无滑窗步进，当前固定为 0。 */
 } danger_sample_pcm_window_meta_t;
 
 /** PCM tap 回调类型。 */
@@ -53,6 +53,14 @@ esp_err_t danger_sample_recorder_init(
     const danger_sample_recorder_config_t *config);
 
 /**
+ * @brief 重置当前采集会话。
+ *
+ * 递增 generation、清空 PCM ring、取消未完成 capture。用于危险识别后台
+ * 服务 start/stop 边界，不销毁 worker/queue，避免普通开关后无法再次启动。
+ */
+void danger_sample_recorder_reset_session(void);
+
+/**
  * @brief 反初始化危险样本录制器，释放资源。
  */
 void danger_sample_recorder_deinit(void);
@@ -60,13 +68,15 @@ void danger_sample_recorder_deinit(void);
 /**
  * @brief 触发样本录制。
  *
- * 在危险识别触发时调用，将当前缓冲区内容写入文件。
+ * 在危险识别触发时调用，按触发窗口末尾索引切出前 1 秒并继续收集后 1 秒。
  *
  * @param[in] label_index 识别标签索引（0=non-danger, 1=danger）。
  * @param[in] confidence 识别置信度。
+ * @param[in] window_end_sample_index 触发推理窗口末尾样本索引（end-exclusive）。
  * @return ESP_OK 表示录制成功。
  */
-esp_err_t danger_sample_recorder_capture(uint32_t label_index, float confidence);
+esp_err_t danger_sample_recorder_capture(uint32_t label_index, float confidence,
+                                         uint64_t window_end_sample_index);
 
 /**
  * @brief 检查录制器是否正在录制。

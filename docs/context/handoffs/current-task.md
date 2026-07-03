@@ -2,7 +2,7 @@
 id: context-current-task
 tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox, thin-watch-client, thick-watch-endpoint
 summary: 记录 AI Memory Watch / Hermes V1-V2.4 状态、Watch Runtime Resource Gate 状态，以及 2026-07-01 表情表盘代码回退后的重执行计划入口。
-last_reviewed: 2026-07-03
+last_reviewed: 2026-07-04
 memory_type: task
 scope: task
 owners: docs/context/handoffs
@@ -23,6 +23,18 @@ evidence_level: observed
 > - 鉴权验证：watch endpoint server tests `144 passed`；Docker 容器已重建；公网无 token POST 返回 `401 missing_bearer_token`，合法 token 公网 smoke 返回 `HTTP 200 ok=True`，验证未打印真实 token。
 > - 后续正式化：Android App 补电池优化白名单提示、最近告警历史和断线状态更醒目的提醒。
 > - 2026-07-02 更新：`resources` LittleFS `LFS_ERR_NOSPC` 阻塞已解除；删除 `resources/watchface` 后完整 `idf.py build` 已通过。
+
+> **2026-07-04 更新：危险样本 SD recorder 语义修复已完成**
+>
+> - 第一版本地模型闭环仍是前 1 秒 + 后 1 秒 WAV/JSON，不上传服务器，不新增 UI 开关，跟随危险识别后台服务开关。
+> - ESP-DL PCM tap 已改为发布连续 `resampled_samples` chunk；推理结果带 `window_end_sample_index`，Alerting capture 按该 index 切片。
+> - recorder 使用 3 秒 PSRAM ring，capture 先复制前 1 秒，再 pending 收集后 1 秒，凑满 32000 样本后投递 SD 写入 worker。
+> - 子代理复查发现的两项风险已修复：service 使用 PCM tap adapter，不再强转不兼容函数指针；capture 会回填 ring 中已存在的 post 样本，不依赖默认 chunk 对齐。
+> - 普通 `danger_detection_service_stop()` 只调用 `danger_sample_recorder_reset_session()`，不 deinit recorder，避免 stop 后再次 start 时 recorder 不再初始化。
+> - 验证：相关 source tests `26 passed`；完整 `idf.py build` 通过，`111.bin` `0xabfea0`，最小 app 分区剩余 `0x340160`/23%。
+> - 真机证据：用户补充确认已实测，不只是 host 仿真；`Alerting -> recorder capture -> /sdcard/danger_samples` 样本保存链路已按用户反馈通过。未保存原始串口日志、WAV/JSON 文件名或 SD 卡截图。
+> - 2026-07-04 新增默认关闭板端自测入口：`CONFIG_DANGER_SAMPLE_RECORDER_BOARD_TEST` 开启后启动 60 秒注入合成 PCM 并模拟 capture；COM3 日志 `board_logs/2026-07-04-03-21-14-danger-sample-recorder-board-test.log` 已证明新增 `/sdcard/danger_samples/20260704/032222_1_95.wav/.json`，`wav_before=3 -> wav_after=4`、`json_before=3 -> json_after=4`，无 FAIL/Guru/panic。测试后已刷回默认关闭测试的正常固件。
+> - 2026-07-04 随后按用户要求删除上述临时板端自测代码：正常固件不再包含 `danger_sample_recorder_board_test`、`CONFIG_DANGER_SAMPLE_RECORDER_BOARD_TEST` 或 60 秒自动写 SD 入口；正式 recorder/SD 保存链路仍保留。
 
 > **2026-07-01 插入：表情表盘重执行状态**
 >

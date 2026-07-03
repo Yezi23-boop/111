@@ -99,6 +99,57 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
             espdl_callback.index('danger_detection_post_cloud_alert("danger", danger_prob'),
         )
 
+    def test_alerting_capture_uses_window_end_sample_index(self) -> None:
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+        espdl_callback = service_source[
+            service_source.index("static void danger_detection_on_espdl_result") :
+            service_source.index("/**\n * @brief 初始化危险检测服务。")
+        ]
+
+        self.assertIn("danger_sample_recorder_capture", service_source)
+        self.assertIn("result->window_end_sample_index", espdl_callback)
+        self.assertLess(
+            espdl_callback.index("app_alert_manager_raise(&request)"),
+            espdl_callback.index("danger_sample_recorder_capture("),
+        )
+
+    def test_recorder_stop_path_resets_session_instead_of_deinit(self) -> None:
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+        stop_body = service_source[
+            service_source.index("esp_err_t danger_detection_service_stop") :
+            service_source.index("/**\n * @brief 获取当前危险检测快照。")
+        ]
+
+        self.assertIn("danger_sample_recorder_reset_session();", stop_body)
+        self.assertNotIn("danger_sample_recorder_deinit();", stop_body)
+        self.assertIn("普通后台开关 stop 只重置会话", stop_body)
+
+    def test_espdl_pcm_tap_uses_type_safe_adapter(self) -> None:
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("danger_detection_on_espdl_pcm_tap", service_source)
+        self.assertIn("const espdl_audio_pcm_window_meta_t *meta", service_source)
+        self.assertIn("const danger_sample_pcm_window_meta_t recorder_meta", service_source)
+        self.assertIn("recorder_callback(pcm_data, samples, &recorder_meta, NULL)", service_source)
+        self.assertIn(
+            "espdl_audio_runtime_set_pcm_tap_callback(\n        danger_detection_on_espdl_pcm_tap, NULL)",
+            service_source,
+        )
+        self.assertNotIn("(espdl_audio_pcm_tap_callback_t)", service_source)
+
+    def test_recorder_capture_failure_does_not_block_alert_pipeline(self) -> None:
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+        espdl_callback = service_source[
+            service_source.index("static void danger_detection_on_espdl_result") :
+            service_source.index("/**\n * @brief 初始化危险检测服务。")
+        ]
+
+        self.assertLess(
+            espdl_callback.index("app_alert_manager_raise(&request)"),
+            espdl_callback.index("danger_sample_recorder_capture("),
+        )
+        self.assertIn("录制失败不影响主功能", espdl_callback)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,6 +32,7 @@ typedef struct {
     float confidence;                       /**< 判定类别对应的 softmax 概率。 */
     float logits[ESPDL_CLASS_COUNT];        /**< 反量化后的原始 logits。 */
     float probabilities[ESPDL_CLASS_COUNT]; /**< softmax 概率。 */
+    uint64_t window_end_sample_index;       /**< 本次 16kHz 推理窗口末尾样本索引（end-exclusive）。 */
 } espdl_model_result_t;
 
 /** 不透明模型运行器句柄。 */
