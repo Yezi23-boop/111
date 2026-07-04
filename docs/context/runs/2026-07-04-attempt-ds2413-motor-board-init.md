@@ -6,7 +6,7 @@ last_reviewed: 2026-07-04
 status: completed
 record_because: route-choice, hardware-init, freertos, evidence
 changed: components/ds2413, main/app/board_ds2413_motor.c, main/app/hardware_init.c, main/CMakeLists.txt, main/idf_component.yml
-evidence_level: build
+evidence_level: observed
 ---
 
 # Attempt Log: DS2413 Motor Board Init
@@ -34,15 +34,12 @@ evidence_level: build
 - 2026-07-04 补充注释：完善 DS2413 公开接口契约、GPIO18/RMT-only 约束、FreeRTOS mutex 串行化原因、open-drain release/pull-low 语义和协议字节说明；未改变运行时代码行为。
 - `python -m unittest tests.test_board_ds2413_motor_source tests.test_nonblocking_boot_source tests.test_power_integration_source`：27 passed。已同步两处漂移断言：天气任务栈当前为 `6144`，`power_policy_task` 当前使用 `xTaskCreateWithCaps(...)`。
 - `idf.py build` 通过；构建中确认 `ds2413` 与 `espressif__onewire_bus` 进入组件图；删除 UART1 fallback 后生成 `build/111.bin`，大小 `0xac7aa0`，最小 app 分区剩余 `0x338560`/23%。
+- 2026-07-04 闭环板测：发现 `sdkconfig` 漂移为 `CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST=y`，导致正常启动后自动运行 runtime gate 板端压测；已恢复为 `# CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST is not set`。按仓库规则执行 `idf.py fullclean; idf.py build`，通过后生成 `111.bin` `0xac7130`，app free `0x338ed0`/23%。
+- COM7 正常固件 `app-flash` 成功，随后 pyserial 复位采集 `board_logs/2026-07-04-20-47-24-ds2413-normal-com7-pyserial.log`。日志出现 `DS2413 ROM via RMT: BA DC CD 73 50 05 10 46`、`DS2413 motor default off: raw=0x78 PIOA(state=0 latch=0)`、`boot_stage: startup_sequence_done`、`boot_stage: ui_first_frame_ready`、`boot_stage: cold_boot_resource_snapshot_done`，未出现 `runtime_gate_test`、Guru、panic、watchdog、`ESP_ERR_NO_MEM`。
 
 ## 未验证
 
-- 本轮未执行 `app-flash-monitor`，因此尚无板端日志证明真实 DS2413 ROM 枚举与马达默认关闭回读。
-- 后续板测建议观察：
-  - `DS2413 ROM via RMT:`；
-  - `DS2413 motor default off`；
-  - `boot_stage: board_foundation_done` 与 `boot_stage: startup_sequence_done`；
-  - 无 Guru、panic、watchdog、`ESP_ERR_NO_MEM`。
+- 未验证马达脉冲/震动策略；本轮只证明启动早期 DS2413 枚举、默认关断和正常启动链路。
 
 ## 后续边界
 

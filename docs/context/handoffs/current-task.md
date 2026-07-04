@@ -19,7 +19,8 @@ evidence_level: observed
 > - `hardware_init()` 已在 NVS 后、SD/codec 等较慢初始化前调用 `board_ds2413_motor_init()`；初始化失败只 warning，不阻断 Board Foundation。
 > - 已补充 DS2413 公开接口、RMT-only、FreeRTOS mutex、open-drain release/pull-low 和协议字节注释；这轮只改注释，不改变马达运行行为。
 > - 本轮未把马达接入 `app_alert_manager`、危险提醒、低电量提示、Hermes 通知或 UI；`power_policy.haptic_alert_allowed` 语义未变。
-> - 验证：`python -m unittest tests.test_board_ds2413_motor_source tests.test_nonblocking_boot_source tests.test_power_integration_source` 27 passed；`idf.py build` 通过，`111.bin` `0xac7aa0`，最小 app 分区剩余 `0x338560`/23%。尚未做 COM3 板端 `app-flash-monitor`，因此没有真实 DS2413 ROM / default off 串口证据。
+> - 闭环验证：`python -m unittest tests.test_board_ds2413_motor_source tests.test_nonblocking_boot_source tests.test_power_integration_source tests.test_runtime_resource_gate_board_test_source` 31 passed；发现并修复 `sdkconfig` 漂移，已恢复 `# CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST is not set`，避免正常固件自动运行 runtime gate 板端压测。按规则执行 `idf.py fullclean; idf.py build` 通过，`111.bin` `0xac7130`，最小 app 分区剩余 `0x338ed0`/23%。
+> - 板端证据：COM7 `app-flash` 成功，pyserial 复位日志 `board_logs/2026-07-04-20-47-24-ds2413-normal-com7-pyserial.log` 出现 `DS2413 ROM via RMT: BA DC CD 73 50 05 10 46`、`DS2413 motor default off: raw=0x78 PIOA(state=0 latch=0)`、`boot_stage: startup_sequence_done`、`boot_stage: ui_first_frame_ready` 和 `boot_stage: cold_boot_resource_snapshot_done`；未出现 `runtime_gate_test`、Guru、panic、watchdog、`ESP_ERR_NO_MEM`。
 
 > **2026-07-03 更新：危险 Alerting 手机通知链路已真机跑通**
 >
