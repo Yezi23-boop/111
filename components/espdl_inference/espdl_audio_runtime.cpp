@@ -83,6 +83,7 @@ struct RuntimeControl {
     espdl_audio_pcm_tap_callback_t pcm_tap_callback = nullptr;
     void *pcm_tap_user_data = nullptr;
     esp_err_t last_result = ESP_OK;
+    std::atomic<float> danger_threshold = {ESPDL_DSCNN_DANGER_THRESHOLD};
     uint64_t absolute_sample_index = 0U;  /**< 已重采样输出的绝对样本计数。 */
 };
 
@@ -458,6 +459,14 @@ esp_err_t espdl_audio_runtime_start(const espdl_audio_runtime_config_t *config)
         ESP_LOGE(TAG, "ESP-DL active 模型初始化失败: %s", esp_err_to_name(ret));
         return ret;
     }
+    ret = espdl_model_runner_set_threshold(
+        s_runtime.model_runner, s_runtime.danger_threshold.load());
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "ESP-DL danger 阈值设置失败: %s", esp_err_to_name(ret));
+        espdl_model_runner_destroy(s_runtime.model_runner);
+        s_runtime.model_runner = nullptr;
+        return ret;
+    }
 
     /* 自检 */
     ret = espdl_model_runner_self_test(s_runtime.model_runner);
@@ -575,6 +584,19 @@ bool espdl_audio_runtime_is_running(void)
 espdl_audio_runtime_state_t espdl_audio_runtime_get_state(void)
 {
     return static_cast<espdl_audio_runtime_state_t>(s_runtime.state.load());
+}
+
+esp_err_t espdl_audio_runtime_set_danger_threshold(float threshold)
+{
+    if (threshold < 0.0f || threshold > 1.0f) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    s_runtime.danger_threshold.store(threshold);
+    if (s_runtime.model_runner == nullptr) {
+        return ESP_OK;
+    }
+    return espdl_model_runner_set_threshold(s_runtime.model_runner, threshold);
 }
 
 esp_err_t espdl_audio_runtime_set_result_callback(

@@ -20,6 +20,7 @@ typedef struct {
     bool valid;
     bool alert_visible;
     bool safety_monitor_enabled;
+    danger_detection_view_sensitivity_mode_t sensitivity_mode;
     char status_text[32];
     char category_text[32];
     char primary_result_text[16];
@@ -177,6 +178,36 @@ static void danger_detection_copy_text(char *dst,
     snprintf(dst, dst_size, "%s", src != NULL ? src : "");
 }
 
+static danger_detection_view_sensitivity_mode_t
+danger_detection_view_mode_from_service(
+    danger_detection_sensitivity_mode_t mode)
+{
+    switch (mode) {
+        case DANGER_DETECTION_SENSITIVITY_CONSERVATIVE:
+            return DANGER_DETECTION_VIEW_SENSITIVITY_CONSERVATIVE;
+        case DANGER_DETECTION_SENSITIVITY_SENSITIVE:
+            return DANGER_DETECTION_VIEW_SENSITIVITY_SENSITIVE;
+        case DANGER_DETECTION_SENSITIVITY_STANDARD:
+        default:
+            return DANGER_DETECTION_VIEW_SENSITIVITY_STANDARD;
+    }
+}
+
+static danger_detection_sensitivity_mode_t
+danger_detection_service_mode_from_view(
+    danger_detection_view_sensitivity_mode_t mode)
+{
+    switch (mode) {
+        case DANGER_DETECTION_VIEW_SENSITIVITY_CONSERVATIVE:
+            return DANGER_DETECTION_SENSITIVITY_CONSERVATIVE;
+        case DANGER_DETECTION_VIEW_SENSITIVITY_SENSITIVE:
+            return DANGER_DETECTION_SENSITIVITY_SENSITIVE;
+        case DANGER_DETECTION_VIEW_SENSITIVITY_STANDARD:
+        default:
+            return DANGER_DETECTION_SENSITIVITY_STANDARD;
+    }
+}
+
 static bool danger_detection_render_cache_matches(
     const danger_detection_render_cache_t *cache,
     const danger_detection_view_model_t *model)
@@ -187,6 +218,7 @@ static bool danger_detection_render_cache_matches(
 
     return cache->alert_visible == model->alert_visible &&
            cache->safety_monitor_enabled == model->safety_monitor_enabled &&
+           cache->sensitivity_mode == model->sensitivity_mode &&
            strcmp(cache->status_text, model->status_text) == 0 &&
            strcmp(cache->category_text, model->category_text) == 0 &&
            strcmp(cache->primary_result_text, model->primary_result_text) == 0 &&
@@ -205,6 +237,7 @@ static void danger_detection_render_cache_store(
     cache->valid = true;
     cache->alert_visible = model->alert_visible;
     cache->safety_monitor_enabled = model->safety_monitor_enabled;
+    cache->sensitivity_mode = model->sensitivity_mode;
     danger_detection_copy_text(cache->status_text, sizeof(cache->status_text),
                                model->status_text);
     danger_detection_copy_text(cache->category_text, sizeof(cache->category_text),
@@ -251,6 +284,25 @@ static void danger_detection_safety_monitor_event(bool enabled,
     danger_detection_refresh_status();
 }
 
+static void danger_detection_sensitivity_event(
+    danger_detection_view_sensitivity_mode_t mode,
+    void *user_data)
+{
+    (void)user_data;
+
+    const danger_detection_sensitivity_mode_t service_mode =
+        danger_detection_service_mode_from_view(mode);
+    const esp_err_t ret =
+        danger_detection_service_set_sensitivity_mode(service_mode);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "sensitivity mode switch failed: mode=%d err=%s",
+                 service_mode, esp_err_to_name(ret));
+    }
+
+    s_render_cache.valid = false;
+    danger_detection_refresh_status();
+}
+
 static void danger_detection_ensure_screen_created(void)
 {
     if (s_view != NULL) {
@@ -260,6 +312,7 @@ static void danger_detection_ensure_screen_created(void)
     static const danger_detection_view_config_t kConfig = {
         .back_action_cb = danger_detection_back_event,
         .safety_monitor_cb = danger_detection_safety_monitor_event,
+        .sensitivity_cb = danger_detection_sensitivity_event,
         .user_data = NULL,
     };
 
@@ -303,6 +356,8 @@ static void danger_detection_refresh_status(void)
         .primary_result_text = last_result_text,
         .horn_confidence_text = horn_confidence_text,
         .siren_confidence_text = siren_confidence_text,
+        .sensitivity_mode = danger_detection_view_mode_from_service(
+            danger_detection_service_get_sensitivity_mode()),
         .safety_monitor_enabled =
             manager_snapshot.danger_enabled_by_user,
         .alert_visible = manager_snapshot.danger_enabled_by_user &&

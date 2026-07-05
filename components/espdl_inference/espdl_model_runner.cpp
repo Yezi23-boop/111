@@ -9,6 +9,7 @@
 #include "espdl_model_runner.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -193,7 +194,7 @@ struct espdl_model_runner_t {
     dl::Model *model;
     std::vector<int8_t> input_quantized;
     const char *name;
-    float threshold;
+    std::atomic<float> threshold;
 };
 
 extern "C" {
@@ -213,7 +214,7 @@ esp_err_t espdl_model_runner_create(espdl_model_runner_t **out_runner,
 
     runner->model = nullptr;
     runner->name = model_name != nullptr ? model_name : "unnamed";
-    runner->threshold = default_threshold_for(runner->name);
+    runner->threshold.store(default_threshold_for(runner->name));
 
     runner->model = new dl::Model((const char *)model_data,
                                   fbs::MODEL_LOCATION_IN_FLASH_RODATA);
@@ -249,7 +250,7 @@ esp_err_t espdl_model_runner_create(espdl_model_runner_t **out_runner,
              runner->model->get_inputs().begin()->second->get_exponent(),
              runner->model->get_outputs().begin()->second->get_dtype_string(),
              runner->model->get_outputs().begin()->second->get_exponent(),
-             runner->threshold);
+             runner->threshold.load());
     log_model_memory_info(runner->model, runner->name);
 
     *out_runner = runner;
@@ -320,7 +321,7 @@ esp_err_t espdl_model_runner_run(espdl_model_runner_t *runner,
         return ret;
     }
 
-    fill_binary_threshold_result(logits, runner->threshold, result);
+    fill_binary_threshold_result(logits, runner->threshold.load(), result);
 
     ESP_LOGD(TAG,
              "[%s] decision=%s(%d), conf=%.4f, danger=%.4f",
@@ -329,6 +330,21 @@ esp_err_t espdl_model_runner_run(espdl_model_runner_t *runner,
              result->label_index,
              result->confidence,
              result->probabilities[1]);
+    return ESP_OK;
+}
+
+esp_err_t espdl_model_runner_set_threshold(espdl_model_runner_t *runner,
+                                           float threshold)
+{
+    if (runner == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (threshold < 0.0f || threshold > 1.0f) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    runner->threshold.store(threshold);
+    ESP_LOGI(TAG, "[%s] danger threshold set to %.2f", runner->name, threshold);
     return ESP_OK;
 }
 

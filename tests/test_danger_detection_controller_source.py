@@ -43,6 +43,31 @@ class DangerDetectionControllerSourceTests(unittest.TestCase):
             source.index("manager_snapshot->danger_block_reason"),
         )
 
+    def test_ui_exposes_sensitivity_modes_without_raw_thresholds(self) -> None:
+        source = DANGER_DETECTION_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+        view_header = (UI_CUSTOM_DIR / "danger_detection_view.h").read_text(
+            encoding="utf-8"
+        )
+        view_source = (UI_CUSTOM_DIR / "danger_detection_view.c").read_text(
+            encoding="utf-8"
+        )
+        combined_ui = source + "\n" + view_header + "\n" + view_source
+
+        self.assertIn("DANGER_DETECTION_VIEW_SENSITIVITY_CONSERVATIVE", view_header)
+        self.assertIn("DANGER_DETECTION_VIEW_SENSITIVITY_STANDARD", view_header)
+        self.assertIn("DANGER_DETECTION_VIEW_SENSITIVITY_SENSITIVE", view_header)
+        self.assertIn("danger_detection_service_set_sensitivity_mode", source)
+        self.assertIn("danger_detection_service_get_sensitivity_mode", source)
+        self.assertIn("灵敏度 · 减少误报", view_source)
+        self.assertIn("灵敏度 · 日常推荐", view_source)
+        self.assertIn("灵敏度 · 更容易触发", view_source)
+        self.assertIn('"保守"', view_source)
+        self.assertIn('"标准"', view_source)
+        self.assertIn('"敏感"', view_source)
+        self.assertNotIn("0.95", combined_ui)
+        self.assertNotIn("0.90", combined_ui)
+        self.assertNotIn("0.85", combined_ui)
+
 
 if __name__ == "__main__":
     unittest.main()

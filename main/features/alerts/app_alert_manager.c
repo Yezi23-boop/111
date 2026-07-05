@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "haptic_alert_player.h"
 #include "mp3_player.h"
 #include "ui_refresh_policy.h"
 
@@ -127,6 +128,12 @@ esp_err_t app_alert_manager_init(void)
     }
 
     ret = audio_alert_player_init();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    ret = haptic_alert_player_init();
     if (ret != ESP_OK)
     {
         return ret;
@@ -289,6 +296,16 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
             (void)display_alert_adapter_hide_danger_overlay();
         }
         return ESP_OK;
+    }
+
+    if (request->severity == APP_ALERT_SEVERITY_DANGER)
+    {
+        ret = haptic_alert_player_play_initial_danger_once();
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "haptic alert start failed: %s",
+                     esp_err_to_name(ret));
+        }
     }
 
     app_alert_manager_preempt_normal_audio_output(request);

@@ -85,8 +85,22 @@ static void wifi_management_back_event_cb(lv_event_t *e)
 static void wifi_management_retry_saved_event_cb(lv_event_t *e)
 {
     (void)e;
+    esp_err_t ret = ESP_OK;
+
     ESP_LOGI(TAG, "request latest saved Wi-Fi");
-    (void)network_manager_use_latest_wifi();
+    ret = network_manager_use_latest_wifi();
+    if (ret == ESP_ERR_NOT_FOUND)
+    {
+        ESP_LOGW(TAG, "no saved Wi-Fi credentials, choose provisioning first");
+        wifi_management_controller_show_inline_message(
+            "No Saved Wi-Fi", "Use BLE Provision or AP Web Fallback first");
+    }
+    else if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "saved Wi-Fi retry failed: %s", esp_err_to_name(ret));
+        wifi_management_controller_show_inline_message(
+            "Retry Failed", "Choose BLE or web provisioning if it keeps failing");
+    }
     wifi_management_controller_refresh();
 }
 

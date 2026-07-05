@@ -25,7 +25,7 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', 'SimHei', 'Helvetica Neue'
 <text x="550.0" y="611.0" text-anchor="middle" class="label">ESP32-S3 手表</text>
 <rect x="750" y="445" width="280" height="210" rx="20" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="3"/>
 <g transform="translate(890.0 511) scale(0.7) translate(-890.0 -511)"><path d="M 842.0,529 C 832.0,493 872.0,483 886.0,499 C 904.0,469 952.0,487 944.0,527 C 960.0,531 948.0,557 928.0,555 L 854.0,555 C 828.0,555 822.0,533 842.0,529 Z" fill="#ffffff" stroke="#bbf7d0" stroke-width="4"/></g>
-<text x="890.0" y="611.0" text-anchor="middle" class="label">watch endpoint</text>
+<text x="890.0" y="611.0" text-anchor="middle" class="label">云服务端</text>
 <rect x="1090" y="445" width="280" height="210" rx="20" fill="#faf5ff" stroke="#ddd6fe" stroke-width="3"/>
 <g transform="translate(1230.0 511) scale(0.7) translate(-1230.0 -511)"><path d="M 1185.0,511 C 1180.0,479 1218.0,463 1230.0,487 C 1248.0,461 1286.0,485 1272.0,519 C 1284.0,547 1244.0,563 1230.0,539 C 1212.0,565 1172.0,541 1185.0,511 Z" fill="#ffffff" stroke="#ddd6fe" stroke-width="4"/><path d="M 1208.0,495 C 1225.0,507 1214.0,523 1230.0,535 M 1250.0,493 C 1234.0,507 1250.0,521 1232.0,539" stroke="#ddd6fe" stroke-width="3" fill="none" opacity="0.65"/></g>
 <text x="1230.0" y="611.0" text-anchor="middle" class="label">Hermes</text>

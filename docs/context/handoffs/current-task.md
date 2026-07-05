@@ -2,7 +2,7 @@
 id: context-current-task
 tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox, thin-watch-client, thick-watch-endpoint
 summary: 记录 AI Memory Watch / Hermes V1-V2.4 状态、Watch Runtime Resource Gate 状态，以及 2026-07-01 表情表盘代码回退后的重执行计划入口。
-last_reviewed: 2026-07-04
+last_reviewed: 2026-07-05
 memory_type: task
 scope: task
 owners: docs/context/handoffs
@@ -11,6 +11,21 @@ evidence_level: observed
 ---
 
 # AI Memory Watch / Hermes 当前任务交接
+
+> **2026-07-05 更新：危险识别三档灵敏度已接入**
+>
+> - `sensitivity_mode` 首版已实现为 `保守 / 标准 / 敏感` 三档，默认 `标准`，当前不做 NVS 持久化。
+> - 三档由 `danger_detection_service` 持有并映射 ESP-DL 单窗阈值：保守 `0.95`、标准 `0.90`、敏感 `0.85`；`espdl_model_runner` 只接收数值 threshold，不理解用户语言。
+> - 危险识别页新增三段式选择控件；UI 只显示中文模式，不显示原始阈值数字。
+> - 验证：目标 source tests `24 passed`，完整 `idf.py build` 通过；host preview 已新增 `-OpenDanger`，截图为 `main/ui/agent_preview/artifacts/danger-sensitivity-preview.png`。
+
+> **2026-07-05 更新：危险告警首次强震 owner 已接入**
+>
+> - 新增 `haptic_alert_player` 作为震动提醒 owner；`board_ds2413_motor` 仍只负责 DS2413 硬件开关，危险识别服务不直接调用马达。
+> - `app_alert_manager` 在新的 `APP_ALERT_SEVERITY_DANGER` 首次 raise 时异步触发首次强震；重复同源 active 告警只更新标签，不重复震动。
+> - 首版强震模式为 `220ms on -> 90ms off -> 220ms on`，由短生命周期 FreeRTOS task 执行，任务退出前兜底关闭马达并自删。
+> - 本轮不做持续提醒 `realert_rule`、用户通知模式、持续提醒开关或事件记录。
+> - 已通过相关 source tests；完整构建与 context 校验结果见本轮收尾。
 
 > **2026-07-04 更新：DS2413 马达板级能力已合入主线**
 >

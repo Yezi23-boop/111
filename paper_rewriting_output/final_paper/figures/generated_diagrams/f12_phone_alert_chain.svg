@@ -22,13 +22,13 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', 'SimHei', 'Helvetica Neue'
 <text x="245.0" y="612.0" text-anchor="middle" class="small">ESP32-S3 手表</text>
 <rect x="465" y="470" width="280" height="180" rx="20" fill="#fef2f2" stroke="#fecaca" stroke-width="3"/>
 <g transform="translate(605.0 525) scale(0.62) translate(-605.0 -525)"><path d="M 561.0,561 L 571.0,517 Q 605.0,469 639.0,517 L 649.0,561 Z" fill="#ffffff" stroke="#eecaca" stroke-width="4"/><circle cx="605.0" cy="533" r="13" fill="#eecaca" opacity="0.7"/><path d="M 549.0,495 L 529.0,475 M 661.0,495 L 681.0,475" stroke="#eecaca" stroke-width="5"/></g>
-<text x="605.0" y="612.0" text-anchor="middle" class="small">Alerting</text>
+<text x="605.0" y="612.0" text-anchor="middle" class="small">危险告警</text>
 <rect x="825" y="470" width="280" height="180" rx="20" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="3"/>
 <g transform="translate(965.0 525) scale(0.62) translate(-965.0 -525)"><path d="M 917.0,543 C 907.0,507 947.0,497 961.0,513 C 979.0,483 1027.0,501 1019.0,541 C 1035.0,545 1023.0,571 1003.0,569 L 929.0,569 C 903.0,569 897.0,547 917.0,543 Z" fill="#ffffff" stroke="#bbf7d0" stroke-width="4"/></g>
-<text x="965.0" y="612.0" text-anchor="middle" class="small">告警 worker</text>
+<text x="965.0" y="612.0" text-anchor="middle" class="small">后台发送</text>
 <rect x="1185" y="470" width="280" height="180" rx="20" fill="#faf5ff" stroke="#ddd6fe" stroke-width="3"/>
 <g transform="translate(1325.0 525) scale(0.62) translate(-1325.0 -525)"><path d="M 1277.0,543 C 1267.0,507 1307.0,497 1321.0,513 C 1339.0,483 1387.0,501 1379.0,541 C 1395.0,545 1383.0,571 1363.0,569 L 1289.0,569 C 1263.0,569 1257.0,547 1277.0,543 Z" fill="#ffffff" stroke="#ddd6fe" stroke-width="4"/></g>
-<text x="1325.0" y="612.0" text-anchor="middle" class="small">watch endpoint</text>
+<text x="1325.0" y="612.0" text-anchor="middle" class="small">云服务端</text>
 <rect x="1545" y="470" width="280" height="180" rx="20" fill="#fff7ed" stroke="#fed7aa" stroke-width="3"/>
 <g transform="translate(1685.0 525) scale(0.62) translate(-1685.0 -525)"><rect x="1655.0" y="475" width="60" height="100" rx="14" fill="#ffffff" stroke="#eed7aa" stroke-width="4"/><rect x="1663.0" y="507" width="44" height="28" rx="7" fill="#eed7aa" opacity="0.20"/><circle cx="1685.0" cy="560" r="5" fill="#eed7aa"/></g>
 <text x="1685.0" y="612.0" text-anchor="middle" class="small">手机通知栏</text>

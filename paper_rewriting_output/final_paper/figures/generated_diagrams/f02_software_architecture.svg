@@ -44,7 +44,7 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', 'SimHei', 'Helvetica Neue'
 <line x1="440" y1="830" x2="520" y2="830" stroke="#7c3aed" stroke-width="4" fill="none" marker-end="url(#arrow-purple)"/>
 <rect x="520" y="755" width="280" height="150" rx="20" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="3"/>
 <g transform="translate(660.0 803) scale(0.55) translate(-660.0 -803)"><path d="M 612.0,821 C 602.0,785 642.0,775 656.0,791 C 674.0,761 722.0,779 714.0,819 C 730.0,823 718.0,849 698.0,847 L 624.0,847 C 598.0,847 592.0,825 612.0,821 Z" fill="#ffffff" stroke="#bbf7d0" stroke-width="4"/></g>
-<text x="660.0" y="871.0" text-anchor="middle" class="small">watch endpoint</text>
+<text x="660.0" y="871.0" text-anchor="middle" class="small">云服务端</text>
 <line x1="800" y1="830" x2="880" y2="830" stroke="#7c3aed" stroke-width="4" fill="none" marker-end="url(#arrow-purple)"/>
 <rect x="880" y="755" width="280" height="150" rx="20" fill="#faf5ff" stroke="#ddd6fe" stroke-width="3"/>
 <g transform="translate(1020.0 803) scale(0.55) translate(-1020.0 -803)"><path d="M 975.0,803 C 970.0,771 1008.0,755 1020.0,779 C 1038.0,753 1076.0,777 1062.0,811 C 1074.0,839 1034.0,855 1020.0,831 C 1002.0,857 962.0,833 975.0,803 Z" fill="#ffffff" stroke="#ddd6fe" stroke-width="4"/><path d="M 998.0,787 C 1015.0,799 1004.0,815 1020.0,827 M 1040.0,785 C 1024.0,799 1040.0,813 1022.0,831" stroke="#ddd6fe" stroke-width="3" fill="none" opacity="0.65"/></g>

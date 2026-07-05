@@ -2,7 +2,9 @@
 #include <string.h>
 #include "esp_err.h"
 #include "network_manager.h"
-#include "danger_detection_service.h"
+#include "features/danger_detection/danger_detection_service.h"
+#include "services/background_service_manager.h"
+#include "services/power_policy.h"
 #include "system_time.h"
 #include "services/network_service.h"
 #include "features/weather/time_weather.h"
@@ -273,11 +275,40 @@ esp_err_t official_chat_service_stop_listening(void) {
 void network_service_request_portal(void) {}
 network_service_state_t network_service_get_state(void) { return NETWORK_SERVICE_STATE_SERVICE_READY; }
 
-void app_alert_manager_set_traffic_audio_overlay_enabled(int enabled) {}
+esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled) {
+    (void)enabled;
+    return ESP_OK;
+}
 
-void background_service_manager_set_danger_detection_enabled(int enabled) {}
-void *background_service_manager_get_snapshot(void) { return NULL; }
-void background_service_manager_init(void) {}
+static bool s_mock_danger_enabled = true;
+static danger_detection_sensitivity_mode_t s_mock_sensitivity_mode =
+    DANGER_DETECTION_SENSITIVITY_STANDARD;
+
+esp_err_t background_service_manager_set_danger_detection_enabled(bool enabled) {
+    s_mock_danger_enabled = enabled;
+    return ESP_OK;
+}
+
+background_service_manager_snapshot_t background_service_manager_get_snapshot(void) {
+    background_service_manager_snapshot_t snapshot = {
+        .started = true,
+        .danger_enabled_by_user = s_mock_danger_enabled,
+        .danger_allowed_by_policy = true,
+        .danger_should_run = s_mock_danger_enabled,
+        .danger_runtime_running = s_mock_danger_enabled,
+        .danger_block_reason = s_mock_danger_enabled
+                                   ? BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE
+                                   : BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED,
+        .danger_blocked_by_foreground_audio = false,
+        .danger_blocked_by_foreground_runtime = false,
+        .policy_state = POWER_POLICY_STATE_ACTIVE,
+        .policy_flags = POWER_POLICY_FLAG_NONE,
+        .last_error = ESP_OK,
+    };
+    return snapshot;
+}
+
+esp_err_t background_service_manager_init(void) { return ESP_OK; }
 esp_err_t background_service_manager_notify_foreground_runtime_changed(void) { return ESP_OK; }
 
 #include "services/foreground_runtime_gate.h"
@@ -292,7 +323,36 @@ esp_err_t foreground_runtime_gate_release(foreground_runtime_owner_t owner) {
 #include "services/background_https_gate.h"
 void background_https_gate_quiet_for(uint32_t duration_ms, const char *reason) {}
 
-void *danger_detection_service_get_snapshot(void) { return NULL; }
+danger_detection_snapshot_t danger_detection_service_get_snapshot(void) {
+    danger_detection_snapshot_t snapshot = {
+        .state = s_mock_danger_enabled ? DANGER_DETECTION_STATE_RUNNING
+                                       : DANGER_DETECTION_STATE_IDLE,
+        .risk_state = s_mock_danger_enabled ? DANGER_DETECTION_RISK_MONITORING
+                                            : DANGER_DETECTION_RISK_OFF,
+        .stable_label = DANGER_DETECTION_LABEL_NONE,
+        .last_detected_label = DANGER_DETECTION_LABEL_DANGER,
+        .last_detected_confidence = 0.92f,
+        .horn_confidence = 0.18f,
+        .siren_confidence = 0.07f,
+        .danger_confidence = 0.92f,
+        .alert_sequence = 0,
+        .last_error = ESP_OK,
+        .danger_overlay_active = false,
+        .active_backend = DANGER_DETECTION_BACKEND_ESPDL,
+    };
+    return snapshot;
+}
+
+esp_err_t danger_detection_service_set_sensitivity_mode(
+    danger_detection_sensitivity_mode_t mode) {
+    s_mock_sensitivity_mode = mode;
+    return ESP_OK;
+}
+
+danger_detection_sensitivity_mode_t
+danger_detection_service_get_sensitivity_mode(void) {
+    return s_mock_sensitivity_mode;
+}
 
 #include "services/power_service.h"
 esp_err_t power_service_get_snapshot(board_power_state_t *out_state) {

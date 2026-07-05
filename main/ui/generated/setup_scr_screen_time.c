@@ -12,8 +12,74 @@
 #include "gui_guider.h"
 #include "events_init.h"
 #include "widgets_init.h"
+#include "system_time.h"
 #include "custom.h"
 
+enum {
+    kScreenTimeSwipeExitThresholdPx = 60,
+    kScreenTimeSwipeExitMaxDyPx = 50,
+};
+
+static int32_t s_screen_time_swipe_start_x;
+static int32_t s_screen_time_swipe_start_y;
+static bool s_screen_time_swipe_tracking;
+
+static void screen_time_open_calendar_on_loaded(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_SCREEN_LOADED) {
+        return;
+    }
+
+    lv_ui *ui = (lv_ui *)lv_event_get_user_data(e);
+    if (ui == NULL || ui->screen_time_datetext_1 == NULL) {
+        return;
+    }
+
+    system_time_local_t now = {0};
+    if (system_time_get_local_time(&now) == ESP_OK) {
+        char date_text[16];
+        lv_snprintf(date_text, sizeof(date_text), "%04d/%02d/%02d",
+                    now.year, now.month, now.day);
+        lv_label_set_text(ui->screen_time_datetext_1, date_text);
+    }
+
+    screen_time_datetext_1_init_calendar(
+        ui->screen_time_datetext_1,
+        (char *)lv_label_get_text(ui->screen_time_datetext_1));
+}
+
+static void screen_time_swipe_exit_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_point_t p;
+
+    switch (code) {
+    case LV_EVENT_PRESSED:
+        lv_indev_get_point(lv_indev_get_act(), &p);
+        s_screen_time_swipe_start_x = p.x;
+        s_screen_time_swipe_start_y = p.y;
+        s_screen_time_swipe_tracking = true;
+        break;
+    case LV_EVENT_RELEASED:
+        if (!s_screen_time_swipe_tracking) {
+            break;
+        }
+        s_screen_time_swipe_tracking = false;
+        lv_indev_get_point(lv_indev_get_act(), &p);
+        if ((p.x - s_screen_time_swipe_start_x) >= kScreenTimeSwipeExitThresholdPx &&
+            LV_ABS(p.y - s_screen_time_swipe_start_y) <= kScreenTimeSwipeExitMaxDyPx) {
+            ui_load_scr_animation(&guider_ui, &guider_ui.screen_main,
+                                  guider_ui.screen_main_del,
+                                  &guider_ui.screen_time_del,
+                                  setup_scr_screen_main,
+                                  LV_SCR_LOAD_ANIM_FADE_ON, 300, 300,
+                                  true, true);
+        }
+        break;
+    default:
+        break;
+    }
+}
 
 
 void setup_scr_screen_time(lv_ui *ui)
@@ -21,80 +87,20 @@ void setup_scr_screen_time(lv_ui *ui)
     //Write codes screen_time
     ui->screen_time = lv_obj_create(NULL);
     lv_obj_set_size(ui->screen_time, 410, 502);
+    lv_obj_clear_flag(ui->screen_time, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(ui->screen_time, LV_SCROLLBAR_MODE_OFF);
 
     //Write style for screen_time, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
     lv_obj_set_style_bg_opa(ui->screen_time, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(ui->screen_time, lv_color_hex(0xffffff), LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_set_style_bg_grad_dir(ui->screen_time, LV_GRAD_DIR_NONE, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_image_src(ui->screen_time, &_4_RGB565A8_410x502, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_image_opa(ui->screen_time, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_image_recolor_opa(ui->screen_time, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
 
-    //Write codes screen_time_datetext_1
+    // Hidden date anchor used by the custom calendar view.
     ui->screen_time_datetext_1 = lv_label_create(ui->screen_time);
-    lv_obj_set_pos(ui->screen_time_datetext_1, 94, 32);
-    lv_obj_set_size(ui->screen_time_datetext_1, 222, 64);
+    lv_obj_set_pos(ui->screen_time_datetext_1, 0, 0);
+    lv_obj_set_size(ui->screen_time_datetext_1, 1, 1);
     lv_label_set_text(ui->screen_time_datetext_1, "2025/10/27");
-    lv_obj_set_style_text_align(ui->screen_time_datetext_1, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_add_flag(ui->screen_time_datetext_1, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(ui->screen_time_datetext_1, screen_time_datetext_1_event_handler, LV_EVENT_ALL, NULL);
-
-    //Write style for screen_time_datetext_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_text_color(ui->screen_time_datetext_1, lv_color_hex(0x000000), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->screen_time_datetext_1, &lv_font_montserratMedium_27, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui->screen_time_datetext_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_letter_space(ui->screen_time_datetext_1, 2, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(ui->screen_time_datetext_1, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui->screen_time_datetext_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(ui->screen_time_datetext_1, 4, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(ui->screen_time_datetext_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(ui->screen_time_datetext_1, lv_color_hex(0x2195f6), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_border_side(ui->screen_time_datetext_1, LV_BORDER_SIDE_FULL, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui->screen_time_datetext_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_top(ui->screen_time_datetext_1, 7, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_right(ui->screen_time_datetext_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_left(ui->screen_time_datetext_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->screen_time_datetext_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-    //Write codes screen_time_imgbtn_1
-    ui->screen_time_imgbtn_1 = lv_imagebutton_create(ui->screen_time);
-    lv_obj_set_pos(ui->screen_time_imgbtn_1, 0, 410);
-    lv_obj_set_size(ui->screen_time_imgbtn_1, 104, 89);
-    lv_obj_add_flag(ui->screen_time_imgbtn_1, LV_OBJ_FLAG_CHECKABLE);
-    lv_imagebutton_set_src(ui->screen_time_imgbtn_1, LV_IMAGEBUTTON_STATE_RELEASED, &_left_RGB565A8_104x89, NULL, NULL);
-    ui->screen_time_imgbtn_1_label = lv_label_create(ui->screen_time_imgbtn_1);
-    lv_label_set_text(ui->screen_time_imgbtn_1_label, "");
-    lv_label_set_long_mode(ui->screen_time_imgbtn_1_label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(ui->screen_time_imgbtn_1_label, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_pad_all(ui->screen_time_imgbtn_1, 0, LV_STATE_DEFAULT);
-
-    //Write style for screen_time_imgbtn_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-    lv_obj_set_style_text_color(ui->screen_time_imgbtn_1, lv_color_hex(0x000000), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->screen_time_imgbtn_1, &lv_font_montserratMedium_12, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui->screen_time_imgbtn_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(ui->screen_time_imgbtn_1, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui->screen_time_imgbtn_1, 0, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-    //Write style for screen_time_imgbtn_1, Part: LV_PART_MAIN, State: LV_STATE_PRESSED.
-    lv_obj_set_style_image_recolor_opa(ui->screen_time_imgbtn_1, 0, LV_PART_MAIN|LV_STATE_PRESSED);
-    lv_obj_set_style_image_opa(ui->screen_time_imgbtn_1, 255, LV_PART_MAIN|LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(ui->screen_time_imgbtn_1, lv_color_hex(0xFF33FF), LV_PART_MAIN|LV_STATE_PRESSED);
-    lv_obj_set_style_text_font(ui->screen_time_imgbtn_1, &lv_font_montserratMedium_12, LV_PART_MAIN|LV_STATE_PRESSED);
-    lv_obj_set_style_text_opa(ui->screen_time_imgbtn_1, 255, LV_PART_MAIN|LV_STATE_PRESSED);
-    lv_obj_set_style_shadow_width(ui->screen_time_imgbtn_1, 0, LV_PART_MAIN|LV_STATE_PRESSED);
-
-    //Write style for screen_time_imgbtn_1, Part: LV_PART_MAIN, State: LV_STATE_CHECKED.
-    lv_obj_set_style_image_recolor_opa(ui->screen_time_imgbtn_1, 0, LV_PART_MAIN|LV_STATE_CHECKED);
-    lv_obj_set_style_image_opa(ui->screen_time_imgbtn_1, 255, LV_PART_MAIN|LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(ui->screen_time_imgbtn_1, lv_color_hex(0xFF33FF), LV_PART_MAIN|LV_STATE_CHECKED);
-    lv_obj_set_style_text_font(ui->screen_time_imgbtn_1, &lv_font_montserratMedium_12, LV_PART_MAIN|LV_STATE_CHECKED);
-    lv_obj_set_style_text_opa(ui->screen_time_imgbtn_1, 255, LV_PART_MAIN|LV_STATE_CHECKED);
-    lv_obj_set_style_shadow_width(ui->screen_time_imgbtn_1, 0, LV_PART_MAIN|LV_STATE_CHECKED);
-
-    //Write style for screen_time_imgbtn_1, Part: LV_PART_MAIN, State: LV_IMAGEBUTTON_STATE_RELEASED.
-    lv_obj_set_style_image_recolor_opa(ui->screen_time_imgbtn_1, 0, LV_PART_MAIN|LV_IMAGEBUTTON_STATE_RELEASED);
-    lv_obj_set_style_image_opa(ui->screen_time_imgbtn_1, 255, LV_PART_MAIN|LV_IMAGEBUTTON_STATE_RELEASED);
+    lv_obj_add_flag(ui->screen_time_datetext_1, LV_OBJ_FLAG_HIDDEN);
 
     //The custom code of screen_time.
 
@@ -102,6 +108,9 @@ void setup_scr_screen_time(lv_ui *ui)
     //Update current screen layout.
     lv_obj_update_layout(ui->screen_time);
 
-    //Init events for screen.
-    events_init_screen_time(ui);
+    lv_obj_add_event_cb(ui->screen_time, screen_time_open_calendar_on_loaded,
+                        LV_EVENT_SCREEN_LOADED, ui);
+    lv_obj_add_event_cb(ui->screen_time, screen_time_swipe_exit_event_cb,
+                        LV_EVENT_ALL, ui);
+
 }

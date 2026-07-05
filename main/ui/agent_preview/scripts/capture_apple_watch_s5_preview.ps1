@@ -4,7 +4,9 @@ param(
     [switch]$OpenHermes,
     [switch]$OpenHermesInbox,
     [switch]$OpenHermesDetail,
-    [switch]$OpenAi
+    [switch]$OpenAi,
+    [switch]$OpenCalendar,
+    [switch]$OpenDanger
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,6 +36,10 @@ if ($OpenHermes) {
     $captureArgs = @("--open-hermes-detail") + $captureArgs
 } elseif ($OpenAi) {
     $captureArgs = @("--open-ai") + $captureArgs
+} elseif ($OpenCalendar) {
+    $captureArgs = @("--open-calendar") + $captureArgs
+} elseif ($OpenDanger) {
+    $captureArgs = @("--open-danger") + $captureArgs
 }
 
 & $ExePath @captureArgs
@@ -55,6 +61,10 @@ if ($OpenHermes) {
     $runArgs += "--open-hermes-detail"
 } elseif ($OpenAi) {
     $runArgs += "--open-ai"
+} elseif ($OpenCalendar) {
+    $runArgs += "--open-calendar"
+} elseif ($OpenDanger) {
+    $runArgs += "--open-danger"
 }
 $commandLine = "`"$ExePath`""
 if ($runArgs.Count -gt 0) {

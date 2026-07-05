@@ -128,6 +128,8 @@ APP_ALERT_MANAGER_SOURCE = ALERTS_DIR / "app_alert_manager.c"
 APP_ALERT_MANAGER_HEADER = ALERTS_DIR / "app_alert_manager.h"
 AUDIO_ALERT_PLAYER_SOURCE = ALERTS_DIR / "audio_alert_player.c"
 AUDIO_ALERT_PLAYER_HEADER = ALERTS_DIR / "audio_alert_player.h"
+HAPTIC_ALERT_PLAYER_SOURCE = ALERTS_DIR / "haptic_alert_player.c"
+HAPTIC_ALERT_PLAYER_HEADER = ALERTS_DIR / "haptic_alert_player.h"
 DISPLAY_ALERT_ADAPTER_SOURCE = ALERTS_DIR / "display_alert_adapter.c"
 DISPLAY_ALERT_ADAPTER_HEADER = ALERTS_DIR / "display_alert_adapter.h"
 

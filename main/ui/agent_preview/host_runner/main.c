@@ -9,7 +9,9 @@
 
 #include "gui_guider.h"
 #include "events_init.h"
+#include "widgets_init.h"
 #include "ai_ui_controller.h"
+#include "danger_detection_controller.h"
 #include "memory_watch_controller.h"
 #include "mini_games_controller.h"
 #include "drivers/sdl/lv_sdl_keyboard.h"
@@ -34,6 +36,8 @@ typedef struct {
     bool open_hermes_inbox;
     bool open_hermes_detail;
     bool open_ai;
+    bool open_calendar;
+    bool open_danger;
     const char *capture_path;
 } preview_args_t;
 
@@ -135,6 +139,14 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         {
             args.open_ai = true;
         }
+        else if (strcmp(argv[i], "--open-calendar") == 0)
+        {
+            args.open_calendar = true;
+        }
+        else if (strcmp(argv[i], "--open-danger") == 0)
+        {
+            args.open_danger = true;
+        }
         else if (strcmp(argv[i], "--capture") == 0 && i + 1 < argc)
         {
             args.capture_path = argv[++i];
@@ -153,6 +165,7 @@ static void preview_tick_once(uint32_t *last_tick)
     lv_timer_handler();
     memory_watch_controller_poll_ui();
     mini_games_controller_poll_ui();
+    danger_detection_controller_poll_ui();
     watch_nc_poll(false, false);
     if (s_screen_mask != NULL && lv_obj_is_valid(s_screen_mask))
     {
@@ -244,6 +257,7 @@ int main(int argc, char **argv)
     memory_watch_controller_init(&guider_ui);
     events_init(&guider_ui);
     ai_ui_controller_init(&guider_ui);
+    danger_detection_controller_init(&guider_ui);
     mini_games_controller_init(&guider_ui);
     preview_create_screen_mask();
     static const watch_nc_config_t kMockNcCfg = {0};
@@ -264,6 +278,16 @@ int main(int argc, char **argv)
     else if (args.open_ai)
     {
         ai_ui_open();
+    }
+    else if (args.open_calendar)
+    {
+        setup_scr_screen_time(&guider_ui);
+        lv_label_set_text(guider_ui.screen_time_datetext_1, "2026/09/09");
+        lv_screen_load(guider_ui.screen_time);
+    }
+    else if (args.open_danger)
+    {
+        danger_detection_ui_open();
     }
 
     uint32_t last_tick = SDL_GetTicks();

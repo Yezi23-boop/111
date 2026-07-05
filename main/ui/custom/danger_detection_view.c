@@ -17,6 +17,10 @@ struct danger_detection_view {
     lv_obj_t *status_label;
     lv_obj_t *category_label;
     lv_obj_t *primary_result_label;
+    lv_obj_t *sensitivity_title_label;
+    lv_obj_t *sensitivity_row;
+    lv_obj_t *sensitivity_buttons[3];
+    lv_obj_t *sensitivity_labels[3];
     lv_obj_t *scores_card;
     lv_obj_t *horn_title_label;
     lv_obj_t *horn_confidence_label;
@@ -27,8 +31,10 @@ struct danger_detection_view {
     lv_obj_t *alert_icon_label;
     danger_detection_view_action_cb_t back_action_cb;
     danger_detection_view_switch_cb_t safety_monitor_cb;
+    danger_detection_view_sensitivity_cb_t sensitivity_cb;
     void *user_data;
     bool updating_switch;
+    bool updating_sensitivity;
 };
 
 static const lv_coord_t kDangerBackButtonX = 28;
@@ -61,6 +67,25 @@ static void danger_detection_view_switch_event(lv_event_t *e)
     view->safety_monitor_cb(enabled, view->user_data);
 }
 
+static void danger_detection_view_sensitivity_event(lv_event_t *e)
+{
+    danger_detection_view_t *view =
+        (danger_detection_view_t *)lv_event_get_user_data(e);
+    if (view == NULL || view->sensitivity_cb == NULL ||
+        view->updating_sensitivity) {
+        return;
+    }
+
+    lv_obj_t *target = lv_event_get_target(e);
+    for (int i = 0; i < 3; ++i) {
+        if (target == view->sensitivity_buttons[i]) {
+            view->sensitivity_cb((danger_detection_view_sensitivity_mode_t)i,
+                                 view->user_data);
+            return;
+        }
+    }
+}
+
 static void danger_detection_view_set_text(lv_obj_t *label, const char *text)
 {
     if (label == NULL) {
@@ -68,6 +93,20 @@ static void danger_detection_view_set_text(lv_obj_t *label, const char *text)
     }
 
     lv_label_set_text(label, text != NULL ? text : "");
+}
+
+static const char *danger_detection_view_sensitivity_hint(
+    danger_detection_view_sensitivity_mode_t mode)
+{
+    switch (mode) {
+        case DANGER_DETECTION_VIEW_SENSITIVITY_CONSERVATIVE:
+            return "灵敏度 · 减少误报";
+        case DANGER_DETECTION_VIEW_SENSITIVITY_SENSITIVE:
+            return "灵敏度 · 更容易触发";
+        case DANGER_DETECTION_VIEW_SENSITIVITY_STANDARD:
+        default:
+            return "灵敏度 · 日常推荐";
+    }
 }
 
 danger_detection_view_t *danger_detection_view_create(
@@ -82,6 +121,7 @@ danger_detection_view_t *danger_detection_view_create(
     view->back_action_cb = config != NULL ? config->back_action_cb : NULL;
     view->safety_monitor_cb =
         config != NULL ? config->safety_monitor_cb : NULL;
+    view->sensitivity_cb = config != NULL ? config->sensitivity_cb : NULL;
     view->user_data = config != NULL ? config->user_data : NULL;
 
     view->screen = lv_obj_create(NULL);
@@ -176,7 +216,59 @@ danger_detection_view_t *danger_detection_view_create(
     lv_obj_set_style_text_font(view->primary_result_label,
                                &lv_font_montserratMedium_58, 0);
     lv_obj_set_style_text_letter_space(view->primary_result_label, 3, 0);
-    lv_obj_align(view->primary_result_label, LV_ALIGN_CENTER, 0, 28);
+    lv_obj_align(view->primary_result_label, LV_ALIGN_CENTER, 0, -14);
+
+    view->sensitivity_title_label = lv_label_create(view->content_layer);
+    lv_label_set_text(view->sensitivity_title_label, "灵敏度 · 日常推荐");
+    lv_obj_set_style_text_font(view->sensitivity_title_label,
+                               &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+                               0);
+    lv_obj_set_style_text_color(view->sensitivity_title_label,
+                                lv_color_hex(0x111827), 0);
+    lv_obj_align(view->sensitivity_title_label, LV_ALIGN_TOP_MID, 0, 286);
+
+    view->sensitivity_row = lv_obj_create(view->content_layer);
+    lv_obj_remove_style_all(view->sensitivity_row);
+    lv_obj_set_size(view->sensitivity_row, 320, 34);
+    lv_obj_align(view->sensitivity_row, LV_ALIGN_TOP_MID, 0, 310);
+    lv_obj_set_flex_flow(view->sensitivity_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(view->sensitivity_row, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(view->sensitivity_row, 4, 0);
+
+    static const char *const kSensitivityTexts[] = {
+        "保守",
+        "标准",
+        "敏感",
+    };
+    for (int i = 0; i < 3; ++i) {
+        view->sensitivity_buttons[i] = lv_obj_create(view->sensitivity_row);
+        lv_obj_remove_style_all(view->sensitivity_buttons[i]);
+        lv_obj_set_size(view->sensitivity_buttons[i], 104, 34);
+        lv_obj_add_flag(view->sensitivity_buttons[i], LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(view->sensitivity_buttons[i], LV_OBJ_FLAG_CHECKABLE);
+        lv_obj_set_style_radius(view->sensitivity_buttons[i], 6, 0);
+        lv_obj_set_style_bg_opa(view->sensitivity_buttons[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(view->sensitivity_buttons[i],
+                                  lv_color_hex(0xf3f4f6), 0);
+        lv_obj_set_style_bg_color(view->sensitivity_buttons[i],
+                                  lv_color_hex(0x111827), LV_STATE_CHECKED);
+        lv_obj_add_event_cb(view->sensitivity_buttons[i],
+                            danger_detection_view_sensitivity_event,
+                            LV_EVENT_CLICKED, view);
+
+        view->sensitivity_labels[i] =
+            lv_label_create(view->sensitivity_buttons[i]);
+        lv_label_set_text(view->sensitivity_labels[i], kSensitivityTexts[i]);
+        lv_obj_set_style_text_font(
+            view->sensitivity_labels[i],
+            &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, 0);
+        lv_obj_set_style_text_color(view->sensitivity_labels[i],
+                                    lv_color_hex(0x374151), 0);
+        lv_obj_set_style_text_color(view->sensitivity_labels[i],
+                                    lv_color_white(), LV_STATE_CHECKED);
+        lv_obj_center(view->sensitivity_labels[i]);
+    }
 
     view->scores_card = lv_obj_create(view->content_layer);
     lv_obj_remove_style_all(view->scores_card);
@@ -244,6 +336,7 @@ danger_detection_view_t *danger_detection_view_create(
         .primary_result_text = "NONE",
         .horn_confidence_text = "--",
         .siren_confidence_text = "--",
+        .sensitivity_mode = DANGER_DETECTION_VIEW_SENSITIVITY_STANDARD,
         .safety_monitor_enabled = false,
         .alert_visible = false,
     };
@@ -288,6 +381,9 @@ void danger_detection_view_apply_model(
                                    model->horn_confidence_text);
     danger_detection_view_set_text(view->siren_confidence_label,
                                    model->siren_confidence_text);
+    danger_detection_view_set_text(
+        view->sensitivity_title_label,
+        danger_detection_view_sensitivity_hint(model->sensitivity_mode));
 
     view->updating_switch = true;
     if (model->safety_monitor_enabled) {
@@ -298,6 +394,20 @@ void danger_detection_view_apply_model(
         lv_obj_align(view->safety_monitor_knob, LV_ALIGN_LEFT_MID, 3, 0);
     }
     view->updating_switch = false;
+
+    view->updating_sensitivity = true;
+    for (int i = 0; i < 3; ++i) {
+        if (i == (int)model->sensitivity_mode) {
+            lv_obj_add_state(view->sensitivity_buttons[i], LV_STATE_CHECKED);
+            lv_obj_set_style_text_color(view->sensitivity_labels[i],
+                                        lv_color_white(), 0);
+        } else {
+            lv_obj_clear_state(view->sensitivity_buttons[i], LV_STATE_CHECKED);
+            lv_obj_set_style_text_color(view->sensitivity_labels[i],
+                                        lv_color_hex(0x374151), 0);
+        }
+    }
+    view->updating_sensitivity = false;
 
     if (model->alert_visible) {
         lv_obj_set_style_bg_color(view->screen, lv_palette_main(LV_PALETTE_RED),

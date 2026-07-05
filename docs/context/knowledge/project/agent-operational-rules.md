@@ -32,16 +32,18 @@ evidence_level: design
 - 不得把 `idf.py flash` 作为 agent 默认烧录命令；它会按 `build/flasher_args.json` 写入 bootloader、partition table、app 以及其他已配置分区。
 - 仅在修改 `partition table`、bootloader、`OTA` 布局、flash 参数、会影响分区 / bootloader / flash 模式的 `sdkconfig`，或需要刷新 `assets` / `model` / `nvs` / `phy_init` 等非 app 分区产物时，才使用 `idf.py flash`；用户明确要求全量刷新时也可使用，但必须说明原因。
 - 如需串口验证，优先执行 `app-flash` 后再限时采集 `monitor` / 串口日志；避免把 `idf.py flash monitor` 作为默认验证命令。
-- 优先使用 `scripts/board/agent_serial_monitor.ps1` 或 `scripts/board/agent_serial_monitor.py` 做 agent 可读串口采集；它会自动生成 `board_logs/*.log` 和 `board_logs/*.summary.json`，摘要内包含 `status/flash_completed/boot_seen/app_started/startup_done/observation_complete/hard_fatal_count/diagnostic_event_count/evidence/custom_evidence/fatal/diagnostic_events/important_events/tail/log_path`，后续 agent 应先读 summary，再按 `log_path` 打开完整日志。
+- 优先使用 `scripts/board/agent_serial_monitor.ps1` 或 `scripts/board/agent_serial_monitor.py` 做 agent 可读串口采集；它会自动生成完整 `board_logs/*.log` 和轻量 `board_logs/*.summary.json`。summary 只包含采集事实与工具清理结果，例如 `status=captured/capture_stop_reason/panic_log_seen/line_count/log_path/summary_path/residual_monitor_count/residual_monitor_killed_count/residual_monitor_remaining_count`；固件是否崩溃、是否启动成功、业务是否异常，一律由 agent 读取完整日志后自行判断。
+- 硬约束：除非 `agent_serial_monitor` 工具不可用或本轮已明确失败并记录失败原因，否则不得直接调用裸 `idf.py monitor`，也不得用 `Start-Process` 后台启动 monitor；需要兜底时必须先确认并清理残留 monitor 进程。
   - 常规只观察：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 60 -Action monitor -Tag <task>`
   - 普通 app 改动后观察：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 90 -FlashTimeoutSeconds 180 -Action app-flash-monitor -Tag <task>`
   - `app-flash-monitor` 的 `DurationSeconds` 表示看到启动证据后的观察窗口，不包含 app 刷写时间；刷写与等待启动由 `FlashTimeoutSeconds` 控制，避免大 app 刷写到一半就被采集窗口杀掉并误报 `no_boot_seen`。
   - `app-flash-monitor` 默认静默控制台，避免刷写日志淹没 agent 通道；如确实需要实时流式输出，显式加 `-StreamConsole`。
-  - 验证 STANDBY 30 秒观察：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 75 -FlashTimeoutSeconds 240 -Action app-flash-monitor -Tag standby-30s -Preset standby -LiteralPattern @("reason=")`
-  - 针对任务补证据关键词：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 60 -Action monitor -Tag <task> -Preset system-time -Pattern @("power=Board power boot snapshot") -TailLines 120`
-  - 纯文本关键词含 `=`、中文或不想按正则解析时，使用 `-LiteralPattern`，例如：`-LiteralPattern @("reason=")`；`-Pattern "name=regex"` 只用于明确要命名正则的场景。
+  - 验证 STANDBY 30 秒观察：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 75 -FlashTimeoutSeconds 240 -Action app-flash-monitor -Tag standby-30s`
+  - 针对任务补证据关键词时，不再让工具过滤或判断；agent 应读取 summary 的 `log_path` 后自行搜索完整 `.log`。
   - 观察已运行板子且不希望 monitor 复位：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\board\agent_serial_monitor.ps1 -Port COM3 -DurationSeconds 30 -Action monitor -Tag <task> -NoReset`
-- `agent_serial_monitor` 的 `status=ok|partial` 才默认返回成功；`observed_no_boot` / `boot_missing_after_flash` 默认返回失败，除非显式加 `-AllowNoBoot`。`ESP_ERR_NO_MEM` 等资源诊断会进入 `diagnostic_events`，不再和 `Guru/panic/watchdog` 这类硬失败混为一类。
+- `agent_serial_monitor` 不再输出 `status=fail`、`hard_fatal_count`、`diagnostic_event_count`、`fatal` 或 `diagnostic_events`。`status=captured` 只表示工具完成采集，不代表固件健康。
+- 默认完整采集到时间结束；只有看到明确 ESP panic 起点且随后出现 `Backtrace:` / `ELF file SHA256` / `Rebooting...` / register dump 等结构证据时，工具才提前结束采集，并仅记录 `panic_log_seen=1` 与 `capture_stop_reason=panic_log_seen`。
+- `agent_serial_monitor` 收尾会自动全局扫描并结束 `idf_monitor.py`、`idf.py ... monitor`、`ESP_IDF_MONITOR_TEST` 相关残留进程，不限定 `COM3`，会尽量从命令行识别 `COMx` 并报告到 `residual_monitor_processes[].port` 与终端残留行；结束后会二次扫描并报告 `residual_monitor_killed_count/residual_monitor_remaining_count`。扫描会排除 `agent_serial_monitor.py` 自身包装进程，避免误杀工具本身。
 - `idf.py monitor` 没有自然返回值；自动化验证时默认采集窗口为 `30` 秒，最长不超过 `1` 分钟。
 - Windows Codex 桌面环境下，如需让 agent 直接读取 `idf.py monitor`，可临时设置 `ESP_IDF_MONITOR_TEST=1` 绕过 `TTY` 检查；该变量只用于 host 侧采集，不属于固件配置。
 - 只要使用过 `ESP_IDF_MONITOR_TEST=1`，就必须清理残留的 `idf_monitor` / `idf.py monitor` 进程，并确认串口已释放，再进行下一轮 `flash`、`monitor` 或串口验证。

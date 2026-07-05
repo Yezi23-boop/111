@@ -26,8 +26,8 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', 'SimHei', 'Helvetica Neue'
 <rect x="417.0" y="471.0" width="96" height="34" rx="9" fill="#ffffff" opacity="0.96"/>
 <text x="465.0" y="496.0" text-anchor="middle" class="hint">开启</text>
 <line x1="770" y1="515" x2="880" y2="515" stroke="#ea580c" stroke-width="4" fill="none" marker-end="url(#arrow-orange)"/>
-<rect x="705.0" y="471.0" width="240" height="34" rx="9" fill="#ffffff" opacity="0.96"/>
-<text x="825.0" y="496.0" text-anchor="middle" class="hint">单窗 danger</text>
+<rect x="765.0" y="471.0" width="120" height="34" rx="9" fill="#ffffff" opacity="0.96"/>
+<text x="825.0" y="496.0" text-anchor="middle" class="hint">单窗危险</text>
 <line x1="1150" y1="515" x2="1260" y2="515" stroke="#dc2626" stroke-width="4" fill="none" marker-end="url(#arrow-red)"/>
 <rect x="1145.0" y="471.0" width="120" height="34" rx="9" fill="#ffffff" opacity="0.96"/>
 <text x="1205.0" y="496.0" text-anchor="middle" class="hint">连续确认</text>

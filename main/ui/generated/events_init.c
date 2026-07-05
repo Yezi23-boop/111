@@ -604,23 +604,9 @@ void events_init_screen_wallpaper (lv_ui *ui)
     lv_obj_add_event_cb(ui->screen_wallpaper_img_4, screen_wallpaper_img_4_event_handler, LV_EVENT_ALL, ui);
 }
 
-static void screen_time_imgbtn_1_event_handler (lv_event_t *e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    switch (code) {
-    case LV_EVENT_CLICKED:
-    {
-        ui_load_scr_animation(&guider_ui, &guider_ui.screen_main, guider_ui.screen_main_del, &guider_ui.screen_time_del, setup_scr_screen_main, LV_SCR_LOAD_ANIM_FADE_ON, 300, 300, true, true);
-        break;
-    }
-    default:
-        break;
-    }
-}
-
 void events_init_screen_time (lv_ui *ui)
 {
-    lv_obj_add_event_cb(ui->screen_time_imgbtn_1, screen_time_imgbtn_1_event_handler, LV_EVENT_ALL, ui);
+    (void)ui;
 }
 
 

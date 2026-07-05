@@ -814,7 +814,14 @@ esp_err_t network_manager_use_latest_wifi(void)
 
     if (ret != ESP_OK)
     {
-        s_state = NETWORK_MANAGER_STATE_ERROR;
+        if (ret == ESP_ERR_NOT_FOUND)
+        {
+            s_state = NETWORK_MANAGER_STATE_IDLE;
+        }
+        else
+        {
+            s_state = NETWORK_MANAGER_STATE_ERROR;
+        }
         xSemaphoreGive(s_manager_mutex);
         return ret;
     }

@@ -3,7 +3,7 @@
 
 This tool keeps `idf.py monitor` as the low-level transport, but adds the parts
 agents repeatedly need: bounded capture windows, stable log file names, process
-cleanup, and a small JSON summary with key evidence lines.
+cleanup, and a small JSON summary with capture facts.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Iterable
 
 
 DEFAULT_IDF_EXPORT_PS1 = r"D:\esp-idf\v5.5.3\esp-idf\export.ps1"
@@ -30,62 +29,25 @@ OBSERVE_START_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("app_main_called", re.compile(r"main_task: Calling app_main\(\)")),
 )
 
-EVIDENCE_PATTERNS: dict[str, str] = {
-    "boot_rom_seen": r"ESP-ROM:esp32s3",
-    "app_main_called": r"main_task: Calling app_main\(\)",
-    "startup_done": r"boot_stage: startup_sequence_done",
-    "ui_first_frame": r"boot_stage: ui_first_frame_ready",
-    "rtc_snapshot": r"rtc_time_snapshot:",
-    "rtc_bootstrap_ok": r"system_time: rtc bootstrap ok",
-    "sntp_started": r"system_time: SNTP started",
-    "sntp_sync_ok": r"system_time: sntp sync ok source=SNTP",
-    "rtc_writeback": r"rtc_writeback=1",
-    "network_service_ready": r"network state: WIFI_READY -> SERVICE_READY",
-    "power_snapshot": r"Board power boot snapshot:",
-    "rtc_timer_evidence": r"rtc_timer_stopped_after_evidence",
-    "light_sleep_skipped": r"light_sleep_test_skipped:",
-}
+PANIC_START_RE = re.compile(
+    r"Guru Meditation Error|panic'ed|abort\(\) was called|abort was called",
+    re.IGNORECASE,
+)
+PANIC_CONFIRM_RE = re.compile(
+    r"Backtrace:|ELF file SHA256|Rebooting\.\.\.|Core\s+\d+\s+register dump|register dump:",
+    re.IGNORECASE,
+)
+PANIC_CAPTURE_GRACE_SECONDS = 1.0
 
-PRESET_PATTERNS: dict[str, dict[str, str]] = {
-    "standby": {
-        "standby_budget": r"power_budget_change: state=STANDBY",
-        "standby_brightness_zero": r"apply brightness state=standby.*target=0%",
-        "standby_wifi_ps": r"Wi-Fi power save enabled by power budget",
-        "standby_network_paused": r"network state: SERVICE_READY -> WIFI_READY",
-    },
-    "system-time": {
-        "system_time_boot": r"system_time_boot:",
-        "rtc_bootstrap_done": r"rtc bootstrap done|rtc bootstrap ok",
-        "sntp_sync_ok": r"sntp sync ok source=SNTP",
-        "rtc_writeback": r"rtc_writeback=1",
-    },
-    "runtime-gate": {
-        "runtime_gate_test": r"runtime_gate_test",
-        "foreground_runtime": r"foreground_runtime|foreground_audio_active",
-        "background_https": r"background_https",
-        "memory_watch": r"memory_watch",
-    },
-    "wifi": {
-        "wifi_connected": r"wifi:connected with",
-        "wifi_disconnect_reason": r"reason=[0-9]+",
-        "wifi_service_ready": r"network state: WIFI_READY -> SERVICE_READY",
-        "wifi_power_save": r"Wi-Fi power save (enabled|disabled) by power budget",
-    },
-}
-
-HARD_FATAL_PATTERNS: dict[str, str] = {
-    "guru_meditation": r"Guru Meditation",
-    "panic": r"\bpanic\b|PANIC",
-    "abort": r"\babort\(\)|abort was called",
-    "watchdog": r"watchdog|Task watchdog|WDT",
-    "flash_checksum_mismatch": r"checksum mismatch",
-}
-
-DIAGNOSTIC_PATTERNS: dict[str, str] = {
-    "no_mem": r"ESP_ERR_NO_MEM|NO_MEM",
-    "stack_overflow": r"stack overflow",
-    "wifi_disconnect_reason": r"reason=[0-9]+",
-}
+RESIDUAL_MONITOR_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bidf_monitor\.py\b", re.IGNORECASE),
+    re.compile(r"\bidf\.py\b.*\bmonitor\b", re.IGNORECASE),
+    re.compile(r"\bESP_IDF_MONITOR_TEST\b", re.IGNORECASE),
+)
+MONITOR_PORT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:^|\s)(?:-p|--port)\s+(COM\d+)\b", re.IGNORECASE),
+    re.compile(r"\bport\s*=\s*(COM\d+)\b", re.IGNORECASE),
+)
 
 
 def repo_root_from_script() -> Path:
@@ -155,11 +117,199 @@ def kill_process_tree(process: subprocess.Popen[str]) -> None:
         process.kill()
 
 
+def compact_command_line(command_line: object, limit: int = 400) -> str:
+    text = "" if command_line is None else str(command_line)
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def process_field(process: dict[str, object], *names: str) -> object:
+    for name in names:
+        if name in process:
+            return process[name]
+    return None
+
+
+def process_id(process: dict[str, object]) -> int | None:
+    value = process_field(process, "ProcessId", "pid")
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def is_residual_monitor_process(process: dict[str, object], current_pid: int) -> bool:
+    pid = process_id(process)
+    if pid is None or pid == current_pid:
+        return False
+    command_line = compact_command_line(process_field(process, "CommandLine", "command_line"), 4000)
+    if not command_line:
+        return False
+    if re.search(r"\bagent_serial_monitor\.py\b", command_line, re.IGNORECASE):
+        return False
+    return any(pattern.search(command_line) for pattern in RESIDUAL_MONITOR_PATTERNS)
+
+
+def extract_monitor_port(command_line: object) -> str | None:
+    text = compact_command_line(command_line, 4000)
+    for pattern in MONITOR_PORT_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return match.group(1).upper()
+    return None
+
+
+def residual_process_summary(process: dict[str, object]) -> dict[str, object]:
+    command_line = process_field(process, "CommandLine", "command_line")
+    return {
+        "pid": process_id(process),
+        "parent_pid": process_field(process, "ParentProcessId", "ppid"),
+        "name": process_field(process, "Name", "name"),
+        "port": extract_monitor_port(command_line),
+        "command_line": compact_command_line(command_line),
+    }
+
+
+def scan_residual_monitor_processes(current_pid: int) -> dict[str, object]:
+    """Find monitor-like host processes after capture."""
+    if os.name == "nt":
+        command = [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            (
+                "Get-CimInstance Win32_Process | "
+                "Select-Object ProcessId,ParentProcessId,Name,CommandLine | "
+                "ConvertTo-Json -Compress"
+            ),
+        ]
+    else:
+        command = [
+            "ps",
+            "-eo",
+            "pid=,ppid=,comm=,args=",
+        ]
+
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not break capture.
+        return {"error": str(exc), "processes": []}
+
+    if result.returncode != 0:
+        return {"error": result.stderr.strip() or f"exit_code={result.returncode}", "processes": []}
+
+    try:
+        if os.name == "nt":
+            raw = result.stdout.strip()
+            if not raw:
+                process_rows: list[dict[str, object]] = []
+            else:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    process_rows = [parsed]
+                else:
+                    process_rows = [row for row in parsed if isinstance(row, dict)]
+        else:
+            process_rows = []
+            for line in result.stdout.splitlines():
+                parts = line.strip().split(maxsplit=3)
+                if len(parts) < 4:
+                    continue
+                pid, ppid, name, command_line = parts
+                process_rows.append(
+                    {
+                        "pid": pid,
+                        "ppid": ppid,
+                        "name": name,
+                        "command_line": command_line,
+                    }
+                )
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not break capture.
+        return {"error": str(exc), "processes": []}
+
+    processes = [
+        residual_process_summary(row)
+        for row in process_rows
+        if is_residual_monitor_process(row, current_pid)
+    ]
+    return {"error": None, "processes": processes}
+
+
+def terminate_residual_monitor_processes(processes: list[dict[str, object]]) -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
+    for process in processes:
+        pid = process.get("pid")
+        result = {
+            "pid": pid,
+            "port": process.get("port"),
+            "name": process.get("name"),
+            "terminated": False,
+            "exit_code": None,
+            "error": None,
+        }
+        try:
+            pid_text = str(int(pid))
+        except (TypeError, ValueError):
+            result["error"] = "invalid_pid"
+            results.append(result)
+            continue
+
+        try:
+            if os.name == "nt":
+                completed = subprocess.run(
+                    ["taskkill.exe", "/T", "/F", "/PID", pid_text],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                    check=False,
+                )
+            else:
+                completed = subprocess.run(
+                    ["kill", "-TERM", pid_text],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                    check=False,
+                )
+            result["exit_code"] = completed.returncode
+            result["terminated"] = completed.returncode == 0
+            if completed.returncode != 0:
+                result["error"] = completed.stderr.strip() or completed.stdout.strip()
+        except Exception as exc:  # noqa: BLE001 - cleanup diagnostics must not break summary.
+            result["error"] = str(exc)
+        results.append(result)
+    return results
+
+
 def observe_start_trigger(line: str) -> str | None:
     for name, pattern in OBSERVE_START_PATTERNS:
         if pattern.search(line):
             return name
     return None
+
+
+def update_panic_detector(line: str, panic_start_seen: bool) -> tuple[bool, bool]:
+    """Track ESP panic log structure without deciding firmware health."""
+    panic_start_seen = panic_start_seen or bool(PANIC_START_RE.search(line))
+    panic_confirmed = panic_start_seen and bool(PANIC_CONFIRM_RE.search(line))
+    return panic_start_seen, panic_confirmed
 
 
 def run_capture(command: list[str], log_path: Path, args: argparse.Namespace) -> dict[str, object]:
@@ -172,6 +322,11 @@ def run_capture(command: list[str], log_path: Path, args: argparse.Namespace) ->
     )
     timed_out = False
     timed_out_phase = None
+    capture_stop_reason = None
+    panic_start_seen = False
+    panic_log_seen = False
+    panic_stop_deadline = None
+    stop_kill_sent = False
     lines: list[str] = []
 
     process = subprocess.Popen(
@@ -194,10 +349,21 @@ def run_capture(command: list[str], log_path: Path, args: argparse.Namespace) ->
         while True:
             if process.poll() is not None and output.empty():
                 break
-            if time.monotonic() >= deadline:
+            now = time.monotonic()
+            if panic_stop_deadline is not None and now >= panic_stop_deadline:
+                capture_stop_reason = "panic_log_seen"
+                if not stop_kill_sent:
+                    kill_process_tree(process)
+                    stop_kill_sent = True
+            elif now >= deadline:
                 timed_out = True
                 timed_out_phase = "observe" if observe_started else "pre_observe"
-                kill_process_tree(process)
+                capture_stop_reason = (
+                    "duration_elapsed" if observe_started else "pre_observe_timeout"
+                )
+                if not stop_kill_sent:
+                    kill_process_tree(process)
+                    stop_kill_sent = True
             try:
                 line = output.get(timeout=0.2)
             except queue.Empty:
@@ -216,77 +382,33 @@ def run_capture(command: list[str], log_path: Path, args: argparse.Namespace) ->
                     observe_trigger = trigger
                     observe_started_at = dt.datetime.now(dt.timezone.utc)
                     deadline = time.monotonic() + args.duration_seconds
+            if not panic_log_seen:
+                panic_start_seen, panic_confirmed = update_panic_detector(
+                    clean_text, panic_start_seen
+                )
+                if panic_confirmed:
+                    panic_log_seen = True
+                    capture_stop_reason = "panic_log_seen"
+                    panic_stop_deadline = time.monotonic() + PANIC_CAPTURE_GRACE_SECONDS
             if not timed_out and not args.quiet_console:
                 safe_console_write(clean_line)
 
     ended_at = dt.datetime.now(dt.timezone.utc)
+    if capture_stop_reason is None:
+        capture_stop_reason = "process_exited"
     return {
         "started_at": started_at.isoformat(),
         "ended_at": ended_at.isoformat(),
         "timed_out": timed_out,
         "timed_out_phase": timed_out_phase,
+        "capture_stop_reason": capture_stop_reason,
+        "panic_log_seen": panic_log_seen,
         "exit_code": process.poll(),
         "observe_started": observe_started,
         "observe_trigger": observe_trigger,
         "observe_started_at": observe_started_at.isoformat() if observe_started_at else None,
         "lines": lines,
     }
-
-
-def collect_matches(lines: Iterable[str], patterns: dict[str, str]) -> dict[str, dict[str, object]]:
-    results: dict[str, dict[str, object]] = {}
-    compiled = {name: re.compile(pattern) for name, pattern in patterns.items()}
-    for name in compiled:
-        results[name] = {"count": 0, "first_line": None, "last_line": None}
-
-    for index, line in enumerate(lines, start=1):
-        for name, pattern in compiled.items():
-            if pattern.search(line):
-                item = results[name]
-                item["count"] = int(item["count"]) + 1
-                if item["first_line"] is None:
-                    item["first_line"] = {"line": index, "text": line}
-                item["last_line"] = {"line": index, "text": line}
-    return results
-
-
-def important_events(lines: list[str], limit: int) -> list[dict[str, object]]:
-    keywords = (
-        "boot_stage:",
-        "system_time",
-        "rtc_time_snapshot",
-        "Board power boot snapshot",
-        "NETWORK_SERVICE",
-        "wifi_ctrl:",
-        "Guru Meditation",
-        "panic",
-        "ESP_ERR",
-        "rtc_timer",
-        "light_sleep",
-    )
-    events: list[dict[str, object]] = []
-    for index, line in enumerate(lines, start=1):
-        if any(keyword in line for keyword in keywords):
-            events.append({"line": index, "text": line})
-    return events[-limit:]
-
-
-def tail_lines(lines: list[str], limit: int) -> list[dict[str, object]]:
-    if limit <= 0:
-        return []
-    first_line = max(1, len(lines) - limit + 1)
-    return [
-        {"line": first_line + offset, "text": line}
-        for offset, line in enumerate(lines[-limit:])
-    ]
-
-
-def match_count(matches: dict[str, dict[str, object]], name: str) -> int:
-    return int(matches.get(name, {}).get("count", 0))
-
-
-def total_match_count(matches: dict[str, dict[str, object]]) -> int:
-    return sum(int(item["count"]) for item in matches.values())
 
 
 def flash_completed(lines: list[str]) -> bool | None:
@@ -303,40 +425,23 @@ def observation_complete(capture: dict[str, object]) -> bool:
     return capture["timed_out_phase"] == "observe"
 
 
-def decide_status(
-    args: argparse.Namespace,
-    evidence: dict[str, dict[str, object]],
-    hard_fatal: dict[str, dict[str, object]],
-) -> str:
-    if total_match_count(hard_fatal) > 0:
-        return "fail"
-    if match_count(evidence, "boot_rom_seen") == 0:
-        if args.action == "app-flash-monitor":
-            return "boot_missing_after_flash"
-        return "observed_no_boot"
-    if match_count(evidence, "startup_done") == 0:
-        return "partial"
-    return "ok"
-
-
 def write_summary(
     args: argparse.Namespace,
     command: list[str],
     log_path: Path,
     capture: dict[str, object],
     summary_path: Path,
+    residual_scan: dict[str, object],
+    residual_kill_results: list[dict[str, object]],
+    residual_final_scan: dict[str, object],
 ) -> dict[str, object]:
     lines = list(capture["lines"])
-    evidence = collect_matches(lines, EVIDENCE_PATTERNS)
-    hard_fatal = collect_matches(lines, HARD_FATAL_PATTERNS)
-    diagnostic_events = collect_matches(lines, DIAGNOSTIC_PATTERNS)
-    custom_evidence = collect_matches(lines, args.custom_patterns)
-    boot_seen = match_count(evidence, "boot_rom_seen") > 0
-    app_started = match_count(evidence, "app_main_called") > 0
-    startup_done = match_count(evidence, "startup_done") > 0
+    residual_processes = list(residual_scan.get("processes", []))
+    residual_remaining = list(residual_final_scan.get("processes", []))
+    residual_killed_count = sum(1 for item in residual_kill_results if item.get("terminated"))
     summary = {
         "tool": "agent_serial_monitor",
-        "status": decide_status(args, evidence, hard_fatal),
+        "status": "captured",
         "action": args.action,
         "port": args.port,
         "baud": args.baud,
@@ -346,91 +451,34 @@ def write_summary(
         "reset_on_start": not args.no_reset,
         "timed_out": capture["timed_out"],
         "timed_out_phase": capture["timed_out_phase"],
+        "capture_stop_reason": capture["capture_stop_reason"],
+        "panic_log_seen": capture["panic_log_seen"],
         "exit_code": capture["exit_code"],
         "observe_started": capture["observe_started"],
         "observe_trigger": capture["observe_trigger"],
         "observe_started_at": capture["observe_started_at"],
         "flash_completed": flash_completed(lines),
-        "boot_seen": boot_seen,
-        "app_started": app_started,
-        "startup_done": startup_done,
         "observation_complete": observation_complete(capture),
-        "hard_fatal_count": total_match_count(hard_fatal),
-        "diagnostic_event_count": total_match_count(diagnostic_events),
+        "line_count": len(lines),
+        "residual_monitor_count": len(residual_processes),
+        "residual_monitor_processes": residual_processes,
+        "residual_monitor_scan_error": residual_scan.get("error"),
+        "residual_monitor_kill_results": residual_kill_results,
+        "residual_monitor_killed_count": residual_killed_count,
+        "residual_monitor_remaining_count": len(residual_remaining),
+        "residual_monitor_remaining_processes": residual_remaining,
+        "residual_monitor_final_scan_error": residual_final_scan.get("error"),
         "started_at": capture["started_at"],
         "ended_at": capture["ended_at"],
         "command": command,
         "log_path": str(log_path),
         "summary_path": str(summary_path),
-        "evidence": evidence,
-        "custom_evidence": custom_evidence,
-        "fatal": hard_fatal,
-        "hard_fatal": hard_fatal,
-        "diagnostic_events": diagnostic_events,
-        "important_events": important_events(lines, args.max_events),
-        "tail": tail_lines(lines, args.tail_lines),
     }
     summary_path.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     return summary
-
-
-def safe_pattern_name(value: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip()).strip("_")
-    return safe[:80] or "pattern"
-
-
-def add_pattern(patterns: dict[str, str], name: str, pattern: str) -> None:
-    base_name = safe_pattern_name(name)
-    candidate = base_name
-    suffix = 2
-    while candidate in patterns:
-        candidate = f"{base_name}_{suffix}"
-        suffix += 1
-    patterns[candidate] = pattern
-
-
-def parse_custom_patterns(raw_patterns: list[str], raw_literal_patterns: list[str]) -> dict[str, str]:
-    patterns: dict[str, str] = {}
-    for raw in raw_patterns:
-        value = raw.strip()
-        if not value:
-            raise ValueError("--pattern cannot be empty")
-
-        if "=" in value:
-            name, pattern = value.split("=", 1)
-            name = name.strip()
-            pattern = pattern.strip()
-            if not name or not pattern:
-                name = value
-                pattern = re.escape(value)
-        else:
-            name = safe_pattern_name(value)
-            pattern = re.escape(value)
-
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"--pattern {raw!r} is not a valid regex: {exc}") from exc
-
-        add_pattern(patterns, name, pattern)
-
-    for raw in raw_literal_patterns:
-        value = raw.strip()
-        if not value:
-            raise ValueError("--literal-pattern cannot be empty")
-        add_pattern(patterns, value, re.escape(value))
-    return patterns
-
-
-def preset_patterns(presets: list[str]) -> dict[str, str]:
-    patterns: dict[str, str] = {}
-    for preset in presets:
-        for name, pattern in PRESET_PATTERNS[preset].items():
-            add_pattern(patterns, name, pattern)
-    return patterns
 
 
 def parse_args() -> argparse.Namespace:
@@ -466,39 +514,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", default="serial", help="File-name tag for logs.")
     parser.add_argument("--log-dir", default="board_logs")
     parser.add_argument("--idf-export-ps1", default=DEFAULT_IDF_EXPORT_PS1)
-    parser.add_argument("--max-events", type=int, default=80)
-    parser.add_argument(
-        "--preset",
-        action="append",
-        choices=tuple(PRESET_PATTERNS.keys()),
-        default=[],
-        help="Add a built-in evidence preset. Can be passed multiple times.",
-    )
-    parser.add_argument(
-        "--pattern",
-        action="append",
-        default=[],
-        help=(
-            "Custom evidence pattern. Use 'name=regex' for regex matching, "
-            "or a plain keyword for literal matching. If either side of '=' is empty, "
-            "the whole value is treated as literal. Can be passed multiple times."
-        ),
-    )
-    parser.add_argument(
-        "--literal-pattern",
-        action="append",
-        default=[],
-        help=(
-            "Custom literal evidence pattern. Use this when the keyword contains '=' "
-            "or when regex parsing is not wanted. Can be passed multiple times."
-        ),
-    )
-    parser.add_argument(
-        "--tail-lines",
-        type=int,
-        default=120,
-        help="Number of recent log lines to include in summary JSON.",
-    )
     parser.add_argument(
         "--no-reset",
         action="store_true",
@@ -516,24 +531,11 @@ def parse_args() -> argparse.Namespace:
         dest="quiet_console",
         help="Stream captured serial output to stdout even for app-flash-monitor.",
     )
-    parser.add_argument(
-        "--allow-no-boot",
-        action="store_true",
-        help="Return success even when no boot evidence is observed.",
-    )
     args = parser.parse_args()
     if args.duration_seconds <= 0:
         parser.error("--duration-seconds must be > 0")
     if args.flash_timeout_seconds <= 0:
         parser.error("--flash-timeout-seconds must be > 0")
-    if args.tail_lines < 0:
-        parser.error("--tail-lines must be >= 0")
-    try:
-        args.custom_patterns = preset_patterns(args.preset)
-        for name, pattern in parse_custom_patterns(args.pattern, args.literal_pattern).items():
-            add_pattern(args.custom_patterns, name, pattern)
-    except ValueError as exc:
-        parser.error(str(exc))
     if args.quiet_console is None:
         args.quiet_console = args.action == "app-flash-monitor"
     return args
@@ -552,17 +554,51 @@ def main() -> int:
 
     command = build_idf_command(args, repo_root)
     capture = run_capture(command, log_path, args)
-    summary = write_summary(args, command, log_path, capture, summary_path)
+    residual_scan = scan_residual_monitor_processes(os.getpid())
+    residual_processes = list(residual_scan.get("processes", []))
+    residual_kill_results = terminate_residual_monitor_processes(residual_processes)
+    if residual_processes:
+        time.sleep(0.5)
+    residual_final_scan = scan_residual_monitor_processes(os.getpid())
+    summary = write_summary(
+        args,
+        command,
+        log_path,
+        capture,
+        summary_path,
+        residual_scan,
+        residual_kill_results,
+        residual_final_scan,
+    )
 
     print()
     print(f"AGENT_SERIAL_MONITOR_STATUS={summary['status']}")
     print(f"AGENT_SERIAL_MONITOR_LOG={log_path}")
     print(f"AGENT_SERIAL_MONITOR_SUMMARY={summary_path}")
-    if summary["status"] in ("ok", "partial"):
-        return 0
-    if args.allow_no_boot and summary["status"] in ("observed_no_boot", "boot_missing_after_flash"):
-        return 0
-    return 2
+    print(f"AGENT_SERIAL_MONITOR_CAPTURE_STOP_REASON={summary['capture_stop_reason']}")
+    print(f"AGENT_SERIAL_MONITOR_PANIC_LOG_SEEN={int(bool(summary['panic_log_seen']))}")
+    print(f"AGENT_SERIAL_MONITOR_RESIDUAL_COUNT={summary['residual_monitor_count']}")
+    print(f"AGENT_SERIAL_MONITOR_RESIDUAL_KILLED_COUNT={summary['residual_monitor_killed_count']}")
+    print(f"AGENT_SERIAL_MONITOR_RESIDUAL_REMAINING_COUNT={summary['residual_monitor_remaining_count']}")
+    if summary["residual_monitor_scan_error"]:
+        print(f"AGENT_SERIAL_MONITOR_RESIDUAL_SCAN_ERROR={summary['residual_monitor_scan_error']}")
+    for process in summary["residual_monitor_processes"]:
+        print(
+            "AGENT_SERIAL_MONITOR_RESIDUAL="
+            f"pid={process['pid']} port={process['port'] or 'unknown'} name={process['name']}"
+        )
+    for result in summary["residual_monitor_kill_results"]:
+        print(
+            "AGENT_SERIAL_MONITOR_RESIDUAL_KILL="
+            f"pid={result['pid']} port={result['port'] or 'unknown'} "
+            f"terminated={int(bool(result['terminated']))}"
+        )
+    for process in summary["residual_monitor_remaining_processes"]:
+        print(
+            "AGENT_SERIAL_MONITOR_RESIDUAL_REMAINING="
+            f"pid={process['pid']} port={process['port'] or 'unknown'} name={process['name']}"
+        )
+    return 0
 
 
 if __name__ == "__main__":

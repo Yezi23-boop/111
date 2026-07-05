@@ -42,7 +42,8 @@ class NetworkManagerSourceTests(unittest.TestCase):
         self.assertIn("xSemaphoreCreateMutexStatic", source)
         self.assertIn("xSemaphoreTake(s_manager_mutex, portMAX_DELAY)", source)
         self.assertIn("static volatile network_manager_state_t s_state", source)
-        self.assertIn("xTaskCreate(network_manager_task", source)
+        self.assertIn("xTaskCreateWithCaps(network_manager_task", source)
+        self.assertIn("MALLOC_CAP_SPIRAM", source)
         self.assertIn("network_manager_stop_active_transport", source)
         self.assertIn("network_manager_start_selected_transport_auto()", source)
         self.assertIn("network_manager_connect_entry(&latest, true)", source)
@@ -174,6 +175,30 @@ class NetworkManagerSourceTests(unittest.TestCase):
         self.assertIn("network_manager_connect_entry(&latest, false)", source)
         self.assertIn("network_manager_connect_entry(&entries[index], false)", source)
         self.assertIn("s_state = NETWORK_MANAGER_STATE_ERROR;", source)
+
+    def test_manual_saved_wifi_retry_without_recent_does_not_publish_error(self) -> None:
+        source = NETWORK_MANAGER_SOURCE.read_text(encoding="utf-8")
+
+        retry_body = source.split(
+            "esp_err_t network_manager_use_latest_wifi(void)", 1
+        )[1].split("/**\n * @brief 主动断开", 1)[0]
+        self.assertIn("ret = network_credentials_get_latest(&latest);", retry_body)
+        self.assertIn("if (ret == ESP_ERR_NOT_FOUND)", retry_body)
+        self.assertIn("s_state = NETWORK_MANAGER_STATE_IDLE;", retry_body)
+        credentials_tail = retry_body.split(
+            "ret = network_credentials_get_latest(&latest);", 1
+        )[1]
+        error_body = credentials_tail.split(
+            "network_manager_drop_pending_provisioned_entry_for_manual_action();", 1
+        )[0]
+        not_found_body = retry_body.split("if (ret == ESP_ERR_NOT_FOUND)", 1)[1].split(
+            "else", 1
+        )[0]
+        self.assertLess(
+            error_body.index("s_state = NETWORK_MANAGER_STATE_IDLE;"),
+            error_body.index("return ret;"),
+        )
+        self.assertNotIn("NETWORK_MANAGER_STATE_ERROR", not_found_body)
 
 
 if __name__ == "__main__":

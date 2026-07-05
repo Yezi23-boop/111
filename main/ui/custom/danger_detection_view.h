@@ -15,12 +15,23 @@ typedef void (*danger_detection_view_action_cb_t)(void *user_data);
 typedef void (*danger_detection_view_switch_cb_t)(bool enabled,
                                                   void *user_data);
 
+typedef enum {
+    DANGER_DETECTION_VIEW_SENSITIVITY_CONSERVATIVE = 0,
+    DANGER_DETECTION_VIEW_SENSITIVITY_STANDARD,
+    DANGER_DETECTION_VIEW_SENSITIVITY_SENSITIVE,
+} danger_detection_view_sensitivity_mode_t;
+
+typedef void (*danger_detection_view_sensitivity_cb_t)(
+    danger_detection_view_sensitivity_mode_t mode,
+    void *user_data);
+
 typedef struct {
     const char *status_text;
     const char *category_text;
     const char *primary_result_text;
     const char *horn_confidence_text;
     const char *siren_confidence_text;
+    danger_detection_view_sensitivity_mode_t sensitivity_mode;
     bool safety_monitor_enabled;
     bool alert_visible;
 } danger_detection_view_model_t;
@@ -28,6 +39,7 @@ typedef struct {
 typedef struct {
     danger_detection_view_action_cb_t back_action_cb;
     danger_detection_view_switch_cb_t safety_monitor_cb;
+    danger_detection_view_sensitivity_cb_t sensitivity_cb;
     void *user_data;
 } danger_detection_view_config_t;
 

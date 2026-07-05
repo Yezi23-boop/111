@@ -113,6 +113,17 @@ bool espdl_audio_runtime_is_running(void);
 espdl_audio_runtime_state_t espdl_audio_runtime_get_state(void);
 
 /**
+ * @brief 设置 ESP-DL 单模型 danger 概率阈值。
+ *
+ * 可在运行前或运行中调用。运行前调用会保存为下次启动的阈值；运行中调用会立即
+ * 下发到当前模型 runner。
+ *
+ * @param[in] threshold danger 概率阈值，合法范围为 0.0f 到 1.0f。
+ * @return ESP_OK 表示设置成功。
+ */
+esp_err_t espdl_audio_runtime_set_danger_threshold(float threshold);
+
+/**
  * @brief 注册推理结果回调。
  *
  * @param[in] callback 回调函数，NULL 注销。

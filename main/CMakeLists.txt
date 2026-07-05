@@ -68,6 +68,8 @@ set(feature_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/features/alerts/audio_alert_player.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/features/alerts/haptic_alert_player.c
+
     ${CMAKE_CURRENT_LIST_DIR}/features/alerts/display_alert_adapter.c
 
     ${CMAKE_CURRENT_LIST_DIR}/features/audio/audio_app.c
@@ -105,6 +107,8 @@ set(ui_runtime_srcs
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/clock_functions.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/custom.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/emissive_calendar_view.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_controller.c
 

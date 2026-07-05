@@ -41,6 +41,27 @@ class EspdlSingleModelRuntimeSourceTests(unittest.TestCase):
 
         self.assertIn("ESPDL_DSCNN_DANGER_THRESHOLD  0.90f", runner_header)
 
+    def test_single_model_threshold_is_runtime_configurable(self) -> None:
+        runner_header = ESPDL_MODEL_RUNNER_HEADER.read_text(encoding="utf-8")
+        runner_source = (ESPDL_DIR / "espdl_model_runner.cpp").read_text(
+            encoding="utf-8"
+        )
+        runtime_header = ESPDL_AUDIO_RUNTIME_HEADER.read_text(encoding="utf-8")
+        runtime_source = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("espdl_model_runner_set_threshold", runner_header)
+        self.assertIn("std::atomic<float> threshold", runner_source)
+        self.assertIn("threshold < 0.0f || threshold > 1.0f", runner_source)
+        self.assertIn("runner->threshold.store(threshold)", runner_source)
+        self.assertIn("runner->threshold.load()", runner_source)
+        self.assertIn("espdl_audio_runtime_set_danger_threshold", runtime_header)
+        self.assertIn("s_runtime.danger_threshold.store(threshold)", runtime_source)
+        self.assertIn(
+            "espdl_model_runner_set_threshold(\n"
+            "        s_runtime.model_runner, s_runtime.danger_threshold.load())",
+            runtime_source,
+        )
+
     def test_runtime_stop_timeout_can_cleanup_on_later_stop_or_start(self) -> None:
         source = ESPDL_AUDIO_RUNTIME_SOURCE.read_text(encoding="utf-8")
 

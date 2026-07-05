@@ -55,6 +55,12 @@ D:\esp32S3\111\main\ui\agent_preview\artifacts\wifi-management-image-to-code.png
 & "D:\esp32S3\111\main\ui\agent_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenAi
 ```
 
+打开危险识别页面截图：
+
+```powershell
+& "D:\esp32S3\111\main\ui\agent_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenDanger
+```
+
 自定义输出路径：
 
 ```powershell

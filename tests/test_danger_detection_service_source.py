@@ -52,6 +52,36 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("s_espdl_hold_until_tick", service_source)
         self.assertIn("danger_detection_reset_espdl_postprocess", service_source)
 
+    def test_sensitivity_mode_maps_to_single_window_thresholds(self) -> None:
+        service_header = DANGER_DETECTION_SERVICE_HEADER.read_text(encoding="utf-8")
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("danger_detection_sensitivity_mode_t", service_header)
+        self.assertIn("DANGER_DETECTION_SENSITIVITY_CONSERVATIVE", service_header)
+        self.assertIn("DANGER_DETECTION_SENSITIVITY_STANDARD", service_header)
+        self.assertIn("DANGER_DETECTION_SENSITIVITY_SENSITIVE", service_header)
+        self.assertIn("danger_detection_service_set_sensitivity_mode", service_header)
+        self.assertIn("danger_detection_service_get_sensitivity_mode", service_header)
+        self.assertIn(".single_window_threshold = 0.95f", service_source)
+        self.assertIn(".single_window_threshold = 0.90f", service_source)
+        self.assertIn(".single_window_threshold = 0.85f", service_source)
+        self.assertIn(
+            ".sensitivity_mode = DANGER_DETECTION_SENSITIVITY_STANDARD",
+            service_source,
+        )
+
+    def test_sensitivity_switch_resets_postprocess_and_updates_runtime(self) -> None:
+        service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+        setter_body = service_source[
+            service_source.index("esp_err_t danger_detection_service_set_sensitivity_mode") :
+            service_source.index("danger_detection_sensitivity_mode_t\n"
+                                 "danger_detection_service_get_sensitivity_mode")
+        ]
+
+        self.assertIn("danger_detection_reset_espdl_postprocess();", setter_body)
+        self.assertIn("espdl_audio_runtime_set_danger_threshold", setter_body)
+        self.assertIn("profile->single_window_threshold", setter_body)
+
     def test_stop_failure_keeps_runtime_owned_until_cleanup_succeeds(self) -> None:
         service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
 

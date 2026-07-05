@@ -18,6 +18,7 @@ extern "C"
 #include "gui_guider.h"
 #include "ai_ui_controller.h"
 #include "clock_functions.h"  // 时钟功能模块
+#include "emissive_calendar_view.h"
 #include "main_dropdown_controller.h"
 #include "memory_watch_controller.h"
 #include "wifi_management_controller.h"

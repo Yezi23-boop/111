@@ -91,6 +91,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 只有确认 `export.ps1` 可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作；修改过 `sdkconfig` 时必须先 `idf.py fullclean` 再 `idf.py build`。
 - 常规 C/C++ 代码、UI 逻辑或业务 service 改动在 `idf.py build` 通过后，默认使用 `idf.py -p <PORT> app-flash`；不得把 `idf.py flash` 作为默认烧录命令，因为它会按 `build/flasher_args.json` 写入多个分区。
 - 如需串口验证，优先 `app-flash` 后再限时采集 `monitor` / 串口日志，避免默认 `idf.py flash monitor``monitor` 窗口一分钟
+- 串口验证必须优先使用 `scripts/board/agent_serial_monitor.ps1` 或 `scripts/board/agent_serial_monitor.py`；除非该工具不可用或本轮已明确失败并记录原因，不得直接调用裸 `idf.py monitor`，也不得用 `Start-Process` 后台启动 monitor。
 - 修改 `GPIO` / `I2C` / `SPI` / `UART` / `I2S` / `LCD` / `Touch` / `Wi-Fi` / `BLE` 前，必须先确认引脚定义、初始化顺序、时钟或带宽约束，以及错误恢复路径。
 - 测试 `Light Sleep` / `Deep Sleep` / 外部唤醒源前，必须先写清楚唤醒源、观测口、兜底唤醒和恢复步骤；测试代码默认关闭，禁止随开机自动进入 sleep。依赖 USB 串口/JTAG 观测时，不得把测试结果当作可靠闭环，应优先准备外部 UART 日志或手动 BOOT/RST 恢复路径。
 - 不要在没有证据的情况下删除已有 `reset`、`delay`、power-on sequence 或初始化命令序列。

@@ -68,11 +68,12 @@ route_area: "Hearing assist / danger alerts"
 ### `app_alert_manager`
 
 - 负责真正拉起用户提醒动作。
-- 当前能力仍是：
+- 当前能力是：
+  - 首次危险强震（`haptic_alert_player` 异步调用 DS2413 马达）
   - 一次性 warning 音频播放
   - 红色危险覆盖层
 - 2026-05-13 当前决策：AI 对话页前台期间由 `official_chat_service -> background_service_manager` 暂停 Safety Monitor，退出 AI 对话后按安全监听开关恢复；不在 `app_alert_manager` 增加 official_chat speaking 特判。
-- 还不是“震动优先、持续提醒、分级提醒”的 hearing-assist 产品提醒层。
+- 已补齐“首次震动优先”的最小链路，但还不是“持续提醒、分级提醒、用户可配置”的完整 hearing-assist 产品提醒层。
 
 ### `danger_detection_controller`
 
@@ -114,7 +115,7 @@ route_area: "Hearing assist / danger alerts"
 | 参数名 | 设计定义 | 当前归属 / 文件 | 当前状态 | 当前代码行为 | 主要差距 / 下一步 |
 | --- | --- | --- | --- | --- | --- |
 | `suspicious_user_visible` | 可疑态是否直接对用户可见 | 无明确 owner | 未实现（当前等效为 false） | 当前用户界面没有 `Suspicious` 公共状态，只在正式告警时看到明显变化 | 与设计建议一致，但只是“缺失”而不是“有意识实现” |
-| `initial_alert_vibration_pattern` | 首次正式告警的强震模式 | 未在本次主路径中发现明确 owner | 未实现 | 当前提醒主路径是 warning 音频 + 红色 overlay，没有看到清晰的震动/haptic 实现接入 | 若产品继续走 hearing-assist 主线，应优先补 vibration-first owner |
+| `initial_alert_vibration_pattern` | 首次正式告警的强震模式 | `haptic_alert_player.c` + `board_ds2413_motor.c` + `app_alert_manager.c` | 已实现（首版） | `app_alert_manager` 在新的 danger raise 时调用 `haptic_alert_player_play_initial_danger_once()`；haptic player 用短生命周期 task 执行 `220ms on -> 90ms off -> 220ms on`，退出前兜底关马达；重复同源 active 告警不重复强震 | 后续需真机确认体感强度，并和持续提醒策略统一 |
 | `sustain_alert_vibration_pattern` | 持续危险时的后续补提醒模式 | 无明确 owner | 未实现 | 当前没有持续提醒概念，因此也没有持续震动模式 | 后续应和 `realert_rule` 一起设计，而不是只在 `app_alert_manager` 堆逻辑 |
 | `sustain_alert_repeat_interval_ms` | 持续提醒节奏间隔 | 无明确 owner | 未实现 | 当前没有周期性补提醒时钟 | 后续需要显式 owner，建议不要塞进模型层 |
 | `alert_screen_style` | 正式危险态的屏幕样式 | `display_alert_adapter.c` + `danger_detection_view/controller.c` | 部分实现 | 当前已有红色危险 overlay，以及页面内的 danger 可见态 | 已有“危险态视觉信号”，但还不是统一产品样式规范 |
@@ -124,8 +125,8 @@ route_area: "Hearing assist / danger alerts"
 
 | 参数名 | 设计定义 | 当前归属 / 文件 | 当前状态 | 当前代码行为 | 主要差距 / 下一步 |
 | --- | --- | --- | --- | --- | --- |
-| `sensitivity_mode` | 保守/标准/敏感模式 | 无明确 owner | 未实现 | 当前没有用户级灵敏度模式映射 | 后续应通过 profile 映射一组内部阈值，而不是直接暴露原始数字 |
-| `notification_mode` | 仅震动或震动+屏幕等策略 | 无明确 owner | 未实现 | 当前实装路线更像“音频 + 屏幕”，且没有用户切换入口 | 与 hearing-assist 目标存在明显偏差，后续应改成震动优先 |
+| `sensitivity_mode` | 保守/标准/敏感模式 | `danger_detection_service.c` + `espdl_audio_runtime.cpp` + `danger_detection_controller/view` | 已实现（首版，非持久化） | 危险识别页提供 `保守 / 标准 / 敏感` 三段选择；service 持有用户级 mode 并映射 ESP-DL 单窗阈值 `0.95 / 0.90 / 0.85`，runtime/runner 只接收数值阈值；UI 不显示原始数字 | 后续若需要重启保留用户选择，再单独接 NVS；Edge Impulse 旧后端暂不接入 |
+| `notification_mode` | 仅震动或震动+屏幕等策略 | 无明确 owner | 未实现 | 当前实装路线已包含首次强震 + 音频 + 屏幕，但没有用户切换入口 | 后续若做用户配置，应基于 haptic/audio/display 三通道组合映射，不直接暴露底层开关 |
 | `sustain_alert_enabled` | 是否允许持续提醒 | 无明确 owner | 未实现 | 当前只有首次 raise，不存在“持续提醒开关” | 这是 hearing-assist 产品差异点之一，值得进入后续实现优先级 |
 | `event_log_enabled` | 是否记录最近危险事件 | 无明确 owner | 未实现 | 当前只看到实时日志输出，没有明确事件日志能力 | 若后续需要建立用户信任或做回放，这一项很有价值 |
 
@@ -163,14 +164,15 @@ route_area: "Hearing assist / danger alerts"
   - 最近事件记录
   - 用户级 sensitivity / sustain alert 策略
 
-### 3. 当前提醒层仍不是“震动优先”
+### 3. 当前提醒层已补首次强震，但仍缺持续提醒
 
 - 当前主路径是：
   - `app_alert_manager_raise()`
   - danger overlay
+  - `haptic_alert_player_play_initial_danger_once()`
   - `audio_alert_player_play_warning_once()`
-- 本次核对范围内没有看到清晰的 vibration/haptic 主提醒链。
-- 这与 hearing-assist 产品路线存在明显偏差。
+- `haptic_alert_player` 只负责首次危险强震，不负责持续提醒、用户模式或事件记录。
+- 与 hearing-assist 完整产品路线相比，后续重点从“有没有震动”转为“持续危险时如何补提醒、如何配置提醒模式”。
 
 ### 4. 当前参数 profile 已开始收敛，但模型阈值和 service 后处理仍需统一版本治理
 
@@ -202,13 +204,12 @@ route_area: "Hearing assist / danger alerts"
   - ESP-DL 回调在真正 raise/clear 前会二次检查 service 是否仍允许提交提醒，避免 stop/AI 前台抢麦期间 stale callback 重新触发告警。
   - ESP-DL 推理循环内 `pcm_float` 已从每窗动态分配改为任务启动时一次性分配；长期运行仍需板端堆余量证据。
 
-### 第三优先级：把提醒层从“音频+overlay”推进到“震动优先+持续提醒”
+### 第三优先级：把提醒层从“首次强震”推进到“持续提醒+用户策略”
 
-- 首先补 vibration/haptic 归属模块
-- 再补：
-  - 首告警模式
+- 后续应补：
   - 持续提醒节奏
-  - 用户级开关和模式映射
+  - 持续提醒开关
+  - 用户级通知模式映射
 
 ## 一句话结论
 
@@ -217,4 +218,4 @@ route_area: "Hearing assist / danger alerts"
 - 但它距离“面向听障用户的完整产品闭环”还差三步：
   - 长期运行内存证据、真实板端 stop/start 循环证据和 P0 提醒可感知效果证据
   - 持续提醒、事件记录和用户策略 profile
-  - 从音频+红屏 fallback 变成震动优先、持续提醒、用户可配置的 hearing-assist 提醒层
+  - 从首次强震 + 音频 + 红屏推进到持续提醒、用户可配置的 hearing-assist 提醒层

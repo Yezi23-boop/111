@@ -70,6 +70,16 @@ esp_err_t espdl_model_runner_run(espdl_model_runner_t *runner,
                                  espdl_model_result_t *result);
 
 /**
+ * @brief 设置单窗 danger 概率阈值。
+ *
+ * @param[in] runner 运行器句柄。
+ * @param[in] threshold danger 概率阈值，合法范围为 0.0f 到 1.0f。
+ * @return ESP_OK 表示设置成功。
+ */
+esp_err_t espdl_model_runner_set_threshold(espdl_model_runner_t *runner,
+                                           float threshold);
+
+/**
  * @brief 执行 ESP-DL 官方 test vector 自检。
  *
  * @param[in] runner 运行器句柄。

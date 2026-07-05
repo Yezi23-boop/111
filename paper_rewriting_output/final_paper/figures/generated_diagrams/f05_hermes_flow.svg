@@ -25,7 +25,7 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', 'SimHei', 'Helvetica Neue'
 <text x="465.0" y="542.0" text-anchor="middle" class="small">手表端</text>
 <rect x="650" y="410" width="230" height="170" rx="20" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="3"/>
 <g transform="translate(765.0 465) scale(0.62) translate(-765.0 -465)"><path d="M 717.0,483 C 707.0,447 747.0,437 761.0,453 C 779.0,423 827.0,441 819.0,481 C 835.0,485 823.0,511 803.0,509 L 729.0,509 C 703.0,509 697.0,487 717.0,483 Z" fill="#ffffff" stroke="#bbf7d0" stroke-width="4"/></g>
-<text x="765.0" y="542.0" text-anchor="middle" class="small">watch endpoint</text>
+<text x="765.0" y="542.0" text-anchor="middle" class="small">云服务端</text>
 <rect x="985" y="410" width="230" height="170" rx="20" fill="#eff6ff" stroke="#bfdbfe" stroke-width="3"/>
 <g transform="translate(1100.0 465) scale(0.62) translate(-1100.0 -465)"><path d="M 1036.0,465 C 1056.0,421 1076.0,509 1096.0,465 C 1116.0,421 1136.0,509 1164.0,465" stroke="#bfdbfe" stroke-width="5" fill="none"/></g>
 <text x="1100.0" y="542.0" text-anchor="middle" class="small">ASR</text>

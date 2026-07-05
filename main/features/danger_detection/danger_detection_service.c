@@ -28,13 +28,37 @@ static const char kDangerAlertCloudMessage[] =
  * - 快照通过临界区保护，避免 UI 在读取时看到半更新状态。
  */
 
-static const danger_detection_policy_profile_t k_espdl_policy_profile = {
-    .deployment_profile_id = "espdl_dscnn_v3_4_t90_core_2w3c_h2s_cd3s",
-    .danger_class_profile = "core_siren_horn_alarm",
-    .confirm_windows = 2U,
-    .clear_windows = 3U,
-    .alert_hold_ms = 2000U,
-    .cooldown_ms = 3000U,
+static const danger_detection_policy_profile_t k_espdl_policy_profiles[] = {
+    {
+        .deployment_profile_id = "espdl_dscnn_v59_core_conservative_t95",
+        .danger_class_profile = "core_siren_horn_alarm",
+        .sensitivity_mode = DANGER_DETECTION_SENSITIVITY_CONSERVATIVE,
+        .single_window_threshold = 0.95f,
+        .confirm_windows = 2U,
+        .clear_windows = 3U,
+        .alert_hold_ms = 2000U,
+        .cooldown_ms = 3000U,
+    },
+    {
+        .deployment_profile_id = "espdl_dscnn_v59_core_standard_t90",
+        .danger_class_profile = "core_siren_horn_alarm",
+        .sensitivity_mode = DANGER_DETECTION_SENSITIVITY_STANDARD,
+        .single_window_threshold = 0.90f,
+        .confirm_windows = 2U,
+        .clear_windows = 3U,
+        .alert_hold_ms = 2000U,
+        .cooldown_ms = 3000U,
+    },
+    {
+        .deployment_profile_id = "espdl_dscnn_v59_core_sensitive_t85",
+        .danger_class_profile = "core_siren_horn_alarm",
+        .sensitivity_mode = DANGER_DETECTION_SENSITIVITY_SENSITIVE,
+        .single_window_threshold = 0.85f,
+        .confirm_windows = 2U,
+        .clear_windows = 3U,
+        .alert_hold_ms = 2000U,
+        .cooldown_ms = 3000U,
+    },
 };
 
 typedef struct
@@ -43,6 +67,7 @@ typedef struct
     bool callback_registered;             /**< 后处理告警回调是否已注册。 */
     bool runtime_started;                 /**< 音频运行时是否已启动。 */
     danger_detection_backend_t active_backend; /**< 当前活跃的推理后端。 */
+    danger_detection_sensitivity_mode_t sensitivity_mode; /**< 当前用户级灵敏度。 */
     danger_detection_snapshot_t snapshot; /**< 对外发布的快照。 */
     portMUX_TYPE lock;                    /**< 快照临界区锁，保护共享状态一致性。 */
 } danger_detection_service_state_t;
@@ -52,6 +77,7 @@ static danger_detection_service_state_t s_service_state = {
     .callback_registered = false,
     .runtime_started = false,
     .active_backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE,
+    .sensitivity_mode = DANGER_DETECTION_SENSITIVITY_STANDARD,
     .snapshot = {
         .state = DANGER_DETECTION_STATE_IDLE,
         .risk_state = DANGER_DETECTION_RISK_OFF,
@@ -73,6 +99,28 @@ static uint32_t s_espdl_danger_window_count = 0U; /**< ESP-DL 连续 danger 窗�
 static uint32_t s_espdl_clear_window_count = 0U;  /**< ESP-DL 连续 non-danger 窗口计数。 */
 static TickType_t s_espdl_hold_until_tick = 0;    /**< ESP-DL 告警保持到期 tick。 */
 static TickType_t s_espdl_cooldown_until_tick = 0; /**< ESP-DL 冷却到期 tick。 */
+
+static const danger_detection_policy_profile_t *
+danger_detection_profile_for_mode(danger_detection_sensitivity_mode_t mode)
+{
+    for (size_t i = 0; i < sizeof(k_espdl_policy_profiles) /
+                               sizeof(k_espdl_policy_profiles[0]); ++i)
+    {
+        if (k_espdl_policy_profiles[i].sensitivity_mode == mode)
+        {
+            return &k_espdl_policy_profiles[i];
+        }
+    }
+    return &k_espdl_policy_profiles[DANGER_DETECTION_SENSITIVITY_STANDARD];
+}
+
+static bool danger_detection_is_valid_sensitivity_mode(
+    danger_detection_sensitivity_mode_t mode)
+{
+    return mode == DANGER_DETECTION_SENSITIVITY_CONSERVATIVE ||
+           mode == DANGER_DETECTION_SENSITIVITY_STANDARD ||
+           mode == DANGER_DETECTION_SENSITIVITY_SENSITIVE;
+}
 
 /**
  * @brief 重置 ESP-DL 后处理短状态。
@@ -192,7 +240,53 @@ const char *danger_detection_risk_state_text(
 const danger_detection_policy_profile_t *
 danger_detection_service_get_policy_profile(void)
 {
-    return &k_espdl_policy_profile;
+    danger_detection_sensitivity_mode_t mode;
+
+    taskENTER_CRITICAL(&s_service_state.lock);
+    mode = s_service_state.sensitivity_mode;
+    taskEXIT_CRITICAL(&s_service_state.lock);
+    return danger_detection_profile_for_mode(mode);
+}
+
+esp_err_t danger_detection_service_set_sensitivity_mode(
+    danger_detection_sensitivity_mode_t mode)
+{
+    if (!danger_detection_is_valid_sensitivity_mode(mode))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const danger_detection_policy_profile_t *profile =
+        danger_detection_profile_for_mode(mode);
+    danger_detection_backend_t backend = DANGER_DETECTION_BACKEND_EDGE_IMPULSE;
+
+    taskENTER_CRITICAL(&s_service_state.lock);
+    s_service_state.sensitivity_mode = mode;
+    backend = s_service_state.active_backend;
+    danger_detection_reset_espdl_postprocess();
+    taskEXIT_CRITICAL(&s_service_state.lock);
+
+    esp_err_t ret = espdl_audio_runtime_set_danger_threshold(
+        profile->single_window_threshold);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "danger sensitivity mode=%d threshold=%.2f backend=%d",
+             mode, profile->single_window_threshold, backend);
+    return ESP_OK;
+}
+
+danger_detection_sensitivity_mode_t
+danger_detection_service_get_sensitivity_mode(void)
+{
+    danger_detection_sensitivity_mode_t mode;
+
+    taskENTER_CRITICAL(&s_service_state.lock);
+    mode = s_service_state.sensitivity_mode;
+    taskEXIT_CRITICAL(&s_service_state.lock);
+    return mode;
 }
 
 /**
@@ -654,8 +748,18 @@ static esp_err_t start_espdl_backend(void)
 
     danger_detection_set_state(DANGER_DETECTION_STATE_STARTING, ESP_OK);
 
+    const danger_detection_policy_profile_t *profile =
+        danger_detection_service_get_policy_profile();
+    esp_err_t ret = espdl_audio_runtime_set_danger_threshold(
+        profile->single_window_threshold);
+    if (ret != ESP_OK)
+    {
+        danger_detection_set_state(DANGER_DETECTION_STATE_ERROR, ret);
+        return ret;
+    }
+
     /* 注册 ESPDL 结果回调 */
-    esp_err_t ret = espdl_audio_runtime_set_result_callback(
+    ret = espdl_audio_runtime_set_result_callback(
         danger_detection_on_espdl_result, NULL);
     if (ret != ESP_OK)
     {

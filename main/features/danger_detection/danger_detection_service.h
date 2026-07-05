@@ -55,6 +55,14 @@ extern "C"
         DANGER_DETECTION_BACKEND_ESPDL = 1,        /**< ESP-DL 单模型危险二分类。 */
     } danger_detection_backend_t;
 
+    /* 用户级危险识别灵敏度模式。 */
+    typedef enum
+    {
+        DANGER_DETECTION_SENSITIVITY_CONSERVATIVE = 0, /**< 保守：减少误报。 */
+        DANGER_DETECTION_SENSITIVITY_STANDARD,         /**< 标准：日常推荐。 */
+        DANGER_DETECTION_SENSITIVITY_SENSITIVE,        /**< 敏感：更容易触发。 */
+    } danger_detection_sensitivity_mode_t;
+
     typedef struct
     {
         danger_detection_state_t state;               /**< 服务当前状态。 */
@@ -81,6 +89,8 @@ extern "C"
     {
         const char *deployment_profile_id; /**< 后处理策略版本标识。 */
         const char *danger_class_profile;  /**< active danger 类别边界。 */
+        danger_detection_sensitivity_mode_t sensitivity_mode; /**< 用户级灵敏度模式。 */
+        float single_window_threshold;     /**< 单窗 danger 概率阈值。 */
         uint32_t confirm_windows;          /**< 进入正式告警所需连续 danger 窗口数。 */
         uint32_t clear_windows;            /**< 退出正式告警所需连续 non-danger 窗口数。 */
         uint32_t alert_hold_ms;            /**< 正式告警最短保持时间，单位毫秒。 */
@@ -128,6 +138,23 @@ extern "C"
      */
     const danger_detection_policy_profile_t *
     danger_detection_service_get_policy_profile(void);
+
+    /**
+     * @brief 设置用户级危险识别灵敏度模式。
+     *
+     * @param[in] mode 灵敏度模式。
+     * @return ESP_OK 表示设置成功。
+     */
+    esp_err_t danger_detection_service_set_sensitivity_mode(
+        danger_detection_sensitivity_mode_t mode);
+
+    /**
+     * @brief 获取当前用户级危险识别灵敏度模式。
+     *
+     * @return 当前灵敏度模式；默认是 `DANGER_DETECTION_SENSITIVITY_STANDARD`。
+     */
+    danger_detection_sensitivity_mode_t
+    danger_detection_service_get_sensitivity_mode(void);
 
     /**
      * @brief 将危险风险状态转换成稳定英文标识。

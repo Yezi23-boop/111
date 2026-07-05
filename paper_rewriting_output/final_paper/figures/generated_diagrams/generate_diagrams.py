@@ -301,7 +301,7 @@ def f01():
     specs = [
         (70, "环境危险声", COLORS["red_fill"], COLORS["red_stroke"], "wave"),
         (410, "ESP32-S3 手表", COLORS["cyan_fill"], COLORS["cyan_stroke"], "watch"),
-        (750, "watch endpoint", COLORS["green_fill"], COLORS["green_stroke"], "cloud"),
+        (750, "云服务端", COLORS["green_fill"], COLORS["green_stroke"], "cloud"),
         (1090, "Hermes", COLORS["purple_fill"], COLORS["purple_stroke"], "brain"),
         (1430, "电脑端协同", COLORS["blue_fill"], COLORS["blue_stroke"], "laptop"),
     ]
@@ -323,7 +323,7 @@ def f02():
         band(90, 640, 1868, 330, "Hermes 任务辅助链路", COLORS["purple"], "#faf5ff"),
     ]
     top = [("音频采集", "mic"), ("ESP-DL 推理", "chip"), ("风险融合", "wave"), ("提醒管理", "alarm"), ("LVGL UI", "phone")]
-    bottom = [("语音/文本", "user"), ("watch endpoint", "cloud"), ("Hermes", "brain"), ("JSON 回执", "sd"), ("手表显示", "watch")]
+    bottom = [("语音/文本", "user"), ("云服务端", "cloud"), ("Hermes", "brain"), ("JSON 回执", "sd"), ("手表显示", "watch")]
     xs = [160, 520, 880, 1240, 1600]
     for i, (label, ic) in enumerate(top):
         body.append(node(xs[i], 335, 280, 150, label, COLORS["blue_fill"] if i < 2 else COLORS["green_fill"] if i == 2 else COLORS["red_fill"] if i == 3 else COLORS["cyan_fill"], COLORS["blue_stroke"] if i < 2 else COLORS["green_stroke"] if i == 2 else COLORS["red_stroke"] if i == 3 else COLORS["cyan_stroke"], ic, cls="small"))
@@ -372,7 +372,7 @@ def f04():
     for label, (x, y, fill, stroke) in states.items():
         body.append(pill(x, y, 270, 120, label, fill, stroke))
     body.append(arrow(430, 515, 500, 515, "green", label="开启"))
-    body.append(arrow(770, 515, 880, 515, "orange", label="单窗 danger"))
+    body.append(arrow(770, 515, 880, 515, "orange", label="单窗危险"))
     body.append(arrow(1150, 515, 1260, 515, "red", label="连续确认"))
     body.append(path_arrow("M 1395,575 L 1395,840 L 1150,840", "red", label=(1280, 840, "保持结束")))
     body.append(path_arrow("M 880,840 L 635,840 L 635,575", "blue", label=(730, 840, "冷却结束")))
@@ -384,7 +384,7 @@ def f05():
     specs = [
         (80, "用户", COLORS["blue_fill"], COLORS["blue_stroke"], "user"),
         (350, "手表端", COLORS["cyan_fill"], COLORS["cyan_stroke"], "watch"),
-        (650, "watch endpoint", COLORS["green_fill"], COLORS["green_stroke"], "cloud"),
+        (650, "云服务端", COLORS["green_fill"], COLORS["green_stroke"], "cloud"),
         (985, "ASR", COLORS["blue_fill"], COLORS["blue_stroke"], "wave"),
         (1235, "Hermes", COLORS["purple_fill"], COLORS["purple_stroke"], "brain"),
         (1515, "电脑端工具", COLORS["orange_fill"], COLORS["orange_stroke"], "laptop"),
@@ -402,7 +402,7 @@ def f05():
 def f06():
     body = []
     top = [
-        (165, 305, "Alerting 事件", COLORS["red_fill"], COLORS["red_stroke"], "alarm"),
+        (165, 305, "危险告警", COLORS["red_fill"], COLORS["red_stroke"], "alarm"),
         (570, 305, "连续 PCM", COLORS["blue_fill"], COLORS["blue_stroke"], "wave"),
         (975, 305, "SD 本地缓存", COLORS["orange_fill"], COLORS["orange_stroke"], "sd"),
         (1380, 305, "人工导出", COLORS["green_fill"], COLORS["green_stroke"], "cloud"),
@@ -434,9 +434,9 @@ def f12():
     body = []
     specs = [
         (105, "ESP32-S3 手表", COLORS["cyan_fill"], COLORS["cyan_stroke"], "watch"),
-        (465, "Alerting", COLORS["red_fill"], COLORS["red_stroke"], "alarm"),
-        (825, "告警 worker", COLORS["green_fill"], COLORS["green_stroke"], "cloud"),
-        (1185, "watch endpoint", COLORS["purple_fill"], COLORS["purple_stroke"], "cloud"),
+        (465, "危险告警", COLORS["red_fill"], COLORS["red_stroke"], "alarm"),
+        (825, "后台发送", COLORS["green_fill"], COLORS["green_stroke"], "cloud"),
+        (1185, "云服务端", COLORS["purple_fill"], COLORS["purple_stroke"], "cloud"),
         (1545, "手机通知栏", COLORS["orange_fill"], COLORS["orange_stroke"], "phone"),
     ]
     for x, label, fill, stroke, ic in specs:
