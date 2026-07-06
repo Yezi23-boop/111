@@ -139,7 +139,9 @@ extern "C"
     /**
      * @brief 配置 QMI8658C 的加速度和陀螺仪采样模式。
      *
-     * 第一阶段只写 CTRL2、CTRL3 和 CTRL7，保持 FIFO、AttitudeEngine、磁力计和中断配置关闭。
+     * 第一阶段只配置基础六轴路径：CTRL1/CTRL5 采用当前板已验证的 Waveshare 口径，
+     * CTRL2/CTRL3 配置量程和 ODR，CTRL7 只开启 accel/gyro。保持 FIFO、AttitudeEngine、
+     * 磁力计和中断事件源关闭。
      * `int1_source/int2_source` 是后续芯片侧 INT 事件源预留字段，当前必须传 disabled。
      *
      * @param[in] config 六轴采样模式配置，不能为空。

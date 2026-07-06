@@ -25,6 +25,7 @@ static uint8_t s_i2c_addr_7bit =
 static uint8_t s_accel_fs_code = 0; // 最近一次配置的加速度量程；0 为 ±2g。
 static uint8_t s_gyro_fs_code = 0;  // 最近一次配置的陀螺仪量程；0 为 ±16 dps。
 static bool s_sample_configured = false; // true 表示已通过 qmi8658c_config() 建立物理量换算口径。
+static uint32_t s_read_count = 0; // 调试用读数计数，按 1Hz 节流打印采样寄存器状态。
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
 static i2c_master_dev_handle_t s_dev_handle = NULL; // 共享 master bus 下的 QMI8658C 设备句柄。
@@ -32,6 +33,8 @@ static i2c_master_dev_handle_t s_dev_handle = NULL; // 共享 master bus 下的 
 
 typedef struct
 {
+    uint8_t status0;
+    uint32_t timestamp;
     int16_t temperature_raw;
     int16_t accel_x;
     int16_t accel_y;
@@ -59,6 +62,7 @@ static esp_err_t qmi8658c_convert_raw_gyro(
     const qmi8658c_raw_sample_t *raw,
     qmi8658c_gyro_t *sample);
 static int16_t qmi8658c_decode_i16(const uint8_t *data);
+static uint32_t qmi8658c_decode_u24(const uint8_t *data);
 
 esp_err_t qmi8658c_init(void)
 {
@@ -194,12 +198,12 @@ esp_err_t qmi8658c_config(const qmi8658c_config_t *config)
                         "disable sensors before configure failed");
 
     /*
-     * 打开地址自增后再读取连续样本窗口；若未打开自增，多字节事务会
-     * 反复读取同一寄存器，导致样本看似固定。
+     * 对齐 Waveshare 官方 qmi8658_init()：CTRL1=0x60。
+     * 只写 bit6 地址自增在当前板上会出现样本寄存器冻结。
      */
     ESP_RETURN_ON_ERROR(
         qmi8658c_write_byte(QMI8658C_REG_CTRL1,
-                            QMI8658C_CTRL1_ADDR_AUTO_INCREMENT),
+                            QMI8658C_CTRL1_WAVESHARE_DEFAULT),
         TAG, "write ctrl1 failed");
 
     uint8_t ctrl2 =
@@ -219,11 +223,19 @@ esp_err_t qmi8658c_config(const qmi8658c_config_t *config)
                         "write ctrl2 failed");
     ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL3, ctrl3), TAG,
                         "write ctrl3 failed");
+    ESP_RETURN_ON_ERROR(
+        qmi8658c_write_byte(QMI8658C_REG_CTRL5,
+                            QMI8658C_CTRL5_WAVESHARE_DEFAULT),
+        TAG, "write ctrl5 failed");
     ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL7, ctrl7), TAG,
                         "write ctrl7 failed");
     s_accel_fs_code = config->accel_fs;
     s_gyro_fs_code = config->gyro_fs;
     s_sample_configured = true;
+    s_read_count = 0;
+    ESP_LOGI(TAG, "configured registers: ctrl1=0x%02X ctrl2=0x%02X ctrl3=0x%02X ctrl5=0x%02X ctrl7=0x%02X",
+             QMI8658C_CTRL1_WAVESHARE_DEFAULT, ctrl2, ctrl3,
+             QMI8658C_CTRL5_WAVESHARE_DEFAULT, ctrl7);
     return ESP_OK;
 }
 
@@ -233,21 +245,56 @@ static esp_err_t qmi8658c_read_raw(qmi8658c_raw_sample_t *sample)
                         "sample is null");
     ESP_RETURN_ON_ERROR(qmi8658c_init(), TAG, "init failed before raw read");
 
-    uint8_t raw[14] = {0}; // TEMP(2) + accel(6) + gyro(6)，均为低字节在前。
-    ESP_RETURN_ON_ERROR(
-        qmi8658c_read_bytes(QMI8658C_REG_TEMP_L, raw, sizeof(raw)), TAG,
-        "read raw sample failed");
+    uint8_t status0 = 0;
+    ESP_RETURN_ON_ERROR(qmi8658c_read_bytes(QMI8658C_REG_STATUS0, &status0, 1),
+                        TAG, "read status0 failed");
+
+    uint8_t timestamp_raw[3] = {0};
+    ESP_RETURN_ON_ERROR(qmi8658c_read_bytes(QMI8658C_REG_TIMESTAMP_L,
+                                            timestamp_raw,
+                                            sizeof(timestamp_raw)),
+                        TAG, "read timestamp failed");
+
+    uint8_t temperature_raw[2] = {0};
+    ESP_RETURN_ON_ERROR(qmi8658c_read_bytes(QMI8658C_REG_TEMP_L,
+                                            temperature_raw,
+                                            sizeof(temperature_raw)),
+                        TAG, "read temperature failed");
+
+    uint8_t raw[12] = {0}; // accel(6) + gyro(6)，从 AX_L 开始对齐 Waveshare 官方读法。
+    ESP_RETURN_ON_ERROR(qmi8658c_read_bytes(QMI8658C_REG_AX_L, raw, sizeof(raw)),
+                        TAG, "read sensor sample failed");
 
     qmi8658c_raw_sample_t out = {
-        .temperature_raw = qmi8658c_decode_i16(&raw[0]),
-        .accel_x = qmi8658c_decode_i16(&raw[2]),
-        .accel_y = qmi8658c_decode_i16(&raw[4]),
-        .accel_z = qmi8658c_decode_i16(&raw[6]),
-        .gyro_x = qmi8658c_decode_i16(&raw[8]),
-        .gyro_y = qmi8658c_decode_i16(&raw[10]),
-        .gyro_z = qmi8658c_decode_i16(&raw[12]),
+        .status0 = status0,
+        .timestamp = qmi8658c_decode_u24(timestamp_raw),
+        .temperature_raw = qmi8658c_decode_i16(temperature_raw),
+        .accel_x = qmi8658c_decode_i16(&raw[0]),
+        .accel_y = qmi8658c_decode_i16(&raw[2]),
+        .accel_z = qmi8658c_decode_i16(&raw[4]),
+        .gyro_x = qmi8658c_decode_i16(&raw[6]),
+        .gyro_y = qmi8658c_decode_i16(&raw[8]),
+        .gyro_z = qmi8658c_decode_i16(&raw[10]),
     };
     *sample = out;
+
+    ++s_read_count;
+    if (s_read_count <= 5U || (s_read_count % 50U) == 0U)
+    {
+        ESP_LOGI(TAG,
+                 "sample_debug: count=%u status0=0x%02X ready=%d timestamp=%u raw_accel=(%d,%d,%d) raw_gyro=(%d,%d,%d) temp=%d",
+                 (unsigned)s_read_count,
+                 out.status0,
+                 (out.status0 & 0x03U) != 0U ? 1 : 0,
+                 (unsigned)out.timestamp,
+                 out.accel_x,
+                 out.accel_y,
+                 out.accel_z,
+                 out.gyro_x,
+                 out.gyro_y,
+                 out.gyro_z,
+                 out.temperature_raw);
+    }
     return ESP_OK;
 }
 
@@ -472,4 +519,9 @@ static float qmi8658c_gyro_raw_to_dps(int16_t raw, uint8_t gyro_fs)
 static int16_t qmi8658c_decode_i16(const uint8_t *data)
 {
     return (int16_t)(((uint16_t)data[1] << 8) | data[0]);
+}
+
+static uint32_t qmi8658c_decode_u24(const uint8_t *data)
+{
+    return ((uint32_t)data[2] << 16) | ((uint32_t)data[1] << 8) | data[0];
 }

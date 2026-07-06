@@ -18,16 +18,17 @@ status: active
 - 当前固件不再把 WoM 作为运行主线：public driver API 已删除 `enable_wom/disable_wom/read_wom/read_int`，`STATUSINT` 不再作为 public service 入口。
 - `qmi8658c_config()` 是唯一普通配置入口，负责加速度/陀螺仪量程、ODR 和 sensor enable；当前默认最大量程为 `accel_fs=3`（±16g）和 `gyro_fs=7`（±2048 dps）。
 - `qmi8658c_config_t` 保留 `int1_source/int2_source` 作为芯片侧 INT 事件源预留字段；第一版唯一支持 `QMI8658C_INT_SOURCE_DISABLED`，不会写 INT1/INT2 事件源寄存器。
-- `imu_service` 当前只做 `probe -> qmi8658c_config()` 并发布 snapshot，不连续采样、不安装 GPIO21 ISR、不做 WoM poll fallback。默认 `app_main` 仍不启动该 service。
+- `imu_service` 当前随 deferred services 默认启动：完成 `probe -> qmi8658c_config()` 后安装 ESP32 GPIO21 ISR，并用 FreeRTOS task 做 50Hz 周期采样、维护 200 帧 / 4 秒环形缓冲；不做 WoM poll fallback。
+- 当前 QMI 原始读取对齐已验证的 Waveshare 口径：配置 `CTRL1=0x60`、`CTRL5=0x03`，读取 `STATUS0`、24-bit timestamp、temperature，并从 `AX_L` 开始读取 12 字节六轴数据。
 - 下方 WoM/INT1 内容是历史板测证据和排查资料，不代表当前固件运行路径。
 
 ## 当前 owner 与边界
 
 - 芯片协议与寄存器操作：`components/qmi8658c`
 - 板级地址、中断 GPIO 与安装方向：`main/app/board_imu.c`
-- 当前统一配置服务：`main/services/imu_service.c`
-- 默认调用方向：`imu_service -> board_imu -> qmi8658c -> shared I2C`
-- QMI8658C 已不是“未接入器件”；当前固件先以统一配置和物理六轴读取契约为主，不启用芯片 WoM 或 ESP32 GPIO 中断。
+- 当前统一配置与采样服务：`main/services/imu_service.c`
+- 默认调用方向：`imu_service -> imu_sensor -> qmi8658c -> shared I2C`；`board_imu` 只提供 I2C 地址、GPIO21 和安装方向事实。
+- QMI8658C 已不是“未接入器件”；当前固件以统一配置、物理六轴读取和 50Hz service 采样为主，不启用芯片 WoM 或芯片侧 INT 事件源。
 
 ## 原理图稳定事实
 
@@ -73,7 +74,7 @@ status: active
 - Waveshare 同板官方 `04_Immersive_block` 只轮询 QMI 原始数据，没有配置或验收 INT1；官方例程运行正常不能作为 GPIO21 中断通路正常的证据。
 - 固件无法修复铜线、焊接或板型映射问题。需要真实 IRQ 时，应断电测通断并修复 INT1 到 GPIO21，或将 `INT2/TP15` 飞线到可用 GPIO。
 - 旧版 service 的兼容策略曾是：启动时对照 `STATUSINT.INT1` 与 GPIO21，不一致则禁用浮空 ISR 并轮询 `STATUS1.WoM`；该路径已在 2026-07-07 统一配置收口中删除。
-- 当前软件路径是 `qmi8658c_probe -> qmi8658c_config -> qmi8658c_read` 的物理六轴契约；抬腕、跌倒或连续采样需要在后续 service/algorithm 任务中重新定义。
+- 当前软件路径是 `imu_service -> imu_sensor -> qmi8658c_probe/config/read` 的物理六轴契约；50Hz 采样已经在 service 层运行。抬腕、跌倒识别仍需要在后续 service/algorithm 任务中定义。
 
 ## CTRL9 与 STATUSINT 协议结论
 

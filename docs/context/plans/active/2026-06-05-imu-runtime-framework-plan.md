@@ -72,6 +72,7 @@ board_imu board facts
 - `[x]` 2026-07-07：参考小智 Board/Device 分层思路，新增 `components/imu_sensor` 极窄适配层；`imu_service` 改为 `imu_service -> imu_sensor -> qmi8658c`，并在 service 层安装 GPIO21 ISR，通过 FreeRTOS task notification 处理事件计数。
 - `[x]` 2026-07-07：按用户要求移除 `app_main.c` 中包住 `imu_service_start()` 的 `#if 0`，IMU service 现在随 deferred services 默认启动，开机即可验证 probe/config/GPIO21 ISR 安装日志。
 - `[x]` 2026-07-07：按用户要求先做稳定 50Hz 采样；`imu_service` 使用 `vTaskDelayUntil` 每 20ms 调用 `imu_sensor_read()`，写入 200 帧环形缓冲，并在 snapshot 中发布 `sampling_active/sample_count/sample_error_count/last_sample_interval_us/sample_window_ready`。
+- `[x]` 2026-07-07：COM7 闭环验证 50Hz 采样主线；最新 QMI 读法按 `STATUS0 -> TIMESTAMP -> TEMP -> AX_L 12 bytes` 对齐，`sample_50hz` 从 `count=1` 持续到 `count=1350`，`count=200` 后 `window_ready=1`，未见 panic。
 - `[ ]` 后续补离线 replay/evaluator，把真实样本与规则阈值调参从固件循环中拆出来。
 - `[ ]` 后续讨论并实现真实抬腕识别策略。
 
@@ -86,11 +87,13 @@ board_imu board facts
 - 2026-07-07：用户确认采用 `imu_service -> imu_sensor -> qmi8658c`，并要求安装 GPIO21 ISR。当前决策为：ESP32 GPIO ISR 属于 `imu_service` 运行时资源；`imu_sensor` 只做传感器适配；`qmi8658c` driver 不知道 GPIO21，也不安装 ISR。
 - 2026-07-07：用户要求“不需要 `#if 0`”，确认 IMU service 默认启动；该启动只验证统一配置和 GPIO21 ISR 事件计数，不表示已经开启连续采样或跌倒/抬腕算法。
 - 2026-07-07：用户确认第一版先走稳定 50Hz 采样，而不是 FIFO Watermark；当前只在 `imu_service` 内缓存 200 帧窗口，不投递 fall service，不做模型推理。
+- 2026-07-07：当前 QMI8658C 读取方法按 Waveshare 对齐口径收口：`CTRL1=0x60`、`CTRL5=0x03`，读取时分段取 `STATUS0`、24-bit timestamp、temperature 和从 `AX_L` 开始的 12 字节六轴原始数据。
 
 ## Validation and Acceptance
 
 - source test：锁定 service 不硬编码 I2C 地址，driver 不消费 board facts，`imu_motion` 不访问硬件/FreeRTOS；锁定 public header 不再出现 WoM API/type；锁定 `imu_service` 不直接 include/call `qmi8658c_*`，GPIO ISR/task notification 只出现在 service 层。
 - board evidence：当前第一版要求正常固件可 build/app-flash；开机日志应出现 `started: sampling_50hz`、`probe:`、`configured:`、`int1_gpio_ready`、`sampling_started: rate_hz=50 window_frames=200`、周期性 `sample_50hz:` 和 `boot_stage: imu_service_ready`。后续接 fall service 时，再补完整窗口副本投递和模型日志验收。
+- 2026-07-07 COM7 evidence：`board_logs/2026-07-07-06-11-28-serial.log` 显示 `configured registers: ctrl1=0x60 ctrl2=0x33 ctrl3=0x73 ctrl5=0x03 ctrl7=0x03`，`sample_50hz count=200 window_ready=1`，采集至 `count=1350`，`panic_log_seen=0`。
 - context validation：本文档变更至少运行 `uv run python scripts/context/validate_context.py --level standard --q "IMU runtime framework QMI8658C board_imu imu_service imu_motion" --brief`。
 - build rule：若只改本文档，不要求 `idf.py build`；若后续改 `components` 或 `main` 代码，必须跑相关 source tests 和 `idf.py build`，普通 app 改动用 `idf.py -p COM3 app-flash` 验证。
 

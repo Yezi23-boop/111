@@ -15,20 +15,27 @@
 #define QMI8658C_REG_CTRL1 0x02
 #define QMI8658C_REG_CTRL2 0x03
 #define QMI8658C_REG_CTRL3 0x04
+#define QMI8658C_REG_CTRL5 0x06
 #define QMI8658C_REG_CTRL7 0x08
 #define QMI8658C_REG_CTRL8 0x09
 #define QMI8658C_REG_CTRL9 0x0A
 
-/* STATUS0 可用于后续判断 aDA/gDA；当前 read_raw 先做直接读取。 */
+/* STATUS0 bit0/bit1 分别由 Waveshare 驱动用于 accel/gyro data-ready 判断。 */
 #define QMI8658C_REG_STATUS0 0x2E
 
-/* 连续原始数据窗口：TEMP_L/TEMP_H, AX..AZ, GX..GZ。 */
+/* 24-bit timestamp + 温度 + 连续六轴原始数据窗口。 */
+#define QMI8658C_REG_TIMESTAMP_L 0x30
 #define QMI8658C_REG_TEMP_L 0x33
 #define QMI8658C_REG_AX_L 0x35
 #define QMI8658C_REG_GX_L 0x3B
 
-/* CTRL1 bit6 开启 I2C/SPI 地址自增，便于连续读取原始数据窗口。 */
+/*
+ * Waveshare 官方 qmi8658_init() 写 CTRL1=0x60。这里保留已验证的
+ * 官方初始化口径，避免当前板上样本寄存器不刷新。
+ */
 #define QMI8658C_CTRL1_ADDR_AUTO_INCREMENT (1u << 6)
+#define QMI8658C_CTRL1_WAVESHARE_DEFAULT 0x60
+#define QMI8658C_CTRL5_WAVESHARE_DEFAULT 0x03
 
 /* CTRL2/CTRL3 字段掩码；驱动会额外拒绝手册标为 N/A 的 ODR 编码。 */
 #define QMI8658C_CTRL2_ACCEL_FS_MASK 0x07
