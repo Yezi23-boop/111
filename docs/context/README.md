@@ -9,7 +9,6 @@
 - `runs/`：单次实验、bring-up、联调和验证闭环记录。
 - `plans/active/`：进行中的复杂任务执行计划。
 - `plans/completed/`：已完成任务的计划归档。
-- `handoffs/`：当前任务压缩摘要、仓库现状摘要等交接文档。
 - `evals/`：检索基准、查询样例和上下文系统评测输入。
 - `INDEX.agent.md`：agent 首读的低 token 路由入口。
 - `CHANGELOG.md`：上下文库的变更流水。
@@ -158,8 +157,8 @@ uv run python scripts/context/test_memory_flow.py
 - 修改文档时同步更新 `last_reviewed`。
 - 长任务优先先落计划，再改代码；推荐在 `plans/active/` 维护 `Progress`、`Decision Log`、`Validation`。
 - 会被后续 agent 重复尝试、失败代价高、影响 owner/架构、包含关键证据或需要跨会话接手的内容，才写成 `runs/` attempt；一次性小事和无复用价值细节不要写入长期上下文。
-- 交接文档优先保持“少而稳”：`current-task.md` 用于当前任务压缩，`current-repo-state.md` 用于仓库骨架压缩。
-- 推荐从模板起步：`plans/active/plan-template.md`、`runs/run-template.md`、`runs/attempt-template.md`、`handoffs/handoff-template.md`。
+- `handoffs/` 已退场：当前接手状态优先维护在对应 `plans/active/`，失败路线和证据写入 `runs/`，稳定事实写入 `knowledge/`。
+- 推荐从模板起步：`plans/active/plan-template.md`、`runs/run-template.md`、`runs/attempt-template.md`。
 
 ## 记忆晋升规则
 
@@ -169,7 +168,7 @@ uv run python scripts/context/test_memory_flow.py
 - 有复用价值的一次性实验、日志、板测、联调与验证闭环，进入 `runs/`。
 - 为了避免后续 agent 重复同一动作而记录的“改过什么、试过什么、哪里失败、下一步怎么接”，也进入 `runs/`，但必须满足 `record_reasons` 门槛，并在开工前用 `--scope runs` 先检索。
 - 正在推进且需要多轮维护的复杂任务，进入 `plans/active/`；结束后再归档到 `plans/completed/`。
-- 为了跨会话续跑或压缩当前状态而写的摘要，进入 `handoffs/`。
+- 为了跨会话续跑或压缩当前状态而写的摘要，优先进入对应 `plans/active/`；没有 active plan 但具备复用价值的接手状态，写入 `runs/` 并使用 `handoff` 或 `evidence` 记录理由。
 
 ## 清理与沉淀
 
@@ -182,6 +181,6 @@ uv run python scripts/context/test_memory_flow.py
 ## 验证分级
 
 - `light`：普通代码任务，只做 runs/knowledge 检索和可选 brief pack，不重建索引。
-- `standard`：只改 `docs/context` 普通知识卡、runs、plans、handoffs 时使用，运行 `build_index.py + check.py`。
+- `standard`：只改 `docs/context` 普通知识卡、runs、plans 时使用，运行 `build_index.py + check.py`。
 - `routing`：改 `INDEX.agent.md`、`project-profile.md`、`knowledge-map.md`、`query-golden.yaml` 或重要路由时使用，额外运行 `eval_query.py`。
 - `full`：改 `scripts/context`、query 评分、garden 规则、pack 逻辑、记忆政策、生命周期字段、归档/晋升机制时使用，运行完整机制验证。

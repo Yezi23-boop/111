@@ -5,10 +5,10 @@ summary: AI Memory Watch / Hermes V2.1 WebSocket-first 执行计划：活跃对�
 last_reviewed: 2026-06-27
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-websocket-v2.1-plan.md
+owners: docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-websocket-v2.1-plan.md
 triggers: AI Memory Watch V2.1, Hermes WebSocket, watch ws, conversation reply, inbox polling
 evidence_level: design
-status: completed
+status: archived
 ---
 
 # AI Memory Watch / Hermes WebSocket V2.1 执行计划

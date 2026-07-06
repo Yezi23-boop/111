@@ -1,16 +1,21 @@
 ---
 id: context-current-repo-state
 tags: context, handoff, repo-state
-summary: 压缩记录当前仓库上下文系统的结构、入口和维护方式，便于新会话快速恢复骨架。
-last_reviewed: 2026-05-04
+summary: 历史仓库状态摘要归档；当前上下文系统以 INDEX.agent.md 和 project-profile.md 为准。
+last_reviewed: 2026-07-07
 memory_type: task
 scope: repo
-owners: AGENTS.md, docs/context
+owners: AGENTS.md, docs/context/archive/handoffs
 triggers: handoff, repo-state, current-context
 evidence_level: observed
+status: archived
+garden_status: archived
+garden_reviewed: 2026-07-07
 ---
 
 # 当前仓库状态摘要
+
+> 归档说明：本文是 `docs/context/handoffs/` 退场前的历史状态摘要。当前上下文入口以 `docs/context/INDEX.agent.md` 与 `docs/context/knowledge/project/project-profile.md` 为准。
 
 ## 上下文系统骨架
 
@@ -19,7 +24,7 @@ evidence_level: observed
 - `docs/context/procedures/` 负责标准做法。
 - `docs/context/runs/` 负责单次验证和实验记录。
 - `docs/context/plans/` 负责复杂任务计划。
-- `docs/context/handoffs/` 负责当前状态压缩与交接。
+- `docs/context/handoffs/` 历史上曾负责当前状态压缩与交接；该层现已退场并迁入 `docs/context/archive/handoffs/`。
 
 ## 维护脚本
 

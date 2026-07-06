@@ -7,7 +7,7 @@ memory_type: episodic
 scope: task
 status: active
 result: success
-owners: docs/context/knowledge/project/runtime-owner-contract.md, docs/context/plans/active/2026-05-25-safety-monitor-background-completion-plan.md, docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md, main/services/background_service_manager.c, main/services/safety_monitor_session.c, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, main/ui/custom/danger_detection_controller.c, components/espdl_inference, components/audio_codec
+owners: docs/context/knowledge/project/runtime-owner-contract.md, docs/context/plans/completed/2026-05-25-safety-monitor-background-completion-plan.md, docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md, main/services/background_service_manager.c, main/services/safety_monitor_session.c, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, main/ui/custom/danger_detection_controller.c, components/espdl_inference, components/audio_codec
 triggers: Safety Monitor 后台骨架 background_service_manager safety_monitor_session danger_detection_service 后续 agent subagent 复查
 evidence_level: reviewed
 record_reasons: owner-architecture, framework-constraint, subagent-review
@@ -19,7 +19,7 @@ force_reason:
 ## 背景
 
 - 本次要验证什么：当前危险识别后台服务骨架是否已经搭好，是否可以作为后续 agent 写代码的固定合同。
-- 对应任务或计划：`docs/context/plans/active/2026-05-25-safety-monitor-background-completion-plan.md`
+- 对应任务或计划：`docs/context/plans/completed/2026-05-25-safety-monitor-background-completion-plan.md`
 - 结果状态：success
 - 长期记录理由：owner-architecture, framework-constraint, subagent-review
 
@@ -33,7 +33,7 @@ force_reason:
 
 - 修改过的文件或 owner：
 - `docs/context/knowledge/project/runtime-owner-contract.md`
-- `docs/context/plans/active/2026-05-25-safety-monitor-background-completion-plan.md`
+- `docs/context/plans/completed/2026-05-25-safety-monitor-background-completion-plan.md`
 - `docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md`
 - `docs/context/CHANGELOG.md`
 - `main/services/background_service_manager.[ch]`

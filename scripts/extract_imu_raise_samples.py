@@ -10,38 +10,39 @@ WOM_RE = re.compile(
     r"gpio=(?P<gpio>-?\d+) level=(?P<level>-?\d+) "
     r"statusint=0x(?P<statusint>[0-9a-fA-F]+) int1_mirror=(?P<int1_mirror>\d+) "
     r"status1=0x(?P<status1>[0-9a-fA-F]+) "
-    r"raw_accel=\((?P<raw_x>-?\d+),(?P<raw_y>-?\d+),(?P<raw_z>-?\d+)\)"
-    r"(?: raw_gyro=\((?P<raw_gx>-?\d+),(?P<raw_gy>-?\d+),(?P<raw_gz>-?\d+)\))?"
+    r"accel_mg=\((?P<wom_ax_mg>-?\d+),(?P<wom_ay_mg>-?\d+),(?P<wom_az_mg>-?\d+)\)"
 )
 
-AE_FRAME_RE = re.compile(
-    r"imu_csv: source=ae_dq,label=(?P<log_label>[^,]+),event_id=(?P<event_id>\d+),"
-    r"trigger=(?P<trigger>[^,]+),index=(?P<index>\d+),ready=(?P<ready>\d+),"
-    r"clipped=(?P<clipped>\d+),dqw=(?P<dqw>-?\d+),dqx=(?P<dqx>-?\d+),"
-    r"dqy=(?P<dqy>-?\d+),dqz=(?P<dqz>-?\d+),frame_mdeg=(?P<frame_mdeg>-?\d+),"
-    r"total_mdeg=(?P<total_mdeg>-?\d+),(?:status0=0x(?P<status0>[0-9a-fA-F]+),)?"
-    r"ae1=0x(?P<ae1>[0-9a-fA-F]+),"
-    r"ae2=0x(?P<ae2>[0-9a-fA-F]+)"
+PHYSICAL_FRAME_RE = re.compile(
+    r"imu_csv: source=physical_6axis,label=(?P<log_label>[^,]+),event_id=(?P<event_id>\d+),"
+    r"trigger=(?P<trigger>[^,]+),index=(?P<index>\d+),"
+    r"ax_mg=(?P<ax_mg>-?\d+),ay_mg=(?P<ay_mg>-?\d+),az_mg=(?P<az_mg>-?\d+),"
+    r"gx_mdps=(?P<gx_mdps>-?\d+),gy_mdps=(?P<gy_mdps>-?\d+),gz_mdps=(?P<gz_mdps>-?\d+),"
+    r"nx=(?P<nx>-?\d+),ny=(?P<ny>-?\d+),nz=(?P<nz>-?\d+),"
+    r"motion_detected=(?P<motion_detected>\d+),motion_reason=(?P<motion_reason>[^,]+),"
+    r"roll_delta_deg=(?P<roll_delta_deg>-?\d+)"
 )
 
 FINAL_POSE_RE = re.compile(
     r"final_pose: event_id=(?P<event_id>\d+) source=(?P<source>\w+) "
     r"pass=(?P<final_pose_pass>\d+) norm_pass=(?P<norm_pass>\d+) "
     r"stable_pass=(?P<stable_pass>\d+) face_pass=(?P<face_pass>\d+) "
-    r"accel=\((?P<final_x>-?\d+),(?P<final_y>-?\d+),(?P<final_z>-?\d+)\) "
+    r"accel_mg=\((?P<final_ax_mg>-?\d+),(?P<final_ay_mg>-?\d+),(?P<final_az_mg>-?\d+)\) "
+    r"gyro_mdps=\((?P<final_gx_mdps>-?\d+),(?P<final_gy_mdps>-?\d+),(?P<final_gz_mdps>-?\d+)\) "
     r"norm_mg=(?P<final_norm_mg>-?\d+) stability_mg=(?P<final_stability_mg>-?\d+) "
-    r"face_axis=(?P<face_axis>\S+) face_threshold_raw=(?P<face_threshold_raw>-?\d+)"
+    r"face_axis=(?P<face_axis>\S+) face_threshold_mg=(?P<face_threshold_mg>-?\d+)"
 )
 
 RAISE_RESULT_RE = re.compile(
     r"raise_result: event_id=(?P<event_id>\d+) source=(?P<source>\w+) "
     r"raise_detected=(?P<raise_detected>\d+) motion_pass=(?P<motion_pass>\d+) "
     r"final_pose_pass=(?P<final_pose_pass>\d+) reject_reason=(?P<reject_reason>\w+) "
-    r"valid_dq=(?P<valid_dq>\d+) clipped=(?P<clipped>\d+) "
-    r"total_mdeg=(?P<total_mdeg>-?\d+) max_frame_mdeg=(?P<max_frame_mdeg>-?\d+) "
+    r"motion_samples=(?P<motion_samples>\d+) motion_reason=(?P<motion_reason>\w+) "
+    r"roll_delta_deg=(?P<roll_delta_deg>-?\d+) "
     r"final_norm_mg=(?P<final_norm_mg>-?\d+) "
     r"final_stability_mg=(?P<final_stability_mg>-?\d+) "
-    r"final_accel=\((?P<final_x>-?\d+),(?P<final_y>-?\d+),(?P<final_z>-?\d+)\)"
+    r"final_accel_mg=\((?P<final_ax_mg>-?\d+),(?P<final_ay_mg>-?\d+),(?P<final_az_mg>-?\d+)\) "
+    r"final_gyro_mdps=\((?P<final_gx_mdps>-?\d+),(?P<final_gy_mdps>-?\d+),(?P<final_gz_mdps>-?\d+)\)"
 )
 
 
@@ -53,26 +54,25 @@ EVENT_FIELDS = [
     "reject_reason",
     "motion_pass",
     "final_pose_pass",
-    "valid_dq",
-    "clipped",
-    "total_mdeg",
-    "max_frame_mdeg",
+    "motion_samples",
+    "motion_reason",
+    "roll_delta_deg",
     "final_norm_mg",
     "final_stability_mg",
-    "raw_x",
-    "raw_y",
-    "raw_z",
-    "raw_gx",
-    "raw_gy",
-    "raw_gz",
-    "final_x",
-    "final_y",
-    "final_z",
+    "wom_ax_mg",
+    "wom_ay_mg",
+    "wom_az_mg",
+    "final_ax_mg",
+    "final_ay_mg",
+    "final_az_mg",
+    "final_gx_mdps",
+    "final_gy_mdps",
+    "final_gz_mdps",
     "norm_pass",
     "stable_pass",
     "face_pass",
     "face_axis",
-    "face_threshold_raw",
+    "face_threshold_mg",
     "statusint",
     "status1",
 ]
@@ -82,17 +82,18 @@ FRAME_FIELDS = [
     "event_id",
     "trigger",
     "index",
-    "ready",
-    "clipped",
-    "dqw",
-    "dqx",
-    "dqy",
-    "dqz",
-    "frame_mdeg",
-    "total_mdeg",
-    "status0",
-    "ae1",
-    "ae2",
+    "ax_mg",
+    "ay_mg",
+    "az_mg",
+    "gx_mdps",
+    "gy_mdps",
+    "gz_mdps",
+    "nx",
+    "ny",
+    "nz",
+    "motion_detected",
+    "motion_reason",
+    "roll_delta_deg",
 ]
 
 
@@ -114,22 +115,18 @@ def parse_log(log_path: pathlib.Path, label: str) -> tuple[List[Dict[str, str]],
                 {
                     "label": label,
                     "source": row["source"],
-                    "raw_x": row["raw_x"],
-                    "raw_y": row["raw_y"],
-                    "raw_z": row["raw_z"],
-                    "raw_gx": row.get("raw_gx") or "",
-                    "raw_gy": row.get("raw_gy") or "",
-                    "raw_gz": row.get("raw_gz") or "",
+                    "wom_ax_mg": row["wom_ax_mg"],
+                    "wom_ay_mg": row["wom_ay_mg"],
+                    "wom_az_mg": row["wom_az_mg"],
                     "statusint": row["statusint"],
                     "status1": row["status1"],
                 }
             )
             continue
 
-        if match := AE_FRAME_RE.search(line):
+        if match := PHYSICAL_FRAME_RE.search(line):
             row = match.groupdict()
             row["label"] = _label_for(row.pop("log_label"), label)
-            row["status0"] = row.get("status0") or ""
             frames.append(row)
             event = events.setdefault(row["event_id"], {"event_id": row["event_id"]})
             event.setdefault("label", row["label"])
@@ -163,7 +160,7 @@ def write_csv(path: pathlib.Path, fieldnames: Iterable[str], rows: List[Dict[str
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Extract IMU raise-wrist event and dQ frame samples from board logs."
+        description="Extract IMU raise-wrist event and physical six-axis samples from board logs."
     )
     parser.add_argument("log_path", type=pathlib.Path, help="Input board log path.")
     parser.add_argument("--label", default="unknown", help="Label for this capture, e.g. raise or negative.")

@@ -1,25 +1,33 @@
 ---
 id: qmi8658c-minimal-probe
-tags: esp32-s3, imu, qmi8658c, i2c, probe, wearable, wom, gpio21, interrupt, revision-a, raw-motion
-summary: QMI8658C Rev A 在当前板上的稳定接线、可用能力、INT1(GPIO21) 物理开路证据与原始六轴软件抬腕方案。
-last_reviewed: 2026-06-04
+tags: esp32-s3, imu, qmi8658c, i2c, probe, wearable, gpio21, interrupt, revision-a, unified-config
+summary: QMI8658C Rev A 在当前板上的稳定接线、可用能力、历史 INT1/WoM 证据与当前统一配置策略。
+last_reviewed: 2026-07-07
 memory_type: semantic
 scope: board
 owners: components/qmi8658c, main/app/board_imu.c, main/services/imu_service.c
-triggers: qmi8658c, imu, wom, qmi_int1, gpio21, revision-a, status0 sda, ctrl9 0x0c, raise-detection
+triggers: qmi8658c, imu, wom, qmi_int1, gpio21, revision-a, status0 sda, ctrl9 0x0c, unified-config
 evidence_level: observed
 status: active
 ---
 
 # QMI8658C 板级接入与 INT1 证据
 
+## 2026-07-07 当前固件策略
+
+- 当前固件不再把 WoM 作为运行主线：public driver API 已删除 `enable_wom/disable_wom/read_wom/read_int`，`STATUSINT` 不再作为 public service 入口。
+- `qmi8658c_config()` 是唯一普通配置入口，负责加速度/陀螺仪量程、ODR 和 sensor enable；当前默认最大量程为 `accel_fs=3`（±16g）和 `gyro_fs=7`（±2048 dps）。
+- `qmi8658c_config_t` 保留 `int1_source/int2_source` 作为芯片侧 INT 事件源预留字段；第一版唯一支持 `QMI8658C_INT_SOURCE_DISABLED`，不会写 INT1/INT2 事件源寄存器。
+- `imu_service` 当前只做 `probe -> qmi8658c_config()` 并发布 snapshot，不连续采样、不安装 GPIO21 ISR、不做 WoM poll fallback。默认 `app_main` 仍不启动该 service。
+- 下方 WoM/INT1 内容是历史板测证据和排查资料，不代表当前固件运行路径。
+
 ## 当前 owner 与边界
 
 - 芯片协议与寄存器操作：`components/qmi8658c`
-- 板级地址、中断 GPIO、安装方向与抬腕阈值：`main/app/board_imu.c`
-- 长期运行、WoM 事件、原始六轴动作窗口与抬腕结果发布：`main/services/imu_service.c`
+- 板级地址、中断 GPIO 与安装方向：`main/app/board_imu.c`
+- 当前统一配置服务：`main/services/imu_service.c`
 - 默认调用方向：`imu_service -> board_imu -> qmi8658c -> shared I2C`
-- QMI8658C 已不是“未接入器件”；当前样板的 `INT1(GPIO21)` 物理通路不可用，正式 service 会在启动时检测并切换到 20 ms WoM 状态轮询。
+- QMI8658C 已不是“未接入器件”；当前固件先以统一配置和物理六轴读取契约为主，不启用芯片 WoM 或 ESP32 GPIO 中断。
 
 ## 原理图稳定事实
 
@@ -59,12 +67,13 @@ status: active
 ## 当前结论与运行策略
 
 - QMI8658C 芯片、供电、共享 I2C、原始六轴数据、内部 WoM 状态和 Rev A CTRL9 握手已经可用。
-- 当前样板 `U5 INT1 -> QMI_INT1 -> ESP32 GPIO21` 的实测行为是浮空/开路；原理图标称连接不能替代当前样板的导通证据。
+- 2026-06-04 COM3 样板 `U5 INT1 -> QMI_INT1 -> ESP32 GPIO21` 的实测行为是浮空/开路；原理图标称连接不能替代具体样板的导通证据。
 - 芯片内部 `STATUSINT.INT1` 和 `STATUS1.WoM` 能正常变化，故障不在 WoM 生成逻辑，也不在 ESP32 ISR 配置。
+- 2026-07-07 当前 COM7 板曾闭环捕获 `wom_event source=irq gpio=21 statusint=0x02 status1=0x04`，证明当前板 IRQ 链路可用；该结论只适用于当次板测，不要求当前固件继续启用 WoM。
 - Waveshare 同板官方 `04_Immersive_block` 只轮询 QMI 原始数据，没有配置或验收 INT1；官方例程运行正常不能作为 GPIO21 中断通路正常的证据。
 - 固件无法修复铜线、焊接或板型映射问题。需要真实 IRQ 时，应断电测通断并修复 INT1 到 GPIO21，或将 `INT2/TP15` 飞线到可用 GPIO。
-- 正式 service 的兼容策略是：启动时对照稳定的 `STATUSINT.INT1` 与 GPIO21；不一致则锁存 `int1_path_fault`、禁用浮空 ISR，并每 20 ms 轮询 `STATUS1.WoM` 启动原始六轴动作窗口。
-- 当前软件抬腕路径是 `WoM -> 16 帧 raw accel/gyro -> imu_motion -> final pose -> raise_result`；20 ms 轮询只替代 WoM 通知来源。
+- 旧版 service 的兼容策略曾是：启动时对照 `STATUSINT.INT1` 与 GPIO21，不一致则禁用浮空 ISR 并轮询 `STATUS1.WoM`；该路径已在 2026-07-07 统一配置收口中删除。
+- 当前软件路径是 `qmi8658c_probe -> qmi8658c_config -> qmi8658c_read` 的物理六轴契约；抬腕、跌倒或连续采样需要在后续 service/algorithm 任务中重新定义。
 
 ## CTRL9 与 STATUSINT 协议结论
 
@@ -78,7 +87,7 @@ status: active
 
 ## 可复用排查顺序
 
-1. 先验证 `WHO_AM_I=0x05`、`REVISION_ID`、原始加速度与 `STATUS1.WoM`，不要把“无 GPIO 中断”等同为“QMI 不可用”。
+1. 先验证 `WHO_AM_I=0x05`、`REVISION_ID` 和 `qmi8658c_config()` 后的物理六轴读取，不要把“无 GPIO 中断”等同为“QMI 不可用”。
 2. 同一时刻读取 `STATUSINT.INT1` 与 `gpio_get_level(GPIO21)`：
    - `STATUSINT.INT1=0`、`GPIO21=1`：优先检查 PCB 网络、焊接、板型版本或 GPIO 映射。
    - 两者都为 `1`：QMI 正在主动输出高，继续检查 WoM 初始电平和读取 `STATUS1` 后的复位行为。
@@ -95,14 +104,14 @@ status: active
 
 - 不要给 INT1 补外部上拉来解释当前高电平；原理图没有该上拉，QMI INT1 也不是依赖外部上拉的开漏输出。
 - 不要把 `TP_INT(GPIO38)` 当作 QMI 中断测试点；QMI 可直接探测的测试点是 `INT2 -> TP15`。
-- 不要再次用普通 GPIO ISR 配置变化尝试修复当前样板；芯片镜像与 GPIO 电平不一致已经证明问题位于物理通路。
-- 不要继续依赖 10 秒轮询评价抬腕动作；正式降级窗口是 20 ms。
+- 不要再次用普通 GPIO ISR 配置变化尝试修复 COM3 样板；芯片镜像与 GPIO 电平不一致已经证明当时问题位于物理通路。
+- 不要把旧 20 ms WoM 轮询 fallback 当作当前固件主线；当前版本已经移除 WoM 路径。
 - 不要在当前 Rev A 芯片上重新引入旧 Rev0.6 的 AE/MoD/dQ 寄存器定义；`CTRL9 0x0C` 只可按 Tap 配置命令理解。
 
 ## 适用边界
 
 - 本卡记录当前样板稳定板级事实、当前 owner 和已验证能力；不能将当前样板的物理开路结论泛化到所有 ESP32-S3-Touch-AMOLED-2.06 批次。
-- 软件轮询与原始六轴动作窗口已闭环，但真实硬件 IRQ 未修复；抬腕参数仍未完成佩戴体验调优。
+- 历史软件轮询与原始六轴动作窗口已闭环，但当前固件已移除该路径；抬腕参数仍未完成佩戴体验调优。
 - 本次 MoD/sDA 根因与旧路径证据见 `docs/context/runs/2026-06-04-attempt-qmi8658c-software-raise-fallback-sample-and-mod-dq.md`。
 - 本次详细原理图与板测探索记录见 `docs/context/runs/2026-06-04-attempt-qmi8658c-int1-gpio21-schematic-board-evidence.md`。
 - 若后续更换硬件版本、QMI revision 或 `SA0` 绑法，需要重新确认地址和中断行为。

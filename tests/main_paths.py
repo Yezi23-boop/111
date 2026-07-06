@@ -205,6 +205,11 @@ QMI8658C_SOURCE = QMI8658C_DIR / "qmi8658c.c"
 QMI8658C_REGS_HEADER = QMI8658C_DIR / "qmi8658c_regs.h"
 QMI8658C_CMAKE = QMI8658C_DIR / "CMakeLists.txt"
 
+IMU_SENSOR_DIR = REPO_ROOT / "components" / "imu_sensor"
+IMU_SENSOR_HEADER = IMU_SENSOR_DIR / "include" / "imu_sensor.h"
+IMU_SENSOR_SOURCE = IMU_SENSOR_DIR / "imu_sensor.c"
+IMU_SENSOR_CMAKE = IMU_SENSOR_DIR / "CMakeLists.txt"
+
 DS2413_DIR = REPO_ROOT / "components" / "ds2413"
 DS2413_HEADER = DS2413_DIR / "include" / "ds2413.h"
 DS2413_SOURCE = DS2413_DIR / "ds2413.c"

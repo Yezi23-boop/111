@@ -8,7 +8,7 @@ scope: repo
 triggers: 小游戏, 2048, Flappy Bird, 小恐龙, mini_games, games, game_page
 owners: main/ui/custom, main/features, main/ui/lvgl_task.c, main/ui/ui_refresh_policy.c
 evidence_level: design
-status: active
+status: archived
 ---
 
 # 手表小游戏移植计划

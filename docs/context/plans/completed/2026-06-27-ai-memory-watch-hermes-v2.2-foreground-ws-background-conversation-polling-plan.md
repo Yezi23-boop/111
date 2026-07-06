@@ -5,10 +5,10 @@ summary: AI Memory Watch / Hermes V2.2 执行计划：前台 Hermes 页面使用
 last_reviewed: 2026-06-27
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-v2.2-foreground-ws-background-conversation-polling-plan.md
+owners: docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.2-foreground-ws-background-conversation-polling-plan.md
 triggers: AI Memory Watch V2.2, Hermes foreground websocket, background conversation polling, pending reply, last_seen_conversation_id
 evidence_level: design
-status: active
+status: archived
 ---
 
 # AI Memory Watch / Hermes V2.2 前台 WS + 后台 Conversation Polling 执行计划

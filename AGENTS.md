@@ -104,11 +104,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 首读只看 `docs/context/INDEX.agent.md` 与 `docs/context/knowledge/project/project-profile.md`；不要默认全量打开 `README.md`、`knowledge-map.md`、`repo-overview.md` 或 `knowledge/**`。
 - 非简单任务默认用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`，避免重复尝试并只生成低 token brief。（**降级策略**：如果 Python 脚本执行失败，必须立即改用 `grep_search` 工具直接搜索 `docs/context/` 目录，严禁因此放弃查阅上下文）。
 - 新增功能、跨模块改动、后台能力、低功耗、OTA、音频/网络/危险识别协作类任务，默认先按 `docs/context/knowledge/project/runtime-owner-contract.md` 判断启动阶段、资源 owner、调用方向和禁止加层边界。
-- 出现可复用知识、流程、决策、attempt 或交接状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
-- `docs/context/handoffs/current-task.md` 是当前任务接力页，不是历史总账。它可以不频繁更新，但不允许过期到误导下一步；当“未验证/阻塞/active plan/下一步”等状态被新证据反转，或交接、暂停、上下文压缩、用户要求记录当前状态时，必须更新该文件。内容只写当前真实状态、下一步、阻塞/风险和不要再相信的旧信息，不写真实 key/token，不重复 `CHANGELOG.md`。
+- 出现可复用知识、流程、决策、attempt 或跨会话接手状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
+- `docs/context/handoffs/` 已退场，不再作为当前任务接力层。跨会话接手状态优先写到对应 `plans/active/` 的 Progress/Next Step；失败路线、特殊证据和可复用排查结论写入 `runs/`；稳定事实进入 `knowledge/`。
 - 遇到大问题错误或路线选择时，若本轮形成了可复用判断、证伪路径、取舍原因或下一步边界，可考虑写入 `docs/context/runs/`；大问题错误使用 `error-signature`，路线选择/放弃使用 `route-choice`，必要时补 `evidence`。
 - 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
-- **核心并发与底层驱动红线改动强制收尾规则**：只要当次任务修改涉及 `FreeRTOS`（任务/锁/队列/Timer）、RAM/PSRAM 内存分配、硬件驱动初始化、分区表或 `sdkconfig`，无论任务大小是否属于 active plan，在宣布任务完成前**强制**必须按固定顺序执行四步闭环：1) 新建 `docs/context/runs/YYYY-MM-DD-attempt-<特征词>.md`（沉淀错误签名与证伪路径）；2) 在 `CHANGELOG.md` 顶部记录摘要；3) 按需同步接力页 `current-task.md`；4) 必须执行 `validate_context.py --level standard` 确保索引校验通过。**未附带校验通过结果前，严禁宣称任务或修改结案。**
+- **核心并发与底层驱动红线改动强制收尾规则**：只要当次任务修改涉及 `FreeRTOS`（任务/锁/队列/Timer）、RAM/PSRAM 内存分配、硬件驱动初始化、分区表或 `sdkconfig`，无论任务大小是否属于 active plan，在宣布任务完成前**强制**必须按固定顺序执行四步闭环：1) 新建 `docs/context/runs/YYYY-MM-DD-attempt-<特征词>.md`（沉淀错误签名与证伪路径）；2) 在 `CHANGELOG.md` 顶部记录摘要；3) 如存在对应 active plan，更新其 Progress/Validation/Next Step；4) 必须执行 `validate_context.py --level standard` 确保索引校验通过。**未附带校验通过结果前，严禁宣称任务或修改结案。**
 
 ## 规划/框架类任务强制路由
 
@@ -129,6 +129,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码。
 
 - 新增或修改代码优先满足分层清晰、单一职责、接口明确、错误路径可验证；避免超出当前需求的抽象、配置项、兼容层和防御式包装。
+- 结构体嵌套最好不要超过三层；超过三层时优先拆成命名子结构、独立 owner 数据或访问函数，避免调用方深链读取/修改状态。
 - 默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；新能力优先落到现有 owner，必要时新增窄 service/session，不新增大而全管理器。
 - 跨任务命令、状态、等待和资源仲裁优先使用 FreeRTOS 原语：queue、task notification、event group、mutex/critical section；避免裸 `volatile`、临时轮询或自造 flag 协议。
 - 板级事实由 `main/app/board_*` 或现有 board owner 持有；GPIO、总线地址、片选、传感器轴向、硬件阈值不得长期散落在 service 或 driver 中。

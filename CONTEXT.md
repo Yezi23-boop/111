@@ -22,6 +22,11 @@ _Avoid_: IDLE_DIM as a separate user-facing power state, Light Sleep, Deep Sleep
 The animated emoji watchface shown first when the screen wakes/turns on or the UI boots. It is the first visual entry surface, not the universal back-stack root; subpage back navigation returns to the existing main screen.
 _Avoid_: Treating it as a lock screen, a Hermes-only page, or the default target for every back action.
 
+**模型输入坐标系**:
+The fixed coordinate frame consumed by an IMU ML model after board-specific sensor mounting has been mapped away. For fall detection this means the model receives `accX/accY/accZ`, not QMI8658C register `accel_x/accel_y/accel_z`.
+For six-axis IMU data, acceleration channels use `accX/accY/accZ` and gyroscope channels use `gyroX/gyroY/gyroZ`.
+_Avoid_: Feeding raw sensor XYZ directly to the fall model when the board mounting direction has not been accounted for.
+
 ## Flagged Ambiguities
 
 **IDLE_DIM vs STANDBY**:

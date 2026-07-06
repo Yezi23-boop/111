@@ -5,10 +5,10 @@ summary: AI Memory Watch / Hermes V2.4 执行计划：在 V2.3 server session �
 last_reviewed: 2026-06-27
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md
+owners: docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md
 triggers: AI Memory Watch V2.4, ESP32 Hermes thin client, memory_watch_service slimming, memory_watch_ws_client, server session, watch sync, RAM baseline
 evidence_level: design
-status: active
+status: archived
 ---
 
 # AI Memory Watch / Hermes V2.4 ESP32 Thin Client Slimming 执行计划

@@ -304,7 +304,7 @@ boot mem snapshot: internal_free=XXX largest=YYY psram_free=ZZZ
 涉及 FreeRTOS/RAM/PSRAM 改动，每个 Gate 完成后必须：
 1. 新建 `docs/context/runs/YYYY-MM-DD-attempt-ram-arbitration-gateN.md`（错误签名 + 证伪路径）。
 2. `CHANGELOG.md` 顶部记录摘要。
-3. 同步 `current-task.md`。
+3. 同步对应 active plan 的 Progress/Validation/Next Step。
 4. 执行 `validate_context.py --level standard`。
 5. 板端冷启动日志含内存快照、压力级别、无 panic/Guru/`ESP_ERR_NO_MEM`。
 

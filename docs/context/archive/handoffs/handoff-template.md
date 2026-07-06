@@ -1,13 +1,16 @@
 ---
 id: context-handoff-template
 tags: context, handoff, template, compaction
-summary: 跨会话交接模板，用于把长任务压缩成最小可续跑状态。
-last_reviewed: 2026-05-04
+summary: 历史交接模板归档；handoffs 层已退场，当前接手状态优先写入 plans/active 或 runs。
+last_reviewed: 2026-07-07
 memory_type: task
 scope: task
-owners: docs/context/handoffs
+owners: docs/context/archive/handoffs
 triggers: handoff-template, compaction, next-session
 evidence_level: design
+status: archived
+garden_status: archived
+garden_reviewed: 2026-07-07
 ---
 
 # 交接模板

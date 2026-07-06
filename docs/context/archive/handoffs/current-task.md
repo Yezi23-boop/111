@@ -1,16 +1,41 @@
 ---
 id: context-current-task
 tags: context, handoff, current-task, ai-memory-watch, hermes, v1-archive, v2-archive, inbox, thin-watch-client, thick-watch-endpoint
-summary: 记录 AI Memory Watch / Hermes V1-V2.4 状态、Watch Runtime Resource Gate 状态，以及 2026-07-01 表情表盘代码回退后的重执行计划入口。
-last_reviewed: 2026-07-05
+summary: 历史接力页归档；不再代表当前任务状态。当前状态优先看 plans/active、runs 和稳定 knowledge。
+last_reviewed: 2026-07-07
 memory_type: task
 scope: task
-owners: docs/context/handoffs
+owners: docs/context/archive/handoffs
 triggers: handoff, current-task, next-step, ai-memory-watch, hermes, watch_voice_endpoint, v1-archive, v2-archive, inbox, websocket, conversation_polling, thin_watch_client, thick_watch_endpoint, server_session, runtime_resource_gate, foreground_runtime_gate, background_https_gate, watchface, 表盘
 evidence_level: observed
+status: archived
+garden_status: archived
+garden_reviewed: 2026-07-07
 ---
 
 # AI Memory Watch / Hermes 当前任务交接
+
+> **2026-07-07 更新：QMI8658C public API 已完成简约命名收口**
+>
+> - 最新边界修正：`board_imu` 不并入 `qmi8658c driver`，但已收窄为纯板级硬件事实；当前只保存 QMI8658C I2C 地址、INT1 GPIO 和 IMU 安装方向中的表盘法向轴。
+> - WoM 阈值、motion window、final pose threshold 等第一版运行策略已迁到 `imu_service.c` 的 `imu_service_profile_t` / `k_imu_service_profile`；后续调参不要改 `board_imu`。
+> - `components/qmi8658c/include/qmi8658c.h` 不再公开 `qmi8658c_raw_sample_t`、`qmi8658c_read_raw()` 或 raw-to-gyro conversion API；raw register decode 只留在 driver 内部。
+> - 对外采样接口现在只保留完整物理六轴 `qmi8658c_read()` / `qmi8658c_sample_t`；`qmi8658c_accel_t` 表示 `m/s^2`，`qmi8658c_gyro_t` 表示 `deg/s`，字段统一为 `x/y/z`。
+> - 旧公开 API `qmi8658c_read_accel_mps2()`、`qmi8658c_read_gyro_dps()`、`qmi8658c_read_sample()`、`qmi8658c_configure()` 和 `qmi8658c_configure_wake_on_motion()` 已删除，不提供兼容层。
+> - `board_imu` 删除 `accel_lsb_per_g`，表盘法向阈值改为 `face_axis_threshold_mg=-397`；service 不再知道 QMI raw LSB。
+> - `imu_service` snapshot 使用 `last_wom_accel` / `last_wom_status` / `last_final_sample`；WoM 触发帧通过 `qmi8658c_read()` 读取完整六轴后只记录物理加速度，运动窗口与 final pose 使用 `physical_6axis`、`accel_mg`、`gyro_mdps` 日志字段。
+> - 后续 fall window 应直接使用物理六轴样本，再做模型输入坐标系 `accX/accY/accZ/gyroX/gyroY/gyroZ` 命名与轴向映射；不要从旧 context 的 `raw_motion` 口径继续扩展。
+> - 验证：source tests 23 passed；`git diff --check` 仅 LF/CRLF warning；`idf.py build` 通过，`111.bin` `0xac3230`，app free `0x33cdd0`/23%；context standard 校验错误 0、警告 0。attempt log：`docs/context/runs/2026-07-07-attempt-board-imu-hw-profile-split.md`。
+
+> **2026-07-06 更新：摔倒检测旧模型路线已从当前仓库清理**
+>
+> - 用户已明确分工：`D:\esp32S3\imu` 只负责复杂训练、评估和模型导出；当前仓库 `D:\esp32S3\111` 只负责固件部署，不放训练脚本、完整数据集或临时训练资产。
+> - 旧 Edge Impulse 208622 外部 `.espdl` 路线在板端 `new dl::Model(...)` 阶段触发 ESP-DL loader `LoadProhibited`，不要再把它当作可继续部署的当前状态。历史失败日志仍可参考 `board_logs/2026-07-06-21-45-54-fall-detection-board-test.log`。
+> - 当前仓库已删除旧 `components/fall_detection_inference`、旧 `fall_detection_board_test`、旧 source test、旧 active plan 和旧 runner attempt 文档；不要再相信旧状态里“`CONFIG_FALL_DETECTION_BOARD_TEST` 可开启验证”的描述。
+> - 后续若从 `D:\esp32S3\imu` 产出新的 `.espdl`，必须先确认 ESP-DL loader 可加载、算子属于 ESP-DL 支持范围，再回到当前仓库新增最小部署组件。
+> - 保留部署侧地基：QMI8658C driver 统一输出物理六轴，后续用 `qmi8658c_read()` 获取 `m/s^2` 加速度与 `deg/s` 角速度；driver 只负责 raw-to-physical，不负责板级安装方向。
+> - 保留未来窗口边界：IMU 4 秒窗口由 `imu_service` 维护 50Hz/200 帧采样，并投递完整窗口副本给未来 `fall_detection_service`；fall service 不主动读取 IMU 硬件或维护采样时钟。
+> - 保留命名口径：模型输入坐标系使用 `accX/accY/accZ` 与 `gyroX/gyroY/gyroZ`；轴向重映射应在 board/imu 侧完成，不放进模型 runner。
 
 > **2026-07-05 更新：危险识别页已新增麦克风测试按钮**
 >
@@ -114,7 +139,7 @@ evidence_level: observed
 - Hermes API Server、watch voice endpoint、Cloudflare Tunnel、公网 `watch.934000.xyz/v1/watch/*`、文本命令和真实麦克风语音链路均已有成功证据。
 - 当前 watch endpoint 容器已重建到 V2.2 server 代码，本机 `127.0.0.1:8787/health` healthy，公网 `watch.934000.xyz` runtime gate、WS smoke、conversation polling smoke 均通过。
 - V2.3 计划已归档：`docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.3-thin-watch-client-thick-watch-endpoint-plan.md`。
-- V2.4 active plan 已新增并开始执行：`docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md`。
+- V2.4 active plan 当时已新增并开始执行；该计划现已归档到 `docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md`。
 - V2.4 阶段 0/1/1.5/2/3/4/5 已完成：基线复核、ESP32 职责审计、server `/v1/watch/sync` 契约测试与 endpoint、ESP32 `/sync` 窄客户端、后台 pending/foreground reconcile sync 换芯、WS client 意图级收口、旧 `/conversation` poll client 删除和 `done` 空回复兜底修正已落地。当前验证：server tests `140 passed`，ESP32 Memory Watch source tests `40 passed`，`idf.py build` 通过（`111.bin` `0xabef80`，最小 app 分区剩余 `0x341080`/23%）。
 - V2.4 阶段 6 已完成部分真机验收：用户修复 Mihomo/Fake-IP DNS 后，COM3 日志显示手表联网到 `192.168.103.11`、进入 `SERVICE_READY`、SNTP 同步成功、Hermes health online、inbox poll 正常；watch endpoint 容器重建后 `/v1/watch/sync` 路由已部署，本机/公网未授权请求返回 401，真机日志出现 `conversation: sync ok messages=0 session=none terminal=0`；前台 WSS 真麦克风链路再次成功，返回 `status=done/action=conversation_reply/error_code=none`，`mw_upload` high-water 约 `3172` words。
 - Runtime Resource Gate active plan：`docs/context/plans/active/2026-06-29-watch-runtime-resource-gate-plan.md`。阶段 1-5 代码已完成：强前台 owner、Safety Monitor/ESP-DL 让路、Hermes 前台 acquire/release、后台 HTTPS gate、Bluetooth quiet-window 单次重试均已接入；阶段 6 已完成板端自动 gate/BLE fail-closed 回归，公网 HTTPS 成功路径和 ESP-DL running -> 强前台让路仍待 Wi-Fi 可用后补测。
@@ -179,7 +204,7 @@ evidence_level: observed
 ## 当前风险
 
 - 工作区有大量已有未提交改动，且 `sdkconfig` 现在可能含开发期 watch device token；不要误提交。
-- `docs/context/handoffs/current-task.md` 是当前接力页，不是历史总账；历史细节看 changelog 和 completed plan。
+- `docs/context/archive/handoffs/current-task.md` 是历史接力页归档，不代表当前任务状态；当前状态优先看 `plans/active/`、`runs/` 和稳定 knowledge，历史细节看 changelog 与 completed plan。
 - 最新用户日志中的问题不是 Hermes 链路问题。第一轮是点击主界面 Bluetooth 后普通 BLE presence 进入 BT controller 初始化时 internal heap 不足触发 `BLE_INIT: Malloc failed` / `emi.c` assert / interrupt WDT；已加 `ble_presence` preflight 和 `network_manager` 回滚保护。第二轮复测不再崩溃，但 BLE enabled 偏好在开机 latest Wi-Fi 路径自动启动普通 BLE，抢占 LVGL/SPI DMA internal RAM，导致 display bounce / flush `ESP_ERR_NO_MEM`；已改成后台路径只收口不自动启动，只有用户显式 Bluetooth 开关才允许启动 BLE。第三轮冷启动复测已通过：未自动 BLE advertising，display bounce buffer 分配成功，Wi-Fi 到 `SERVICE_READY`，Hermes health online。第四轮手动连续点击 Bluetooth 复测也已通过防护目标：internal heap 约 `30 KiB`、最大连续块约 `14 KiB` 时稳定返回 `ESP_ERR_NO_MEM` 并显示失败 toast，无 `emi.c`、Guru、interrupt WDT 或显示链路回退。
 - V2.2 离页 pending 主链路和重复回复修复均已由用户真机反馈确认可用；后续主要风险转为体验细节、异常路径和低功耗参数，不再是主链路可用性。
 - 不要继续把 Mihomo/Fake-IP DNS 当作当前阻塞点；用户已修复，后续只有在同网络再次出现 `ESP_ERR_HTTP_CONNECT`、公网域名连不上或解析异常时，才把 fake-ip DNS 作为复发线索。
@@ -198,7 +223,7 @@ evidence_level: observed
 - **V2.3 阶段 1-5 全部完成**（2026-06-27）：计划已归档到 `docs/context/plans/completed/`。server session_repo 成为任务状态真相源（Stage 1-2），ESP32 保留 display dedup（Stage 3），通知路由继承 V2.2 分通道（Stage 4），门禁 126 server tests + 39 source tests + idf.py build 全部通过（Stage 5）。
 - **V2.3 复查修复**（2026-06-27）：`SessionRepo` 允许 `accepted -> error/timeout`，避免 ASR 前置失败导致 session 假 active/pending；server pytest `126 passed`。
 - **下一步**：server 公网部署验证 + COM3 真机 Hermes 前台/离页链路复测（Stage 0 冷启动基线已确认，Stage 2-3 主要为 server 增量，预期无回归）。
-- **V2.4 下一步**：可按用户节奏归档 V2.4 active plan，或继续做体验微调/低功耗参数微调；不要再回到旧的“离页后 session=none 一直思考中”排查路线，除非新日志再次复现。
+- **V2.4 历史下一步**：当时建议按用户节奏归档 V2.4 active plan；该计划现已归档到 `docs/context/plans/completed/`。后续不要再回到旧的“离页后 session=none 一直思考中”排查路线，除非新日志再次复现。
 - ~~如果继续 BLE 问题，下一步不是放宽 guard，而是单独做 internal RAM 预算收敛~~（已通过方案 B 越过门槛）。
 - **2026-06-29 方案 B（任务栈迁 PSRAM）全部完成**：9 个任务栈迁 PSRAM，COM3 冷启动 internal free=**73,982 B (72.3 KB)**、largest=**49,152 B (48 KB)**，BLE presence preflight 门槛（64 KB / 40 KB）已越过。累计释放 ~43 KB internal RAM（290 KB → 264 KB，78.3%）。**下一优先级：真机测试 BLE presence 启动与确认广播/配网流程**。attempt log：`docs/context/runs/2026-06-29-attempt-planb-task-stack-psram.md`。日志：`board_logs/2026-06-29-planb-task-stack-psram-cold-boot.log`。
 - **Runtime Resource Gate 下一步**：阶段 6 只剩补测，不要重复已经完成的自动 gate 压测。Wi-Fi 可用后重点补测公网 HTTPS 成功路径（weather/inbox/health/sync 在 gate 下可延后但能成功）和 ESP-DL running -> 强前台让路；目标是无 panic/Guru/stack overflow/`esp-aes` 分配失败，BLE 失败路径可解释，Hermes 前台优先，后台 HTTPS 可延后。
@@ -213,7 +238,7 @@ evidence_level: observed
 - 机器可读契约：`server/watch_voice_endpoint/watch_contract.v1.json`
 - 产品定位：`docs/context/knowledge/project/ai-memory-watch-product-positioning.md`
 - V2.3 completed plan：`docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.3-thin-watch-client-thick-watch-endpoint-plan.md`
-- V2.4 active plan：`docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md`
+- V2.4 计划（历史 active，现已归档）：`docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-v2.4-esp32-thin-client-slimming-plan.md`
 - Runtime Resource Gate active plan：`docs/context/plans/active/2026-06-29-watch-runtime-resource-gate-plan.md`
 - Runtime Resource Gate 阶段 1 run：`docs/context/runs/2026-06-29-attempt-foreground-runtime-gate.md`
 - Runtime Resource Gate 阶段 2 run：`docs/context/runs/2026-06-29-attempt-espdl-foreground-runtime-yield.md`

@@ -20,6 +20,14 @@ ROOT_CONTENT_FILES = (
     "INDEX.agent.md",
 )
 
+ACTIVE_PLAN_EXEMPT_FILES = {
+    "plans/active/README.md",
+    "plans/active/plan-template.md",
+}
+
+UNCHECKED_CHECKBOX_RE = re.compile(r"`?\[ \]`?|`?\[/\]`?")
+CHECKED_CHECKBOX_RE = re.compile(r"`?\[x\]`?", re.IGNORECASE)
+
 
 def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
     if not raw.startswith("---\n"):
@@ -70,7 +78,6 @@ def collect_target_files(docs_root: Path) -> list[Path]:
         "procedures",
         "runs",
         "plans",
-        "handoffs",
     )
 
     for root_name in content_roots:
@@ -82,6 +89,10 @@ def collect_target_files(docs_root: Path) -> list[Path]:
             files.append(file_path)
 
     return files
+
+
+def is_active_plan_document(rel_path: str) -> bool:
+    return rel_path.startswith("plans/active/") and rel_path not in ACTIVE_PLAN_EXEMPT_FILES
 
 
 def validate_file(path: Path, docs_root: Path, seen_ids: dict[str, str]) -> tuple[list[str], list[str]]:
@@ -134,22 +145,27 @@ def validate_file(path: Path, docs_root: Path, seen_ids: dict[str, str]) -> tupl
     if "# " not in body:
         warnings.append(f"{rel_path}: 未检测到一级标题（建议添加）")
 
-    if meta.get("memory_type") == "project_plan" and str(meta.get("status")).strip() == "active":
+    if is_active_plan_document(rel_path):
+        status = str(meta.get("status", "")).strip().lower()
+        if status and status != "active":
+            errors.append(f"{rel_path}: active 目录中的计划状态必须是 `active`，当前为 `{status}`")
+
         if "\n## Progress" not in f"\n{body}" and "\n## 进度" not in f"\n{body}":
             errors.append(f"{rel_path}: 活跃计划书必须包含精确的 `## 进度` (或 `## Progress`) 二级标题")
-        
+
         progress_idx = body.find("## 进度")
         if progress_idx == -1:
             progress_idx = body.find("## Progress")
-            
+
         if progress_idx != -1:
             next_heading_idx = body.find("\n## ", progress_idx + 11)
             progress_content = body[progress_idx:] if next_heading_idx == -1 else body[progress_idx:next_heading_idx]
-            
-            unchecked_pattern = re.compile(r"\[ \]|`\[ \]`|\[/\]|`\[/\]`")
-            checked_pattern = re.compile(r"\[x\]|`\[x\]`", re.IGNORECASE)
-            
-            if unchecked_pattern.search(progress_content) is None and checked_pattern.search(progress_content) is not None:
+
+            is_all_checked = (
+                UNCHECKED_CHECKBOX_RE.search(progress_content) is None
+                and CHECKED_CHECKBOX_RE.search(progress_content) is not None
+            )
+            if is_all_checked:
                 errors.append(f"{rel_path}: 进度已全部打勾，请将该计划归档（移至 completed 目录，并将 status 改为 archived）")
 
     return errors, warnings

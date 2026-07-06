@@ -21,7 +21,7 @@ record_reasons: route-choice, error-signature, evidence
   1. ESP32 侧 `memory_watch_ws_client` 能否复用当前仓库已有小智 AI WebSocket transport 技术骨架，并通过 `idf.py build`。
   2. 是否能避免 `main` 直接 include `components/official_chat/net/websocket_client.h` 私有头。
   3. 修复 source test 暴露出的 `memory_watch_service` 跨任务 pending 标志仍使用裸 `static volatile` 的同步边界问题。
-- 对应计划：`docs/context/plans/active/2026-06-27-ai-memory-watch-hermes-websocket-v2.1-plan.md`
+- 对应计划：`docs/context/plans/completed/2026-06-27-ai-memory-watch-hermes-websocket-v2.1-plan.md`
 
 ## 操作
 

@@ -68,7 +68,7 @@
 - `knowledge/project/audio-horn-like-segment-extraction.md`
 - `knowledge/project/audio-low-activity-filter-script.md`
 
-## 运行记录与交接
+## 运行记录与计划
 
 - `runs/README.md`
 - `runs/run-template.md`
@@ -76,9 +76,6 @@
 - `plans/active/README.md`
 - `plans/active/plan-template.md`
 - `plans/completed/README.md`
-- `handoffs/handoff-template.md`
-- `handoffs/current-repo-state.md`
-- `handoffs/current-task.md`
 
 ## 评测与维护
 
@@ -92,5 +89,5 @@
 
 - 在 `knowledge/<domain>/` 下新增主题文件。
 - 在 `knowledge/project/` 下新增稳定项目知识、架构边界或长期取舍卡。
-- 在 `procedures/`、`runs/`、`plans/`、`handoffs/` 中按记忆类型补充内容。
+- 在 `procedures/`、`runs/`、`plans/` 中按记忆类型补充内容。
 - 修改后重建索引：`uv run python scripts/context/build_index.py`

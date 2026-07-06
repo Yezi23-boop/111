@@ -246,9 +246,7 @@ idf_component_register(
 
         pcf85063atl
 
-        qmi8658c
-
-        imu_motion
+        imu_sensor
 
         78__xiaozhi-fonts
 

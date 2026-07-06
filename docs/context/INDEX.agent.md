@@ -167,7 +167,6 @@ Cleanup and promotion policy:
 | User plan, roadmap, staged execution | `docs/context/plans/` | Needed across sessions or agents |
 | Attempt, big error, route choice, board log, verification, anti-repeat evidence | `docs/context/runs/` | Has `repeat-risk`, `high-cost`, `error-signature`, `route-choice`, `owner-architecture`, `evidence`, `handoff`, `plan-decision`, or `project-knowledge` reason |
 | Repeatable diagnosis or operating procedure | `docs/context/procedures/` | Useful as a future workflow |
-| Current task compression | `docs/context/handoffs/current-task.md` | Needed for handoff, not a stable fact source |
 
 Do not write long-term memory for one-off typo fixes, routine command output, or unconfirmed ideas.
 

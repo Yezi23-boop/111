@@ -18,7 +18,6 @@ CONTENT_ROOTS = (
     "procedures",
     "runs",
     "plans",
-    "handoffs",
 )
 
 ROOT_CONTENT_FILES = (
@@ -142,28 +141,7 @@ REQUIRED_SECTIONS_BY_MATCH = (
     ),
 )
 
-REQUIRED_SECTIONS_BY_EXACT = {
-    "handoffs/current-task.md": (
-        "## 目标",
-        "## 当前状态",
-        "## Progress",
-        "## Decision Log",
-        "## 已验证",
-        "## 当前风险",
-        "## 下一步",
-        "## 证据入口",
-    ),
-    "handoffs/handoff-template.md": (
-        "## 目标",
-        "## 当前状态",
-        "## Progress",
-        "## Decision Log",
-        "## 已验证",
-        "## 当前风险",
-        "## 下一步",
-        "## 证据入口",
-    ),
-}
+REQUIRED_SECTIONS_BY_EXACT = {}
 
 LIKELY_PATH_PREFIXES = (
     "docs/",

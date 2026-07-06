@@ -279,11 +279,9 @@ static void start_deferred_services(void)
     }
 
     /*
-     * [暂时关闭] QMI8658C 内部 WoM/INT1 第一版只做事件日志验证。
-     * 原因：用户要求暂时关闭 IMU 服务以节省资源或调试其他功能。
-     * 恢复方法：取消下方 imu_service_start() 调用的注释即可。
+     * IMU service 当前做统一配置、GPIO21 ISR 事件计数和 50Hz 周期采样。
+     * 让它随 deferred services 启动，便于开机日志直接验证 IMU 链路与采样稳定性。
      */
-#if 0
     if (imu_service_start() != ESP_OK)
     {
         ESP_LOGW(TAG, "IMU service start failed");
@@ -292,7 +290,6 @@ static void start_deferred_services(void)
     {
         ESP_LOGI(TAG, "boot_stage: imu_service_ready");
     }
-#endif
 }
 
 /**

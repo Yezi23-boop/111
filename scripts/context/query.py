@@ -22,7 +22,6 @@ SCOPE_KNOWLEDGE = "knowledge"
 SCOPE_PROCEDURES = "procedures"
 SCOPE_RUNS = "runs"
 SCOPE_PLANS = "plans"
-SCOPE_HANDOFFS = "handoffs"
 SCOPE_ARCHIVE = "archive"
 SCOPE_ALL = "all"
 
@@ -167,8 +166,6 @@ def in_scope(rel_path: str, scope: str, include_meta: bool) -> bool:
         return normalized.startswith("docs/context/runs/")
     if scope == SCOPE_PLANS:
         return normalized.startswith("docs/context/plans/")
-    if scope == SCOPE_HANDOFFS:
-        return normalized.startswith("docs/context/handoffs/")
     if scope == SCOPE_ARCHIVE:
         return normalized.startswith("docs/context/archive/")
 
@@ -189,8 +186,6 @@ def path_bonus(rel_path: str) -> int:
         return 4
     if normalized.startswith("docs/context/plans/"):
         return 3
-    if normalized.startswith("docs/context/handoffs/"):
-        return 5
     if normalized.startswith("docs/context/archive/"):
         return -20
     if is_meta_path(normalized):
@@ -211,13 +206,14 @@ def lifecycle_penalty(
     summary: str,
     status: str,
     superseded_by: str,
+    scope: str,
     query: str,
     terms: list[str],
 ) -> int | None:
     normalized = rel_path.replace("\\", "/")
     status_lower = status.strip().lower()
     superseded_by = superseded_by.strip()
-    history_intent = has_history_intent(query, terms)
+    history_intent = scope == SCOPE_ARCHIVE or has_history_intent(query, terms)
 
     if normalized.startswith("docs/context/archive/") and not history_intent:
         return None
@@ -384,6 +380,7 @@ def score_document(
         summary=summary,
         status=status,
         superseded_by=superseded_by,
+        scope=scope,
         query=query,
         terms=terms,
     )
@@ -498,7 +495,6 @@ def build_parser() -> argparse.ArgumentParser:
             SCOPE_PROCEDURES,
             SCOPE_RUNS,
             SCOPE_PLANS,
-            SCOPE_HANDOFFS,
             SCOPE_ARCHIVE,
             SCOPE_ALL,
         ],

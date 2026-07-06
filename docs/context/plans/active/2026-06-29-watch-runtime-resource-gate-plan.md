@@ -357,7 +357,7 @@ idf.py build
 
 1. 新建 `docs/context/runs/YYYY-MM-DD-attempt-<feature>.md` 记录错误签名、证伪路径和验证证据。
 2. 更新 `docs/context/CHANGELOG.md` 顶部摘要。
-3. 按需同步 `docs/context/handoffs/current-task.md`，尤其是暂停、交接或状态反转时。
+3. 按需更新本 active plan 的 `Progress / Validation and Acceptance / Next Step`，尤其是暂停、接手或状态反转时。
 4. 执行：
 
 ```powershell

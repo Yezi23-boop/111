@@ -6,8 +6,6 @@
 #include "esp_check.h"
 #include "esp_idf_version.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "i2c_manager.h"
 #include "qmi8658c_regs.h"
 
@@ -19,49 +17,73 @@
 
 static const char *TAG = "qmi8658c";
 
+static const float k_standard_gravity = 9.80665f;
+
 static bool s_ready = false; // 组件是否已挂到共享 I2C；不表示芯片身份已验证。
 static uint8_t s_i2c_addr_7bit =
     QMI8658C_I2C_ADDR_7BIT; // 板级 SA0 绑法决定；默认兼容当前开发板。
+static uint8_t s_accel_fs_code = 0; // 最近一次配置的加速度量程；0 为 ±2g。
+static uint8_t s_gyro_fs_code = 0;  // 最近一次配置的陀螺仪量程；0 为 ±16 dps。
+static bool s_sample_configured = false; // true 表示已通过 qmi8658c_config() 建立物理量换算口径。
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
 static i2c_master_dev_handle_t s_dev_handle = NULL; // 共享 master bus 下的 QMI8658C 设备句柄。
 #endif
 
+typedef struct
+{
+    int16_t temperature_raw;
+    int16_t accel_x;
+    int16_t accel_y;
+    int16_t accel_z;
+    int16_t gyro_x;
+    int16_t gyro_y;
+    int16_t gyro_z;
+} qmi8658c_raw_sample_t;
+
 static esp_err_t qmi8658c_read_bytes(uint8_t reg, uint8_t *data, size_t len);
 static esp_err_t qmi8658c_write_bytes(uint8_t reg, const uint8_t *data,
                                       size_t len);
 static esp_err_t qmi8658c_write_byte(uint8_t reg, uint8_t value);
-static esp_err_t qmi8658c_read_statusint_raw(uint8_t *statusint);
-static esp_err_t qmi8658c_enable_statusint_ctrl9_handshake(void);
-static esp_err_t qmi8658c_execute_ctrl9(uint8_t command);
+static esp_err_t qmi8658c_read_raw(qmi8658c_raw_sample_t *sample);
 static bool qmi8658c_accel_odr_code_valid(uint8_t odr);
 static bool qmi8658c_gyro_odr_code_valid(uint8_t odr);
+static int32_t qmi8658c_accel_lsb_per_g(uint8_t accel_fs);
+static float qmi8658c_accel_raw_to_mps2(int16_t raw, uint8_t accel_fs);
+static esp_err_t qmi8658c_convert_raw_accel(
+    const qmi8658c_raw_sample_t *raw,
+    qmi8658c_accel_t *sample);
+static int32_t qmi8658c_gyro_lsb_per_dps(uint8_t gyro_fs);
+static float qmi8658c_gyro_raw_to_dps(int16_t raw, uint8_t gyro_fs);
+static esp_err_t qmi8658c_convert_raw_gyro(
+    const qmi8658c_raw_sample_t *raw,
+    qmi8658c_gyro_t *sample);
 static int16_t qmi8658c_decode_i16(const uint8_t *data);
 
 esp_err_t qmi8658c_init(void)
 {
-    const qmi8658c_bus_config_t config = {
-        .i2c_addr_7bit = QMI8658C_I2C_ADDR_7BIT,
+    const qmi8658c_bus_t config = {
+        .addr = QMI8658C_I2C_ADDR_7BIT,
     };
-    return qmi8658c_init_with_bus_config(&config);
+    return qmi8658c_init_bus(&config);
 }
 
-esp_err_t qmi8658c_init_with_bus_config(const qmi8658c_bus_config_t *config)
+esp_err_t qmi8658c_init_bus(const qmi8658c_bus_t *config)
 {
     if (s_ready)
     {
         ESP_RETURN_ON_FALSE(config != NULL, ESP_ERR_INVALID_ARG, TAG,
                             "bus config is null");
-        ESP_RETURN_ON_FALSE(config->i2c_addr_7bit == s_i2c_addr_7bit,
+        ESP_RETURN_ON_FALSE(config->addr == s_i2c_addr_7bit,
                             ESP_ERR_INVALID_STATE, TAG,
                             "qmi8658c already initialized with another addr");
         return ESP_OK;
     }
     ESP_RETURN_ON_FALSE(config != NULL, ESP_ERR_INVALID_ARG, TAG,
                         "bus config is null");
-    ESP_RETURN_ON_FALSE(config->i2c_addr_7bit <= 0x7F, ESP_ERR_INVALID_ARG,
+    ESP_RETURN_ON_FALSE(config->addr <= 0x7F, ESP_ERR_INVALID_ARG,
                         TAG, "i2c addr is not 7-bit");
-    s_i2c_addr_7bit = config->i2c_addr_7bit;
+    s_i2c_addr_7bit = config->addr;
 
     ESP_RETURN_ON_ERROR(i2c_manager_init(), TAG, "i2c manager init failed");
 
@@ -85,7 +107,7 @@ esp_err_t qmi8658c_init_with_bus_config(const qmi8658c_bus_config_t *config)
     return ESP_OK;
 }
 
-esp_err_t qmi8658c_probe(qmi8658c_identity_t *identity)
+esp_err_t qmi8658c_probe(qmi8658c_info_t *identity)
 {
     ESP_RETURN_ON_FALSE(identity != NULL, ESP_ERR_INVALID_ARG, TAG,
                         "identity is null");
@@ -131,31 +153,49 @@ esp_err_t qmi8658c_probe(qmi8658c_identity_t *identity)
     return ESP_OK;
 }
 
-esp_err_t qmi8658c_configure(const qmi8658c_config_t *config)
+esp_err_t qmi8658c_config(const qmi8658c_config_t *config)
 {
     ESP_RETURN_ON_FALSE(config != NULL, ESP_ERR_INVALID_ARG, TAG,
                         "config is null");
     ESP_RETURN_ON_FALSE(
         config->accel_fs <= QMI8658C_CTRL2_ACCEL_FS_MASK,
         ESP_ERR_INVALID_ARG, TAG, "accel full-scale code out of range");
+    ESP_RETURN_ON_FALSE(qmi8658c_accel_lsb_per_g(config->accel_fs) > 0,
+                        ESP_ERR_INVALID_ARG, TAG,
+                        "accel full-scale code has no mps2 scale");
     ESP_RETURN_ON_FALSE(qmi8658c_accel_odr_code_valid(config->accel_odr),
                         ESP_ERR_INVALID_ARG, TAG,
                         "accel odr code is not supported by datasheet");
     ESP_RETURN_ON_FALSE(config->gyro_fs <= QMI8658C_CTRL3_GYRO_FS_MASK,
                         ESP_ERR_INVALID_ARG, TAG,
                         "gyro full-scale code out of range");
+    ESP_RETURN_ON_FALSE(qmi8658c_gyro_lsb_per_dps(config->gyro_fs) > 0,
+                        ESP_ERR_INVALID_ARG, TAG,
+                        "gyro full-scale code has no dps scale");
     ESP_RETURN_ON_FALSE(config->gyro_odr <= QMI8658C_CTRL3_GYRO_ODR_MASK,
                         ESP_ERR_INVALID_ARG, TAG,
                         "gyro odr code out of range");
     ESP_RETURN_ON_FALSE(qmi8658c_gyro_odr_code_valid(config->gyro_odr),
                         ESP_ERR_INVALID_ARG, TAG,
                         "gyro odr code is not supported by datasheet");
+    ESP_RETURN_ON_FALSE(config->int1_source == QMI8658C_INT_SOURCE_DISABLED,
+                        ESP_ERR_NOT_SUPPORTED, TAG,
+                        "int1 source is reserved and must be disabled");
+    ESP_RETURN_ON_FALSE(config->int2_source == QMI8658C_INT_SOURCE_DISABLED,
+                        ESP_ERR_NOT_SUPPORTED, TAG,
+                        "int2 source is reserved and must be disabled");
     ESP_RETURN_ON_ERROR(qmi8658c_init(), TAG, "init failed before configure");
 
     /*
-     * 先打开地址自增，再配置量程/ODR，最后启用 sensor。
-     * 原因：read_raw 依赖从 TEMP_L 开始的连续读取窗口；若未打开自增，
-     * 多字节事务会反复读取同一寄存器，导致样本看似固定。
+     * MCU reset 不一定会让 QMI8658C 断电复位。先关闭 accel/gyro，再写
+     * 量程/ODR，避免芯片仍处在旧 enable 状态时忽略 full-scale 变更。
+     */
+    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL7, 0), TAG,
+                        "disable sensors before configure failed");
+
+    /*
+     * 打开地址自增后再读取连续样本窗口；若未打开自增，多字节事务会
+     * 反复读取同一寄存器，导致样本看似固定。
      */
     ESP_RETURN_ON_ERROR(
         qmi8658c_write_byte(QMI8658C_REG_CTRL1,
@@ -181,10 +221,13 @@ esp_err_t qmi8658c_configure(const qmi8658c_config_t *config)
                         "write ctrl3 failed");
     ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL7, ctrl7), TAG,
                         "write ctrl7 failed");
+    s_accel_fs_code = config->accel_fs;
+    s_gyro_fs_code = config->gyro_fs;
+    s_sample_configured = true;
     return ESP_OK;
 }
 
-esp_err_t qmi8658c_read_raw(qmi8658c_raw_sample_t *sample)
+static esp_err_t qmi8658c_read_raw(qmi8658c_raw_sample_t *sample)
 {
     ESP_RETURN_ON_FALSE(sample != NULL, ESP_ERR_INVALID_ARG, TAG,
                         "sample is null");
@@ -208,108 +251,57 @@ esp_err_t qmi8658c_read_raw(qmi8658c_raw_sample_t *sample)
     return ESP_OK;
 }
 
-esp_err_t qmi8658c_read_status1(qmi8658c_status1_t *status)
+static esp_err_t qmi8658c_convert_raw_accel(
+    const qmi8658c_raw_sample_t *raw,
+    qmi8658c_accel_t *sample)
 {
-    ESP_RETURN_ON_FALSE(status != NULL, ESP_ERR_INVALID_ARG, TAG,
-                        "status is null");
-    ESP_RETURN_ON_ERROR(qmi8658c_init(), TAG, "init failed before status1 read");
+    ESP_RETURN_ON_FALSE(raw != NULL, ESP_ERR_INVALID_ARG, TAG,
+                        "raw sample is null");
+    ESP_RETURN_ON_FALSE(sample != NULL, ESP_ERR_INVALID_ARG, TAG,
+                        "accel mps2 sample is null");
 
-    uint8_t raw = 0;
-    ESP_RETURN_ON_ERROR(qmi8658c_read_bytes(QMI8658C_REG_STATUS1, &raw, 1),
-                        TAG, "read status1 failed");
+    const int32_t lsb_per_g = qmi8658c_accel_lsb_per_g(s_accel_fs_code);
+    ESP_RETURN_ON_FALSE(lsb_per_g > 0, ESP_ERR_INVALID_STATE, TAG,
+                        "accel full-scale code has no mps2 scale");
 
-    status->raw_status1 = raw;
-    status->wake_on_motion = (raw & QMI8658C_STATUS1_WOM) != 0;
-    status->cmd_done = (raw & QMI8658C_STATUS1_CMD_DONE) != 0;
+    sample->x = qmi8658c_accel_raw_to_mps2(raw->accel_x, s_accel_fs_code);
+    sample->y = qmi8658c_accel_raw_to_mps2(raw->accel_y, s_accel_fs_code);
+    sample->z = qmi8658c_accel_raw_to_mps2(raw->accel_z, s_accel_fs_code);
     return ESP_OK;
 }
 
-esp_err_t qmi8658c_read_statusint(qmi8658c_statusint_t *status)
+static esp_err_t qmi8658c_convert_raw_gyro(
+    const qmi8658c_raw_sample_t *raw,
+    qmi8658c_gyro_t *sample)
 {
-    ESP_RETURN_ON_FALSE(status != NULL, ESP_ERR_INVALID_ARG, TAG,
-                        "statusint is null");
-    ESP_RETURN_ON_ERROR(qmi8658c_init(), TAG,
-                        "init failed before statusint read");
+    ESP_RETURN_ON_FALSE(raw != NULL, ESP_ERR_INVALID_ARG, TAG,
+                        "raw sample is null");
+    ESP_RETURN_ON_FALSE(sample != NULL, ESP_ERR_INVALID_ARG, TAG,
+                        "gyro dps sample is null");
 
-    uint8_t raw = 0;
-    ESP_RETURN_ON_ERROR(qmi8658c_read_statusint_raw(&raw), TAG,
-                        "read statusint failed");
+    const int32_t lsb_per_dps = qmi8658c_gyro_lsb_per_dps(s_gyro_fs_code);
+    ESP_RETURN_ON_FALSE(lsb_per_dps > 0, ESP_ERR_INVALID_STATE, TAG,
+                        "gyro full-scale code has no dps scale");
 
-    status->raw_statusint = raw;
-    status->ctrl9_done = (raw & QMI8658C_STATUSINT_CTRL9_DONE) != 0;
-    status->int1_high = (raw & QMI8658C_STATUSINT_INT1_LEVEL) != 0;
-    status->int2_high = (raw & QMI8658C_STATUSINT_INT2_LEVEL) != 0;
+    sample->x = qmi8658c_gyro_raw_to_dps(raw->gyro_x, s_gyro_fs_code);
+    sample->y = qmi8658c_gyro_raw_to_dps(raw->gyro_y, s_gyro_fs_code);
+    sample->z = qmi8658c_gyro_raw_to_dps(raw->gyro_z, s_gyro_fs_code);
     return ESP_OK;
 }
 
-esp_err_t qmi8658c_configure_wake_on_motion(
-    const qmi8658c_wom_config_t *config)
+esp_err_t qmi8658c_read(qmi8658c_sample_t *sample)
 {
-    ESP_RETURN_ON_FALSE(config != NULL, ESP_ERR_INVALID_ARG, TAG,
-                        "wom config is null");
-    ESP_RETURN_ON_FALSE(config->threshold_mg > 0, ESP_ERR_INVALID_ARG, TAG,
-                        "wom threshold 0 disables wom");
-    ESP_RETURN_ON_FALSE(config->blanking_samples <= 0x3F,
-                        ESP_ERR_INVALID_ARG, TAG,
-                        "wom blanking samples out of range");
-    ESP_RETURN_ON_FALSE(config->accel_fs <= QMI8658C_CTRL2_ACCEL_FS_MASK,
-                        ESP_ERR_INVALID_ARG, TAG,
-                        "wom accel full-scale code out of range");
-    ESP_RETURN_ON_FALSE(qmi8658c_accel_odr_code_valid(config->accel_odr),
-                        ESP_ERR_INVALID_ARG, TAG,
-                        "wom accel odr code is not supported by datasheet");
-    ESP_RETURN_ON_FALSE(config->interrupt <=
-                            QMI8658C_WOM_INTERRUPT_INT2_INITIAL_HIGH,
-                        ESP_ERR_INVALID_ARG, TAG,
-                        "wom interrupt code out of range");
-    ESP_RETURN_ON_ERROR(qmi8658c_init(), TAG, "init failed before wom config");
+    ESP_RETURN_ON_FALSE(sample != NULL, ESP_ERR_INVALID_ARG, TAG,
+                        "physical sample is null");
+    ESP_RETURN_ON_FALSE(s_sample_configured, ESP_ERR_INVALID_STATE, TAG,
+                        "qmi8658c sample range is not configured");
 
-    /*
-     * Figure 10 的 WoM 序列要求先关闭 sensor，避免旧采样状态和启动瞬态
-     * 影响阈值配置。最后只打开 aEN，保持陀螺仪关闭以降低功耗。
-     */
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL7, 0), TAG,
-                        "disable sensors before wom failed");
-    ESP_RETURN_ON_ERROR(
-        qmi8658c_write_byte(QMI8658C_REG_CTRL1,
-                            QMI8658C_CTRL1_ADDR_AUTO_INCREMENT),
-        TAG, "write wom ctrl1 failed");
-
-    uint8_t ctrl2 = (uint8_t)((config->accel_fs << 4) | config->accel_odr);
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL2, ctrl2), TAG,
-                        "write wom ctrl2 failed");
-
-    const uint8_t cal1_h =
-        (uint8_t)(((uint8_t)config->interrupt << 6) |
-                  (config->blanking_samples & 0x3F));
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CAL1_L,
-                                            config->threshold_mg),
-                        TAG, "write wom threshold failed");
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CAL1_H, cal1_h),
-                        TAG, "write wom interrupt config failed");
-    ESP_RETURN_ON_ERROR(qmi8658c_execute_ctrl9(
-                            QMI8658C_CTRL9_CMD_WRITE_WOM_SETTING),
-                        TAG, "execute wom ctrl9 failed");
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL7,
-                                            QMI8658C_CTRL7_ACCEL_ENABLE),
-                        TAG, "enable accel for wom failed");
-    return ESP_OK;
-}
-
-esp_err_t qmi8658c_disable_wake_on_motion(void)
-{
-    ESP_RETURN_ON_ERROR(qmi8658c_init(), TAG, "init failed before wom disable");
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL7, 0), TAG,
-                        "disable sensors before wom off failed");
-
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CAL1_L, 0), TAG,
-                        "write wom off threshold failed");
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CAL1_H, 0), TAG,
-                        "write wom off interrupt config failed");
-    ESP_RETURN_ON_ERROR(qmi8658c_execute_ctrl9(
-                            QMI8658C_CTRL9_CMD_WRITE_WOM_SETTING),
-                        TAG, "execute wom off ctrl9 failed");
-    return ESP_OK;
+    qmi8658c_raw_sample_t raw = {0};
+    ESP_RETURN_ON_ERROR(qmi8658c_read_raw(&raw), TAG,
+                        "read raw before physical sample failed");
+    ESP_RETURN_ON_ERROR(qmi8658c_convert_raw_accel(&raw, &sample->accel),
+                        TAG, "convert accel mps2 failed");
+    return qmi8658c_convert_raw_gyro(&raw, &sample->gyro);
 }
 
 static esp_err_t qmi8658c_read_bytes(uint8_t reg, uint8_t *data, size_t len)
@@ -391,70 +383,6 @@ static esp_err_t qmi8658c_write_bytes(uint8_t reg, const uint8_t *data,
 #endif
 }
 
-static esp_err_t qmi8658c_execute_ctrl9(uint8_t command)
-{
-    /*
-     * Rev A 默认用 INT1 做 CTRL9 握手。当前 WoM 也需要 INT1，因此先切换到
-     * STATUSINT.bit7 握手，避免配置命令本身污染 GPIO21 的 WoM 边沿。
-     */
-    ESP_RETURN_ON_ERROR(qmi8658c_enable_statusint_ctrl9_handshake(), TAG,
-                        "enable statusint ctrl9 handshake failed");
-    ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL9, command), TAG,
-                        "write ctrl9 failed");
-
-    for (int i = 0; i < 1000; ++i)
-    {
-        uint8_t statusint = 0;
-        ESP_RETURN_ON_ERROR(qmi8658c_read_statusint_raw(&statusint), TAG,
-                            "read ctrl9 statusint failed");
-        if ((statusint & QMI8658C_STATUSINT_CTRL9_DONE) != 0)
-        {
-            ESP_RETURN_ON_ERROR(qmi8658c_write_byte(QMI8658C_REG_CTRL9,
-                                                    QMI8658C_CTRL9_CMD_ACK),
-                                TAG, "ack ctrl9 failed");
-            for (int clear_try = 0; clear_try < 1000; ++clear_try)
-            {
-                ESP_RETURN_ON_ERROR(qmi8658c_read_statusint_raw(&statusint),
-                                    TAG,
-                                    "read statusint after ctrl9 ack failed");
-                if ((statusint & QMI8658C_STATUSINT_CTRL9_DONE) == 0)
-                {
-                    return ESP_OK;
-                }
-                vTaskDelay(pdMS_TO_TICKS(1));
-            }
-
-            ESP_LOGW(TAG, "ctrl9 command 0x%02x ack clear timeout", command);
-            return ESP_ERR_TIMEOUT;
-        }
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
-
-    ESP_LOGW(TAG, "ctrl9 command 0x%02x timeout", command);
-    return ESP_ERR_TIMEOUT;
-}
-
-static esp_err_t qmi8658c_enable_statusint_ctrl9_handshake(void)
-{
-    uint8_t ctrl8 = 0;
-    ESP_RETURN_ON_ERROR(qmi8658c_read_bytes(QMI8658C_REG_CTRL8, &ctrl8, 1),
-                        TAG, "read ctrl8 failed");
-    if ((ctrl8 & QMI8658C_CTRL8_CTRL9_HANDSHAKE_STATUSINT) != 0)
-    {
-        return ESP_OK;
-    }
-
-    ctrl8 |= QMI8658C_CTRL8_CTRL9_HANDSHAKE_STATUSINT;
-    return qmi8658c_write_byte(QMI8658C_REG_CTRL8, ctrl8);
-}
-
-static esp_err_t qmi8658c_read_statusint_raw(uint8_t *statusint)
-{
-    ESP_RETURN_ON_FALSE(statusint != NULL, ESP_ERR_INVALID_ARG, TAG,
-                        "statusint is null");
-    return qmi8658c_read_bytes(QMI8658C_REG_STATUSINT, statusint, 1);
-}
-
 static bool qmi8658c_accel_odr_code_valid(uint8_t odr)
 {
     /*
@@ -468,6 +396,77 @@ static bool qmi8658c_gyro_odr_code_valid(uint8_t odr)
 {
     // 手册 CTRL3 表中 gyro ODR 仅 0x0-0x8 有效，0x9-0xF 标为 N/A。
     return odr <= 0x08;
+}
+
+static int32_t qmi8658c_accel_lsb_per_g(uint8_t accel_fs)
+{
+    /*
+     * CTRL2 accel full-scale code 使用常见 QMI8658C 量程表：
+     * 0=±2g, 1=±4g, 2=±8g, 3=±16g。后续若启用其它编码，
+     * 必须先补手册证据和对应换算，避免物理量 API 静默输出错误单位。
+     */
+    switch (accel_fs)
+    {
+    case 0:
+        return 16384;
+    case 1:
+        return 8192;
+    case 2:
+        return 4096;
+    case 3:
+        return 2048;
+    default:
+        return 0;
+    }
+}
+
+static float qmi8658c_accel_raw_to_mps2(int16_t raw, uint8_t accel_fs)
+{
+    const int32_t lsb_per_g = qmi8658c_accel_lsb_per_g(accel_fs);
+    if (lsb_per_g <= 0)
+    {
+        return 0.0f;
+    }
+    return ((float)raw / (float)lsb_per_g) * k_standard_gravity;
+}
+
+static int32_t qmi8658c_gyro_lsb_per_dps(uint8_t gyro_fs)
+{
+    /*
+     * CTRL3 gyro full-scale code：0=±16dps, 1=±32dps, ... 7=±2048dps。
+     * QMI8658C 使用 16-bit 二补码输出，因此 LSB/dps 随量程每档减半。
+     */
+    switch (gyro_fs)
+    {
+    case 0:
+        return 2048;
+    case 1:
+        return 1024;
+    case 2:
+        return 512;
+    case 3:
+        return 256;
+    case 4:
+        return 128;
+    case 5:
+        return 64;
+    case 6:
+        return 32;
+    case 7:
+        return 16;
+    default:
+        return 0;
+    }
+}
+
+static float qmi8658c_gyro_raw_to_dps(int16_t raw, uint8_t gyro_fs)
+{
+    const int32_t lsb_per_dps = qmi8658c_gyro_lsb_per_dps(gyro_fs);
+    if (lsb_per_dps <= 0)
+    {
+        return 0.0f;
+    }
+    return (float)raw / (float)lsb_per_dps;
 }
 
 static int16_t qmi8658c_decode_i16(const uint8_t *data)

@@ -12,7 +12,6 @@ from _stdio import configure_utf8_stdio
 from query import (
     SCOPE_ALL,
     SCOPE_ARCHIVE,
-    SCOPE_HANDOFFS,
     SCOPE_KNOWLEDGE,
     SCOPE_MIXED,
     SCOPE_PLANS,
@@ -140,7 +139,6 @@ def main() -> int:
             SCOPE_PROCEDURES,
             SCOPE_RUNS,
             SCOPE_PLANS,
-            SCOPE_HANDOFFS,
             SCOPE_ARCHIVE,
             SCOPE_ALL,
         ],

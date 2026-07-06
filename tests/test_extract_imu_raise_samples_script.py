@@ -7,7 +7,7 @@ from tests.main_paths import IMU_RAISE_SAMPLE_SCRIPT
 
 
 class ExtractImuRaiseSamplesScriptTests(unittest.TestCase):
-    def test_script_extracts_event_summary_and_dq_frames(self) -> None:
+    def test_script_extracts_event_summary_and_physical_frames(self) -> None:
         spec = importlib.util.spec_from_file_location(
             "extract_imu_raise_samples", IMU_RAISE_SAMPLE_SCRIPT
         )
@@ -18,10 +18,10 @@ class ExtractImuRaiseSamplesScriptTests(unittest.TestCase):
 
         log_text = "\n".join(
             [
-                "I (1000) imu_service: wom_event: event_id=1 source=poll gpio=21 level=1 statusint=0x02 int1_mirror=1 status1=0x04 raw_accel=(10,-20,-16000) raw_gyro=(100,-200,300) action=log_only",
-                "I (1040) imu_service: imu_csv: source=ae_dq,label=unknown,event_id=1,trigger=poll,index=0,ready=1,clipped=0,dqw=16380,dqx=10,dqy=20,dqz=30,frame_mdeg=120,total_mdeg=120,status0=0x0b,ae1=0x08,ae2=0x00",
-                "I (1080) imu_service: final_pose: event_id=1 source=poll pass=1 norm_pass=1 stable_pass=1 face_pass=1 accel=(11,-21,-16100) norm_mg=1002 stability_mg=25 face_axis=-Z face_threshold_raw=-6500 action=log_only",
-                "I (1120) imu_service: raise_result: event_id=1 source=poll raise_detected=1 motion_pass=1 final_pose_pass=1 reject_reason=PASS valid_dq=12 clipped=0 total_mdeg=45000 max_frame_mdeg=9000 final_norm_mg=1002 final_stability_mg=25 final_accel=(11,-21,-16100) action=log_only",
+                "I (1000) imu_service: wom_event: event_id=1 source=poll gpio=21 level=1 statusint=0x02 int1_mirror=1 status1=0x04 accel_mg=(1,-1,-977) action=log_only",
+                "I (1040) imu_service: imu_csv: source=physical_6axis,label=unknown,event_id=1,trigger=poll,index=0,ax_mg=1,ay_mg=-1,az_mg=-977,gx_mdps=781,gy_mdps=-1563,gz_mdps=2344,nx=1,ny=-1,nz=-1000,motion_detected=1,motion_reason=RAISE_DETECTED,roll_delta_deg=-45",
+                "I (1080) imu_service: final_pose: event_id=1 source=poll pass=1 norm_pass=1 stable_pass=1 face_pass=1 accel_mg=(1,-1,-982) gyro_mdps=(781,-1563,2344) norm_mg=1002 stability_mg=25 face_axis=-Z face_threshold_mg=-397 action=log_only",
+                "I (1120) imu_service: raise_result: event_id=1 source=poll raise_detected=1 motion_pass=1 final_pose_pass=1 reject_reason=PASS motion_samples=16 motion_reason=RAISE_DETECTED roll_delta_deg=-45 final_norm_mg=1002 final_stability_mg=25 final_accel_mg=(1,-1,-982) final_gyro_mdps=(781,-1563,2344) action=log_only",
             ]
         )
 
@@ -45,13 +45,15 @@ class ExtractImuRaiseSamplesScriptTests(unittest.TestCase):
         self.assertEqual(event_rows[0]["event_id"], "1")
         self.assertEqual(event_rows[0]["raise_detected"], "1")
         self.assertEqual(event_rows[0]["reject_reason"], "PASS")
-        self.assertEqual(event_rows[0]["total_mdeg"], "45000")
-        self.assertEqual(event_rows[0]["raw_gz"], "300")
-        self.assertEqual(event_rows[0]["final_z"], "-16100")
+        self.assertEqual(event_rows[0]["motion_samples"], "16")
+        self.assertEqual(event_rows[0]["wom_az_mg"], "-977")
+        self.assertEqual(event_rows[0]["final_az_mg"], "-982")
+        self.assertEqual(event_rows[0]["final_gz_mdps"], "2344")
         self.assertEqual(len(frame_rows), 1)
         self.assertEqual(frame_rows[0]["trigger"], "poll")
-        self.assertEqual(frame_rows[0]["status0"], "0b")
-        self.assertEqual(frame_rows[0]["frame_mdeg"], "120")
+        self.assertEqual(frame_rows[0]["az_mg"], "-977")
+        self.assertEqual(frame_rows[0]["gz_mdps"], "2344")
+        self.assertEqual(frame_rows[0]["motion_reason"], "RAISE_DETECTED")
 
 
 if __name__ == "__main__":
