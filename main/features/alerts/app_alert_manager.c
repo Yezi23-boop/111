@@ -64,6 +64,8 @@ static const char *app_alert_label_to_zh(app_alert_label_t label)
         return "警笛";
     case APP_ALERT_LABEL_DANGER:
         return "危险声音";
+    case APP_ALERT_LABEL_FALL:
+        return "跌倒";
     case APP_ALERT_LABEL_NONE:
     default:
         return "无";

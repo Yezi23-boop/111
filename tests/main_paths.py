@@ -233,3 +233,16 @@ OFFICIAL_CHAT_DIR = REPO_ROOT / "components" / "official_chat"
 OFFICIAL_CHAT_HEADER = OFFICIAL_CHAT_DIR / "include" / "official_chat.h"
 OFFICIAL_CHAT_OTA_SOURCE = OFFICIAL_CHAT_DIR / "ota.cc"
 OFFICIAL_CHAT_C_API_SOURCE = OFFICIAL_CHAT_DIR / "official_chat_c_api.cc"
+
+FALL_DETECTION_INFERENCE_DIR = REPO_ROOT / "components" / "fall_detection_inference"
+FALL_MODEL_RUNNER_HEADER = FALL_DETECTION_INFERENCE_DIR / "include" / "fall_model_runner.h"
+FALL_MODEL_RUNNER_SOURCE = FALL_DETECTION_INFERENCE_DIR / "fall_model_runner.cpp"
+FALL_DETECTION_INFERENCE_CMAKE = FALL_DETECTION_INFERENCE_DIR / "CMakeLists.txt"
+FALL_DETECTION_MODEL_ASSET = (
+    FALL_DETECTION_INFERENCE_DIR
+    / "models"
+    / "esp32s3"
+    / "cnn_c24_pool225_do015_e80_with_test.espdl"
+)
+FALL_DETECTION_SERVICE_SOURCE = SERVICES_DIR / "fall_detection_service.c"
+FALL_DETECTION_SERVICE_HEADER = SERVICES_DIR / "fall_detection_service.h"

@@ -53,6 +53,7 @@ set(service_srcs
     ${CMAKE_CURRENT_LIST_DIR}/services/system_time_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/imu_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/fall_detection_service.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/startup_readiness.c
 
@@ -229,6 +230,7 @@ idf_component_register(
         traffic_inference
 
         espdl_inference
+        fall_detection_inference
 
         network_manager
 

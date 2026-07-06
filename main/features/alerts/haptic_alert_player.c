@@ -4,8 +4,10 @@
 
 #include "app/board_ds2413_motor.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "services/power_policy.h"
@@ -138,12 +140,14 @@ esp_err_t haptic_alert_player_play_initial_danger_once(void)
     }
 
     TaskHandle_t created_handle = NULL;
-    const BaseType_t task_created = xTaskCreate(haptic_alert_player_task,
-                                                "haptic_alert",
-                                                HAPTIC_ALERT_TASK_STACK_SIZE,
-                                                NULL,
-                                                HAPTIC_ALERT_TASK_PRIORITY,
-                                                &created_handle);
+    const BaseType_t task_created = xTaskCreateWithCaps(
+        haptic_alert_player_task,
+        "haptic_alert",
+        HAPTIC_ALERT_TASK_STACK_SIZE,
+        NULL,
+        HAPTIC_ALERT_TASK_PRIORITY,
+        &created_handle,
+        MALLOC_CAP_SPIRAM);
     if (task_created != pdPASS)
     {
         taskENTER_CRITICAL(&s_haptic_state.lock);

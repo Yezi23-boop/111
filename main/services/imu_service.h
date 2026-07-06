@@ -4,9 +4,13 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "imu_sensor.h"
 
 #define IMU_SERVICE_SAMPLE_RATE_HZ 50U
 #define IMU_SERVICE_WINDOW_FRAME_COUNT 200U
+#define IMU_SERVICE_WINDOW_PUBLISH_STRIDE_FRAMES 50U
 
 #ifdef __cplusplus
 extern "C"
@@ -60,6 +64,23 @@ extern "C"
     } imu_service_snapshot_t;
 
     /**
+     * @brief IMU service 发布给上层算法的完整加速度窗口副本。
+     *
+     * 窗口固定为 50Hz / 200 帧 / 4 秒。`accel` 保持芯片寄存器坐标系下的
+     * 物理量 `m/s^2`，模型坐标系重映射由消费方负责。
+     */
+    typedef struct
+    {
+        uint32_t sequence; /**< service 生成的窗口序号。 */
+        uint32_t source_sample_count; /**< 生成窗口时累计成功采样数。 */
+        uint16_t frame_count;         /**< 固定为 `IMU_SERVICE_WINDOW_FRAME_COUNT`。 */
+        uint16_t sample_rate_hz;      /**< 固定为 `IMU_SERVICE_SAMPLE_RATE_HZ`。 */
+        int64_t start_time_us;        /**< 窗口第一帧时间戳，单位微秒。 */
+        int64_t end_time_us;          /**< 窗口最后一帧时间戳，单位微秒。 */
+        imu_sensor_accel_t accel[IMU_SERVICE_WINDOW_FRAME_COUNT]; /**< 逐帧加速度。 */
+    } imu_service_accel_window_t;
+
+    /**
      * @brief 初始化 IMU 服务内部状态。
      *
      * @return `ESP_OK` 表示初始化完成。
@@ -83,6 +104,18 @@ extern "C"
      * @return `ESP_OK` 表示复制成功；`ESP_ERR_INVALID_ARG` 表示参数为空。
      */
     esp_err_t imu_service_get_snapshot(imu_service_snapshot_t *out);
+
+    /**
+     * @brief 注册 IMU 完整窗口输出队列。
+     *
+     * 队列 item 必须是 `imu_service_accel_window_t`，推荐长度为 1。
+     * `imu_service` 使用 `xQueueOverwrite()` 发布最新窗口，避免模型推理慢时阻塞
+     * 50Hz 采样 task。传入 `NULL` 表示取消注册。
+     *
+     * @param[in] queue 接收窗口副本的 FreeRTOS queue。
+     * @return `ESP_OK` 表示注册成功。
+     */
+    esp_err_t imu_service_set_window_queue(QueueHandle_t queue);
 
     /**
      * @brief 将 IMU 服务状态转换为稳定日志文本。

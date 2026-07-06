@@ -5,6 +5,7 @@
 #include "app/board_imu.h"
 #include "driver/gpio.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -43,10 +44,13 @@ typedef struct
     TaskHandle_t task_handle;
     portMUX_TYPE lock;
     imu_service_snapshot_t snapshot;
-    imu_service_ring_sample_t sample_ring[IMU_SERVICE_WINDOW_FRAME_COUNT];
+    imu_service_ring_sample_t *sample_ring;
     uint16_t sample_write_index;
     uint16_t sample_ring_count;
     int64_t last_sample_time_us;
+    QueueHandle_t window_queue;
+    uint32_t window_sequence;
+    imu_service_accel_window_t *publish_window;
 } imu_service_context_t;
 
 static const imu_service_profile_t k_imu_service_profile = {
@@ -76,9 +80,13 @@ static imu_service_context_t s_imu_service = {
         .window_frame_count = IMU_SERVICE_WINDOW_FRAME_COUNT,
         .last_error = ESP_OK,
     },
+    .sample_ring = NULL,
     .sample_write_index = 0,
     .sample_ring_count = 0,
     .last_sample_time_us = 0,
+    .window_queue = NULL,
+    .window_sequence = 0,
+    .publish_window = NULL,
 };
 
 static void IRAM_ATTR imu_service_int1_isr(void *arg)
@@ -176,8 +184,36 @@ static void imu_service_store_sampling_started(void)
     taskEXIT_CRITICAL(&s_imu_service.lock);
 }
 
-static void imu_service_store_sample(const imu_sensor_sample_t *sample,
-                                     int64_t now_us)
+static esp_err_t imu_service_prepare_buffers(void)
+{
+    if (s_imu_service.sample_ring == NULL)
+    {
+        s_imu_service.sample_ring =
+            (imu_service_ring_sample_t *)heap_caps_calloc(
+                IMU_SERVICE_WINDOW_FRAME_COUNT,
+                sizeof(imu_service_ring_sample_t),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        ESP_RETURN_ON_FALSE(s_imu_service.sample_ring != NULL,
+                            ESP_ERR_NO_MEM, TAG,
+                            "sample ring psram allocation failed");
+    }
+
+    if (s_imu_service.publish_window == NULL)
+    {
+        s_imu_service.publish_window =
+            (imu_service_accel_window_t *)heap_caps_calloc(
+                1U, sizeof(imu_service_accel_window_t),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        ESP_RETURN_ON_FALSE(s_imu_service.publish_window != NULL,
+                            ESP_ERR_NO_MEM, TAG,
+                            "publish window psram allocation failed");
+    }
+
+    return ESP_OK;
+}
+
+static uint32_t imu_service_store_sample(const imu_sensor_sample_t *sample,
+                                         int64_t now_us)
 {
     int32_t interval_us = 0;
     if (s_imu_service.last_sample_time_us > 0)
@@ -198,12 +234,14 @@ static void imu_service_store_sample(const imu_sensor_sample_t *sample,
 
     taskENTER_CRITICAL(&s_imu_service.lock);
     s_imu_service.snapshot.sample_count++;
+    const uint32_t sample_count = s_imu_service.snapshot.sample_count;
     s_imu_service.snapshot.last_sample_time_us = now_us;
     s_imu_service.snapshot.last_sample_interval_us = interval_us;
     s_imu_service.snapshot.sample_window_ready =
         s_imu_service.sample_ring_count >= IMU_SERVICE_WINDOW_FRAME_COUNT;
     s_imu_service.snapshot.last_error = ESP_OK;
     taskEXIT_CRITICAL(&s_imu_service.lock);
+    return sample_count;
 }
 
 static void imu_service_store_sample_error(esp_err_t error)
@@ -223,6 +261,78 @@ static esp_err_t imu_service_validate_board_config(
                         ESP_ERR_INVALID_ARG, TAG,
                         "qmi i2c addr is not 7-bit");
     return ESP_OK;
+}
+
+static bool imu_service_build_accel_window(uint32_t source_sample_count,
+                                           imu_service_accel_window_t *window)
+{
+    if (window == NULL ||
+        s_imu_service.sample_ring_count < IMU_SERVICE_WINDOW_FRAME_COUNT)
+    {
+        return false;
+    }
+
+    const uint16_t start_index = s_imu_service.sample_write_index;
+    const uint16_t end_index = (uint16_t)((start_index +
+                                           IMU_SERVICE_WINDOW_FRAME_COUNT - 1U) %
+                                          IMU_SERVICE_WINDOW_FRAME_COUNT);
+
+    window->sequence = ++s_imu_service.window_sequence;
+    window->source_sample_count = source_sample_count;
+    window->frame_count = IMU_SERVICE_WINDOW_FRAME_COUNT;
+    window->sample_rate_hz = IMU_SERVICE_SAMPLE_RATE_HZ;
+    window->start_time_us = s_imu_service.sample_ring[start_index].time_us;
+    window->end_time_us = s_imu_service.sample_ring[end_index].time_us;
+
+    for (uint16_t frame = 0; frame < IMU_SERVICE_WINDOW_FRAME_COUNT; ++frame)
+    {
+        const uint16_t ring_index =
+            (uint16_t)((start_index + frame) % IMU_SERVICE_WINDOW_FRAME_COUNT);
+        window->accel[frame] =
+            s_imu_service.sample_ring[ring_index].physical.accel;
+    }
+    return true;
+}
+
+static void imu_service_publish_window_if_ready(uint32_t sample_count)
+{
+    if (sample_count < IMU_SERVICE_WINDOW_FRAME_COUNT ||
+        (sample_count % IMU_SERVICE_WINDOW_PUBLISH_STRIDE_FRAMES) != 0U)
+    {
+        return;
+    }
+
+    taskENTER_CRITICAL(&s_imu_service.lock);
+    QueueHandle_t window_queue = s_imu_service.window_queue;
+    taskEXIT_CRITICAL(&s_imu_service.lock);
+    if (window_queue == NULL || s_imu_service.publish_window == NULL)
+    {
+        return;
+    }
+
+    if (!imu_service_build_accel_window(sample_count,
+                                        s_imu_service.publish_window))
+    {
+        return;
+    }
+
+    const BaseType_t sent =
+        xQueueOverwrite(window_queue, s_imu_service.publish_window);
+    if (sent == pdPASS)
+    {
+        ESP_LOGI(TAG,
+                 "window_published: sequence=%u source_sample_count=%u start_us=%lld end_us=%lld frames=%u",
+                 (unsigned)s_imu_service.publish_window->sequence,
+                 (unsigned)s_imu_service.publish_window->source_sample_count,
+                 (long long)s_imu_service.publish_window->start_time_us,
+                 (long long)s_imu_service.publish_window->end_time_us,
+                 (unsigned)s_imu_service.publish_window->frame_count);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "window_publish_failed: sequence=%u",
+                 (unsigned)s_imu_service.publish_window->sequence);
+    }
 }
 
 static esp_err_t imu_service_install_int1_isr(const board_imu_config_t *config)
@@ -370,9 +480,9 @@ static void imu_service_run_sampling_loop(void)
         const int64_t now_us = esp_timer_get_time();
         if (ret == ESP_OK)
         {
-            imu_service_store_sample(&sample, now_us);
+            const uint32_t sample_count =
+                imu_service_store_sample(&sample, now_us);
             taskENTER_CRITICAL(&s_imu_service.lock);
-            const uint32_t sample_count = s_imu_service.snapshot.sample_count;
             const int32_t interval_us =
                 s_imu_service.snapshot.last_sample_interval_us;
             const bool window_ready = s_imu_service.snapshot.sample_window_ready;
@@ -392,6 +502,7 @@ static void imu_service_run_sampling_loop(void)
                          (int)imu_service_gyro_axis_mdps(sample.gyro.y),
                          (int)imu_service_gyro_axis_mdps(sample.gyro.z));
             }
+            imu_service_publish_window_if_ready(sample_count);
         }
         else
         {
@@ -427,6 +538,9 @@ esp_err_t imu_service_init(void)
     {
         return ESP_OK;
     }
+
+    ESP_RETURN_ON_ERROR(imu_service_prepare_buffers(), TAG,
+                        "imu psram buffer allocation failed");
 
     taskENTER_CRITICAL(&s_imu_service.lock);
     s_imu_service.snapshot.state = IMU_SERVICE_STATE_STOPPED;
@@ -478,6 +592,16 @@ esp_err_t imu_service_get_snapshot(imu_service_snapshot_t *out)
     taskENTER_CRITICAL(&s_imu_service.lock);
     *out = s_imu_service.snapshot;
     taskEXIT_CRITICAL(&s_imu_service.lock);
+    return ESP_OK;
+}
+
+esp_err_t imu_service_set_window_queue(QueueHandle_t queue)
+{
+    taskENTER_CRITICAL(&s_imu_service.lock);
+    s_imu_service.window_queue = queue;
+    taskEXIT_CRITICAL(&s_imu_service.lock);
+
+    ESP_LOGI(TAG, "window_queue_%s", queue != NULL ? "registered" : "cleared");
     return ESP_OK;
 }
 

@@ -26,6 +26,7 @@
 #include "services/wakeup_evidence_service.h"
 #include "services/system_time_service.h"
 #include "services/imu_service.h"
+#include "services/fall_detection_service.h"
 #include "services/background_service_manager.h"
 #include "services/startup_readiness.h"
 #include "services/runtime_resource_gate_board_test.h"
@@ -289,6 +290,19 @@ static void start_deferred_services(void)
     else
     {
         ESP_LOGI(TAG, "boot_stage: imu_service_ready");
+    }
+
+    /*
+     * Fall detection v1 只消费 IMU service 的完整 4 秒窗口并输出日志。
+     * 它不直接读取 IMU 硬件，也不触发 UI 或告警策略。
+     */
+    if (fall_detection_service_start() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Fall detection service start failed");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "boot_stage: fall_detection_ready");
     }
 }
 

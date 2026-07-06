@@ -1,13 +1,13 @@
 ---
 id: plan-2026-06-05-imu-runtime-framework
-tags: imu, qmi8658c, imu_sensor, framework, board-facts, service, physical-6axis, unified-config
-summary: 只定 IMU 运行框架：driver/board/adapter/service/algorithm 边界、统一配置入口、物理六轴输出与后续采样/识别扩展点。
+tags: imu, qmi8658c, imu_sensor, framework, board-facts, service, physical-6axis, unified-config, fall-detection, esp-dl
+summary: 只定 IMU 运行框架：driver/board/adapter/service/algorithm 边界、统一配置入口、物理六轴输出、50Hz 窗口和跌倒模型部署扩展点。
 last_reviewed: 2026-07-07
 memory_type: task
 scope: imu
 status: active
-owners: components/qmi8658c, components/imu_sensor, main/app/board_imu.c, main/services/imu_service.c, components/imu_motion
-triggers: IMU framework, imu runtime, qmi8658c, imu_sensor, board_imu, imu_service, imu_motion, physical_6axis, unified config
+owners: components/qmi8658c, components/imu_sensor, main/app/board_imu.c, main/services/imu_service.c, main/services/fall_detection_service.c, components/fall_detection_inference, components/imu_motion
+triggers: IMU framework, imu runtime, qmi8658c, imu_sensor, board_imu, imu_service, imu_motion, physical_6axis, unified config, fall detection, ESP-DL
 evidence_level: design
 route_area: "IMU / motion framework"
 ---
@@ -41,13 +41,14 @@ board_imu board facts
   -> imu_sensor generic IMU API
   -> qmi8658c probe/config/read
   -> imu_service 50Hz ring buffer
-  -> service snapshot
-  -> future sampling window / imu_motion / fall detection algorithm
+  -> service snapshot / fall_detection_service window queue
+  -> fall_detection_inference ESP-DL runner
+  -> fall detection snapshot / logs
 ```
 
 - 当前硬件事实：2026-06-04 COM3 样板曾按板测归为 `QMI_INT1 -> GPIO21` 浮空/开路风险；2026-07-07 当前 COM7 板已闭环捕获 `wom_event source=irq gpio=21 statusint=0x02 status1=0x04`，证明当前板 GPIO IRQ 链路可用。当前固件不启用 WoM、不配置芯片 INT 事件源；GPIO21 ISR 只验证 ESP32 侧中断路径与 service owner 分层。
 - 当前配置语义：`imu_service` 启动后只做探测和统一配置，使用最大动态范围：加速度 `accel_fs=3`（±16g），陀螺仪 `gyro_fs=7`（±2048 dps），`int1_source/int2_source=QMI8658C_INT_SOURCE_DISABLED`。
-- 当前结果语义：`imu_service` 的 `RUNNING/configured=true` 表示芯片完成统一配置、GPIO21 ISR 已安装，且 service 会进入 50Hz 采样循环；这仍不表示已经开始抬腕识别或跌倒模型推理。
+- 当前结果语义：`imu_service` 的 `RUNNING/configured=true` 表示芯片完成统一配置、GPIO21 ISR 已安装，且 service 会进入 50Hz 采样循环；`fall_detection_service` 的 `RUNNING/model_ready=true` 表示模型已加载并通过内嵌 test vector。跌倒告警第一版已接入轻量状态机：单窗口 `fall_prob>=0.80` 确认，复用 `app_alert_manager` 做红屏/震动/提示音，并通过 watch endpoint 上传一次；连续 3 个窗口 `fall_prob<0.50` 后清除。
 
 ## Framework Contract
 
@@ -55,6 +56,7 @@ board_imu board facts
 - 后续重新引入 motion event 时，每个 event 至少保留：event id、trigger source、sample interval、frame count、accel/gyro 物理量或算法标准化值、final accel norm、stability 指标、`raise_detected`、`reject_reason`。
 - CSV 样本日志是后续调规则的接口，不是最终产品 UI；重新启用采样日志时字段要稳定，允许后续增加列，但不要改已有列含义。
 - `imu_service` getter 只能读 snapshot，不做 I2C、阻塞等待或状态推进；真实采样和错误恢复必须留在 owner task。
+- `fall_detection_service` 只能消费 `imu_service` 投递的完整 200 帧加速度窗口副本，不直接访问 `qmi8658c_*` 或 `imu_sensor_read()`；模型输入坐标系第一版固定为 `accX=-chip_accel.x`、`accY=+chip_accel.y`、`accZ=-chip_accel.z`，按帧交错展开为 600 个 float。
 - `imu_motion` 第一版可以是占位/简单规则，但必须保持输入输出接口稳定，让后续 dQ、自研姿态、统计规则或轻量 ML 都能替换进去。
 
 ## Progress
@@ -73,6 +75,12 @@ board_imu board facts
 - `[x]` 2026-07-07：按用户要求移除 `app_main.c` 中包住 `imu_service_start()` 的 `#if 0`，IMU service 现在随 deferred services 默认启动，开机即可验证 probe/config/GPIO21 ISR 安装日志。
 - `[x]` 2026-07-07：按用户要求先做稳定 50Hz 采样；`imu_service` 使用 `vTaskDelayUntil` 每 20ms 调用 `imu_sensor_read()`，写入 200 帧环形缓冲，并在 snapshot 中发布 `sampling_active/sample_count/sample_error_count/last_sample_interval_us/sample_window_ready`。
 - `[x]` 2026-07-07：COM7 闭环验证 50Hz 采样主线；最新 QMI 读法按 `STATUS0 -> TIMESTAMP -> TEMP -> AX_L 12 bytes` 对齐，`sample_50hz` 从 `count=1` 持续到 `count=1350`，`count=200` 后 `window_ready=1`，未见 panic。
+- `[x]` 2026-07-07：记录当前板 IMU 六面安装方向：表盘朝上为 QMI8658C `-Z`，表背朝上为 `+Z`，USB/手表右侧朝上为 `-X`，手表左侧朝上为 `+X`，手表顶部朝上为 `+Y`，手表底部朝上为 `-Y`。
+- `[x]` 2026-07-07：部署自训练 ESP-DL 跌倒模型 `cnn_c24_pool225_do015_e80_with_test.espdl`，SHA256=`10526143f02d047b0e5b2c29f29802396171998cfb4071cb54d7858375a98d54`；新增 `components/fall_detection_inference`，校验 `FLOAT [1,600]` 输入、2 类 `[ADL,FALL]` 输出并运行 `Model::test()`。
+- `[x]` 2026-07-07：`imu_service` 新增完整窗口出口，50Hz/200 帧 ring 满后每 50 帧用 queue length 1 + `xQueueOverwrite()` 投递完整加速度窗口副本；`fall_detection_service` 消费窗口、做 `[-x,+y,-z]` 轴向重映射、按帧交错 flatten、推理并发布只读 snapshot。
+- `[x]` 2026-07-07：COM7 闭环验证 fall 部署链路；日志出现模型加载、`dl::Model: Test Pass!`、`sampling_started: rate_hz=50 window_frames=200`、`window_published` 和连续 `fall_window_result`，当前静止样本输出 ADL，`fall_prob=0.1480`，推理耗时约 14-30ms，未见 panic。
+- `[x]` 2026-07-07：跌倒确认告警状态机接入完成；`IDLE -> FALL_CONFIRMED` 不再要求连续 2 个 FALL，单窗口 `fall_prob>=0.80` 即触发一次本地完整告警和 App 上传；`FALL_CONFIRMED` 期间不重复告警/上传，连续 3 个 `fall_prob<0.50` 后 clear。
+- `[x]` 2026-07-07：将 IMU/Fall 大窗口缓冲迁到 PSRAM：`imu_service` 的 200 帧 ring 与 publish window、`fall_detection_service` 的 queue storage/current window/model input 均改为 `heap_caps_*` + `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`；`fall_detect` task 栈改为 `xTaskCreateWithCaps(..., MALLOC_CAP_SPIRAM)`。
 - `[ ]` 后续补离线 replay/evaluator，把真实样本与规则阈值调参从固件循环中拆出来。
 - `[ ]` 后续讨论并实现真实抬腕识别策略。
 
@@ -88,12 +96,18 @@ board_imu board facts
 - 2026-07-07：用户要求“不需要 `#if 0`”，确认 IMU service 默认启动；该启动只验证统一配置和 GPIO21 ISR 事件计数，不表示已经开启连续采样或跌倒/抬腕算法。
 - 2026-07-07：用户确认第一版先走稳定 50Hz 采样，而不是 FIFO Watermark；当前只在 `imu_service` 内缓存 200 帧窗口，不投递 fall service，不做模型推理。
 - 2026-07-07：当前 QMI8658C 读取方法按 Waveshare 对齐口径收口：`CTRL1=0x60`、`CTRL5=0x03`，读取时分段取 `STATUS0`、24-bit timestamp、temperature 和从 `AX_L` 开始的 12 字节六轴原始数据。
+- 2026-07-07：当前板六面映射只作为 board fact 记录在 `board_imu`，暂不新增通用坐标转换 API；后续 fall/raise 的模型输入坐标系需要基于该事实单独定义。
+- 2026-07-07：用户确认当前仓库负责部署、`D:\esp32S3\imu` 负责训练；本轮部署已验证的自训练 ESP-DL 模型，不修改 `managed_components`、不改 ESP-DL 源码、不新增自定义算子。
+- 2026-07-07：用户将 fall detection 第一版从“只做日志闭环”推进到“确认即告警”。当前默认阈值 `FALL>=0.80`，模型内已有 Softmax，板端只读取 `[ADL,FALL]` 概率，不做二次 Softmax；单个 4 秒窗口超过阈值即可确认，不采用连续 2 个 FALL 策略；同一次 `FALL_CONFIRMED` 期间不重复触发本地告警或 App 上传。
 
 ## Validation and Acceptance
 
 - source test：锁定 service 不硬编码 I2C 地址，driver 不消费 board facts，`imu_motion` 不访问硬件/FreeRTOS；锁定 public header 不再出现 WoM API/type；锁定 `imu_service` 不直接 include/call `qmi8658c_*`，GPIO ISR/task notification 只出现在 service 层。
-- board evidence：当前第一版要求正常固件可 build/app-flash；开机日志应出现 `started: sampling_50hz`、`probe:`、`configured:`、`int1_gpio_ready`、`sampling_started: rate_hz=50 window_frames=200`、周期性 `sample_50hz:` 和 `boot_stage: imu_service_ready`。后续接 fall service 时，再补完整窗口副本投递和模型日志验收。
+- board evidence：当前第一版要求正常固件可 build/app-flash；开机日志应出现 `started: sampling_50hz`、`probe:`、`configured:`、`int1_gpio_ready`、`sampling_started: rate_hz=50 window_frames=200`、周期性 `sample_50hz:`、`boot_stage: imu_service_ready`、`Model::test()` 通过、`window_published` 和 `fall_window_result`。
 - 2026-07-07 COM7 evidence：`board_logs/2026-07-07-06-11-28-serial.log` 显示 `configured registers: ctrl1=0x60 ctrl2=0x33 ctrl3=0x73 ctrl5=0x03 ctrl7=0x03`，`sample_50hz count=200 window_ready=1`，采集至 `count=1350`，`panic_log_seen=0`。
+- 2026-07-07 COM7 fall evidence：`board_logs/2026-07-07-06-39-36-fall-detection-espdl.log` 显示 `model loaded: input=float exp=0 shape=[1, 600], output=float exp=0 shape=[1, 2]`、`dl::Model: Test Pass!`、`window_published: sequence=1 source_sample_count=200`、`fall_window_result: sequence=1 ... label=ADL(0) ... adl_prob=0.8520 fall_prob=0.1480 threshold=0.80 infer_ms=14.31`，summary `panic_log_seen=false`。
+- 2026-07-07 COM7 fall alert evidence：`board_logs/2026-07-07-07-26-15-fall-alert-state-machine-psram-alert-tasks.log` 显示 `fall_window_result: sequence=12 ... fall_prob=0.8520` 后立刻 `fall_alert_confirmed`；随后 `haptic_alert_player: initial danger haptic started/finished`、`audio_alert_player: warning playback started/finished`、`display_alert: danger overlay shown`、`fall_app_upload_queued` 和 `watch_endpoint: danger alert dispatched: type=fall prob=0.8520 seq=1`；连续 3 个低风险窗口后 `fall_alert_cleared: ... clear_windows=3`，summary `panic_log_seen=false`。
+- 2026-07-07 COM7 PSRAM buffer evidence：`board_logs/2026-07-07-07-46-41-fall-psram-window-buffers.log` 显示 `heap_init` 主 RAM 池恢复到 `142 KiB`，资源快照 `RAM: 304 KB / 332 KB (91.8%)`，`STACK: internal_free=26482 largest=24576 psram_free=6651280`；同轮仍有 `window_published`、连续 `fall_window_result`、`fall_alert_confirmed`、本地震动/提示音、`danger alert dispatched: type=fall` 和 `fall_alert_cleared`，summary `panic_log_seen=false`。
 - context validation：本文档变更至少运行 `uv run python scripts/context/validate_context.py --level standard --q "IMU runtime framework QMI8658C board_imu imu_service imu_motion" --brief`。
 - build rule：若只改本文档，不要求 `idf.py build`；若后续改 `components` 或 `main` 代码，必须跑相关 source tests 和 `idf.py build`，普通 app 改动用 `idf.py -p COM3 app-flash` 验证。
 
@@ -104,4 +118,4 @@ board_imu board facts
 
 ## Next Step
 
-- 下一步最小动作：在新训练仓库和当前部署仓库边界明确后，为未来跌倒检测设计连续 50Hz 采样 service 出口；当前仓库先保留 `imu_sensor_config()/imu_sensor_read()` 干净契约，QMI8658C 细节留在 adapter/driver 内。
+- 下一步最小动作：把真实 ADL/FALL 动作样本做离线 replay/evaluator，对比板端 `fall_prob` 与训练仓库评估结果；重点观察 `0.50~0.80` 灰区动作、误报动作和连续窗口推理耗时峰值，再决定是否需要调阈值或加入更细的产品策略。

@@ -80,6 +80,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 默认直接在当前仓库内修改，不强制使用 `worktree`。
 - 写代码时要优先保证用户可读性；默认遵循下方“代码注释规范（默认生效）”。
 - 新增/修改公开接口或非显然函数时补中文 Doxygen；关键变量、共享状态和魔法数字解释用途、单位或边界。
+- 内存分配应尽量使用外部 PSRAM（如使用 `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` 等 API），避免挤压 internal RAM；只把必须快速响应、DMA 传输或无法放在外部 RAM 的关键数据留给 internal RAM。
 
 ## ESP-IDF / 构建 / 硬件红线
 
@@ -134,7 +135,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 跨任务命令、状态、等待和资源仲裁优先使用 FreeRTOS 原语：queue、task notification、event group、mutex/critical section；避免裸 `volatile`、临时轮询或自造 flag 协议。
 - 板级事实由 `main/app/board_*` 或现有 board owner 持有；GPIO、总线地址、片选、传感器轴向、硬件阈值不得长期散落在 service 或 driver 中。
 - 资源受限路径优先静态分配或受控分配；区分 task stack、internal RAM、PSRAM、DMA-capable memory 和长期缓存，不把大对象默认放到任务栈。
-- 内存分配应尽量使用外部 PSRAM（如使用 `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` 等 API），避免挤压 internal RAM；只把必须快速响应、DMA 传输或无法放在外部 RAM 的关键数据留给 internal RAM。
 - 必要的输入、返回值和超时要检查；不要为假设场景堆叠复杂兜底、重试、状态机或包装层。
 - 新增协议字段、NVS key、状态枚举、owner 边界或跨端契约时，优先补 source test、契约测试或文档检查。
 - 算法或 AI 相关实现默认拆分为预处理、推理、后处理和模型配置，避免把阈值、量化参数、模型 I/O 和业务逻辑混写。

@@ -23,6 +23,7 @@ extern "C"
     {
         APP_ALERT_SOURCE_NONE = 0,
         APP_ALERT_SOURCE_TRAFFIC_AUDIO = 1, // 来自危险声音识别链路
+        APP_ALERT_SOURCE_FALL_DETECTION = 2, // 来自 IMU 跌倒检测链路
     } app_alert_source_t;
 
     /* 告警严重级别，目前只有危险级。 */
@@ -38,6 +39,7 @@ extern "C"
         APP_ALERT_LABEL_HORN = 1,   // 喇叭类危险音
         APP_ALERT_LABEL_SIREN = 2,  // 警笛类危险音
         APP_ALERT_LABEL_DANGER = 3, // ESP-DL 二分类危险音，尚不细分具体声源
+        APP_ALERT_LABEL_FALL = 4,   // IMU 跌倒检测确认
     } app_alert_label_t;
 
     /* 一次完整告警请求，包含来源、级别和语义标签。 */

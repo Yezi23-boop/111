@@ -6,8 +6,10 @@
 
 #include "audio_codec.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "assets/tishiyinpin_pcm.h"
@@ -141,12 +143,13 @@ esp_err_t audio_alert_player_play_warning_once(void)
     }
 
     TaskHandle_t created_handle = NULL;
-    BaseType_t task_created = xTaskCreate(audio_alert_player_task,
-                                          "audio_alert",
-                                          ALERT_PLAYER_TASK_STACK_SIZE,
-                                          NULL,
-                                          ALERT_PLAYER_TASK_PRIORITY,
-                                          &created_handle);
+    BaseType_t task_created = xTaskCreateWithCaps(audio_alert_player_task,
+                                                  "audio_alert",
+                                                  ALERT_PLAYER_TASK_STACK_SIZE,
+                                                  NULL,
+                                                  ALERT_PLAYER_TASK_PRIORITY,
+                                                  &created_handle,
+                                                  MALLOC_CAP_SPIRAM);
     if (task_created != pdPASS)
     {
         taskENTER_CRITICAL(&s_player_state.lock);

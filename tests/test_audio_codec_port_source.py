@@ -198,6 +198,8 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         self.assertIn("taskENTER_CRITICAL(&s_alert_manager_state.lock)", app_alert_manager)
         self.assertIn("portMUX_TYPE lock", audio_alert_player)
         self.assertIn("taskENTER_CRITICAL(&s_player_state.lock)", audio_alert_player)
+        self.assertIn("xTaskCreateWithCaps(audio_alert_player_task", audio_alert_player)
+        self.assertIn("MALLOC_CAP_SPIRAM", audio_alert_player)
 
 
 if __name__ == "__main__":
