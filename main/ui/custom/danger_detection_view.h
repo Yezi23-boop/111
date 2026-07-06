@@ -31,8 +31,10 @@ typedef struct {
     const char *primary_result_text;
     const char *horn_confidence_text;
     const char *siren_confidence_text;
+    const char *mic_test_status_text;
     danger_detection_view_sensitivity_mode_t sensitivity_mode;
     bool safety_monitor_enabled;
+    bool mic_test_running;
     bool alert_visible;
 } danger_detection_view_model_t;
 
@@ -40,6 +42,7 @@ typedef struct {
     danger_detection_view_action_cb_t back_action_cb;
     danger_detection_view_switch_cb_t safety_monitor_cb;
     danger_detection_view_sensitivity_cb_t sensitivity_cb;
+    danger_detection_view_action_cb_t mic_test_cb;
     void *user_data;
 } danger_detection_view_config_t;
 

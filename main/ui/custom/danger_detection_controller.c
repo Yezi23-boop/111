@@ -5,6 +5,7 @@
 
 #include "features/alerts/app_alert_manager.h"
 #include "features/danger_detection/danger_detection_service.h"
+#include "services/audio_mic_test_service.h"
 #include "services/background_service_manager.h"
 #include "danger_detection_view.h"
 #include "esp_err.h"
@@ -26,6 +27,8 @@ typedef struct {
     char primary_result_text[16];
     char horn_confidence_text[16];
     char siren_confidence_text[16];
+    char mic_test_status_text[32];
+    bool mic_test_running;
 } danger_detection_render_cache_t;
 
 static danger_detection_render_cache_t s_render_cache = {0};
@@ -223,7 +226,9 @@ static bool danger_detection_render_cache_matches(
            strcmp(cache->category_text, model->category_text) == 0 &&
            strcmp(cache->primary_result_text, model->primary_result_text) == 0 &&
            strcmp(cache->horn_confidence_text, model->horn_confidence_text) == 0 &&
-           strcmp(cache->siren_confidence_text, model->siren_confidence_text) == 0;
+           strcmp(cache->siren_confidence_text, model->siren_confidence_text) == 0 &&
+           strcmp(cache->mic_test_status_text, model->mic_test_status_text) == 0 &&
+           cache->mic_test_running == model->mic_test_running;
 }
 
 static void danger_detection_render_cache_store(
@@ -238,6 +243,7 @@ static void danger_detection_render_cache_store(
     cache->alert_visible = model->alert_visible;
     cache->safety_monitor_enabled = model->safety_monitor_enabled;
     cache->sensitivity_mode = model->sensitivity_mode;
+    cache->mic_test_running = model->mic_test_running;
     danger_detection_copy_text(cache->status_text, sizeof(cache->status_text),
                                model->status_text);
     danger_detection_copy_text(cache->category_text, sizeof(cache->category_text),
@@ -251,6 +257,9 @@ static void danger_detection_render_cache_store(
     danger_detection_copy_text(cache->siren_confidence_text,
                                sizeof(cache->siren_confidence_text),
                                model->siren_confidence_text);
+    danger_detection_copy_text(cache->mic_test_status_text,
+                               sizeof(cache->mic_test_status_text),
+                               model->mic_test_status_text);
 }
 
 static void danger_detection_back_event(void *user_data)
@@ -303,6 +312,42 @@ static void danger_detection_sensitivity_event(
     danger_detection_refresh_status();
 }
 
+static const char *danger_detection_mic_test_status_text(
+    const audio_mic_test_snapshot_t *snapshot)
+{
+    if (snapshot == NULL) {
+        return "未测试";
+    }
+
+    switch (snapshot->state) {
+        case AUDIO_MIC_TEST_STATE_RUNNING:
+            return "测试中";
+        case AUDIO_MIC_TEST_STATE_PASSED:
+            return "通过";
+        case AUDIO_MIC_TEST_STATE_FAILED:
+            if (snapshot->reason[0] != '\0') {
+                return snapshot->reason;
+            }
+            return "失败";
+        case AUDIO_MIC_TEST_STATE_IDLE:
+        default:
+            return "未测试";
+    }
+}
+
+static void danger_detection_mic_test_event(void *user_data)
+{
+    (void)user_data;
+
+    const esp_err_t ret = audio_mic_test_service_start();
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "mic test start failed: %s", esp_err_to_name(ret));
+    }
+
+    s_render_cache.valid = false;
+    danger_detection_refresh_status();
+}
+
 static void danger_detection_ensure_screen_created(void)
 {
     if (s_view != NULL) {
@@ -313,6 +358,7 @@ static void danger_detection_ensure_screen_created(void)
         .back_action_cb = danger_detection_back_event,
         .safety_monitor_cb = danger_detection_safety_monitor_event,
         .sensitivity_cb = danger_detection_sensitivity_event,
+        .mic_test_cb = danger_detection_mic_test_event,
         .user_data = NULL,
     };
 
@@ -333,6 +379,8 @@ static void danger_detection_refresh_status(void)
         danger_detection_service_get_snapshot();
     const background_service_manager_snapshot_t manager_snapshot =
         background_service_manager_get_snapshot();
+    audio_mic_test_snapshot_t mic_snapshot = {0};
+    (void)audio_mic_test_service_get_snapshot(&mic_snapshot);
     const char *last_result_text =
         danger_detection_label_text(snapshot.last_detected_label);
 
@@ -356,10 +404,14 @@ static void danger_detection_refresh_status(void)
         .primary_result_text = last_result_text,
         .horn_confidence_text = horn_confidence_text,
         .siren_confidence_text = siren_confidence_text,
+        .mic_test_status_text =
+            danger_detection_mic_test_status_text(&mic_snapshot),
         .sensitivity_mode = danger_detection_view_mode_from_service(
             danger_detection_service_get_sensitivity_mode()),
         .safety_monitor_enabled =
             manager_snapshot.danger_enabled_by_user,
+        .mic_test_running =
+            mic_snapshot.state == AUDIO_MIC_TEST_STATE_RUNNING,
         .alert_visible = manager_snapshot.danger_enabled_by_user &&
                          danger_detection_page_alert_visible(&snapshot),
     };

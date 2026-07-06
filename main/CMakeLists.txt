@@ -36,6 +36,8 @@ set(service_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_recorder.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/services/audio_mic_test_service.c
+
     ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_voice_client.c
     ${CMAKE_CURRENT_LIST_DIR}/services/watch_endpoint_service.c
     ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_ws_client.cc

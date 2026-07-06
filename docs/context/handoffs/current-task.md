@@ -12,6 +12,16 @@ evidence_level: observed
 
 # AI Memory Watch / Hermes 当前任务交接
 
+> **2026-07-05 更新：危险识别页已新增麦克风测试按钮**
+>
+> - 危险识别页新增“测麦克风”手动诊断入口；UI 显示“未测试 / 测试中 / 通过 / 失败原因”。
+> - 新增 `audio_mic_test_service` 作为麦克风测试 owner：点击按钮后在一次性 FreeRTOS task 中暂停 Safety Monitor、申请 `AUDIO_CODEC_OWNER_AUDIO_RECORDER`、设置 36dB 增益、录制 5 秒硬件原始 PCM。
+> - 输出为 `/sdcard/mic_tests/<timestamp>_mic_raw.wav` 与 JSON 报告；串口会打印 `MIC_TEST: STATS ...` 和 `MIC_TEST: DONE status=pass|fail`。
+> - 该入口只验证麦克风/I2S/ES7210/SD 录音链路，不经过 ESP-DL、不触发危险告警、不联网。
+> - 验证：相关 source tests `32 passed`，host preview 截图 `main/ui/agent_preview/artifacts/danger-mic-test-preview.png` 已生成，完整 `idf.py build` 通过。
+> - 最新真机反馈：两次测试均完整读取 `480000/480000` 字节并写出 WAV，但 `ch0_rms≈40~42`、`ch0_peak≈182~194`，用户回放反馈“几乎听不到声音”。这说明 `audio_codec -> I2S -> SD` 通路是活的，但输入幅度异常低；优先查通道映射、ES7210 channel mask、麦克风偏置/焊接/声孔，不要先从 ESP-DL 模型阈值排查。
+> - 已增强诊断：串口会逐通道打印 `MIC_TEST: CH0/CH1 rms/peak/zero_pct/clip/samples/role`，并记录 36dB 增益设置结果；如果 M 通道无输入但其他通道有输入，会显示 `通道不匹配`。下一次真机测试重点看 CH0(role=M) 和 CH1(role=R) 谁有明显 peak。
+
 > **2026-07-05 更新：危险识别三档灵敏度已接入**
 >
 > - `sensitivity_mode` 首版已实现为 `保守 / 标准 / 敏感` 三档，默认 `标准`，当前不做 NVS 持久化。

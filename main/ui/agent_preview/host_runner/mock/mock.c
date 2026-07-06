@@ -4,6 +4,7 @@
 #include "network_manager.h"
 #include "features/danger_detection/danger_detection_service.h"
 #include "services/background_service_manager.h"
+#include "services/audio_mic_test_service.h"
 #include "services/power_policy.h"
 #include "system_time.h"
 #include "services/network_service.h"
@@ -283,6 +284,16 @@ esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled) {
 static bool s_mock_danger_enabled = true;
 static danger_detection_sensitivity_mode_t s_mock_sensitivity_mode =
     DANGER_DETECTION_SENSITIVITY_STANDARD;
+static audio_mic_test_snapshot_t s_mock_mic_test_snapshot = {
+    .state = AUDIO_MIC_TEST_STATE_IDLE,
+    .last_error = ESP_OK,
+    .reason = "未测试",
+    .duration_ms = 5000,
+    .sample_rate_hz = 24000,
+    .channels = 2,
+    .bits_per_sample = 16,
+    .mic_channel_index = 0,
+};
 
 esp_err_t background_service_manager_set_danger_detection_enabled(bool enabled) {
     s_mock_danger_enabled = enabled;
@@ -352,6 +363,22 @@ esp_err_t danger_detection_service_set_sensitivity_mode(
 danger_detection_sensitivity_mode_t
 danger_detection_service_get_sensitivity_mode(void) {
     return s_mock_sensitivity_mode;
+}
+
+esp_err_t audio_mic_test_service_start(void) {
+    s_mock_mic_test_snapshot.state = AUDIO_MIC_TEST_STATE_RUNNING;
+    strncpy(s_mock_mic_test_snapshot.reason, "测试中",
+            sizeof(s_mock_mic_test_snapshot.reason) - 1);
+    return ESP_OK;
+}
+
+esp_err_t audio_mic_test_service_get_snapshot(
+    audio_mic_test_snapshot_t *out_snapshot) {
+    if (out_snapshot == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_snapshot = s_mock_mic_test_snapshot;
+    return ESP_OK;
 }
 
 #include "services/power_service.h"

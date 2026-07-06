@@ -68,6 +68,28 @@ class DangerDetectionControllerSourceTests(unittest.TestCase):
         self.assertNotIn("0.90", combined_ui)
         self.assertNotIn("0.85", combined_ui)
 
+    def test_ui_mic_test_button_uses_service_api_only(self) -> None:
+        source = DANGER_DETECTION_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+        view_header = (UI_CUSTOM_DIR / "danger_detection_view.h").read_text(
+            encoding="utf-8"
+        )
+        view_source = (UI_CUSTOM_DIR / "danger_detection_view.c").read_text(
+            encoding="utf-8"
+        )
+        combined_ui = source + "\n" + view_header + "\n" + view_source
+
+        self.assertIn("services/audio_mic_test_service.h", source)
+        self.assertIn("audio_mic_test_service_start()", source)
+        self.assertIn("audio_mic_test_service_get_snapshot", source)
+        self.assertIn("mic_test_cb", view_header)
+        self.assertIn("测麦克风", view_source)
+        self.assertIn("mic_test_status_text", view_header)
+        self.assertIn("mic_test_running", view_header)
+        self.assertNotIn("audio_codec_read(", combined_ui)
+        self.assertNotIn("audio_codec_acquire_input", combined_ui)
+        self.assertNotIn("sd_manager_", combined_ui)
+        self.assertNotIn("xTaskCreate", combined_ui)
+
 
 if __name__ == "__main__":
     unittest.main()

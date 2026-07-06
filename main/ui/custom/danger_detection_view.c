@@ -21,6 +21,10 @@ struct danger_detection_view {
     lv_obj_t *sensitivity_row;
     lv_obj_t *sensitivity_buttons[3];
     lv_obj_t *sensitivity_labels[3];
+    lv_obj_t *mic_test_row;
+    lv_obj_t *mic_test_button;
+    lv_obj_t *mic_test_button_label;
+    lv_obj_t *mic_test_status_label;
     lv_obj_t *scores_card;
     lv_obj_t *horn_title_label;
     lv_obj_t *horn_confidence_label;
@@ -32,6 +36,7 @@ struct danger_detection_view {
     danger_detection_view_action_cb_t back_action_cb;
     danger_detection_view_switch_cb_t safety_monitor_cb;
     danger_detection_view_sensitivity_cb_t sensitivity_cb;
+    danger_detection_view_action_cb_t mic_test_cb;
     void *user_data;
     bool updating_switch;
     bool updating_sensitivity;
@@ -86,6 +91,17 @@ static void danger_detection_view_sensitivity_event(lv_event_t *e)
     }
 }
 
+static void danger_detection_view_mic_test_event(lv_event_t *e)
+{
+    danger_detection_view_t *view =
+        (danger_detection_view_t *)lv_event_get_user_data(e);
+    if (view == NULL || view->mic_test_cb == NULL) {
+        return;
+    }
+
+    view->mic_test_cb(view->user_data);
+}
+
 static void danger_detection_view_set_text(lv_obj_t *label, const char *text)
 {
     if (label == NULL) {
@@ -122,6 +138,7 @@ danger_detection_view_t *danger_detection_view_create(
     view->safety_monitor_cb =
         config != NULL ? config->safety_monitor_cb : NULL;
     view->sensitivity_cb = config != NULL ? config->sensitivity_cb : NULL;
+    view->mic_test_cb = config != NULL ? config->mic_test_cb : NULL;
     view->user_data = config != NULL ? config->user_data : NULL;
 
     view->screen = lv_obj_create(NULL);
@@ -152,12 +169,12 @@ danger_detection_view_t *danger_detection_view_create(
 
     view->safety_monitor_row = lv_obj_create(view->content_layer);
     lv_obj_remove_style_all(view->safety_monitor_row);
-    lv_obj_set_size(view->safety_monitor_row, 176, 40);
-    lv_obj_align(view->safety_monitor_row, LV_ALIGN_BOTTOM_MID, 0, -112);
+    lv_obj_set_size(view->safety_monitor_row, 146, 34);
+    lv_obj_align(view->safety_monitor_row, LV_ALIGN_TOP_LEFT, 42, 352);
     lv_obj_set_flex_flow(view->safety_monitor_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(view->safety_monitor_row, LV_FLEX_ALIGN_END,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_gap(view->safety_monitor_row, 10, 0);
+    lv_obj_set_style_pad_gap(view->safety_monitor_row, 8, 0);
 
     view->safety_monitor_label = lv_label_create(view->safety_monitor_row);
     lv_label_set_text(view->safety_monitor_label, "安全监听");
@@ -169,7 +186,7 @@ danger_detection_view_t *danger_detection_view_create(
 
     view->safety_monitor_switch = lv_obj_create(view->safety_monitor_row);
     lv_obj_remove_style_all(view->safety_monitor_switch);
-    lv_obj_set_size(view->safety_monitor_switch, 52, 28);
+    lv_obj_set_size(view->safety_monitor_switch, 46, 26);
     lv_obj_add_flag(view->safety_monitor_switch, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(view->safety_monitor_switch, LV_OBJ_FLAG_CHECKABLE);
     lv_obj_set_style_radius(view->safety_monitor_switch, LV_RADIUS_CIRCLE, 0);
@@ -185,7 +202,7 @@ danger_detection_view_t *danger_detection_view_create(
 
     view->safety_monitor_knob = lv_obj_create(view->safety_monitor_switch);
     lv_obj_remove_style_all(view->safety_monitor_knob);
-    lv_obj_set_size(view->safety_monitor_knob, 22, 22);
+    lv_obj_set_size(view->safety_monitor_knob, 20, 20);
     lv_obj_set_style_radius(view->safety_monitor_knob, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(view->safety_monitor_knob, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(view->safety_monitor_knob,
@@ -270,10 +287,50 @@ danger_detection_view_t *danger_detection_view_create(
         lv_obj_center(view->sensitivity_labels[i]);
     }
 
+    view->mic_test_row = lv_obj_create(view->content_layer);
+    lv_obj_remove_style_all(view->mic_test_row);
+    lv_obj_set_size(view->mic_test_row, 174, 34);
+    lv_obj_align(view->mic_test_row, LV_ALIGN_TOP_LEFT, 194, 352);
+    lv_obj_set_flex_flow(view->mic_test_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(view->mic_test_row, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(view->mic_test_row, 6, 0);
+
+    view->mic_test_button = lv_obj_create(view->mic_test_row);
+    lv_obj_remove_style_all(view->mic_test_button);
+    lv_obj_set_size(view->mic_test_button, 100, 34);
+    lv_obj_add_flag(view->mic_test_button, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(view->mic_test_button, 6, 0);
+    lv_obj_set_style_bg_opa(view->mic_test_button, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(view->mic_test_button, lv_color_hex(0x111827), 0);
+    lv_obj_set_style_bg_color(view->mic_test_button, lv_color_hex(0x9ca3af),
+                              LV_STATE_DISABLED);
+    lv_obj_add_event_cb(view->mic_test_button,
+                        danger_detection_view_mic_test_event,
+                        LV_EVENT_CLICKED, view);
+
+    view->mic_test_button_label = lv_label_create(view->mic_test_button);
+    lv_label_set_text(view->mic_test_button_label, "测麦克风");
+    lv_obj_set_style_text_font(
+        view->mic_test_button_label,
+        &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, 0);
+    lv_obj_set_style_text_color(view->mic_test_button_label,
+                                lv_color_white(), 0);
+    lv_obj_center(view->mic_test_button_label);
+
+    view->mic_test_status_label = lv_label_create(view->mic_test_row);
+    lv_label_set_text(view->mic_test_status_label, "未测试");
+    lv_obj_set_width(view->mic_test_status_label, 62);
+    lv_obj_set_style_text_font(
+        view->mic_test_status_label,
+        &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, 0);
+    lv_obj_set_style_text_color(view->mic_test_status_label,
+                                lv_color_hex(0x6b7280), 0);
+
     view->scores_card = lv_obj_create(view->content_layer);
     lv_obj_remove_style_all(view->scores_card);
-    lv_obj_set_size(view->scores_card, 320, 92);
-    lv_obj_align(view->scores_card, LV_ALIGN_BOTTOM_MID, 0, -24);
+    lv_obj_set_size(view->scores_card, 320, 76);
+    lv_obj_align(view->scores_card, LV_ALIGN_BOTTOM_MID, 0, -18);
     lv_obj_set_style_radius(view->scores_card, 22, 0);
     lv_obj_set_style_bg_color(view->scores_card, lv_color_hex(0xf5f5f5), 0);
     lv_obj_set_style_bg_opa(view->scores_card, LV_OPA_COVER, 0);
@@ -284,13 +341,13 @@ danger_detection_view_t *danger_detection_view_create(
                                0);
     lv_obj_set_style_text_letter_space(view->horn_title_label, 2, 0);
     lv_obj_set_style_text_color(view->horn_title_label, lv_color_hex(0x6b7280), 0);
-    lv_obj_align(view->horn_title_label, LV_ALIGN_TOP_LEFT, 18, 14);
+    lv_obj_align(view->horn_title_label, LV_ALIGN_TOP_LEFT, 18, 10);
 
     view->horn_confidence_label = lv_label_create(view->scores_card);
     lv_label_set_text(view->horn_confidence_label, "--");
     lv_obj_set_style_text_font(view->horn_confidence_label,
                                &lv_font_montserratMedium_27, 0);
-    lv_obj_align(view->horn_confidence_label, LV_ALIGN_BOTTOM_LEFT, 18, -10);
+    lv_obj_align(view->horn_confidence_label, LV_ALIGN_BOTTOM_LEFT, 18, -8);
 
     view->siren_title_label = lv_label_create(view->scores_card);
     lv_label_set_text(view->siren_title_label, "SIREN");
@@ -298,13 +355,13 @@ danger_detection_view_t *danger_detection_view_create(
                                &lv_font_montserratMedium_12, 0);
     lv_obj_set_style_text_letter_space(view->siren_title_label, 2, 0);
     lv_obj_set_style_text_color(view->siren_title_label, lv_color_hex(0x6b7280), 0);
-    lv_obj_align(view->siren_title_label, LV_ALIGN_TOP_RIGHT, -18, 14);
+    lv_obj_align(view->siren_title_label, LV_ALIGN_TOP_RIGHT, -18, 10);
 
     view->siren_confidence_label = lv_label_create(view->scores_card);
     lv_label_set_text(view->siren_confidence_label, "--");
     lv_obj_set_style_text_font(view->siren_confidence_label,
                                &lv_font_montserratMedium_27, 0);
-    lv_obj_align(view->siren_confidence_label, LV_ALIGN_BOTTOM_RIGHT, -18, -10);
+    lv_obj_align(view->siren_confidence_label, LV_ALIGN_BOTTOM_RIGHT, -18, -8);
 
     view->alert_layer = lv_obj_create(view->screen);
     lv_obj_remove_style_all(view->alert_layer);
@@ -336,8 +393,10 @@ danger_detection_view_t *danger_detection_view_create(
         .primary_result_text = "NONE",
         .horn_confidence_text = "--",
         .siren_confidence_text = "--",
+        .mic_test_status_text = "未测试",
         .sensitivity_mode = DANGER_DETECTION_VIEW_SENSITIVITY_STANDARD,
         .safety_monitor_enabled = false,
+        .mic_test_running = false,
         .alert_visible = false,
     };
     danger_detection_view_apply_model(view, &initial_model);
@@ -381,6 +440,8 @@ void danger_detection_view_apply_model(
                                    model->horn_confidence_text);
     danger_detection_view_set_text(view->siren_confidence_label,
                                    model->siren_confidence_text);
+    danger_detection_view_set_text(view->mic_test_status_label,
+                                   model->mic_test_status_text);
     danger_detection_view_set_text(
         view->sensitivity_title_label,
         danger_detection_view_sensitivity_hint(model->sensitivity_mode));
@@ -408,6 +469,16 @@ void danger_detection_view_apply_model(
         }
     }
     view->updating_sensitivity = false;
+
+    if (model->mic_test_running) {
+        lv_obj_add_state(view->mic_test_button, LV_STATE_DISABLED);
+        lv_obj_set_style_text_color(view->mic_test_status_label,
+                                    lv_color_hex(0x111827), 0);
+    } else {
+        lv_obj_clear_state(view->mic_test_button, LV_STATE_DISABLED);
+        lv_obj_set_style_text_color(view->mic_test_status_label,
+                                    lv_color_hex(0x6b7280), 0);
+    }
 
     if (model->alert_visible) {
         lv_obj_set_style_bg_color(view->screen, lv_palette_main(LV_PALETTE_RED),
