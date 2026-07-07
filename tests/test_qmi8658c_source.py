@@ -150,7 +150,8 @@ class Qmi8658cSourceTests(unittest.TestCase):
         self.assertIn("qmi8658c_read_bytes(QMI8658C_REG_AX_L, raw, sizeof(raw))", source)
         self.assertIn("qmi8658c_decode_i16(&raw[0])", source)
         self.assertIn("qmi8658c_decode_i16(&raw[6])", source)
-        self.assertIn("sample_debug: count=%u status0=0x%02X ready=%d timestamp=%u", source)
+        self.assertIn("s_read_count % 100U", source)
+        self.assertIn("原始表 | 次数=%-5u 状态0=0x%02X 就绪=%d 时间戳=%-8u", source)
 
     def test_driver_exposes_accel_mps2_conversion_owned_by_qmi(self) -> None:
         self.assertTrue(QMI8658C_SOURCE.exists(), "components/qmi8658c/qmi8658c.c should exist")

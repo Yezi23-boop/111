@@ -310,12 +310,22 @@ esp_err_t app_alert_manager_raise(const app_alert_request_t *request)
         }
     }
 
-    app_alert_manager_preempt_normal_audio_output(request);
-    ret = audio_alert_player_play_warning_once();
-    if (ret != ESP_OK)
+    const bool play_warning_audio =
+        request->source != APP_ALERT_SOURCE_FALL_DETECTION;
+    if (play_warning_audio)
     {
-        ESP_LOGW(TAG, "warning audio playback start failed: %s",
-                 esp_err_to_name(ret));
+        app_alert_manager_preempt_normal_audio_output(request);
+        ret = audio_alert_player_play_warning_once();
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "warning audio playback start failed: %s",
+                     esp_err_to_name(ret));
+        }
+    }
+    else
+    {
+        ESP_LOGI(TAG, "跳过危险提示音 类别=%s",
+                 app_alert_label_to_zh(request->label));
     }
 
     ESP_LOGW(TAG, "进入危险告警 类别=%s", app_alert_label_to_zh(request->label));

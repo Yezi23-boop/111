@@ -77,10 +77,11 @@ board_imu board facts
 - `[x]` 2026-07-07：COM7 闭环验证 50Hz 采样主线；最新 QMI 读法按 `STATUS0 -> TIMESTAMP -> TEMP -> AX_L 12 bytes` 对齐，`sample_50hz` 从 `count=1` 持续到 `count=1350`，`count=200` 后 `window_ready=1`，未见 panic。
 - `[x]` 2026-07-07：记录当前板 IMU 六面安装方向：表盘朝上为 QMI8658C `-Z`，表背朝上为 `+Z`，USB/手表右侧朝上为 `-X`，手表左侧朝上为 `+X`，手表顶部朝上为 `+Y`，手表底部朝上为 `-Y`。
 - `[x]` 2026-07-07：部署自训练 ESP-DL 跌倒模型 `cnn_c24_pool225_do015_e80_with_test.espdl`，SHA256=`10526143f02d047b0e5b2c29f29802396171998cfb4071cb54d7858375a98d54`；新增 `components/fall_detection_inference`，校验 `FLOAT [1,600]` 输入、2 类 `[ADL,FALL]` 输出并运行 `Model::test()`。
-- `[x]` 2026-07-07：`imu_service` 新增完整窗口出口，50Hz/200 帧 ring 满后每 50 帧用 queue length 1 + `xQueueOverwrite()` 投递完整加速度窗口副本；`fall_detection_service` 消费窗口、做 `[-x,+y,-z]` 轴向重映射、按帧交错 flatten、推理并发布只读 snapshot。
+- `[x]` 2026-07-07：`imu_service` 新增完整窗口出口，50Hz/200 帧 ring 满后用 queue length 1 + `xQueueOverwrite()` 投递完整加速度窗口副本；当前按每 100 帧约 2s 发布一次，`fall_detection_service` 消费窗口、做 `[-x,+y,-z]` 轴向重映射、按帧交错 flatten、推理并发布只读 snapshot。
 - `[x]` 2026-07-07：COM7 闭环验证 fall 部署链路；日志出现模型加载、`dl::Model: Test Pass!`、`sampling_started: rate_hz=50 window_frames=200`、`window_published` 和连续 `fall_window_result`，当前静止样本输出 ADL，`fall_prob=0.1480`，推理耗时约 14-30ms，未见 panic。
-- `[x]` 2026-07-07：跌倒确认告警状态机接入完成；`IDLE -> FALL_CONFIRMED` 不再要求连续 2 个 FALL，单窗口 `fall_prob>=0.80` 即触发一次本地完整告警和 App 上传；`FALL_CONFIRMED` 期间不重复告警/上传，连续 3 个 `fall_prob<0.50` 后 clear。
+- `[x]` 2026-07-07：跌倒确认告警状态机接入完成；`IDLE -> FALL_CONFIRMED` 不再要求连续 2 个 FALL，单窗口 `fall_prob>=0.80` 即触发一次本地完整告警和 App 上传；`FALL_CONFIRMED` 期间不重复告警/上传，连续约 4 秒低风险窗口 `fall_prob<0.50` 后 clear。
 - `[x]` 2026-07-07：将 IMU/Fall 大窗口缓冲迁到 PSRAM：`imu_service` 的 200 帧 ring 与 publish window、`fall_detection_service` 的 queue storage/current window/model input 均改为 `heap_caps_*` + `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`；`fall_detect` task 栈改为 `xTaskCreateWithCaps(..., MALLOC_CAP_SPIRAM)`。
+- `[x]` 2026-07-07：按用户要求将当前 QMI8658C/IMU/Fall 关键运行日志中文化，并统一为表格化单行输出；QMI 原始采样调试、`imu_service` 50Hz 采样日志、窗口发布和 fall 推理结果按约 2s 输出（50Hz 下每 100 个样本）。低风险清除窗口数同步改为 2，约 4s 恢复证据。
 - `[ ]` 后续补离线 replay/evaluator，把真实样本与规则阈值调参从固件循环中拆出来。
 - `[ ]` 后续讨论并实现真实抬腕识别策略。
 
@@ -98,7 +99,7 @@ board_imu board facts
 - 2026-07-07：当前 QMI8658C 读取方法按 Waveshare 对齐口径收口：`CTRL1=0x60`、`CTRL5=0x03`，读取时分段取 `STATUS0`、24-bit timestamp、temperature 和从 `AX_L` 开始的 12 字节六轴原始数据。
 - 2026-07-07：当前板六面映射只作为 board fact 记录在 `board_imu`，暂不新增通用坐标转换 API；后续 fall/raise 的模型输入坐标系需要基于该事实单独定义。
 - 2026-07-07：用户确认当前仓库负责部署、`D:\esp32S3\imu` 负责训练；本轮部署已验证的自训练 ESP-DL 模型，不修改 `managed_components`、不改 ESP-DL 源码、不新增自定义算子。
-- 2026-07-07：用户将 fall detection 第一版从“只做日志闭环”推进到“确认即告警”。当前默认阈值 `FALL>=0.80`，模型内已有 Softmax，板端只读取 `[ADL,FALL]` 概率，不做二次 Softmax；单个 4 秒窗口超过阈值即可确认，不采用连续 2 个 FALL 策略；同一次 `FALL_CONFIRMED` 期间不重复触发本地告警或 App 上传。
+- 2026-07-07：用户将 fall detection 第一版从“只做日志闭环”推进到“确认即告警”。当前默认阈值 `FALL>=0.80`，模型内已有 Softmax，板端只读取 `[ADL,FALL]` 概率，不做二次 Softmax；单个 4 秒窗口超过阈值即可确认，不采用连续 2 个 FALL 策略；同一次 `FALL_CONFIRMED` 期间不重复触发本地告警或 App 上传；按 2s 窗口发布后，连续 2 个 `fall_prob<0.50` 低风险窗口约等于 4s 清除证据。
 
 ## Validation and Acceptance
 
@@ -108,6 +109,7 @@ board_imu board facts
 - 2026-07-07 COM7 fall evidence：`board_logs/2026-07-07-06-39-36-fall-detection-espdl.log` 显示 `model loaded: input=float exp=0 shape=[1, 600], output=float exp=0 shape=[1, 2]`、`dl::Model: Test Pass!`、`window_published: sequence=1 source_sample_count=200`、`fall_window_result: sequence=1 ... label=ADL(0) ... adl_prob=0.8520 fall_prob=0.1480 threshold=0.80 infer_ms=14.31`，summary `panic_log_seen=false`。
 - 2026-07-07 COM7 fall alert evidence：`board_logs/2026-07-07-07-26-15-fall-alert-state-machine-psram-alert-tasks.log` 显示 `fall_window_result: sequence=12 ... fall_prob=0.8520` 后立刻 `fall_alert_confirmed`；随后 `haptic_alert_player: initial danger haptic started/finished`、`audio_alert_player: warning playback started/finished`、`display_alert: danger overlay shown`、`fall_app_upload_queued` 和 `watch_endpoint: danger alert dispatched: type=fall prob=0.8520 seq=1`；连续 3 个低风险窗口后 `fall_alert_cleared: ... clear_windows=3`，summary `panic_log_seen=false`。
 - 2026-07-07 COM7 PSRAM buffer evidence：`board_logs/2026-07-07-07-46-41-fall-psram-window-buffers.log` 显示 `heap_init` 主 RAM 池恢复到 `142 KiB`，资源快照 `RAM: 304 KB / 332 KB (91.8%)`，`STACK: internal_free=26482 largest=24576 psram_free=6651280`；同轮仍有 `window_published`、连续 `fall_window_result`、`fall_alert_confirmed`、本地震动/提示音、`danger alert dispatched: type=fall` 和 `fall_alert_cleared`，summary `panic_log_seen=false`。
+- 2026-07-07 中文日志验证：`qmi8658c` 周期日志为 `原始表`，`imu_service` 周期日志为 `采样表`、窗口日志为 `窗口表`，`fall_detection` 推理/告警日志为 `跌倒表`、`跌倒告警已确认/已清除`；普通采样、窗口发布和 fall 推理结果均按约 2s 输出；source tests 和 `idf.py build` 已覆盖 UTF-8 字符串编译。
 - context validation：本文档变更至少运行 `uv run python scripts/context/validate_context.py --level standard --q "IMU runtime framework QMI8658C board_imu imu_service imu_motion" --brief`。
 - build rule：若只改本文档，不要求 `idf.py build`；若后续改 `components` 或 `main` 代码，必须跑相关 source tests 和 `idf.py build`，普通 app 改动用 `idf.py -p COM3 app-flash` 验证。
 

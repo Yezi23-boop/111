@@ -14,7 +14,7 @@ configure_utf8_stdio()
 
 
 LEVEL_HELP = {
-    "light": "普通任务低 token 检索：query runs + query knowledge，可选 brief pack。",
+    "light": "普通任务低 token 检索：query runs + query plans + query mixed，可选 brief pack。",
     "standard": "只改 context 文档：build_index + check。",
     "routing": "改入口或检索基准：build_index + check + eval_query。",
     "full": "改 scripts/context 或记忆机制：build_index + check + garden + eval_query。",
@@ -54,7 +54,7 @@ def build_commands(args: argparse.Namespace, project_root: Path) -> list[list[st
     python = sys.executable
     if args.level == "light":
         if not args.q:
-            raise SystemExit("level=light 需要传入 --q，用任务关键词检索 runs 和稳定知识。")
+            raise SystemExit("level=light 需要传入 --q，用任务关键词检索 runs、plans 和 mixed 上下文。")
 
         commands = [
             [
@@ -66,6 +66,16 @@ def build_commands(args: argparse.Namespace, project_root: Path) -> list[list[st
                 args.q,
                 "--top",
                 str(args.top_runs),
+            ],
+            [
+                python,
+                str(script_path(project_root, "query.py")),
+                "--scope",
+                "plans",
+                "--q",
+                args.q,
+                "--top",
+                str(args.top),
             ],
             [
                 python,

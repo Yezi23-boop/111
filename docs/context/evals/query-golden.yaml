@@ -26,6 +26,13 @@ queries:
     expected_top5:
       - docs/context/procedures/context-garden-policy.md
 
+  - id: fall-detection-v1-active-plan
+    query: "FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN event trigger post-check 5s 6ch"
+    scope: plans
+    expected_top1: docs/context/plans/active/FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN.md
+    expected_top3:
+      - docs/context/plans/active/FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN.md
+
   - id: project-profile-entry
     query: "当前正式启动链路 当前真实 owner 入口"
     expected_top1: docs/context/knowledge/project/project-profile.md

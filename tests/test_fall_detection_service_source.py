@@ -46,6 +46,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("fall_detection_service_get_snapshot", header)
         self.assertIn("does not read IMU hardware directly", header)
         self.assertIn("common alert manager and watch endpoint", header)
+        self.assertIn("does not\n * play the dangerous-sound warning audio", header)
 
     def test_service_consumes_imu_windows_without_touching_driver_or_ui(self) -> None:
         source = FALL_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
@@ -58,6 +59,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("uint8_t *window_queue_storage", source)
         self.assertIn("imu_service_accel_window_t *current_window", source)
         self.assertIn("float *model_input", source)
+        self.assertIn("k_legacy_model_frame_count", source)
         self.assertIn("heap_caps_malloc(\n                k_window_queue_length * sizeof(imu_service_accel_window_t)", source)
         self.assertIn("heap_caps_calloc(\n                1U, sizeof(imu_service_accel_window_t)", source)
         self.assertIn("heap_caps_calloc(FALL_MODEL_INPUT_ELEMENTS", source)
@@ -74,7 +76,9 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("fall_model_runner_create", source)
         self.assertIn("fall_model_runner_self_test", source)
         self.assertIn("fall_model_runner_run", source)
-        self.assertIn("fall_window_result:", source)
+        self.assertIn("跌倒表 |", source)
+        self.assertIn("事件窗口契约不匹配", source)
+        self.assertIn("window->trigger_frame_index !=\n                IMU_SERVICE_EVENT_PRE_FRAMES", source)
         self.assertIn('#include "features/alerts/app_alert_manager.h"', source)
         self.assertIn('#include "services/watch_endpoint_service.h"', source)
         self.assertNotIn("qmi8658c_", source)
@@ -89,38 +93,42 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("model +X = watch right / USB side = -chip X", source)
         self.assertIn("model +Y = watch top = +chip Y", source)
         self.assertIn("model +Z = watch front/dial = -chip Z", source)
+        self.assertIn("旧 3ch 模型仍固定读取 200 帧加速度", source)
+        self.assertIn("for (uint16_t frame = 0; frame < k_legacy_model_frame_count; ++frame)", source)
         self.assertIn("input[(frame * 3U) + 0U] = -window->accel[frame].x;", source)
         self.assertIn("input[(frame * 3U) + 1U] = window->accel[frame].y;", source)
         self.assertIn("input[(frame * 3U) + 2U] = -window->accel[frame].z;", source)
-        self.assertNotIn("window->accel[frame].gyro", source)
+        self.assertIn("后续 6ch / [1,1500]", source)
 
     def test_single_window_fall_confirms_and_three_low_windows_clear(self) -> None:
         source = FALL_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("static const float k_fall_clear_threshold = 0.50f;", source)
-        self.assertIn("static const uint32_t k_fall_clear_window_count = 3U;", source)
+        self.assertIn("static const uint32_t k_fall_clear_window_count = 2U;", source)
         self.assertIn("result->fall_prob >= FALL_MODEL_THRESHOLD_DEFAULT", source)
         self.assertNotIn("danger_window_count", source)
         self.assertIn("FALL_DETECTION_ALERT_STATE_IDLE", source)
         self.assertIn("FALL_DETECTION_ALERT_STATE_CONFIRMED", source)
         self.assertIn("result->fall_prob < k_fall_clear_threshold", source)
         self.assertIn("clear_window_count >=\n            k_fall_clear_window_count", source)
-        self.assertIn("fall_alert_confirmed:", source)
-        self.assertIn("fall_alert_cleared:", source)
+        self.assertIn("跌倒告警已确认:", source)
+        self.assertIn("跌倒告警已清除:", source)
 
-    def test_confirmed_fall_raises_local_alert_and_app_upload_once(self) -> None:
+    def test_confirmed_fall_raises_local_alert_and_uploads_danger_alert_once(self) -> None:
         source = FALL_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("fall_detection_raise_local_alert", source)
+        self.assertIn("fall_detection_post_app_alert", source)
         self.assertIn("APP_ALERT_SOURCE_FALL_DETECTION", source)
         self.assertIn("APP_ALERT_LABEL_FALL", source)
         self.assertIn("app_alert_manager_raise(&request)", source)
         self.assertIn("watch_endpoint_service_post_danger_alert(&alert)", source)
         self.assertIn('static const char *k_fall_app_danger_type = "fall";', source)
         self.assertIn('static const char *k_fall_app_message = "检测到跌倒";', source)
-        self.assertIn("fall_app_upload_queued:", source)
-        self.assertIn("fall_app_upload_failed:", source)
-        self.assertIn("fall_local_alert_failed:", source)
+        self.assertIn("跌倒App上传已入队:", source)
+        self.assertIn("跌倒App上传失败:", source)
+        self.assertIn("跌倒危险语言播发已跳过:", source)
+        self.assertIn("本地跌倒告警失败:", source)
         self.assertIn("app_alert_manager_clear(APP_ALERT_SOURCE_FALL_DETECTION)", source)
         self.assertNotIn("app_upload_pending", source)
         self.assertNotIn("fall_detection_retry_pending_app_upload", source)
@@ -133,6 +141,11 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("APP_ALERT_SOURCE_FALL_DETECTION", header)
         self.assertIn("APP_ALERT_LABEL_FALL", header)
         self.assertIn('return "跌倒";', source)
+        self.assertIn(
+            "request->source != APP_ALERT_SOURCE_FALL_DETECTION",
+            source,
+        )
+        self.assertIn("跳过危险提示音", source)
 
 
 if __name__ == "__main__":

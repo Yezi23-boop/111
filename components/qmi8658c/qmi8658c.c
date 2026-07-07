@@ -25,7 +25,7 @@ static uint8_t s_i2c_addr_7bit =
 static uint8_t s_accel_fs_code = 0; // 最近一次配置的加速度量程；0 为 ±2g。
 static uint8_t s_gyro_fs_code = 0;  // 最近一次配置的陀螺仪量程；0 为 ±16 dps。
 static bool s_sample_configured = false; // true 表示已通过 qmi8658c_config() 建立物理量换算口径。
-static uint32_t s_read_count = 0; // 调试用读数计数，按 1Hz 节流打印采样寄存器状态。
+static uint32_t s_read_count = 0; // 调试用读数计数，按 2s 节流打印采样寄存器状态。
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
 static i2c_master_dev_handle_t s_dev_handle = NULL; // 共享 master bus 下的 QMI8658C 设备句柄。
@@ -279,10 +279,10 @@ static esp_err_t qmi8658c_read_raw(qmi8658c_raw_sample_t *sample)
     *sample = out;
 
     ++s_read_count;
-    if (s_read_count <= 5U || (s_read_count % 50U) == 0U)
+    if (s_read_count <= 5U || (s_read_count % 100U) == 0U)
     {
         ESP_LOGI(TAG,
-                 "sample_debug: count=%u status0=0x%02X ready=%d timestamp=%u raw_accel=(%d,%d,%d) raw_gyro=(%d,%d,%d) temp=%d",
+                 "原始表 | 次数=%-5u 状态0=0x%02X 就绪=%d 时间戳=%-8u | 加速度raw[x y z]=%6d %6d %6d | 陀螺仪raw[x y z]=%6d %6d %6d | 温度raw=%d",
                  (unsigned)s_read_count,
                  out.status0,
                  (out.status0 & 0x03U) != 0U ? 1 : 0,

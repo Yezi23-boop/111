@@ -9,8 +9,10 @@
 #include "imu_sensor.h"
 
 #define IMU_SERVICE_SAMPLE_RATE_HZ 50U
-#define IMU_SERVICE_WINDOW_FRAME_COUNT 200U
-#define IMU_SERVICE_WINDOW_PUBLISH_STRIDE_FRAMES 50U
+#define IMU_SERVICE_EVENT_PRE_FRAMES 75U
+#define IMU_SERVICE_EVENT_POST_FRAMES 175U
+#define IMU_SERVICE_WINDOW_FRAME_COUNT \
+    (IMU_SERVICE_EVENT_PRE_FRAMES + IMU_SERVICE_EVENT_POST_FRAMES)
 
 #ifdef __cplusplus
 extern "C"
@@ -52,7 +54,7 @@ extern "C"
         uint32_t int1_irq_count;   /**< service task 已处理的 INT1 GPIO 中断次数。 */
         int64_t last_int1_irq_time_us; /**< 最近一次 INT1 GPIO 中断处理时间戳，单位微秒。 */
         bool sampling_active;      /**< true 表示 50Hz 周期采样循环已经运行。 */
-        bool sample_window_ready;  /**< true 表示 4 秒 / 200 帧环形缓冲已经填满过。 */
+        bool sample_window_ready;  /**< true 表示 5 秒 / 250 帧事件窗口缓冲已经填满过。 */
         uint16_t sample_rate_hz;   /**< 当前 service 采样频率，单位 Hz。 */
         uint16_t window_frame_count; /**< 当前 service 窗口帧数。 */
         uint32_t sample_count;     /**< 成功读取并写入环形缓冲的样本数。 */
@@ -64,20 +66,30 @@ extern "C"
     } imu_service_snapshot_t;
 
     /**
-     * @brief IMU service 发布给上层算法的完整加速度窗口副本。
+     * @brief IMU service 发布给上层算法的 5 秒事件窗口副本。
      *
-     * 窗口固定为 50Hz / 200 帧 / 4 秒。`accel` 保持芯片寄存器坐标系下的
-     * 物理量 `m/s^2`，模型坐标系重映射由消费方负责。
+     * 窗口固定为 50Hz / 250 帧 / 5 秒，其中事件点位于第
+     * `IMU_SERVICE_EVENT_PRE_FRAMES` 帧。`accel` 和 `gyro` 保持芯片寄存器
+     * 坐标系下的物理量，模型坐标系重映射和 gyro `deg/s -> rad/s` 转换由
+     * 消费方负责。
      */
     typedef struct
     {
         uint32_t sequence; /**< service 生成的窗口序号。 */
         uint32_t source_sample_count; /**< 生成窗口时累计成功采样数。 */
+        uint32_t trigger_sample_count; /**< 触发事件对应的累计采样数。 */
         uint16_t frame_count;         /**< 固定为 `IMU_SERVICE_WINDOW_FRAME_COUNT`。 */
         uint16_t sample_rate_hz;      /**< 固定为 `IMU_SERVICE_SAMPLE_RATE_HZ`。 */
+        uint16_t trigger_frame_index; /**< 事件点在窗口内的帧索引。 */
+        uint32_t trigger_flags;       /**< 触发原因 bitset，仅用于日志和排障。 */
         int64_t start_time_us;        /**< 窗口第一帧时间戳，单位微秒。 */
+        int64_t trigger_time_us;      /**< 事件触发帧时间戳，单位微秒。 */
         int64_t end_time_us;          /**< 窗口最后一帧时间戳，单位微秒。 */
+        float trigger_acc_norm_mps2;  /**< 事件触发帧加速度模长，单位 `m/s^2`。 */
+        float trigger_gyro_norm_radps; /**< 事件触发帧角速度模长，单位 `rad/s`。 */
+        float trigger_jerk_mps2_per_frame; /**< 事件触发帧加速度模长变化，单位 `m/s^2/frame`。 */
         imu_sensor_accel_t accel[IMU_SERVICE_WINDOW_FRAME_COUNT]; /**< 逐帧加速度。 */
+        imu_sensor_gyro_t gyro[IMU_SERVICE_WINDOW_FRAME_COUNT];   /**< 逐帧角速度，单位 `deg/s`。 */
     } imu_service_accel_window_t;
 
     /**
@@ -109,8 +121,9 @@ extern "C"
      * @brief 注册 IMU 完整窗口输出队列。
      *
      * 队列 item 必须是 `imu_service_accel_window_t`，推荐长度为 1。
-     * `imu_service` 使用 `xQueueOverwrite()` 发布最新窗口，避免模型推理慢时阻塞
-     * 50Hz 采样 task。传入 `NULL` 表示取消注册。
+     * `imu_service` 只在实时事件触发并收满 5 秒窗口后使用 `xQueueOverwrite()`
+     * 发布最新窗口，避免模型推理慢时阻塞 50Hz 采样 task。传入 `NULL`
+     * 表示取消注册。
      *
      * @param[in] queue 接收窗口副本的 FreeRTOS queue。
      * @return `ESP_OK` 表示注册成功。

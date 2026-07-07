@@ -1,5 +1,6 @@
 #include "services/imu_service.h"
 
+#include <math.h>
 #include <stdint.h>
 
 #include "app/board_imu.h"
@@ -18,14 +19,42 @@ static const char *TAG = "imu_service";
 static const TickType_t k_retry_delay_ticks = pdMS_TO_TICKS(5000);
 static const TickType_t k_sample_period_ticks =
     pdMS_TO_TICKS(1000 / IMU_SERVICE_SAMPLE_RATE_HZ);
-static const uint32_t k_sample_log_interval = IMU_SERVICE_SAMPLE_RATE_HZ;
+static const uint32_t k_sample_log_interval = IMU_SERVICE_SAMPLE_RATE_HZ * 2U;
 static const float k_standard_gravity = 9.80665f;
+static const float k_degrees_to_radians = 0.017453292519943295f;
+static const float k_event_acc_norm_high_mps2 = 21.57f;
+static const float k_event_gyro_norm_high_radps = 3.84f;
+static const float k_event_jerk_high_mps2_per_frame = 5.39f;
+static const float k_event_gyro_jerk_min_mps2_per_frame = 2.45f;
+static const uint32_t k_event_cooldown_frames =
+    IMU_SERVICE_WINDOW_FRAME_COUNT;
+
+typedef enum
+{
+    IMU_SERVICE_EVENT_TRIGGER_ACC_HIGH = 1U << 0,
+    IMU_SERVICE_EVENT_TRIGGER_JERK_HIGH = 1U << 1,
+    IMU_SERVICE_EVENT_TRIGGER_GYRO_JERK = 1U << 2,
+} imu_service_event_trigger_flag_t;
 
 typedef struct
 {
     int64_t time_us;              /**< 样本时间戳，单位微秒。 */
     imu_sensor_sample_t physical; /**< 完整六轴物理量样本。 */
 } imu_service_ring_sample_t;
+
+typedef struct
+{
+    bool active;                  /**< 已捕获事件，等待 post frames 收满。 */
+    uint32_t trigger_sample_count; /**< 事件触发帧对应的累计采样数。 */
+    uint16_t trigger_ring_index;  /**< 事件触发帧在 ring buffer 中的位置。 */
+    uint32_t trigger_flags;       /**< 触发原因 bitset。 */
+    float acc_norm_mps2;          /**< 触发帧加速度模长，单位 `m/s^2`。 */
+    float gyro_norm_radps;        /**< 触发帧角速度模长，单位 `rad/s`。 */
+    float jerk_mps2_per_frame;    /**< 触发帧加速度模长变化，单位 `m/s^2/frame`。 */
+    uint32_t last_published_trigger_sample_count; /**< 最近已发布事件采样数，用于冷却去重。 */
+    bool has_last_acc_norm;       /**< 是否已有上一帧 acc_norm 可计算 jerk。 */
+    float last_acc_norm_mps2;     /**< 上一帧加速度模长，单位 `m/s^2`。 */
+} imu_service_event_trigger_t;
 
 typedef struct
 {
@@ -51,6 +80,7 @@ typedef struct
     QueueHandle_t window_queue;
     uint32_t window_sequence;
     imu_service_accel_window_t *publish_window;
+    imu_service_event_trigger_t event_trigger;
 } imu_service_context_t;
 
 static const imu_service_profile_t k_imu_service_profile = {
@@ -87,6 +117,7 @@ static imu_service_context_t s_imu_service = {
     .window_queue = NULL,
     .window_sequence = 0,
     .publish_window = NULL,
+    .event_trigger = {0},
 };
 
 static void IRAM_ATTR imu_service_int1_isr(void *arg)
@@ -175,6 +206,50 @@ static int32_t imu_service_gyro_axis_mdps(float value_dps)
     return (int32_t)(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
 }
 
+static float imu_service_accel_norm_mps2(const imu_sensor_accel_t *accel)
+{
+    return sqrtf((accel->x * accel->x) +
+                 (accel->y * accel->y) +
+                 (accel->z * accel->z));
+}
+
+static float imu_service_gyro_norm_radps(const imu_sensor_gyro_t *gyro)
+{
+    const float x = gyro->x * k_degrees_to_radians;
+    const float y = gyro->y * k_degrees_to_radians;
+    const float z = gyro->z * k_degrees_to_radians;
+    return sqrtf((x * x) + (y * y) + (z * z));
+}
+
+static uint32_t imu_service_event_flags(float acc_norm_mps2,
+                                        float gyro_norm_radps,
+                                        float jerk_mps2_per_frame)
+{
+    uint32_t flags = 0;
+    if (acc_norm_mps2 > k_event_acc_norm_high_mps2)
+    {
+        flags |= IMU_SERVICE_EVENT_TRIGGER_ACC_HIGH;
+    }
+    if (jerk_mps2_per_frame > k_event_jerk_high_mps2_per_frame)
+    {
+        flags |= IMU_SERVICE_EVENT_TRIGGER_JERK_HIGH;
+    }
+    if (gyro_norm_radps > k_event_gyro_norm_high_radps &&
+        jerk_mps2_per_frame > k_event_gyro_jerk_min_mps2_per_frame)
+    {
+        flags |= IMU_SERVICE_EVENT_TRIGGER_GYRO_JERK;
+    }
+    return flags;
+}
+
+static bool imu_service_event_cooldown_elapsed(uint32_t sample_count)
+{
+    const uint32_t last_trigger =
+        s_imu_service.event_trigger.last_published_trigger_sample_count;
+    return last_trigger == 0U ||
+           (sample_count - last_trigger) >= k_event_cooldown_frames;
+}
+
 static void imu_service_store_sampling_started(void)
 {
     taskENTER_CRITICAL(&s_imu_service.lock);
@@ -212,6 +287,68 @@ static esp_err_t imu_service_prepare_buffers(void)
     return ESP_OK;
 }
 
+static void imu_service_start_event_trigger(uint32_t sample_count,
+                                            uint16_t ring_index,
+                                            uint32_t flags,
+                                            float acc_norm_mps2,
+                                            float gyro_norm_radps,
+                                            float jerk_mps2_per_frame)
+{
+    s_imu_service.event_trigger.active = true;
+    s_imu_service.event_trigger.trigger_sample_count = sample_count;
+    s_imu_service.event_trigger.trigger_ring_index = ring_index;
+    s_imu_service.event_trigger.trigger_flags = flags;
+    s_imu_service.event_trigger.acc_norm_mps2 = acc_norm_mps2;
+    s_imu_service.event_trigger.gyro_norm_radps = gyro_norm_radps;
+    s_imu_service.event_trigger.jerk_mps2_per_frame = jerk_mps2_per_frame;
+
+    ESP_LOGI(TAG,
+             "事件触发表 | 触发采样=%-6u flags=0x%02x | acc_norm=%.2f_mps2 gyro_norm=%.2f_radps jerk=%.2f_mps2pf | pre=%u post=%u",
+             (unsigned)sample_count,
+             (unsigned)flags,
+             (double)acc_norm_mps2,
+             (double)gyro_norm_radps,
+             (double)jerk_mps2_per_frame,
+             (unsigned)IMU_SERVICE_EVENT_PRE_FRAMES,
+             (unsigned)IMU_SERVICE_EVENT_POST_FRAMES);
+}
+
+static void imu_service_update_event_trigger(const imu_sensor_sample_t *sample,
+                                             uint32_t sample_count,
+                                             uint16_t ring_index)
+{
+    const float acc_norm_mps2 = imu_service_accel_norm_mps2(&sample->accel);
+    const float gyro_norm_radps = imu_service_gyro_norm_radps(&sample->gyro);
+    float jerk_mps2_per_frame = 0.0f;
+    if (s_imu_service.event_trigger.has_last_acc_norm)
+    {
+        jerk_mps2_per_frame = fabsf(
+            acc_norm_mps2 -
+            s_imu_service.event_trigger.last_acc_norm_mps2);
+    }
+
+    const bool has_pre_window =
+        s_imu_service.sample_ring_count > IMU_SERVICE_EVENT_PRE_FRAMES;
+    if (!s_imu_service.event_trigger.active && has_pre_window &&
+        imu_service_event_cooldown_elapsed(sample_count))
+    {
+        const uint32_t flags = imu_service_event_flags(
+            acc_norm_mps2, gyro_norm_radps, jerk_mps2_per_frame);
+        if (flags != 0U)
+        {
+            imu_service_start_event_trigger(sample_count,
+                                            ring_index,
+                                            flags,
+                                            acc_norm_mps2,
+                                            gyro_norm_radps,
+                                            jerk_mps2_per_frame);
+        }
+    }
+
+    s_imu_service.event_trigger.has_last_acc_norm = true;
+    s_imu_service.event_trigger.last_acc_norm_mps2 = acc_norm_mps2;
+}
+
 static uint32_t imu_service_store_sample(const imu_sensor_sample_t *sample,
                                          int64_t now_us)
 {
@@ -241,6 +378,7 @@ static uint32_t imu_service_store_sample(const imu_sensor_sample_t *sample,
         s_imu_service.sample_ring_count >= IMU_SERVICE_WINDOW_FRAME_COUNT;
     s_imu_service.snapshot.last_error = ESP_OK;
     taskEXIT_CRITICAL(&s_imu_service.lock);
+    imu_service_update_event_trigger(sample, sample_count, write_index);
     return sample_count;
 }
 
@@ -263,7 +401,7 @@ static esp_err_t imu_service_validate_board_config(
     return ESP_OK;
 }
 
-static bool imu_service_build_accel_window(uint32_t source_sample_count,
+static bool imu_service_build_event_window(uint32_t source_sample_count,
                                            imu_service_accel_window_t *window)
 {
     if (window == NULL ||
@@ -272,17 +410,41 @@ static bool imu_service_build_accel_window(uint32_t source_sample_count,
         return false;
     }
 
-    const uint16_t start_index = s_imu_service.sample_write_index;
-    const uint16_t end_index = (uint16_t)((start_index +
-                                           IMU_SERVICE_WINDOW_FRAME_COUNT - 1U) %
-                                          IMU_SERVICE_WINDOW_FRAME_COUNT);
+    const imu_service_event_trigger_t *event = &s_imu_service.event_trigger;
+    if (!event->active)
+    {
+        return false;
+    }
+
+    const uint32_t collected_post_frames =
+        source_sample_count - event->trigger_sample_count + 1U;
+    if (collected_post_frames < IMU_SERVICE_EVENT_POST_FRAMES)
+    {
+        return false;
+    }
+
+    const uint16_t start_index = (uint16_t)(
+        (event->trigger_ring_index + IMU_SERVICE_WINDOW_FRAME_COUNT -
+         IMU_SERVICE_EVENT_PRE_FRAMES) %
+        IMU_SERVICE_WINDOW_FRAME_COUNT);
+    const uint16_t end_index = (uint16_t)(
+        (start_index + IMU_SERVICE_WINDOW_FRAME_COUNT - 1U) %
+        IMU_SERVICE_WINDOW_FRAME_COUNT);
 
     window->sequence = ++s_imu_service.window_sequence;
     window->source_sample_count = source_sample_count;
+    window->trigger_sample_count = event->trigger_sample_count;
     window->frame_count = IMU_SERVICE_WINDOW_FRAME_COUNT;
     window->sample_rate_hz = IMU_SERVICE_SAMPLE_RATE_HZ;
+    window->trigger_frame_index = IMU_SERVICE_EVENT_PRE_FRAMES;
+    window->trigger_flags = event->trigger_flags;
     window->start_time_us = s_imu_service.sample_ring[start_index].time_us;
+    window->trigger_time_us =
+        s_imu_service.sample_ring[event->trigger_ring_index].time_us;
     window->end_time_us = s_imu_service.sample_ring[end_index].time_us;
+    window->trigger_acc_norm_mps2 = event->acc_norm_mps2;
+    window->trigger_gyro_norm_radps = event->gyro_norm_radps;
+    window->trigger_jerk_mps2_per_frame = event->jerk_mps2_per_frame;
 
     for (uint16_t frame = 0; frame < IMU_SERVICE_WINDOW_FRAME_COUNT; ++frame)
     {
@@ -290,14 +452,23 @@ static bool imu_service_build_accel_window(uint32_t source_sample_count,
             (uint16_t)((start_index + frame) % IMU_SERVICE_WINDOW_FRAME_COUNT);
         window->accel[frame] =
             s_imu_service.sample_ring[ring_index].physical.accel;
+        window->gyro[frame] =
+            s_imu_service.sample_ring[ring_index].physical.gyro;
     }
     return true;
 }
 
 static void imu_service_publish_window_if_ready(uint32_t sample_count)
 {
-    if (sample_count < IMU_SERVICE_WINDOW_FRAME_COUNT ||
-        (sample_count % IMU_SERVICE_WINDOW_PUBLISH_STRIDE_FRAMES) != 0U)
+    if (!s_imu_service.event_trigger.active ||
+        sample_count < IMU_SERVICE_WINDOW_FRAME_COUNT)
+    {
+        return;
+    }
+
+    const uint32_t collected_post_frames =
+        sample_count - s_imu_service.event_trigger.trigger_sample_count + 1U;
+    if (collected_post_frames < IMU_SERVICE_EVENT_POST_FRAMES)
     {
         return;
     }
@@ -307,10 +478,13 @@ static void imu_service_publish_window_if_ready(uint32_t sample_count)
     taskEXIT_CRITICAL(&s_imu_service.lock);
     if (window_queue == NULL || s_imu_service.publish_window == NULL)
     {
+        s_imu_service.event_trigger.active = false;
+        s_imu_service.event_trigger.last_published_trigger_sample_count =
+            s_imu_service.event_trigger.trigger_sample_count;
         return;
     }
 
-    if (!imu_service_build_accel_window(sample_count,
+    if (!imu_service_build_event_window(sample_count,
                                         s_imu_service.publish_window))
     {
         return;
@@ -321,16 +495,23 @@ static void imu_service_publish_window_if_ready(uint32_t sample_count)
     if (sent == pdPASS)
     {
         ESP_LOGI(TAG,
-                 "window_published: sequence=%u source_sample_count=%u start_us=%lld end_us=%lld frames=%u",
+                 "事件窗口表 | 序号=%-4u 来源采样=%-6u 触发采样=%-6u 帧数=%-3u 触发帧=%-3u flags=0x%02x | 起始_us=%-12lld 触发_us=%-12lld 结束_us=%-12lld",
                  (unsigned)s_imu_service.publish_window->sequence,
                  (unsigned)s_imu_service.publish_window->source_sample_count,
+                 (unsigned)s_imu_service.publish_window->trigger_sample_count,
+                 (unsigned)s_imu_service.publish_window->frame_count,
+                 (unsigned)s_imu_service.publish_window->trigger_frame_index,
+                 (unsigned)s_imu_service.publish_window->trigger_flags,
                  (long long)s_imu_service.publish_window->start_time_us,
-                 (long long)s_imu_service.publish_window->end_time_us,
-                 (unsigned)s_imu_service.publish_window->frame_count);
+                 (long long)s_imu_service.publish_window->trigger_time_us,
+                 (long long)s_imu_service.publish_window->end_time_us);
+        s_imu_service.event_trigger.last_published_trigger_sample_count =
+            s_imu_service.event_trigger.trigger_sample_count;
+        s_imu_service.event_trigger.active = false;
     }
     else
     {
-        ESP_LOGW(TAG, "window_publish_failed: sequence=%u",
+        ESP_LOGW(TAG, "事件窗口发布失败: 序号=%u",
                  (unsigned)s_imu_service.publish_window->sequence);
     }
 }
@@ -471,7 +652,7 @@ static void imu_service_run_sampling_loop(void)
             const int level = gpio_get_level(int1_gpio);
             const int64_t now_us = esp_timer_get_time();
             imu_service_store_int1_irq(int1_gpio, notified, level, now_us);
-            ESP_LOGI(TAG, "int1_irq: gpio=%d level=%d count_delta=%u",
+            ESP_LOGI(TAG, "INT1中断: gpio=%d 电平=%d 本次次数=%u",
                      (int)int1_gpio, level, (unsigned)notified);
         }
 
@@ -491,7 +672,7 @@ static void imu_service_run_sampling_loop(void)
                 (sample_count % k_sample_log_interval) == 0U)
             {
                 ESP_LOGI(TAG,
-                         "sample_50hz: count=%u interval_us=%d window_ready=%d accel_mg=(%d,%d,%d) gyro_mdps=(%d,%d,%d)",
+                         "采样表 | 次数=%-5u 间隔_us=%-6d 窗口=%d | 加速度mg[x y z]=%6d %6d %6d | 陀螺仪mdps[x y z]=%7d %7d %7d",
                          (unsigned)sample_count,
                          (int)interval_us,
                          window_ready ? 1 : 0,
@@ -507,7 +688,7 @@ static void imu_service_run_sampling_loop(void)
         else
         {
             imu_service_store_sample_error(ret);
-            ESP_LOGW(TAG, "sample_failed: %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "采样失败: %s", esp_err_to_name(ret));
         }
 
         vTaskDelayUntil(&last_wake_tick, k_sample_period_ticks);
@@ -578,7 +759,7 @@ esp_err_t imu_service_start(void)
     s_imu_service.started = true;
     taskEXIT_CRITICAL(&s_imu_service.lock);
 
-    ESP_LOGI(TAG, "started: sampling_50hz");
+    ESP_LOGI(TAG, "已启动: 50Hz采样");
     return ESP_OK;
 }
 
@@ -601,7 +782,7 @@ esp_err_t imu_service_set_window_queue(QueueHandle_t queue)
     s_imu_service.window_queue = queue;
     taskEXIT_CRITICAL(&s_imu_service.lock);
 
-    ESP_LOGI(TAG, "window_queue_%s", queue != NULL ? "registered" : "cleared");
+    ESP_LOGI(TAG, "窗口队列已%s", queue != NULL ? "注册" : "清除");
     return ESP_OK;
 }
 

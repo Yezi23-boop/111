@@ -89,7 +89,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 用户正在学习 `FreeRTOS`：涉及任务通信、跨上下文事件、超时等待、互斥保护、状态通知或资源仲裁时，默认把合适的 `FreeRTOS` 原语作为第一选择（如 queue、event group、task notification、mutex、semaphore、critical section），避免用裸 `volatile`、临时轮询或自造 flag 协议替代同步语义。
 - 如果某处没有使用 `FreeRTOS` 原语，必须能说清楚原因，例如同一线程内纯局部状态、已有 owner 提供更高层同步 API、或第三方组件已有固定同步模型；不能只是为了少写代码而绕开 `FreeRTOS`。
 - 新增或重构相关代码时，默认用简短说明解释选择该 `FreeRTOS` 原语的原因、它解决的并发问题，以及对应的操作系统概念，帮助用户把代码和 `FreeRTOS` 学习对应起来。
-- 只有确认 `export.ps1` 可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作；修改过 `sdkconfig` 时必须先 `idf.py fullclean` 再 `idf.py build`。
+- 需要 ESP-IDF shell 时，当前机器优先确认 `D:\esp-idf\v5.5.3\esp-idf\export.ps1`；若不存在，先检查 `$env:IDF_PATH\export.ps1`，再搜索本机 `export.ps1`。
+- 不要假设仓库根目录 `D:\esp32S3\111\export.ps1` 或 `D:\esp32S3\esp-idf\export.ps1` 存在；只有确认实际 `export.ps1` 路径可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作；修改过 `sdkconfig` 时必须先 `idf.py fullclean` 再 `idf.py build`。
 - 常规 C/C++ 代码、UI 逻辑或业务 service 改动在 `idf.py build` 通过后，默认使用 `idf.py -p <PORT> app-flash`；不得把 `idf.py flash` 作为默认烧录命令，因为它会按 `build/flasher_args.json` 写入多个分区。
 - 如需串口验证，优先 `app-flash` 后再限时采集 `monitor` / 串口日志，避免默认 `idf.py flash monitor``monitor` 窗口一分钟
 - 串口验证必须优先使用 `scripts/board/agent_serial_monitor.ps1` 或 `scripts/board/agent_serial_monitor.py`；除非该工具不可用或本轮已明确失败并记录原因，不得直接调用裸 `idf.py monitor`，也不得用 `Start-Process` 后台启动 monitor。

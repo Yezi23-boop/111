@@ -17,10 +17,11 @@ evidence_level: design
 ## IDF 环境与构建
 
 - 默认使用 `FreeRTOS` 思路组织任务、同步和资源访问。
-- 需要拉起 `IDF 5.5` 环境时，必须按以下顺序查找并使用 `export.ps1`：
+- 需要拉起 `IDF 5.5` 环境时，当前机器优先确认并使用以下路径：
   1. `D:\esp-idf\v5.5.3\esp-idf\export.ps1`
-  2. `D:\esp32\v5.5.3\esp-idf\export.ps1`
-  3. 若两者都不存在，再检查 `$env:IDF_PATH` 或搜索本机 `export.ps1`
+  2. 若不存在，检查 `$env:IDF_PATH\export.ps1`
+  3. 若仍不存在，再搜索本机 `export.ps1`
+- 不要假设仓库根目录 `D:\esp32S3\111\export.ps1` 或 `D:\esp32S3\esp-idf\export.ps1` 存在；历史上的其他机器路径只有在实际 `Test-Path` 通过后才能使用。
 - 只有在找到可用 `export.ps1` 后，才执行 `idf.py build` 或其他 `idf.py` 构建动作。
 - 项目配置基线优先参考 `sdkconfig.defaults`；不要在没有说明的情况下大范围修改生成出来的 `sdkconfig`。
 - 只要修改过 `sdkconfig`，就必须先执行 `idf.py fullclean`，再执行 `idf.py build`，避免配置变更没有进入最终产物。

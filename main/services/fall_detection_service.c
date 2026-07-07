@@ -11,6 +11,9 @@
 #include "services/imu_service.h"
 #include "services/watch_endpoint_service.h"
 
+static const char *k_fall_app_danger_type = "fall";
+static const char *k_fall_app_message = "检测到跌倒";
+
 extern const uint8_t cnn_c24_pool225_do015_e80_with_test_espdl[]
     asm("_binary_cnn_c24_pool225_do015_e80_with_test_espdl_start");
 
@@ -20,11 +23,10 @@ static const UBaseType_t k_window_queue_length = 1U;
 static const uint32_t k_task_stack_bytes = 6144U;
 static const UBaseType_t k_task_priority = 2U;
 static const char *k_model_name = "cnn_c24_pool225_do015_e80";
+static const uint16_t k_legacy_model_frame_count =
+    FALL_MODEL_INPUT_ELEMENTS / 3U;
 static const float k_fall_clear_threshold = 0.50f; // 连续低于该 FALL 概率才允许解除已确认跌倒。
-static const uint32_t k_fall_clear_window_count = 3U; // 4s 滑窗每 1s 发布一次，3 个低风险窗口约等于 3s 恢复证据。
-static const char *k_fall_app_danger_type = "fall";
-static const char *k_fall_app_message = "检测到跌倒";
-
+static const uint32_t k_fall_clear_window_count = 2U; // 4s 滑窗每 2s 发布一次，2 个低风险窗口约等于 4s 恢复证据。
 typedef enum
 {
     FALL_DETECTION_ALERT_EVENT_NONE = 0,
@@ -208,7 +210,12 @@ static void fall_detection_fill_model_input(
      * model +Y = watch top = +chip Y,
      * model +Z = watch front/dial = -chip Z.
      */
-    for (uint16_t frame = 0; frame < IMU_SERVICE_WINDOW_FRAME_COUNT; ++frame)
+    /*
+     * 本阶段只接入 Event Trigger + 5s 事件窗口，不替换模型资产。
+     * 旧 3ch 模型仍固定读取 200 帧加速度；后续 6ch / [1,1500]
+     * 模型接入时再把 gyro 转为 rad/s 并扩展输入构造。
+     */
+    for (uint16_t frame = 0; frame < k_legacy_model_frame_count; ++frame)
     {
         input[(frame * 3U) + 0U] = -window->accel[frame].x;
         input[(frame * 3U) + 1U] = window->accel[frame].y;
@@ -299,7 +306,7 @@ static void fall_detection_handle_alert_event(
     if (event->type == FALL_DETECTION_ALERT_EVENT_CONFIRMED)
     {
         ESP_LOGW(TAG,
-                 "fall_alert_confirmed: alert_sequence=%u sequence=%u fall_prob=%.4f threshold=%.2f window_end_us=%lld",
+                 "跌倒告警已确认: 告警序号=%u 窗口序号=%u 跌倒概率=%.4f 阈值=%.2f 窗口结束_us=%lld",
                  (unsigned)event->alert_sequence,
                  (unsigned)event->window_sequence,
                  (double)event->fall_prob,
@@ -309,7 +316,7 @@ static void fall_detection_handle_alert_event(
         esp_err_t local_ret = fall_detection_raise_local_alert();
         if (local_ret != ESP_OK)
         {
-            ESP_LOGW(TAG, "fall_local_alert_failed: sequence=%u err=%s",
+            ESP_LOGW(TAG, "本地跌倒告警失败: 窗口序号=%u 错误=%s",
                      (unsigned)event->window_sequence,
                      esp_err_to_name(local_ret));
         }
@@ -317,18 +324,22 @@ static void fall_detection_handle_alert_event(
         esp_err_t app_ret = fall_detection_post_app_alert(event);
         if (app_ret != ESP_OK)
         {
-            ESP_LOGW(TAG, "fall_app_upload_failed: sequence=%u err=%s",
+            ESP_LOGW(TAG, "跌倒App上传失败: 窗口序号=%u 错误=%s",
                      (unsigned)event->window_sequence,
                      esp_err_to_name(app_ret));
         }
         else
         {
             ESP_LOGI(TAG,
-                     "fall_app_upload_queued: alert_sequence=%u sequence=%u retry=0",
+                     "跌倒App上传已入队: 告警序号=%u 窗口序号=%u 重试=0",
                      (unsigned)event->alert_sequence,
                      (unsigned)event->window_sequence);
         }
 
+        ESP_LOGI(TAG,
+                 "跌倒危险语言播发已跳过: 告警序号=%u 窗口序号=%u 默认保留App上传",
+                 (unsigned)event->alert_sequence,
+                 (unsigned)event->window_sequence);
         fall_detection_store_alert_error(local_ret != ESP_OK ? local_ret
                                                              : app_ret);
     }
@@ -338,13 +349,13 @@ static void fall_detection_handle_alert_event(
             app_alert_manager_clear(APP_ALERT_SOURCE_FALL_DETECTION);
         if (clear_ret != ESP_OK)
         {
-            ESP_LOGW(TAG, "fall_alert_clear_failed: sequence=%u err=%s",
+            ESP_LOGW(TAG, "跌倒告警清除失败: 窗口序号=%u 错误=%s",
                      (unsigned)event->window_sequence,
                      esp_err_to_name(clear_ret));
         }
         fall_detection_store_alert_error(clear_ret);
         ESP_LOGI(TAG,
-                 "fall_alert_cleared: alert_sequence=%u sequence=%u clear_windows=%u fall_prob=%.4f clear_threshold=%.2f",
+                 "跌倒告警已清除: 告警序号=%u 窗口序号=%u 低风险窗口数=%u 跌倒概率=%.4f 清除阈值=%.2f",
                  (unsigned)event->alert_sequence,
                  (unsigned)event->window_sequence,
                  (unsigned)event->clear_window_count,
@@ -372,13 +383,16 @@ static void fall_detection_task(void *arg)
         if (window->frame_count !=
                 IMU_SERVICE_WINDOW_FRAME_COUNT ||
             window->sample_rate_hz !=
-                IMU_SERVICE_SAMPLE_RATE_HZ)
+                IMU_SERVICE_SAMPLE_RATE_HZ ||
+            window->trigger_frame_index !=
+                IMU_SERVICE_EVENT_PRE_FRAMES)
         {
             ESP_LOGW(TAG,
-                     "window_contract_mismatch: sequence=%u frames=%u rate=%u",
+                     "事件窗口契约不匹配: 序号=%u 帧数=%u 采样率=%u 触发帧=%u",
                      (unsigned)window->sequence,
                      (unsigned)window->frame_count,
-                     (unsigned)window->sample_rate_hz);
+                     (unsigned)window->sample_rate_hz,
+                     (unsigned)window->trigger_frame_index);
             fall_detection_store_inference_error(ESP_ERR_INVALID_SIZE);
             continue;
         }
@@ -391,7 +405,7 @@ static void fall_detection_task(void *arg)
             s_fall_detection.runner, s_fall_detection.model_input, &result);
         if (ret != ESP_OK)
         {
-            ESP_LOGW(TAG, "inference_failed: sequence=%u err=%s",
+            ESP_LOGW(TAG, "推理失败: 窗口序号=%u 错误=%s",
                      (unsigned)window->sequence,
                      esp_err_to_name(ret));
             fall_detection_store_inference_error(ret);
@@ -400,9 +414,11 @@ static void fall_detection_task(void *arg)
 
         fall_detection_store_result(window, &result);
         ESP_LOGI(TAG,
-                 "fall_window_result: sequence=%u source_sample_count=%u label=%s(%d) confidence=%.4f adl_prob=%.4f fall_prob=%.4f threshold=%.2f infer_ms=%.2f window_end_us=%lld",
+                 "跌倒表 | 窗口=%-4u 来源采样=%-6u 触发采样=%-6u flags=0x%02x | 判定=%s(%d) | 置信度=%.4f 日常=%.4f 跌倒=%.4f 阈值=%.2f | 推理_ms=%6.2f 触发_us=%lld 结束_us=%lld",
                  (unsigned)window->sequence,
                  (unsigned)window->source_sample_count,
+                 (unsigned)window->trigger_sample_count,
+                 (unsigned)window->trigger_flags,
                  fall_model_label_name(result.label_index),
                  result.label_index,
                  (double)result.confidence,
@@ -410,6 +426,7 @@ static void fall_detection_task(void *arg)
                  (double)result.fall_prob,
                  (double)FALL_MODEL_THRESHOLD_DEFAULT,
                  (double)result.infer_us / 1000.0,
+                 (long long)window->trigger_time_us,
                  (long long)window->end_time_us);
 
         const fall_detection_alert_event_t alert_event =
@@ -499,7 +516,7 @@ esp_err_t fall_detection_service_start(void)
     s_fall_detection.snapshot.last_error = ESP_OK;
     taskEXIT_CRITICAL(&s_fall_detection.lock);
 
-    ESP_LOGI(TAG, "started: model=%s threshold=%.2f queue_len=%u",
+    ESP_LOGI(TAG, "已启动: 模型=%s 阈值=%.2f 队列长度=%u",
              k_model_name,
              (double)FALL_MODEL_THRESHOLD_DEFAULT,
              (unsigned)k_window_queue_length);

@@ -49,20 +49,22 @@ typedef struct
     float threshold;                      /**< FALL probability threshold. */
     int64_t infer_us;                     /**< Latest inference time, in microseconds. */
     fall_detection_alert_state_t alert_state; /**< Current fall alert state. */
-    uint32_t alert_sequence;              /**< Monotonic fall alert sequence for App upload dedup/debug. */
+    uint32_t alert_sequence;              /**< Monotonic fall alert sequence for danger alert upload dedup/debug. */
     uint32_t clear_window_count;          /**< Consecutive low-FALL windows while alert is confirmed. */
     uint32_t last_alert_window_sequence;  /**< IMU window sequence that last confirmed fall. */
     float last_alert_fall_prob;           /**< FALL probability that last confirmed fall. */
-    esp_err_t last_alert_error;           /**< Latest local alert or App upload error; `ESP_OK` when accepted. */
+    esp_err_t last_alert_error;           /**< Latest local alert or danger alert upload error; `ESP_OK` when accepted. */
     esp_err_t last_error;                 /**< Latest error code; `ESP_OK` when healthy. */
 } fall_detection_service_snapshot_t;
 
 /**
  * @brief Start the fall detection runtime service.
  *
- * The service consumes full 50Hz/200-frame IMU windows from `imu_service`.
+ * The service consumes 50Hz event windows from `imu_service`.
  * It does not read IMU hardware directly. Confirmed falls are routed to the
- * common alert manager and watch endpoint exactly once per confirmed episode.
+ * common alert manager and watch endpoint exactly once per confirmed episode,
+ * while the alert manager keeps fall alerts silent by default and does not
+ * play the dangerous-sound warning audio.
  */
 esp_err_t fall_detection_service_start(void);
 
