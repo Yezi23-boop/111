@@ -1,6 +1,9 @@
 #include "ai_ui_controller.h"
 
+#include <stdint.h>
+
 #include "ai_chat_view.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "gui_guider.h"
 #include "services/network_service.h"
@@ -14,7 +17,9 @@ static lv_timer_t *s_status_timer = NULL;
 static lv_timer_t *s_destroy_timer = NULL;
 static ai_chat_view_t *s_pending_destroy_view = NULL;
 static bool s_foreground_requested = false;
+static uint32_t s_preconnect_last_request_ms = 0;
 static bool s_exit_requested = false;
+static const uint32_t kPreconnectRetryDelayMs = 15000;
 
 static void ai_ui_refresh_status(void);
 static void ai_ui_complete_exit_to_main(void);
@@ -81,6 +86,7 @@ static void ai_ui_back_event(void *user_data) {
 
     s_exit_requested = true;
     s_foreground_requested = false;
+    s_preconnect_last_request_ms = 0;
     official_chat_service_leave_foreground();
     ESP_LOGI(TAG, "ai exit requested");
     ai_ui_refresh_status();
@@ -104,8 +110,12 @@ static void ai_ui_refresh_status(void) {
     }
 
     network_service_state_t network_state = network_service_get_state();
-    official_chat_service_state_t service_state =
-        official_chat_service_get_state();
+    official_chat_service_snapshot_t chat_snapshot = {0};
+    if (official_chat_service_get_snapshot(&chat_snapshot) != ESP_OK) {
+        chat_snapshot.state = official_chat_service_get_state();
+        chat_snapshot.audio_channel_ready = false;
+    }
+    official_chat_service_state_t service_state = chat_snapshot.state;
     const bool shutdown_pending =
         s_exit_requested || official_chat_service_is_shutdown_pending();
 
@@ -124,21 +134,47 @@ static void ai_ui_refresh_status(void) {
         if (!s_foreground_requested) {
             official_chat_service_enter_foreground();
             s_foreground_requested = true;
+            s_preconnect_last_request_ms = 0;
             ESP_LOGI(TAG, "official_chat foreground requested");
         }
 
+        if (service_state == OFFICIAL_CHAT_SERVICE_STATE_IDLE &&
+            !chat_snapshot.audio_channel_ready &&
+            (s_preconnect_last_request_ms == 0 ||
+             lv_tick_elaps(s_preconnect_last_request_ms) >=
+                 kPreconnectRetryDelayMs)) {
+            const esp_err_t ret = official_chat_service_prepare_audio_channel();
+            if (ret == ESP_OK) {
+                s_preconnect_last_request_ms = lv_tick_get();
+                ESP_LOGI(TAG, "official_chat audio channel preconnect requested");
+            } else {
+                ESP_LOGW(TAG, "official_chat audio channel preconnect failed: %s",
+                         esp_err_to_name(ret));
+            }
+        }
+
+        const bool waiting_preconnect =
+            service_state == OFFICIAL_CHAT_SERVICE_STATE_IDLE &&
+            !chat_snapshot.audio_channel_ready;
+        const char *status_text = waiting_preconnect
+                                      ? "正在连接"
+                                      : ai_chat_view_service_title(service_state);
+        const char *hint_text = waiting_preconnect
+                                    ? "正在预连接 WebSocket，请稍候。"
+                                    : ai_chat_view_service_hint(service_state);
         ai_chat_view_set_top_status(
             s_view, ai_chat_view_network_badge_text(network_state),
-            ai_chat_view_network_badge_color(network_state),
-            ai_chat_view_service_title(service_state),
-            ai_chat_view_service_hint(service_state));
+            ai_chat_view_network_badge_color(network_state), status_text,
+            hint_text);
         ai_chat_view_set_secondary_action(s_view, "返回主页", true, true);
         const bool voice_visible =
-            (service_state == OFFICIAL_CHAT_SERVICE_STATE_IDLE ||
+            ((service_state == OFFICIAL_CHAT_SERVICE_STATE_IDLE &&
+              chat_snapshot.audio_channel_ready) ||
              service_state == OFFICIAL_CHAT_SERVICE_STATE_LISTENING);
         ai_chat_view_set_voice_button_visible(s_view, voice_visible);
     } else {
         s_foreground_requested = false;
+        s_preconnect_last_request_ms = 0;
         ai_chat_view_set_top_status(
             s_view, ai_chat_view_network_badge_text(network_state),
             ai_chat_view_network_badge_color(network_state),
@@ -188,6 +224,7 @@ static void ai_ui_status_timer_cb(lv_timer_t *timer) {
 void ai_ui_controller_init(lv_ui *ui) {
     s_ui = ui;
     s_exit_requested = false;
+    s_preconnect_last_request_ms = 0;
 }
 
 static void ai_ui_ensure_screen_created(void) {

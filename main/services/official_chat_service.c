@@ -11,7 +11,9 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "background_https_gate.h"
 #include "background_service_manager.h"
+#include "foreground_runtime_gate.h"
 #include "network_service.h"
 #include "official_chat.h"
 #include "sdkconfig.h"
@@ -45,12 +47,14 @@ static official_chat_handle_t s_chat_handle = NULL;               /* 底层会�
 static bool s_foreground_requested = false;                       /* 服务任务私有的前台意图。 */
 static bool s_shutdown_requested = false;                         /* 服务任务私有的关闭流程状态。 */
 static bool s_shutdown_stop_requested = false;                    /* 标记关闭流程中是否已发送 stop_listening。 */
+static bool s_foreground_runtime_gate_held = false;               /* 是否持有 official_chat 强前台运行时窗口。 */
 static TickType_t s_shutdown_destroy_deadline_ticks = 0;          /* quiet period 截止 tick，仅服务任务推进。 */
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static official_chat_service_snapshot_t s_snapshot = {
     .state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED,
     .foreground_active = false,
     .stop_pending = false,
+    .audio_channel_ready = false,
     .last_error = ESP_OK,
 };
 static StaticSemaphore_t s_text_mutex_buffer;                      /* 静态互斥锁存储，避免初始化时额外堆分配。 */
@@ -134,6 +138,17 @@ static void official_chat_service_set_last_error(esp_err_t error)
 }
 
 /**
+ * @brief 原子更新底层语音通道预连接状态。
+ * @param ready true 表示 WebSocket/音频通道已经打开。
+ */
+static void official_chat_service_set_audio_channel_ready(bool ready)
+{
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.audio_channel_ready = ready;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+/**
  * @brief 原子更新前台与停机意图字段。
  * @param foreground_active true 表示聊天处于前台意图。
  * @param stop_pending true 表示已有停机请求待服务任务收敛。
@@ -168,6 +183,48 @@ static void official_chat_service_set_foreground_audio_active(bool active,
                  active, reason != NULL ? reason : "unknown",
                  esp_err_to_name(ret));
     }
+}
+
+/**
+ * @brief 声明 official_chat 强前台运行时窗口。
+ *
+ * WebSocket/TLS 握手会短时间消耗片内 RAM 和 crypto 相关资源；进入 AI 页面时让
+ * ESP-DL 等可抢占后台任务让路，并暂时阻止低优先级 HTTPS 新请求叠加握手峰值。
+ *
+ * @param active true 表示进入 official_chat 前台窗口。
+ */
+static void official_chat_service_set_foreground_runtime_active(bool active)
+{
+    if (active)
+    {
+        background_https_gate_quiet_for(8000U, "official_chat_foreground");
+        if (s_foreground_runtime_gate_held)
+        {
+            return;
+        }
+
+        const esp_err_t ret = foreground_runtime_gate_acquire(
+            FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT, 0U);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "official_chat foreground gate acquire failed: %s",
+                     esp_err_to_name(ret));
+            return;
+        }
+
+        s_foreground_runtime_gate_held = true;
+        (void)background_service_manager_notify_foreground_runtime_changed();
+        return;
+    }
+
+    if (!s_foreground_runtime_gate_held)
+    {
+        return;
+    }
+
+    s_foreground_runtime_gate_held = false;
+    (void)foreground_runtime_gate_release(FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT);
+    (void)background_service_manager_notify_foreground_runtime_changed();
 }
 
 /**
@@ -352,6 +409,7 @@ static bool official_chat_service_requires_shutdown_quiet_period(
 static void official_chat_service_begin_shutdown_from_task(void)
 {
     official_chat_service_set_foreground_audio_active(false, "official_chat");
+    official_chat_service_set_foreground_runtime_active(false);
     s_foreground_requested = false;
     s_shutdown_requested = true;
     s_shutdown_stop_requested = false;
@@ -380,11 +438,27 @@ static void official_chat_service_handle_command(
         s_foreground_requested = true;
         official_chat_service_set_lifecycle_intent(true, false);
         official_chat_service_set_foreground_audio_active(true, "official_chat");
+        official_chat_service_set_foreground_runtime_active(true);
         ESP_LOGI(TAG, "command: enter_foreground");
         break;
     case OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP:
         official_chat_service_begin_shutdown_from_task();
         ESP_LOGI(TAG, "command: leave_foreground_and_stop");
+        break;
+    case OFFICIAL_CHAT_SERVICE_CMD_PREPARE_AUDIO_CHANNEL:
+        if (s_chat_handle != NULL && !s_shutdown_requested)
+        {
+            background_https_gate_quiet_for(8000U, "official_chat_preconnect");
+            const esp_err_t ret =
+                official_chat_prepare_audio_channel(s_chat_handle);
+            if (ret != ESP_OK)
+            {
+                official_chat_service_set_last_error(ret);
+                ESP_LOGW(TAG, "prepare_audio_channel failed: %s",
+                         esp_err_to_name(ret));
+            }
+        }
+        ESP_LOGI(TAG, "command: prepare_audio_channel");
         break;
     case OFFICIAL_CHAT_SERVICE_CMD_START_LISTENING:
         if (s_chat_handle != NULL && !s_shutdown_requested)
@@ -522,6 +596,8 @@ static void official_chat_service_event_cb(const official_chat_event_t *event,
         const official_chat_service_state_t state =
             map_official_chat_state(event->state);
         official_chat_service_set_state(state);
+        official_chat_service_set_audio_channel_ready(
+            official_chat_is_audio_channel_ready(s_chat_handle));
         ESP_LOGI(TAG, "state=%s",
                  official_chat_service_state_to_string(state));
         break;
@@ -584,6 +660,7 @@ static esp_err_t official_chat_service_start_internal(void)
 
     official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_STARTING);
     official_chat_service_set_last_error(ESP_OK);
+    official_chat_service_set_audio_channel_ready(false);
 
     s_chat_handle = official_chat_create(&config);
     if (s_chat_handle == NULL)
@@ -750,6 +827,7 @@ static void official_chat_service_task(void *arg)
 
             s_chat_handle = NULL;
             official_chat_service_set_last_error(ESP_OK);
+            official_chat_service_set_audio_channel_ready(false);
             official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_STOPPED);
             official_chat_service_set_lifecycle_intent(false, false);
             s_shutdown_requested = false;
@@ -1046,6 +1124,21 @@ esp_err_t official_chat_service_get_last_assistant_text(char *buffer,
     esp_err_t ret = official_chat_service_copy_text_locked(
         s_last_assistant_text, buffer, size);
     official_chat_service_unlock();
+    return ret;
+}
+
+/**
+ * @brief 供 AI 页面进入后触发语音通道预连接。
+ */
+esp_err_t official_chat_service_prepare_audio_channel(void)
+{
+    const esp_err_t ret = official_chat_service_post_command(
+        OFFICIAL_CHAT_SERVICE_CMD_PREPARE_AUDIO_CHANNEL, 0);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "prepare_audio_channel command failed: %s",
+                 esp_err_to_name(ret));
+    }
     return ret;
 }
 

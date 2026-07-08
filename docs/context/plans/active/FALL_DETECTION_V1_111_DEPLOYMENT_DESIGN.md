@@ -340,6 +340,7 @@ smoke FALL / ADL 样本
 - `[x]` 2026-07-08：修正 `imu_service_accel_window_t` 注释契约：5s 事件窗口发布当前板级右手系物理轴语义，Fall V1 消费方只负责 Z 轴取反和 gyro `rad/s` 转换。
 - `[x]` 2026-07-08：修复背面朝上误告警路径：删除 `imu_service` 定期窗口发布，`fall_detection_service` 拒绝 `flags=0` 非事件窗口；只有 `flags!=0` 的 Event Trigger 窗口可进入模型推理和确认。
 - `[x]` 2026-07-08：本地告警/红屏确认后最多保持 5 秒；`fall_detection_service` 通过 1 秒 queue timeout 和每次推理后的超时检查自动 clear，后续低风险事件窗口仍可提前 clear。
+- `[x]` 2026-07-08：新增 `fall_detection_service_destroy()` 对外一键销毁入口；销毁只断开 fall 模型窗口队列，不停止 `imu_service` 后台采样；运行中的 `fall_detect` task 进入 `STOPPING` 并在安全点释放 ESP-DL runner、static queue、queue storage、current window 和 model input PSRAM 缓冲。
 - `[ ]` 实现 post-check：低运动 + 姿态变化；普通确认和强置信兜底都必须满足 `low_motion`。
 - `[x]` 2026-07-08：默认策略确认：跌倒告警可以上传 `danger alert`，但 `APP_ALERT_SOURCE_FALL_DETECTION` 不播放危险提示音，也不抢占普通音频输出。
 - `[ ]` 板端验收静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒。
@@ -356,6 +357,7 @@ smoke FALL / ADL 样本
 - 2026-07-08：调试期将当前固件默认 FALL 阈值改为 `0.65`，偏离训练 run 推荐值 `0.85`；这会提高召回和告警触发率，也会提高 ADL 误报风险。
 - 2026-07-08：删除定期窗口推理路径；`imu_service` 不再发布 `flags=0` 周期窗口，`fall_detection_service` 也会拒绝任何 `flags=0` 非事件窗口。背面朝上等姿态误判应先被 Event Trigger / flags 门控挡住，后续 post-check 再做第二层过滤。
 - 2026-07-08：本地告警/红屏不再依赖后续窗口退出，确认后最多保持 5 秒；App danger alert 可上传一次，本机危险语音继续跳过。
+- 2026-07-08：Fall 模型运行时生命周期由 `fall_detection_service` 自己持有；外部只能调用 `fall_detection_service_destroy()` 表达销毁意图，禁止 UI 或其他 owner 直接删除 `fall_detect` task、释放 runner 或停止 `imu_service` 后台采样。
 
 ## 验证与验收
 
@@ -365,6 +367,7 @@ smoke FALL / ADL 样本
 - 2026-07-08 RF5s retry 板端验证：`board_logs/2026-07-08-16-39-22-fall-rf5s-deploy.log` 显示 `tcn_v1_rf5s_6ch_5s` 加载为 `shape=[1, 1500]`、`threshold=0.85`，`dl::Model: Test Pass!`；静止窗口判定 ADL，`fall_prob=0.0000`，推理约 8.9~10.9ms，无 panic。
 - 2026-07-08 删除定期窗口与 5 秒本地告警退出验证：source tests 16 passed；`idf.py build` 通过；context standard 错误 0、警告 0；COM7 `board_logs/2026-07-08-17-16-14-fall-no-periodic-5s-clear.log` 显示 `定期窗口表=0`、fall/imu `flags=0x00=0`、确认后约 5 秒 clear，且 `panic_log_seen=0`。完整静止佩戴、背面朝上、快速翻腕和模拟跌倒分场景验收仍需补采。
 - 2026-07-08 调试阈值 `0.65` 验证：fall source tests 16 passed；`idf.py build` 通过；COM7 `board_logs/2026-07-08-17-39-30-fall-threshold-065.log` 显示 `threshold=0.65`、`Model: Test Pass!`、`panic_log_seen=0`；context standard 错误 0、警告 0。
+- 2026-07-08 一键销毁入口验证：`uv run python -m unittest tests.test_fall_detection_service_source tests.test_fall_detection_inference_source tests.test_imu_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin` `0xace0b0`，app free `0x331f50`/23%。板端实际点击销毁/重启模型的 RAM 日志仍需补采。
 
 ## 幂等与恢复
 

@@ -176,6 +176,17 @@ esp_err_t official_chat_start(official_chat_handle_t handle);
 esp_err_t official_chat_prepare_shutdown(official_chat_handle_t handle);
 
 /**
+ * @brief 预先建立语音通道但不开始录音。
+ *
+ * AI 页面可在进入前台后调用它完成 WebSocket/音频通道预连接，
+ * 用户后续按住说话时就不需要把首次连接延迟压到按键动作上。
+ *
+ * @param[in] handle 有效实例。
+ * @return ESP_OK 表示预连接请求已投递。
+ */
+esp_err_t official_chat_prepare_audio_channel(official_chat_handle_t handle);
+
+/**
  * @brief 手动通过信令或按键触发机器开始录音监听。
  * @param[in] handle 有效实例。
  * @return ESP_OK 成功投递开始事件至核心处理状态机。
@@ -227,6 +238,17 @@ bool official_chat_get_device_aec_enabled(official_chat_handle_t handle);
  * @return official_chat_state_t 状态枚举
  */
 official_chat_state_t official_chat_get_state(official_chat_handle_t handle);
+
+/**
+ * @brief 查询语音通道是否已经打开。
+ *
+ * 该接口用于服务层生成 UI 快照，避免页面只凭 IDLE 状态猜测
+ * WebSocket 是否已经预连接完成。
+ *
+ * @param[in] handle 有效实例。
+ * @return true 表示后续按住说话可直接进入录音态。
+ */
+bool official_chat_is_audio_channel_ready(official_chat_handle_t handle);
 
 /**
  * @brief 全局或局部变更 MQTT 协议栈所需网络安全及队列配置。

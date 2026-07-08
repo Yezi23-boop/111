@@ -1,5 +1,7 @@
 #include "services/fall_detection_service.h"
 
+#include <string.h>
+
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -28,7 +30,7 @@ static const char *k_model_name = "tcn_v1_rf5s_6ch_5s";
 static const float k_degrees_to_radians = 0.017453292519943295f;
 static const float k_fall_clear_threshold = 0.50f; // 后续事件窗口低风险时允许提前解除已确认跌倒。
 static const uint32_t k_fall_clear_window_count = 2U; // 仅作为事件窗口低风险恢复证据。
-static const TickType_t k_alert_receive_timeout_ticks = pdMS_TO_TICKS(1000);
+static const TickType_t k_alert_receive_timeout_ticks = pdMS_TO_TICKS(250); // 兼作一键销毁请求的最大响应延迟。
 static const int64_t k_fall_alert_auto_clear_us = 5LL * 1000LL * 1000LL; // 本地红屏/告警最多保持 5 秒。
 typedef enum
 {
@@ -50,6 +52,7 @@ typedef struct
 typedef struct
 {
     bool started;
+    bool destroy_requested;
     TaskHandle_t task_handle;
     portMUX_TYPE lock;
     fall_detection_service_snapshot_t snapshot;
@@ -64,6 +67,7 @@ typedef struct
 
 static fall_detection_context_t s_fall_detection = {
     .started = false,
+    .destroy_requested = false,
     .task_handle = NULL,
     .lock = portMUX_INITIALIZER_UNLOCKED,
     .snapshot = {
@@ -203,6 +207,96 @@ static QueueHandle_t fall_detection_prepare_window_queue(void)
         s_fall_detection.window_queue_storage,
         &s_fall_detection.window_queue_control);
     return s_fall_detection.window_queue;
+}
+
+static void fall_detection_release_runtime_resources(void)
+{
+    if (s_fall_detection.runner != NULL)
+    {
+        fall_model_runner_destroy(s_fall_detection.runner);
+        s_fall_detection.runner = NULL;
+    }
+
+    if (s_fall_detection.window_queue != NULL)
+    {
+        vQueueDelete(s_fall_detection.window_queue);
+        s_fall_detection.window_queue = NULL;
+    }
+
+    if (s_fall_detection.window_queue_storage != NULL)
+    {
+        heap_caps_free(s_fall_detection.window_queue_storage);
+        s_fall_detection.window_queue_storage = NULL;
+    }
+
+    if (s_fall_detection.current_window != NULL)
+    {
+        heap_caps_free(s_fall_detection.current_window);
+        s_fall_detection.current_window = NULL;
+    }
+
+    if (s_fall_detection.model_input != NULL)
+    {
+        heap_caps_free(s_fall_detection.model_input);
+        s_fall_detection.model_input = NULL;
+    }
+
+    memset(&s_fall_detection.window_queue_control, 0,
+           sizeof(s_fall_detection.window_queue_control));
+}
+
+static void fall_detection_store_destroyed(esp_err_t error)
+{
+    taskENTER_CRITICAL(&s_fall_detection.lock);
+    s_fall_detection.started = false;
+    s_fall_detection.destroy_requested = false;
+    s_fall_detection.task_handle = NULL;
+    s_fall_detection.snapshot.state = FALL_DETECTION_SERVICE_STATE_STOPPED;
+    s_fall_detection.snapshot.model_ready = false;
+    s_fall_detection.snapshot.self_test_passed = false;
+    s_fall_detection.snapshot.window_count = 0;
+    s_fall_detection.snapshot.inference_count = 0;
+    s_fall_detection.snapshot.inference_error_count = 0;
+    s_fall_detection.snapshot.last_window_sequence = 0;
+    s_fall_detection.snapshot.last_window_end_time_us = 0;
+    s_fall_detection.snapshot.label_index = -1;
+    s_fall_detection.snapshot.confidence = 0.0f;
+    s_fall_detection.snapshot.adl_prob = 0.0f;
+    s_fall_detection.snapshot.fall_prob = 0.0f;
+    s_fall_detection.snapshot.threshold = FALL_MODEL_THRESHOLD_DEFAULT;
+    s_fall_detection.snapshot.infer_us = 0;
+    s_fall_detection.snapshot.alert_state = FALL_DETECTION_ALERT_STATE_IDLE;
+    s_fall_detection.snapshot.clear_window_count = 0;
+    s_fall_detection.snapshot.last_alert_window_sequence = 0;
+    s_fall_detection.snapshot.last_alert_fall_prob = 0.0f;
+    s_fall_detection.snapshot.last_alert_error = ESP_OK;
+    s_fall_detection.snapshot.last_error = error;
+    s_fall_detection.last_alert_time_us = 0;
+    taskEXIT_CRITICAL(&s_fall_detection.lock);
+}
+
+static void fall_detection_store_start_error(esp_err_t error)
+{
+    taskENTER_CRITICAL(&s_fall_detection.lock);
+    s_fall_detection.started = false;
+    s_fall_detection.destroy_requested = false;
+    s_fall_detection.task_handle = NULL;
+    s_fall_detection.snapshot.state = FALL_DETECTION_SERVICE_STATE_ERROR;
+    s_fall_detection.snapshot.model_ready = false;
+    s_fall_detection.snapshot.self_test_passed = false;
+    s_fall_detection.snapshot.alert_state = FALL_DETECTION_ALERT_STATE_IDLE;
+    s_fall_detection.snapshot.clear_window_count = 0;
+    s_fall_detection.snapshot.last_error = error;
+    s_fall_detection.last_alert_time_us = 0;
+    taskEXIT_CRITICAL(&s_fall_detection.lock);
+}
+
+static bool fall_detection_destroy_requested(void)
+{
+    taskENTER_CRITICAL(&s_fall_detection.lock);
+    const bool requested = s_fall_detection.destroy_requested;
+    taskEXIT_CRITICAL(&s_fall_detection.lock);
+    return requested;
 }
 
 /**
@@ -413,12 +507,46 @@ static void fall_detection_handle_alert_event(
     }
 }
 
+static void fall_detection_clear_alert_for_destroy(void)
+{
+    bool had_active_alert = false;
+
+    taskENTER_CRITICAL(&s_fall_detection.lock);
+    if (s_fall_detection.snapshot.alert_state ==
+        FALL_DETECTION_ALERT_STATE_CONFIRMED)
+    {
+        s_fall_detection.snapshot.alert_state =
+            FALL_DETECTION_ALERT_STATE_IDLE;
+        s_fall_detection.snapshot.clear_window_count = 0;
+        s_fall_detection.last_alert_time_us = 0;
+        had_active_alert = true;
+    }
+    taskEXIT_CRITICAL(&s_fall_detection.lock);
+
+    if (had_active_alert)
+    {
+        const esp_err_t clear_ret =
+            app_alert_manager_clear(APP_ALERT_SOURCE_FALL_DETECTION);
+        fall_detection_store_alert_error(clear_ret);
+        if (clear_ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "销毁时清除跌倒告警失败: %s",
+                     esp_err_to_name(clear_ret));
+        }
+    }
+}
+
 static void fall_detection_task(void *arg)
 {
     (void)arg;
 
     while (1)
     {
+        if (fall_detection_destroy_requested())
+        {
+            break;
+        }
+
         if (xQueueReceive(s_fall_detection.window_queue,
                           s_fall_detection.current_window,
                           k_alert_receive_timeout_ticks) != pdTRUE)
@@ -428,6 +556,12 @@ static void fall_detection_task(void *arg)
             fall_detection_handle_alert_event(&timeout_event);
             continue;
         }
+
+        if (fall_detection_destroy_requested())
+        {
+            break;
+        }
+
         const imu_service_accel_window_t *window =
             s_fall_detection.current_window;
         fall_detection_store_window_received(window);
@@ -499,32 +633,49 @@ static void fall_detection_task(void *arg)
             fall_detection_update_alert_timeout(esp_timer_get_time());
         fall_detection_handle_alert_event(&timeout_event);
     }
+
+    fall_detection_clear_alert_for_destroy();
+    fall_detection_release_runtime_resources();
+    fall_detection_store_destroyed(ESP_OK);
+    ESP_LOGI(TAG, "已销毁: 模型runner和PSRAM窗口缓冲已释放");
+    vTaskDelete(NULL);
 }
 
 esp_err_t fall_detection_service_start(void)
 {
     taskENTER_CRITICAL(&s_fall_detection.lock);
     const bool already_started = s_fall_detection.started;
+    const fall_detection_service_state_t state =
+        s_fall_detection.snapshot.state;
     taskEXIT_CRITICAL(&s_fall_detection.lock);
     if (already_started)
     {
         return ESP_OK;
     }
+    if (state == FALL_DETECTION_SERVICE_STATE_STOPPING)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
 
-    fall_detection_store_state(FALL_DETECTION_SERVICE_STATE_STARTING, ESP_OK);
+    taskENTER_CRITICAL(&s_fall_detection.lock);
+    s_fall_detection.destroy_requested = false;
+    s_fall_detection.snapshot.state = FALL_DETECTION_SERVICE_STATE_STARTING;
+    s_fall_detection.snapshot.last_error = ESP_OK;
+    taskEXIT_CRITICAL(&s_fall_detection.lock);
 
     esp_err_t ret = fall_detection_prepare_buffers();
     if (ret != ESP_OK)
     {
-        fall_detection_store_state(FALL_DETECTION_SERVICE_STATE_ERROR, ret);
+        fall_detection_release_runtime_resources();
+        fall_detection_store_start_error(ret);
         return ret;
     }
 
     QueueHandle_t queue = fall_detection_prepare_window_queue();
     if (queue == NULL)
     {
-        fall_detection_store_state(FALL_DETECTION_SERVICE_STATE_ERROR,
-                                   ESP_ERR_NO_MEM);
+        fall_detection_release_runtime_resources();
+        fall_detection_store_start_error(ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
 
@@ -534,16 +685,16 @@ esp_err_t fall_detection_service_start(void)
         k_model_name);
     if (ret != ESP_OK)
     {
-        fall_detection_store_state(FALL_DETECTION_SERVICE_STATE_ERROR, ret);
+        fall_detection_release_runtime_resources();
+        fall_detection_store_start_error(ret);
         return ret;
     }
 
     ret = fall_model_runner_self_test(s_fall_detection.runner);
     if (ret != ESP_OK)
     {
-        fall_model_runner_destroy(s_fall_detection.runner);
-        s_fall_detection.runner = NULL;
-        fall_detection_store_state(FALL_DETECTION_SERVICE_STATE_ERROR, ret);
+        fall_detection_release_runtime_resources();
+        fall_detection_store_start_error(ret);
         return ret;
     }
     fall_detection_store_model_ready(true);
@@ -551,9 +702,8 @@ esp_err_t fall_detection_service_start(void)
     ret = imu_service_set_window_queue(queue);
     if (ret != ESP_OK)
     {
-        fall_model_runner_destroy(s_fall_detection.runner);
-        s_fall_detection.runner = NULL;
-        fall_detection_store_state(FALL_DETECTION_SERVICE_STATE_ERROR, ret);
+        fall_detection_release_runtime_resources();
+        fall_detection_store_start_error(ret);
         return ret;
     }
 
@@ -568,11 +718,8 @@ esp_err_t fall_detection_service_start(void)
     if (created != pdPASS)
     {
         (void)imu_service_set_window_queue(NULL);
-        fall_model_runner_destroy(s_fall_detection.runner);
-        s_fall_detection.runner = NULL;
-        s_fall_detection.task_handle = NULL;
-        fall_detection_store_state(FALL_DETECTION_SERVICE_STATE_ERROR,
-                                   ESP_ERR_NO_MEM);
+        fall_detection_release_runtime_resources();
+        fall_detection_store_start_error(ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
 
@@ -586,6 +733,57 @@ esp_err_t fall_detection_service_start(void)
              k_model_name,
              (double)FALL_MODEL_THRESHOLD_DEFAULT,
              (unsigned)k_window_queue_length);
+    return ESP_OK;
+}
+
+esp_err_t fall_detection_service_destroy(void)
+{
+    TaskHandle_t task = NULL;
+    bool task_active = false;
+    bool has_runtime_resources = false;
+
+    taskENTER_CRITICAL(&s_fall_detection.lock);
+    task = s_fall_detection.task_handle;
+    task_active = task != NULL;
+    has_runtime_resources = s_fall_detection.started ||
+                            task_active ||
+                            s_fall_detection.runner != NULL ||
+                            s_fall_detection.window_queue != NULL ||
+                            s_fall_detection.window_queue_storage != NULL ||
+                            s_fall_detection.current_window != NULL ||
+                            s_fall_detection.model_input != NULL;
+    if (task_active)
+    {
+        s_fall_detection.destroy_requested = true;
+        s_fall_detection.snapshot.state =
+            FALL_DETECTION_SERVICE_STATE_STOPPING;
+        s_fall_detection.snapshot.last_error = ESP_OK;
+    }
+    taskEXIT_CRITICAL(&s_fall_detection.lock);
+
+    if (!has_runtime_resources)
+    {
+        fall_detection_store_destroyed(ESP_OK);
+        return ESP_OK;
+    }
+
+    /*
+     * 只断开 fall 模型窗口消费者，保留 imu_service 后台采样。
+     * runner/queue/buffer 由 fall task 在退出点释放，避免推理中途被外部删除。
+     */
+    (void)imu_service_set_window_queue(NULL);
+
+    if (task_active)
+    {
+        xTaskNotifyGive(task);
+        ESP_LOGI(TAG, "正在销毁: 已断开IMU窗口队列，等待fall任务释放模型资源");
+        return ESP_OK;
+    }
+
+    fall_detection_clear_alert_for_destroy();
+    fall_detection_release_runtime_resources();
+    fall_detection_store_destroyed(ESP_OK);
+    ESP_LOGI(TAG, "已销毁: 模型runner和PSRAM窗口缓冲已释放");
     return ESP_OK;
 }
 
@@ -612,6 +810,8 @@ const char *fall_detection_service_state_text(fall_detection_service_state_t sta
         return "starting";
     case FALL_DETECTION_SERVICE_STATE_RUNNING:
         return "running";
+    case FALL_DETECTION_SERVICE_STATE_STOPPING:
+        return "stopping";
     case FALL_DETECTION_SERVICE_STATE_ERROR:
         return "error";
     default:

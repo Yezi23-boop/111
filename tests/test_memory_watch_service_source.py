@@ -309,6 +309,28 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
             inbox_worker_section,
         )
 
+    def test_service_retries_background_https_without_dropping_pending_work(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("kBackgroundHttpsRetryIntervalMs", source)
+        self.assertIn("s_health_check_pending", source)
+        self.assertIn("s_health_retry_next_due_ms", source)
+        self.assertIn("memory_watch_service_schedule_health_retry", source)
+        self.assertIn("watch endpoint health transient failure: keep_online", source)
+        self.assertIn(
+            "memory_watch_service_set_endpoint_snapshot(true, before.hermes_online)",
+            source,
+        )
+
+        inbox_retry_section = source.rsplit(
+            "static void memory_watch_service_inbox_handle_worker_result", 1
+        )[1].split("esp_err_t memory_watch_service_get_inbox_meta")[0]
+        self.assertIn("s_inbox_poll_next_due_ms", inbox_retry_section)
+        self.assertIn("memory_watch_service_inbox_set_poll_pending(true)", inbox_retry_section)
+        self.assertIn("inbox: poll failed, will retry in", inbox_retry_section)
+        self.assertIn("MEMORY_WATCH_INBOX_SYNC_AUTH_ERROR", inbox_retry_section)
+        self.assertIn("memory_watch_service_inbox_set_poll_pending(false)", inbox_retry_section)
+
     def test_service_splits_cancel_paths_and_ignores_late_results(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
 

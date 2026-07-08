@@ -121,6 +121,24 @@ class OfficialChatSourceTests(unittest.TestCase):
         self.assertIn("xEventGroupSetBits(event_group_, kMainEventStopListening);",
                       app)
 
+    def test_official_chat_exposes_audio_channel_preconnect(self) -> None:
+        header = OFFICIAL_CHAT_HEADER.read_text(encoding="utf-8")
+        app_header = (OFFICIAL_CHAT_DIR / "application.h").read_text(
+            encoding="utf-8"
+        )
+        app = OFFICIAL_CHAT_APPLICATION.read_text(encoding="utf-8")
+        c_api = OFFICIAL_CHAT_C_API.read_text(encoding="utf-8")
+
+        self.assertIn("official_chat_prepare_audio_channel(", header)
+        self.assertIn("official_chat_is_audio_channel_ready(", header)
+        self.assertIn("esp_err_t PrepareAudioChannel();", app_header)
+        self.assertIn("bool IsAudioChannelReady() const;", app_header)
+        self.assertIn("kMainEventPrepareAudioChannel", app_header)
+        self.assertIn("HandlePrepareAudioChannelEvent", app)
+        self.assertIn("ContinuePrepareAudioChannel", app)
+        self.assertIn("return handle->app.PrepareAudioChannel();", c_api)
+        self.assertIn("return handle->app.IsAudioChannelReady();", c_api)
+
     def test_official_chat_wake_word_fetch_uses_bounded_shutdown_wait(self) -> None:
         source = OFFICIAL_CHAT_AFE_WAKE_WORD.read_text(encoding="utf-8")
 
@@ -182,9 +200,12 @@ class OfficialChatSourceTests(unittest.TestCase):
     def test_official_chat_skips_local_sr_model_loader(self) -> None:
         source = OFFICIAL_CHAT_APPLICATION.read_text(encoding="utf-8")
 
+        namespace_end = "}  // namespace official_chat"
+        if namespace_end not in source:
+            namespace_end = "} // namespace official_chat"
         init_body = source[
             source.index("esp_err_t Application::InitializeAudioService()")
-            : source.index("}  // namespace official_chat")
+            : source.index(namespace_end)
         ]
         self.assertIn("models_list_.reset();", init_body)
         self.assertIn("不需要本地 wake word", init_body)

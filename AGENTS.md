@@ -137,7 +137,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 板级事实由 `main/app/board_*` 或现有 board owner 持有；GPIO、总线地址、片选、传感器轴向、硬件阈值不得长期散落在 service 或 driver 中。
 - 资源受限路径优先静态分配或受控分配；区分 task stack、internal RAM、PSRAM、DMA-capable memory 和长期缓存，不把大对象默认放到任务栈。
 - 必要的输入、返回值和超时要检查；不要为假设场景堆叠复杂兜底、重试、状态机或包装层。
-- 新增协议字段、NVS key、状态枚举、owner 边界或跨端契约时，优先补 source test、契约测试或文档检查。
+- Build 用来证明代码能编译；测试用来证明重要约定没被破坏
 - 算法或 AI 相关实现默认拆分为预处理、推理、后处理和模型配置，避免把阈值、量化参数、模型 I/O 和业务逻辑混写。
 - 代码风格向 Google Code Style 靠拢，但不为新规则大面积重排无关旧代码。
 - 新增模块、跨 owner 改动或明显重构前，先给出简短文件划分和模块职责；窄 bugfix 或局部补测试不需要额外扩写方案。

@@ -28,6 +28,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
 
         self.assertIn("fall_detection_service_snapshot_t", header)
         self.assertIn("FALL_DETECTION_SERVICE_STATE_RUNNING", header)
+        self.assertIn("FALL_DETECTION_SERVICE_STATE_STOPPING", header)
         self.assertIn("bool model_ready", header)
         self.assertIn("bool self_test_passed", header)
         self.assertIn("uint32_t window_count", header)
@@ -44,6 +45,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("float last_alert_fall_prob", header)
         self.assertIn("esp_err_t last_alert_error", header)
         self.assertIn("fall_detection_service_get_snapshot", header)
+        self.assertIn("fall_detection_service_destroy", header)
         self.assertIn("does not read IMU hardware directly", header)
         self.assertIn("common alert manager and watch endpoint", header)
         self.assertIn("does not\n * play the dangerous-sound warning audio", header)
@@ -109,7 +111,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
 
         self.assertIn("static const float k_fall_clear_threshold = 0.50f;", source)
         self.assertIn("static const uint32_t k_fall_clear_window_count = 2U;", source)
-        self.assertIn("k_alert_receive_timeout_ticks = pdMS_TO_TICKS(1000)", source)
+        self.assertIn("k_alert_receive_timeout_ticks = pdMS_TO_TICKS(250)", source)
         self.assertIn("k_fall_alert_auto_clear_us = 5LL * 1000LL * 1000LL", source)
         self.assertIn("last_alert_time_us", source)
         self.assertIn("fall_detection_update_alert_timeout", source)
@@ -151,6 +153,32 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertNotIn("app_upload_pending", source)
         self.assertNotIn("fall_detection_retry_pending_app_upload", source)
         self.assertNotIn("fall_app_upload_retry_failed:", source)
+
+    def test_destroy_api_detaches_fall_queue_and_releases_model_resources(self) -> None:
+        source = FALL_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
+        header = FALL_DETECTION_SERVICE_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("fall_detection_service_destroy(void)", header)
+        self.assertIn("FALL_DETECTION_SERVICE_STATE_STOPPING", header)
+        self.assertIn("fall_detection_release_runtime_resources", source)
+        self.assertIn("fall_detection_store_destroyed", source)
+        self.assertIn("fall_detection_destroy_requested", source)
+        self.assertIn("fall_detection_clear_alert_for_destroy", source)
+        self.assertIn("s_fall_detection.destroy_requested = true;", source)
+        self.assertIn(
+            "s_fall_detection.snapshot.state =\n"
+            "            FALL_DETECTION_SERVICE_STATE_STOPPING;",
+            source,
+        )
+        self.assertIn("(void)imu_service_set_window_queue(NULL);", source)
+        self.assertIn("fall_model_runner_destroy(s_fall_detection.runner)", source)
+        self.assertIn("vQueueDelete(s_fall_detection.window_queue)", source)
+        self.assertIn("heap_caps_free(s_fall_detection.window_queue_storage)", source)
+        self.assertIn("heap_caps_free(s_fall_detection.current_window)", source)
+        self.assertIn("heap_caps_free(s_fall_detection.model_input)", source)
+        self.assertIn('return "stopping";', source)
+        self.assertIn("已销毁: 模型runner和PSRAM窗口缓冲已释放", source)
+        self.assertNotIn("imu_service_stop", source)
 
     def test_app_alert_manager_declares_fall_source_and_label(self) -> None:
         header = APP_ALERT_MANAGER_HEADER.read_text(encoding="utf-8")

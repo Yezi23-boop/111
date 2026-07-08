@@ -19,7 +19,9 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "official_chat.h"', source)
+        self.assertIn('#include "background_https_gate.h"', source)
         self.assertIn('#include "background_service_manager.h"', source)
+        self.assertIn('#include "foreground_runtime_gate.h"', source)
         self.assertIn("official_chat_create(", source)
         self.assertIn("official_chat_destroy(", source)
         self.assertIn("official_chat_set_event_callback(", source)
@@ -38,6 +40,12 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("official_chat_service_handle_command(", source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND", source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP",
+                      source)
+        self.assertIn("FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT", source)
+        self.assertIn("foreground_runtime_gate_acquire(", source)
+        self.assertIn("foreground_runtime_gate_release(", source)
+        self.assertIn("background_https_gate_quiet_for(8000U", source)
+        self.assertIn("background_service_manager_notify_foreground_runtime_changed()",
                       source)
         self.assertIn("official_chat_get_state(", source)
         self.assertIn("official_chat_stop_listening(", source)
@@ -81,6 +89,9 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("bool official_chat_service_is_shutdown_pending(void);",
                       header)
         self.assertIn("esp_err_t official_chat_service_shutdown(void);", header)
+        self.assertIn("audio_channel_ready", header)
+        self.assertIn("esp_err_t official_chat_service_prepare_audio_channel(void);",
+                      header)
         self.assertIn("esp_err_t official_chat_service_start_listening(void);",
                       header)
         self.assertIn("esp_err_t official_chat_service_stop_listening(void);",
@@ -115,6 +126,13 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
         ui_source = AI_UI_SOURCE.read_text(encoding="utf-8")
 
+        self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_PREPARE_AUDIO_CHANNEL", source)
+        self.assertIn("official_chat_prepare_audio_channel(s_chat_handle)",
+                      source)
+        self.assertIn("official_chat_is_audio_channel_ready(s_chat_handle)",
+                      source)
+        self.assertIn("official_chat_service_prepare_audio_channel(void)",
+                      source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_START_LISTENING", source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_STOP_LISTENING", source)
         self.assertIn("official_chat_start_listening(s_chat_handle)", source)
@@ -124,6 +142,11 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn("return ret;", source)
+        self.assertIn("official_chat_service_get_snapshot(&chat_snapshot)",
+                      ui_source)
+        self.assertIn("official_chat_service_prepare_audio_channel();",
+                      ui_source)
+        self.assertIn("chat_snapshot.audio_channel_ready", ui_source)
         self.assertIn("official_chat_service_start_listening();", ui_source)
         self.assertIn("official_chat_service_stop_listening();", ui_source)
         self.assertIn("ai_chat_view_set_voice_button_visible(", ui_source)

@@ -12,6 +12,7 @@ class ForegroundRuntimeGateSourceTests(unittest.TestCase):
         self.assertIn("foreground_runtime_owner_t", header)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_NONE", header)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_HERMES", header)
+        self.assertIn("FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT", header)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING", header)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_OTA", header)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_FUTURE_PAGE", header)
@@ -34,6 +35,7 @@ class ForegroundRuntimeGateSourceTests(unittest.TestCase):
         self.assertIn("esp_timer_get_time()", source)
         self.assertIn("ESP_ERR_INVALID_STATE", source)
         self.assertIn("foreground_runtime_gate_owner_text", source)
+        self.assertIn('return "OFFICIAL_CHAT";', source)
 
         forbidden_tokens = (
             "malloc(",

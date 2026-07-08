@@ -182,6 +182,7 @@ const lv_font_t *ui_font_assets_icon(void) { return &lv_font_montserratMedium_16
 
 static official_chat_service_state_t s_mock_chat_state =
     OFFICIAL_CHAT_SERVICE_STATE_IDLE;
+static bool s_mock_audio_channel_ready = true;
 static official_chat_service_message_t s_mock_messages[12] = {
     { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_USER, "你好, 小智!" },
     { OFFICIAL_CHAT_SERVICE_MESSAGE_ROLE_ASSISTANT, "你好! 我是小智, 你的个人 AI 语音助手. 很高兴为你服务." },
@@ -254,9 +255,27 @@ esp_err_t official_chat_service_get_last_assistant_text(char *buffer, size_t siz
 }
 
 bool official_chat_service_is_shutdown_pending(void) { return false; }
-void official_chat_service_leave_foreground(void) { s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED; }
+void official_chat_service_leave_foreground(void) {
+    s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
+    s_mock_audio_channel_ready = false;
+}
 void official_chat_service_enter_foreground(void) { s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_IDLE; }
 official_chat_service_state_t official_chat_service_get_state(void) { return s_mock_chat_state; }
+esp_err_t official_chat_service_get_snapshot(official_chat_service_snapshot_t *out_snapshot) {
+    if (out_snapshot == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    out_snapshot->state = s_mock_chat_state;
+    out_snapshot->foreground_active = s_mock_chat_state != OFFICIAL_CHAT_SERVICE_STATE_STOPPED;
+    out_snapshot->stop_pending = false;
+    out_snapshot->audio_channel_ready = s_mock_audio_channel_ready;
+    out_snapshot->last_error = ESP_OK;
+    return ESP_OK;
+}
+esp_err_t official_chat_service_prepare_audio_channel(void) {
+    s_mock_audio_channel_ready = true;
+    return ESP_OK;
+}
 esp_err_t official_chat_service_start_listening(void) {
     s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_LISTENING;
     return ESP_OK;
@@ -270,6 +289,7 @@ esp_err_t official_chat_service_stop_listening(void) {
             "可以. 我建议先吃饭, 再留 30 分钟处理手表 UI 验证, 最后把明早要做的事列成三条.");
     }
     s_mock_chat_state = OFFICIAL_CHAT_SERVICE_STATE_IDLE;
+    s_mock_audio_channel_ready = false;
     return ESP_OK;
 }
 

@@ -44,6 +44,7 @@ extern "C"
         OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP,
         OFFICIAL_CHAT_SERVICE_CMD_NETWORK_READY,
         OFFICIAL_CHAT_SERVICE_CMD_BUDGET_CHANGED,
+        OFFICIAL_CHAT_SERVICE_CMD_PREPARE_AUDIO_CHANNEL,
         OFFICIAL_CHAT_SERVICE_CMD_START_LISTENING,
         OFFICIAL_CHAT_SERVICE_CMD_STOP_LISTENING,
     } official_chat_service_cmd_type_t;
@@ -61,6 +62,7 @@ extern "C"
         official_chat_service_state_t state; /* 当前服务状态。 */
         bool foreground_active;              /* UI 是否声明聊天前台活跃。 */
         bool stop_pending;                   /* 是否已有退出/停机命令待收敛。 */
+        bool audio_channel_ready;            /* 底层 WebSocket/音频通道是否已预连接。 */
         esp_err_t last_error;                /* 最近一次底层或服务错误。 */
     } official_chat_service_snapshot_t;
 
@@ -105,6 +107,9 @@ extern "C"
     /* 获取最近一条助手文本。 */
     esp_err_t official_chat_service_get_last_assistant_text(char *buffer,
                                                             size_t size);
+
+    /* 供 UI 页面进入后触发 WebSocket/音频通道预连接。 */
+    esp_err_t official_chat_service_prepare_audio_channel(void);
 
     /* 供 UI 按键触发开始聆听。 */
     esp_err_t official_chat_service_start_listening(void);

@@ -38,6 +38,7 @@ constexpr EventBits_t kMainEventWorkerExited = BIT9;             /**< 后台工�
 constexpr EventBits_t kMainEventActivationDone = BIT10;          /**< 激活流程（包括网络或配置拉取）完成的通知位。 */
 constexpr EventBits_t kMainEventUpgradeProgress = BIT11;         /**< OTA/固件升级进度更新的通知位。 */
 constexpr EventBits_t kMainEventGracefulButtonStopTimeout = BIT12; /**< 优雅停机超时（防止长按死锁的兜底退出）通知位。 */
+constexpr EventBits_t kMainEventPrepareAudioChannel = BIT13;     /**< 只预连接音频通道，不进入录音态。 */
 
 /**
  * @brief srmodel_list_t 的自定义删除器。
@@ -95,6 +96,16 @@ class Application {
    * @return 触发成功与否状态。
    */
   esp_err_t StartListening();
+
+  /**
+   * @brief 预先建立语音通道。
+   *
+   * 用于 AI 页面进入后的 WebSocket 预连接。该接口只打开协议音频通道，
+   * 不发送开始聆听指令，也不启用麦克风采集。
+   *
+   * @return ESP_OK 表示预连接事件已投递。
+   */
+  esp_err_t PrepareAudioChannel();
 
   /**
    * @brief 触发人工模拟的语音唤醒事件。
@@ -157,6 +168,12 @@ class Application {
    */
   DeviceState GetState() const;
 
+  /**
+   * @brief 查询底层协议音频通道是否已打开。
+   * @return true 表示按住说话可以直接进入录音态。
+   */
+  bool IsAudioChannelReady() const;
+
  private:
   struct ProgressSnapshot {
     int progress = 0;
@@ -170,6 +187,7 @@ class Application {
   void HandleActivationDoneEvent();
   void HandleUpgradeProgressEvent();
   void HandleToggleChatEvent();
+  void HandlePrepareAudioChannelEvent();
   void HandleStartListeningEvent();
   void HandleStartListeningEvent(ListeningMode mode);
   void HandleStopListeningEvent();
@@ -178,6 +196,7 @@ class Application {
   void HandleGracefulButtonStopTimeout();
   void StartActivationTask();
   void ActivationTask();
+  void ContinuePrepareAudioChannel();
   void ContinueOpenAudioChannel(ListeningMode mode);
   void ContinueWakeWordInvoke(const std::string &wake_word);
   ListeningMode GetDefaultListeningMode() const;
@@ -223,6 +242,8 @@ class Application {
   esp_timer_handle_t graceful_button_stop_timer_ = nullptr;
   TaskHandle_t worker_task_handle_ = nullptr;
   TaskHandle_t activation_task_handle_ = nullptr;
+  StackType_t *activation_task_stack_ = nullptr;
+  StaticTask_t *activation_task_tcb_ = nullptr;
   DeviceStateMachine state_machine_;
   ListeningMode listening_mode_ = kListeningModeManualStop;
   std::unique_ptr<srmodel_list_t, ModelListDeleter> models_list_;

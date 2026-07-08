@@ -21,6 +21,7 @@ extern "C"
     {
         FOREGROUND_RUNTIME_OWNER_NONE = 0, /**< 当前没有强前台 owner。 */
         FOREGROUND_RUNTIME_OWNER_HERMES, /**< Hermes 页面录音、WebSocket 或前台交互。 */
+        FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT, /**< 小智 official_chat 页面 WebSocket 或前台语音交互。 */
         FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING, /**< BLE 配网或 BLE 启动敏感窗口。 */
         FOREGROUND_RUNTIME_OWNER_OTA, /**< OTA 或系统维护重任务。 */
         FOREGROUND_RUNTIME_OWNER_FUTURE_PAGE, /**< 后续前台重交互页面的预留 owner。 */

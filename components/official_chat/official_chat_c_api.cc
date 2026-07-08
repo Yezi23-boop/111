@@ -114,6 +114,13 @@ esp_err_t official_chat_prepare_shutdown(official_chat_handle_t handle) {
   return handle->app.PrepareForShutdown();
 }
 
+esp_err_t official_chat_prepare_audio_channel(official_chat_handle_t handle) {
+  if (handle == nullptr) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  return handle->app.PrepareAudioChannel();
+}
+
 esp_err_t official_chat_start_listening(official_chat_handle_t handle) {
   if (handle == nullptr) {
     return ESP_ERR_INVALID_ARG;
@@ -162,6 +169,13 @@ official_chat_state_t official_chat_get_state(official_chat_handle_t handle) {
     return OFFICIAL_CHAT_STATE_UNKNOWN;
   }
   return ToPublicState(handle->app.GetState());
+}
+
+bool official_chat_is_audio_channel_ready(official_chat_handle_t handle) {
+  if (handle == nullptr) {
+    return false;
+  }
+  return handle->app.IsAudioChannelReady();
 }
 
 esp_err_t official_chat_set_mqtt_protocol_config(

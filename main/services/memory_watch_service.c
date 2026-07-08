@@ -66,6 +66,7 @@ static const uint32_t kConversationWorkerStackWords = 10240;
 static const size_t kAudioBufferInitialBytes = 8192U;
 static const size_t kWsAudioChunkBytes = 16U * 1024U;
 static const int64_t kConversationPollIntervalMs = 5000;
+static const int64_t kBackgroundHttpsRetryIntervalMs = 5000;
 static const uint32_t kConversationPollTimeoutMs = 4000U;
 static const EventBits_t kWsWaitConversationBit = BIT0;
 static const EventBits_t kWsWaitErrorBit = BIT1;
@@ -143,6 +144,7 @@ typedef struct
 typedef struct
 {
     esp_err_t error;
+    int http_status;
     bool hermes_online;
 } memory_watch_service_health_result_t;
 
@@ -239,6 +241,9 @@ static bool s_wait_cancel_requested = false;
 static bool s_upload_worker_busy = false;
 static bool s_foreground_active = false;
 static bool s_foreground_runtime_gate_held = false;
+static bool s_health_worker_busy = false;
+static bool s_health_check_pending = false;
+static int64_t s_health_retry_next_due_ms = 0;
 static bool s_conversation_worker_busy = false;
 static bool s_conversation_poll_active = false;
 static int64_t s_conversation_poll_next_due_ms = 0;
@@ -257,10 +262,12 @@ static bool s_boot_text_sent = false;
 static esp_err_t memory_watch_service_inbox_init(void);
 static portMUX_TYPE s_inbox_poll_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool s_inbox_poll_pending = false;
+static int64_t s_inbox_poll_next_due_ms = 0;
 static void memory_watch_service_inbox_set_poll_pending(bool pending);
 static bool memory_watch_service_inbox_is_poll_pending(void);
 static void memory_watch_service_inbox_try_poll(void);
 static void memory_watch_service_inbox_handle_worker_result(uint32_t notify_val);
+static int64_t memory_watch_service_now_ms(void);
 static void memory_watch_service_conversation_try_poll(void);
 static void memory_watch_service_conversation_handle_worker_done(void);
 static
@@ -273,6 +280,11 @@ static void memory_watch_service_log_upload_stack(const char *stage)
     ESP_LOGI(TAG, "mw_upload stack: stage=%s high_water_words=%u",
              stage != NULL ? stage : "unknown",
              (unsigned int)high_water_words);
+}
+
+static int64_t memory_watch_service_now_ms(void)
+{
+    return esp_timer_get_time() / 1000LL;
 }
 
 /**
@@ -1669,6 +1681,7 @@ static esp_err_t memory_watch_service_start_health_job(
     {
         return ESP_ERR_TIMEOUT;
     }
+    s_health_worker_busy = true;
     return ESP_OK;
 }
 
@@ -1938,6 +1951,16 @@ static void memory_watch_service_handle_send_text(const char *text)
                                    ESP_OK);
 }
 
+static void memory_watch_service_schedule_health_retry(const char *reason)
+{
+    s_health_check_pending = true;
+    s_health_retry_next_due_ms =
+        memory_watch_service_now_ms() + kBackgroundHttpsRetryIntervalMs;
+    ESP_LOGI(TAG, "health check deferred: reason=%s retry_in_ms=%" PRId64,
+             reason != NULL ? reason : "transient",
+             kBackgroundHttpsRetryIntervalMs);
+}
+
 static void memory_watch_service_handle_check_health(void)
 {
     const memory_watch_service_snapshot_t before =
@@ -1960,6 +1983,12 @@ static void memory_watch_service_handle_check_health(void)
         return;
     }
 
+    if (s_health_worker_busy)
+    {
+        memory_watch_service_schedule_health_retry("worker_busy");
+        return;
+    }
+
     memory_watch_service_client_config_snapshot_t client_config;
     esp_err_t err = memory_watch_service_copy_client_config(&client_config);
     if (err != ESP_OK)
@@ -1972,11 +2001,13 @@ static void memory_watch_service_handle_check_health(void)
     err = memory_watch_service_start_health_job(&client_config);
     if (err != ESP_OK)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
+        memory_watch_service_schedule_health_retry("dispatch_failed");
         return;
     }
 
-    memory_watch_service_set_endpoint_snapshot(true, false);
+    s_health_check_pending = false;
+    s_health_retry_next_due_ms = 0;
+    memory_watch_service_set_endpoint_snapshot(true, before.hermes_online);
 }
 
 static void memory_watch_service_handle_send_recording(void)
@@ -2075,7 +2106,7 @@ static void memory_watch_service_handle_health_done(
         return;
     }
 
-    memory_watch_service_set_endpoint_snapshot(true, result->hermes_online);
+    s_health_worker_busy = false;
     const memory_watch_service_snapshot_t before =
         memory_watch_service_copy_snapshot();
     if (before.request_active)
@@ -2083,6 +2114,24 @@ static void memory_watch_service_handle_health_done(
         return;
     }
 
+    const bool auth_or_protocol_error =
+        result->http_status == 401 || result->http_status == 403 ||
+        result->http_status == 422;
+    if (result->error != ESP_OK && !auth_or_protocol_error)
+    {
+        memory_watch_service_schedule_health_retry("transient_failure");
+        memory_watch_service_set_endpoint_snapshot(true, before.hermes_online);
+        memory_watch_service_set_state(before.state, result->error);
+        ESP_LOGW(TAG,
+                 "watch endpoint health transient failure: keep_online=%u err=%s",
+                 (unsigned int)before.hermes_online,
+                 esp_err_to_name(result->error));
+        return;
+    }
+
+    s_health_check_pending = false;
+    s_health_retry_next_due_ms = 0;
+    memory_watch_service_set_endpoint_snapshot(true, result->hermes_online);
     memory_watch_service_set_state(
         result->hermes_online ? MEMORY_WATCH_SERVICE_STATE_READY
                               : MEMORY_WATCH_SERVICE_STATE_ERROR,
@@ -2595,6 +2644,7 @@ static void memory_watch_service_health_worker_task(void *arg)
             &job.client_config.client_config, &health);
         const memory_watch_service_health_result_t result = {
             .error = err,
+            .http_status = health.http_status,
             .hermes_online = err == ESP_OK,
         };
         (void)memory_watch_service_post_health_result(&result);
@@ -2668,6 +2718,11 @@ static void memory_watch_service_task(void *arg)
         if (memory_watch_service_inbox_is_poll_pending())
         {
             memory_watch_service_inbox_try_poll();
+        }
+        if (s_health_check_pending &&
+            memory_watch_service_now_ms() >= s_health_retry_next_due_ms)
+        {
+            memory_watch_service_handle_check_health();
         }
         memory_watch_service_conversation_try_poll();
 
@@ -3467,6 +3522,14 @@ static void memory_watch_service_inbox_try_poll(void)
         return;
     }
 
+    const int64_t now_ms = memory_watch_service_now_ms();
+    if (s_inbox_poll_next_due_ms > now_ms)
+    {
+        /* 上一次后台 HTTPS 失败后保留 pending，但等退避窗口结束再发。 */
+        memory_watch_service_inbox_set_poll_pending(true);
+        return;
+    }
+
     inbox_job_t job = {0};
     job.type = INBOX_JOB_POLL;
     if (!memory_watch_service_inbox_get_client_config(&job.client_config))
@@ -3492,6 +3555,7 @@ static void memory_watch_service_inbox_handle_worker_result(uint32_t notify_val)
 
     if (notify_val == INBOX_WORKER_NOTIFY_SUCCESS)
     {
+        s_inbox_poll_next_due_ms = 0;
         memory_watch_service_inbox_merge_staging();
         ESP_LOGI(TAG, "inbox: poll ok items=%zu unread=%u",
                  s_staging_item_count, s_staging_unread_count);
@@ -3499,13 +3563,19 @@ static void memory_watch_service_inbox_handle_worker_result(uint32_t notify_val)
     else if (notify_val == INBOX_WORKER_NOTIFY_NOT_FOUND)
     {
         /* AUTH 或 PROTOCOL error：不要紧循环 */
+        s_inbox_poll_next_due_ms = 0;
+        memory_watch_service_inbox_set_poll_pending(false);
         memory_watch_service_inbox_set_sync_state(MEMORY_WATCH_INBOX_SYNC_AUTH_ERROR);
         ESP_LOGW(TAG, "inbox: poll auth/protocol error, pause polling");
     }
     else
     {
+        s_inbox_poll_next_due_ms =
+            memory_watch_service_now_ms() + kBackgroundHttpsRetryIntervalMs;
+        memory_watch_service_inbox_set_poll_pending(true);
         memory_watch_service_inbox_set_sync_state(MEMORY_WATCH_INBOX_SYNC_RETRY_WAIT);
-        ESP_LOGW(TAG, "inbox: poll failed, will retry");
+        ESP_LOGW(TAG, "inbox: poll failed, will retry in %" PRId64 " ms",
+                 kBackgroundHttpsRetryIntervalMs);
     }
 
     /* 若有待处理的 poll_now，顺手补一次 */

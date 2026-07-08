@@ -42,7 +42,7 @@ inbox / sync / weather / health / SNTP
 - UI + Wi-Fi 是基础常驻层，不通过本计划关闭。
 - Hermes、BLE 配网、OTA、未来重交互页面属于强前台独占，同一时间只允许一个强前台 owner。
 - ESP-DL 不和强前台平级硬抢；强前台进入时，ESP-DL 应暂停、跳过窗口或释放重资源。
-- 后台 HTTPS 是低优先级，必须串行、可延后、可跳过。
+- 后台 HTTPS 是低优先级，必须串行、可延后；但 owner 不应丢弃已产生的 pending 工作，gate 忙或瞬时失败时应退避重试。
 - BLE 启动前可打开 quiet window，阻止新的后台 HTTPS，并允许一次安静重试。
 - 当前不做集中 job queue；如果 token gate 证明不够，再单独评估集中网络 worker。
 
@@ -244,13 +244,13 @@ ble_presence_start() -> ESP_ERR_NO_MEM
 
 - Memory Watch 后台 health/sync/inbox/mark-read acquire/release `background_https_gate`。
 - 天气 HTTPS acquire/release `background_https_gate`。
-- token 拿不到时不阻塞 UI，按 owner 现有 retry 机制延后。
+- token 拿不到时不阻塞 UI，按 owner retry 机制延后；不能把 gate busy 当成永久失败，也不能丢 pending 工作。
 
 验收：
 
 - source tests 覆盖后台 HTTP 调用必须 gated。
 - Hermes 前台 WebSocket/语音上传不被 `background_https_gate` 阻塞。
-- 天气和 inbox 可在 gate 忙时跳过/延后。
+- 天气和 inbox 可在 gate 忙时延后；Memory Watch inbox 必须保留 pending 并重试，不丢弃已产生的拉取需求。
 
 ### 阶段 5：BLE quiet-window retry
 
@@ -306,7 +306,7 @@ ble_presence_start() -> ESP_ERR_NO_MEM
 - `CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y` 与 `CONFIG_MBEDTLS_DYNAMIC_BUFFER=y` 已开启，TLS 大块缓冲倾向 PSRAM；但 `esp_http_client`、socket/LwIP、crypto DMA 和多个后台 task 同时活跃仍会制造 internal 峰值与 largest block 碎片窗口。
 - Memory Watch HTTP client 当前显式使用 8KB RX + 8KB TX buffer，response 大 buffer 已优先 PSRAM；天气 HTTPS 仍是独立 `esp_http_client`，未进入任何后台错峰机制。
 - BLE guard 需要的连续 internal block 远高于当前部分高压日志中的 largest block；gate 只能减少撞车概率，不能替代长期内存治理。
-- 后台 HTTPS gate 接入后，天气、inbox、health 和 `/sync` 会在 gate 忙或 quiet window 中延后；这是预期行为，不能在 UI 层把单次跳过误判成服务永久失败。
+- 后台 HTTPS gate 接入后，天气、inbox、health 和 `/sync` 会在 gate 忙或 quiet window 中延后；这是预期行为，不能在 UI 层把单次 gate busy 误判成服务永久失败。Memory Watch 的 health/inbox 已按“保留 pending + due 重试”收敛，避免后台工作被丢弃。
 
 ## 验证与验收
 
@@ -343,6 +343,7 @@ idf.py build
 - 阶段 6 真实 BLE toggle 首轮发现并修复 cache-disabled 断言：真实 BLE toggle 会写 BLE NVS 偏好，NVS/flash 写入时 cache 可能关闭；若测试任务栈在 PSRAM，会触发 `esp_task_stack_is_sane_cache_disabled()` 断言。已改为 `CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST_ENABLE_REAL_BLE_TOGGLE=y` 时使用 `MALLOC_CAP_INTERNAL` 栈。
 - 阶段 6 真实 BLE toggle 修复后 COM3 结果：`board_logs/2026-06-29-10-31-09-runtime-resource-gate-board-test-real-ble-internal-stack.log` 未见 assert/Guru/panic/stack overflow；BLE guard 返回 `real_ble_enable: result=ESP_ERR_NO_MEM`，随后 `real_ble_disable: result=ESP_OK`，属于可解释 fail closed。结束内存约 `internal_free=43690 largest=20480 psram_free=6953672`。
 - 阶段 6 当前限制：Wi-Fi 未连上，公网 HTTPS 成功路径未覆盖；Safety Monitor 当时包含 `user_disabled` 阻塞，未覆盖 ESP-DL 正在运行后被强前台暂停的完整路径。收尾时已恢复 `sdkconfig` 为 `# CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST is not set`，`uv run python -m unittest tests.test_runtime_resource_gate_board_test_source tests.test_background_https_gate_source tests.test_foreground_runtime_gate_source tests.test_safety_monitor_session_source tests.test_main_screen_ble_toggle_source tests.test_memory_watch_service_source tests.test_time_weather_source` 通过（`Ran 39 tests ... OK`），`idf.py fullclean; idf.py build` 通过（`111.bin` `0xabcc80`，app free `0x343380`/23%），`app-flash-monitor` 45 秒通过且无 `runtime_gate_test` 自动压测日志。
+- 2026-07-08 补修后台 HTTPS 重试语义：真机日志显示 health/inbox 在 gate busy 时会连续失败并让 `hermes_online` 抖到 0。`memory_watch_service` 已增加 health worker busy/pending/retry due，transient failure 保持上次在线状态；inbox poll 失败保留 pending 并按 5 秒 due 重试，auth/protocol 错误才暂停。验证：`tests.test_memory_watch_service_source` 20 passed；相关 gate/source tests 27 passed；`idf.py build` 通过（`111.bin` `0xace350`，app free `0x331cb0`/23%）。attempt log：`docs/context/runs/2026-07-08-attempt-memory-watch-background-https-retry.md`。
 
 ## 幂等与恢复
 

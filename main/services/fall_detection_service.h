@@ -17,6 +17,7 @@ typedef enum
     FALL_DETECTION_SERVICE_STATE_STOPPED = 0, /**< Service has not started. */
     FALL_DETECTION_SERVICE_STATE_STARTING,    /**< Model and queue are being prepared. */
     FALL_DETECTION_SERVICE_STATE_RUNNING,     /**< Waiting for IMU windows or running inference. */
+    FALL_DETECTION_SERVICE_STATE_STOPPING,    /**< Destroy requested; runtime task is releasing resources. */
     FALL_DETECTION_SERVICE_STATE_ERROR,       /**< Last start or inference path hit an error. */
 } fall_detection_service_state_t;
 
@@ -67,6 +68,16 @@ typedef struct
  * play the dangerous-sound warning audio.
  */
 esp_err_t fall_detection_service_start(void);
+
+/**
+ * @brief 一键销毁跌倒检测运行时并释放模型 RAM。
+ *
+ * 这是给 UI 或其他 service 调用的对外销毁入口。它只会把 fall 窗口队列
+ * 从 `imu_service` 断开，不会停止 IMU 后台采样。若 fall task 正在运行，
+ * 销毁是异步完成的：任务观察到请求后在安全点退出循环，释放 ESP-DL
+ * runner 和 PSRAM 缓冲，最后把快照状态标记为 STOPPED。
+ */
+esp_err_t fall_detection_service_destroy(void);
 
 /**
  * @brief Copy the current fall detection service snapshot.

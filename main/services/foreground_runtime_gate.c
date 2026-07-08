@@ -32,6 +32,8 @@ const char *foreground_runtime_gate_owner_text(
     {
     case FOREGROUND_RUNTIME_OWNER_HERMES:
         return "HERMES";
+    case FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT:
+        return "OFFICIAL_CHAT";
     case FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING:
         return "BLE_PROVISIONING";
     case FOREGROUND_RUNTIME_OWNER_OTA:
