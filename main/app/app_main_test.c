@@ -32,6 +32,7 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
@@ -63,6 +64,7 @@
 
 static const char *TAG = "PCB_TEST";
 static const bool kEnableBleTest = false;
+static SemaphoreHandle_t s_lcd_trans_done_sem = NULL;
 
 /* =========================================================
  * 测试结果汇总结构体
@@ -96,6 +98,44 @@ static void print_sep(const char *title)
     }
 }
 
+static esp_err_t pcb_test_i2c_probe_addr(uint8_t addr)
+{
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
+    i2c_master_bus_handle_t bus_handle = i2c_manager_get_bus_handle();
+    if (bus_handle == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return i2c_master_probe(bus_handle, addr, 50);
+#else
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    if (cmd == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(i2c_manager_get_port(), cmd, pdMS_TO_TICKS(50));
+    i2c_cmd_link_delete(cmd);
+    return ret;
+#endif
+}
+
+static bool pcb_test_expect_i2c_device(uint8_t addr, const char *name)
+{
+    esp_err_t ret = pcb_test_i2c_probe_addr(addr);
+    if (ret == ESP_OK)
+    {
+        ESP_LOGI(TAG, "  [OK] I2C 0x%02X 应答：%s", addr, name);
+        return true;
+    }
+
+    ESP_LOGE(TAG, "  [FAIL] I2C 0x%02X 无应答：%s (%s)",
+             addr, name, esp_err_to_name(ret));
+    return false;
+}
+
 /* =========================================================
  * 【测试 1】I2C 总线扫描
  * 期望：0x34(AXP2101) 0x38(FT5x06) 0x51(PCF85063) 0x6B(QMI8658C)
@@ -127,7 +167,13 @@ static bool test_i2c_scan(void)
     ESP_LOGI(TAG, "  0x6B -> QMI8658C (IMU)");
     ESP_LOGI(TAG, "  0x18 -> ES8311  (DAC, 若 codec I2C 挂在同一总线)");
     ESP_LOGI(TAG, "  0x40 -> ES7210  (ADC, 若 codec I2C 挂在同一总线)");
-    return true;
+
+    bool ok = true;
+    ok &= pcb_test_expect_i2c_device(0x34, "AXP2101 PMIC");
+    ok &= pcb_test_expect_i2c_device(0x38, "FT5x06/FT3168 Touch");
+    ok &= pcb_test_expect_i2c_device(0x51, "PCF85063 RTC");
+    ok &= pcb_test_expect_i2c_device(0x6B, "QMI8658C IMU");
+    return ok;
 }
 
 /* =========================================================
@@ -339,7 +385,8 @@ static bool test_qmi8658c(void)
              id.who_am_i, id.revision_id);
     if (id.who_am_i != 0x05)
     {
-        ESP_LOGW(TAG, "  [警告] WHO_AM_I 非预期值，可能是不同版本芯片或通讯错误");
+        ESP_LOGE(TAG, "  [FAIL] WHO_AM_I 非预期值，QMI8658C 通讯或器件型号不匹配");
+        return false;
     }
 
     /*
@@ -371,6 +418,7 @@ static bool test_qmi8658c(void)
     ESP_LOGI(TAG, "连续采集 5 帧原始数据（板子平放时 AZ 应接近 -8192）：");
     bool data_varies = false;
     int16_t prev_az = 0;
+    int read_ok_count = 0;
 
     for (int i = 0; i < 5; i++)
     {
@@ -381,6 +429,7 @@ static bool test_qmi8658c(void)
             ESP_LOGE(TAG, "  第 %d 帧读取失败: %s", i + 1, esp_err_to_name(ret));
             continue;
         }
+        read_ok_count++;
         /* 温度原始值换算：T(°C) = raw / 256 */
         float temp_c = (float)s.temperature_raw / 256.0f;
         ESP_LOGI(TAG,
@@ -396,6 +445,12 @@ static bool test_qmi8658c(void)
         }
         prev_az = s.accel_z;
         vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    if (read_ok_count < 3)
+    {
+        ESP_LOGE(TAG, "  [FAIL] QMI8658C 原始数据只成功读取 %d/5 帧，通讯不稳定", read_ok_count);
+        return false;
     }
 
     if (!data_varies)
@@ -426,6 +481,11 @@ static bool test_qmi8658c(void)
 static bool test_ft5x06(void)
 {
     print_sep("[5/11] FT5x06 触摸  I2C addr=0x38  RST=GPIO9  INT=GPIO38");
+
+    if (!pcb_test_expect_i2c_device(0x38, "FT5x06/FT3168 Touch"))
+    {
+        return false;
+    }
 
     esp_err_t ret = touch_ft5x06_init();
     if (ret != ESP_OK)
@@ -470,39 +530,89 @@ static bool test_ft5x06(void)
     return true;
 }
 
-/* =========================================================
- * 辅助：向屏幕填充一整块纯色（分块发送，避免一次分配过大 DMA buffer）
- * color_rgb565: RGB565 格式，高字节先（big-endian）
- * ========================================================= */
-static void fill_screen_color(esp_lcd_panel_handle_t panel,
-                              uint8_t r8, uint8_t g8,
-                              int y_start, int y_end)
+static bool IRAM_ATTR lcd_test_color_trans_done_cb(esp_lcd_panel_io_handle_t panel_io,
+                                                   esp_lcd_panel_io_event_data_t *edata,
+                                                   void *user_ctx)
 {
-    /* 单次分配 1 行缓冲（DMA-capable），逐行刷入 */
-    const int kLineBytes = CO5300_PANEL_H_RES * 2;
-    uint8_t *line_buf = heap_caps_malloc(kLineBytes, MALLOC_CAP_DMA);
-    if (line_buf == NULL)
+    (void)panel_io;
+    (void)edata;
+    (void)user_ctx;
+
+    BaseType_t need_yield = pdFALSE;
+    if (s_lcd_trans_done_sem != NULL)
     {
-        ESP_LOGW(TAG, "fill_screen: DMA 缓冲分配失败，跳过");
-        return;
+        xSemaphoreGiveFromISR(s_lcd_trans_done_sem, &need_yield);
+    }
+    return need_yield == pdTRUE;
+}
+
+static uint16_t rgb565_from_888(uint8_t r8, uint8_t g8, uint8_t b8)
+{
+    return ((uint16_t)(r8 & 0xF8) << 8) |
+           ((uint16_t)(g8 & 0xFC) << 3) |
+           ((uint16_t)b8 >> 3);
+}
+
+/* =========================================================
+ * 辅助：向屏幕填充一整块纯色。
+ *
+ * CO5300 主 UI 链路启用了 RGB565 字节交换；这里直接写高字节在前的
+ * RGB565 数据，并按 10 行一块等待传输完成，避免 DMA 缓冲在异步队列
+ * 尚未消费完时被复用或释放。
+ * ========================================================= */
+static esp_err_t fill_screen_color(esp_lcd_panel_handle_t panel,
+                                   uint8_t r8, uint8_t g8, uint8_t b8,
+                                   int y_start, int y_end)
+{
+    const int kChunkLines = CO5300_PANEL_MAX_TRANSFER_LINES;
+    const int kChunkBytes = CO5300_PANEL_H_RES * kChunkLines * 2;
+    uint8_t *chunk_buf = heap_caps_malloc(kChunkBytes, MALLOC_CAP_DMA);
+    if (chunk_buf == NULL)
+    {
+        return ESP_ERR_NO_MEM;
     }
 
-    /* RGB565 大端：r8 高 5 位放 byte0[7:3]，g8 高 3 位放 byte0[2:0]，
-     * g8 低 3 位放 byte1[7:5]，b8 高 5 位（此处 b8=0）放 byte1[4:0] */
-    uint8_t b0 = (r8 & 0xF8) | ((g8 >> 5) & 0x07);
-    uint8_t b1 = ((g8 & 0x1C) << 3); /* 纯色 B=0 */
-    for (int i = 0; i < CO5300_PANEL_H_RES; i++)
+    uint16_t color = rgb565_from_888(r8, g8, b8);
+    uint8_t high = (uint8_t)(color >> 8);
+    uint8_t low = (uint8_t)(color & 0xFF);
+
+    for (int y = y_start; y < y_end;)
     {
-        line_buf[i * 2] = b0;
-        line_buf[i * 2 + 1] = b1;
+        int lines = y_end - y;
+        if (lines > kChunkLines)
+        {
+            lines = kChunkLines;
+        }
+
+        int pixels = CO5300_PANEL_H_RES * lines;
+        for (int i = 0; i < pixels; i++)
+        {
+            chunk_buf[i * 2] = high;
+            chunk_buf[i * 2 + 1] = low;
+        }
+
+        while (xSemaphoreTake(s_lcd_trans_done_sem, 0) == pdTRUE)
+        {
+        }
+
+        esp_err_t ret = esp_lcd_panel_draw_bitmap(panel, 0, y, CO5300_PANEL_H_RES, y + lines, chunk_buf);
+        if (ret != ESP_OK)
+        {
+            heap_caps_free(chunk_buf);
+            return ret;
+        }
+
+        if (xSemaphoreTake(s_lcd_trans_done_sem, pdMS_TO_TICKS(500)) != pdTRUE)
+        {
+            heap_caps_free(chunk_buf);
+            return ESP_ERR_TIMEOUT;
+        }
+
+        y += lines;
     }
 
-    for (int y = y_start; y < y_end; y++)
-    {
-        esp_lcd_panel_draw_bitmap(panel, 0, y, CO5300_PANEL_H_RES, y + 1, line_buf);
-    }
-
-    heap_caps_free(line_buf);
+    heap_caps_free(chunk_buf);
+    return ESP_OK;
 }
 
 /* =========================================================
@@ -520,57 +630,120 @@ static bool test_display(void)
         return false;
     }
 
-    co5300_panel_set_brightness_percent(80);
-    ESP_LOGI(TAG, "CO5300 panel init OK，亮度 80%%，开始三色刷屏...");
-
     esp_lcd_panel_handle_t panel = NULL;
     esp_lcd_panel_io_handle_t io = NULL;
     ret = co5300_panel_get_raw(&io, &panel);
     if (ret != ESP_OK || panel == NULL)
     {
-        ESP_LOGW(TAG, "无法获取 panel 句柄，跳过像素填充（panel init 已成功）");
-        return true;
+        ESP_LOGE(TAG, "无法获取 panel 句柄，不能验证 QSPI 像素写入");
+        return false;
     }
 
-    /* 屏幕共 502 行，分三段：红(0~167)、绿(168~335)、蓝(336~501) */
-
-    /* 红色：R=255 G=0 B=0 */
-    fill_screen_color(panel, 0xFF, 0x00, 0, 167);
-    ESP_LOGI(TAG, "  红色段 (行 0~167) 已写入");
-    vTaskDelay(pdMS_TO_TICKS(300));
-
-    /* 绿色：R=0 G=255 B=0 → RGB565 big-endian: 0x07E0 → b0=0x07 b1=0xE0 */
-    /* 这里复用 fill_screen_color，传 r8=0x00 g8=0xFF */
-    fill_screen_color(panel, 0x00, 0xFF, 168, 335);
-    ESP_LOGI(TAG, "  绿色段 (行 168~335) 已写入");
-    vTaskDelay(pdMS_TO_TICKS(300));
-
-    /* 蓝色：R=0 G=0 B=255 → RGB565: 0x001F → b0=0x00 b1=0x1F
-     * fill_screen_color 目前 B 固定为 0，蓝色需要单独处理 */
+    s_lcd_trans_done_sem = xSemaphoreCreateBinary();
+    if (s_lcd_trans_done_sem == NULL)
     {
-        const int kLineBytes = CO5300_PANEL_H_RES * 2;
-        uint8_t *buf = heap_caps_malloc(kLineBytes, MALLOC_CAP_DMA);
-        if (buf)
-        {
-            for (int i = 0; i < CO5300_PANEL_H_RES; i++)
-            {
-                buf[i * 2] = 0x00;     /* RGB565 蓝色高字节 */
-                buf[i * 2 + 1] = 0x1F; /* RGB565 蓝色低字节 */
-            }
-            for (int y = 336; y <= 501; y++)
-            {
-                esp_lcd_panel_draw_bitmap(panel, 0, y, CO5300_PANEL_H_RES, y + 1, buf);
-            }
-            heap_caps_free(buf);
-        }
+        ESP_LOGE(TAG, "创建 LCD 传输完成信号量失败");
+        return false;
+    }
+
+    const esp_lcd_panel_io_callbacks_t cbs = {
+        .on_color_trans_done = lcd_test_color_trans_done_cb,
+    };
+    ret = co5300_panel_register_color_done_callback(&cbs, NULL);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "注册 LCD 传输完成回调失败: %s", esp_err_to_name(ret));
+        vSemaphoreDelete(s_lcd_trans_done_sem);
+        s_lcd_trans_done_sem = NULL;
+        return false;
+    }
+
+    /*
+     * 主 UI 链路实测需要 X 方向 23 像素偏移来对齐可视区域；测试固件
+     * 直接走 panel 句柄，也必须设置同样 gap，否则颜色可能写到不可视窗口。
+     */
+    ret = esp_lcd_panel_set_gap(panel, 23, 0);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "设置 CO5300 可视区域偏移失败: %s", esp_err_to_name(ret));
+        vSemaphoreDelete(s_lcd_trans_done_sem);
+        s_lcd_trans_done_sem = NULL;
+        return false;
+    }
+
+    ret = co5300_panel_set_brightness_percent(100);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "设置 CO5300 亮度失败: %s", esp_err_to_name(ret));
+        vSemaphoreDelete(s_lcd_trans_done_sem);
+        s_lcd_trans_done_sem = NULL;
+        return false;
+    }
+    ESP_LOGI(TAG, "CO5300 panel init OK，亮度 100%%，开始全屏红/绿/蓝测试...");
+
+    ret = fill_screen_color(panel, 0xFF, 0x00, 0x00, 0, CO5300_PANEL_V_RES);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "全屏红色写入失败: %s", esp_err_to_name(ret));
+        goto display_fail;
+    }
+    ESP_LOGI(TAG, "  全屏红色已写入");
+    vTaskDelay(pdMS_TO_TICKS(800));
+
+    ret = fill_screen_color(panel, 0x00, 0xFF, 0x00, 0, CO5300_PANEL_V_RES);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "全屏绿色写入失败: %s", esp_err_to_name(ret));
+        goto display_fail;
+    }
+    ESP_LOGI(TAG, "  全屏绿色已写入");
+    vTaskDelay(pdMS_TO_TICKS(800));
+
+    ret = fill_screen_color(panel, 0x00, 0x00, 0xFF, 0, CO5300_PANEL_V_RES);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "全屏蓝色写入失败: %s", esp_err_to_name(ret));
+        goto display_fail;
+    }
+    ESP_LOGI(TAG, "  全屏蓝色已写入");
+    vTaskDelay(pdMS_TO_TICKS(800));
+
+    /* 屏幕共 502 行，最终停在三段色条，方便持续观察。 */
+    ret = fill_screen_color(panel, 0xFF, 0x00, 0x00, 0, 167);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "红色段写入失败: %s", esp_err_to_name(ret));
+        goto display_fail;
+    }
+    ESP_LOGI(TAG, "  红色段 (行 0~167) 已写入");
+
+    ret = fill_screen_color(panel, 0x00, 0xFF, 0x00, 168, 335);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "绿色段写入失败: %s", esp_err_to_name(ret));
+        goto display_fail;
+    }
+    ESP_LOGI(TAG, "  绿色段 (行 168~335) 已写入");
+
+    ret = fill_screen_color(panel, 0x00, 0x00, 0xFF, 336, CO5300_PANEL_V_RES);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "蓝色段写入失败: %s", esp_err_to_name(ret));
+        goto display_fail;
     }
     ESP_LOGI(TAG, "  蓝色段 (行 336~501) 已写入");
-    vTaskDelay(pdMS_TO_TICKS(300));
 
     ESP_LOGI(TAG, "[视觉验证] 屏幕应呈现上红、中绿、下蓝三段色条");
     ESP_LOGI(TAG, "  若颜色错误（如红/蓝互换），检查 RGB 字节序或 D0/D1 引脚焊接");
     ESP_LOGI(TAG, "  若某段色条不亮，检查对应 QSPI 数据线引脚");
+    vSemaphoreDelete(s_lcd_trans_done_sem);
+    s_lcd_trans_done_sem = NULL;
     return true;
+
+display_fail:
+    vSemaphoreDelete(s_lcd_trans_done_sem);
+    s_lcd_trans_done_sem = NULL;
+    return false;
 }
 
 /* =========================================================
@@ -580,6 +753,15 @@ static bool test_display(void)
 static bool test_audio(void)
 {
     print_sep("[7/11] 音频 Codec  I2S0  MCLK=16  BCLK=41  LRCK=45  PA=46");
+
+    bool codec_i2c_ok = true;
+    codec_i2c_ok &= pcb_test_expect_i2c_device(0x18, "ES8311 DAC");
+    codec_i2c_ok &= pcb_test_expect_i2c_device(0x40, "ES7210 ADC");
+    if (!codec_i2c_ok)
+    {
+        ESP_LOGE(TAG, "音频 Codec I2C 控制面未全部应答，跳过 I2S 初始化");
+        return false;
+    }
 
     esp_err_t ret = audio_codec_init();
     if (ret != ESP_OK)
@@ -601,29 +783,35 @@ static bool test_audio(void)
     }
     else
     {
-        ESP_LOGW(TAG, "  audio_codec_set_volume 失败: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "  audio_codec_set_volume 失败: %s", esp_err_to_name(ret));
+        return false;
     }
 
-    /* 验证 PA 功放使能引脚 GPIO46 能正常控制 */
-    gpio_config_t pa_cfg = {
-        .pin_bit_mask = (1ULL << AUDIO_PA_CTRL_GPIO),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    if (gpio_config(&pa_cfg) == ESP_OK)
+    int volume = -1;
+    ret = audio_codec_get_volume(&volume);
+    if (ret != ESP_OK || volume != 50)
     {
-        gpio_set_level(AUDIO_PA_CTRL_GPIO, 1);
-        ESP_LOGI(TAG, "  PA GPIO46 拉高（功放使能）");
-        vTaskDelay(pdMS_TO_TICKS(100));
-        gpio_set_level(AUDIO_PA_CTRL_GPIO, 0);
-        ESP_LOGI(TAG, "  PA GPIO46 拉低（功放静音）");
+        ESP_LOGE(TAG, "  audio_codec_get_volume 失败或读回不匹配: ret=%s volume=%d",
+                 esp_err_to_name(ret), volume);
+        return false;
     }
-    else
+    ESP_LOGI(TAG, "  audio_codec_get_volume 读回 OK: %d", volume);
+
+    ret = audio_codec_set_pa_enable(true);
+    if (ret != ESP_OK)
     {
-        ESP_LOGW(TAG, "  PA GPIO46 配置失败");
+        ESP_LOGE(TAG, "  PA GPIO46 使能失败: %s", esp_err_to_name(ret));
+        return false;
     }
+    ESP_LOGI(TAG, "  PA GPIO46 拉高（功放使能）");
+    vTaskDelay(pdMS_TO_TICKS(100));
+    ret = audio_codec_set_pa_enable(false);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "  PA GPIO46 关闭失败: %s", esp_err_to_name(ret));
+        return false;
+    }
+    ESP_LOGI(TAG, "  PA GPIO46 拉低（功放静音）");
 
     ESP_LOGI(TAG, "  I2S 引脚汇总: MCLK=GPIO16  BCLK=GPIO41  LRCK=GPIO45");
     ESP_LOGI(TAG, "               TX_DOUT=GPIO40  RX_DIN=GPIO42");
@@ -1057,7 +1245,6 @@ static bool test_ds2413(void)
     ds2413_device_t device = {0};
     ds2413_state_t initial_state = {0};
     ds2413_state_t verified_state = {0};
-    ds2413_state_t readback_state = {0};
     esp_err_t ret;
 
     gpio_reset_pin(GPIO_NUM_18);
@@ -1277,6 +1464,7 @@ static void comm_test_task(void *arg)
     ESP_LOGI(TAG, "    1W   : GPIO18");
 
     test_results_t r = {0};
+    const bool ble_skipped = !kEnableBleTest;
 
     r.i2c_scan = test_i2c_scan();
     r.axp2101 = test_axp2101();
@@ -1294,7 +1482,7 @@ static void comm_test_task(void *arg)
     else
     {
         ESP_LOGW(TAG, "当前板卡不需要 BLE，跳过 [10/11] BLE 广播可见性测试");
-        r.ble = true;
+        r.ble = false;
     }
     r.ds2413 = test_ds2413();
 
@@ -1309,21 +1497,30 @@ static void comm_test_task(void *arg)
     ESP_LOGI(TAG, "  [ 7/11] 音频 Codec   (I2S0)        : %s", r.audio ? "PASS" : "FAIL ← 检查 MCLK/I2C");
     ESP_LOGI(TAG, "  [ 8/11] SD 卡        (SPI3)        : %s", r.sd ? "PASS" : "FAIL ← 检查 SPI 引脚/FAT32");
     ESP_LOGI(TAG, "  [ 9/11] Wi-Fi AP 扫描              : %s", r.wifi ? "PASS" : "FAIL ← 检查天线/射频电路");
-    ESP_LOGI(TAG, "  [10/11] BLE 广播可见性             : %s", r.ble ? "PASS" : "FAIL ← 检查 BLE 射频/天线");
+    if (ble_skipped)
+    {
+        ESP_LOGI(TAG, "  [10/11] BLE 广播可见性             : SKIP（当前板卡不需要 BLE）");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "  [10/11] BLE 广播可见性             : %s", r.ble ? "PASS" : "FAIL ← 检查 BLE 射频/天线");
+    }
     ESP_LOGI(TAG, "  [11/11] DS2413 1-Wire (GPIO18)    : %s", r.ds2413 ? "PASS" : "FAIL ← 检查 GPIO18/上拉/DS2413");
 
     int pass_cnt = (r.i2c_scan + r.axp2101 + r.pcf85063 + r.qmi8658c +
                     r.ft5x06 + r.display + r.audio + r.sd +
                     r.wifi + r.ble + r.ds2413);
+    int total_cnt = ble_skipped ? 10 : 11;
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "  总计：%d / 11 项通过", pass_cnt);
-    if (pass_cnt == 11)
+    ESP_LOGI(TAG, "  总计：%d / %d 项通过%s", pass_cnt, total_cnt,
+             ble_skipped ? "（BLE 已跳过）" : "");
+    if (pass_cnt == total_cnt)
     {
         ESP_LOGI(TAG, "  ★ 全部通过！新 PCB 通讯验证 OK ★");
     }
     else
     {
-        ESP_LOGW(TAG, "  ！有 %d 项失败，请根据上方日志逐项排查", 11 - pass_cnt);
+        ESP_LOGW(TAG, "  ！有 %d 项失败，请根据上方日志逐项排查", total_cnt - pass_cnt);
     }
     print_sep(NULL);
 
