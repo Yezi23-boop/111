@@ -17,16 +17,16 @@
 static const char *k_fall_app_danger_type = "fall";
 static const char *k_fall_app_message = "检测到跌倒";
 
-extern const uint8_t tcn_v1_rf5s_6ch_5s_with_test_espdl[]
-    asm("_binary_tcn_v1_rf5s_6ch_5s_with_test_espdl_start");
+extern const uint8_t cnn_v1_recall90_6ch_2s_with_test_espdl[]
+    asm("_binary_cnn_v1_recall90_6ch_2s_with_test_espdl_start");
 
 static const char *TAG = "fall_detection";
 
 static const UBaseType_t k_window_queue_length = 1U;
 static const uint32_t k_task_stack_bytes = 6144U;
 static const UBaseType_t k_task_priority = 2U;
-static const char *k_model_name = "tcn_v1_rf5s_6ch_5s";
-/* V1 模型输入：50Hz × 5s × 6ch = 250 × 6 = 1500 */
+static const char *k_model_name = "cnn_v1_recall90_6ch_2s";
+/* V1 recall90 调试模型输入：50Hz × 2s × 6ch = 100 × 6 = 600 */
 static const float k_degrees_to_radians = 0.017453292519943295f;
 static const float k_fall_clear_threshold = 0.50f; // 后续事件窗口低风险时允许提前解除已确认跌倒。
 static const uint32_t k_fall_clear_window_count = 2U; // 仅作为事件窗口低风险恢复证据。
@@ -300,9 +300,9 @@ static bool fall_detection_destroy_requested(void)
 }
 
 /**
- * @brief 将 5s 事件窗口填充为 V1 6ch 模型输入。
+ * @brief 将 2s 事件窗口填充为 V1 6ch 模型输入。
  *
- * 布局按帧交错：[accX, accY, accZ, gyroX, gyroY, gyroZ] × 250帧。
+ * 布局按帧交错：[accX, accY, accZ, gyroX, gyroY, gyroZ] × 100帧。
  * 输入窗口已是 imu_service 输出的修正后右手系板级物理轴，禁止再套旧 raw chip
  * 轴的 X 反号。坐标映射沿用当前 V1 训练约定：
  *   model accX  =  imu accX
@@ -681,7 +681,7 @@ esp_err_t fall_detection_service_start(void)
 
     ret = fall_model_runner_create(
         &s_fall_detection.runner,
-        tcn_v1_rf5s_6ch_5s_with_test_espdl,
+        cnn_v1_recall90_6ch_2s_with_test_espdl,
         k_model_name);
     if (ret != ESP_OK)
     {

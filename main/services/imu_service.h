@@ -9,8 +9,8 @@
 #include "imu_sensor.h"
 
 #define IMU_SERVICE_SAMPLE_RATE_HZ 50U
-#define IMU_SERVICE_EVENT_PRE_FRAMES 75U
-#define IMU_SERVICE_EVENT_POST_FRAMES 175U
+#define IMU_SERVICE_EVENT_PRE_FRAMES 35U
+#define IMU_SERVICE_EVENT_POST_FRAMES 65U
 #define IMU_SERVICE_WINDOW_FRAME_COUNT \
     (IMU_SERVICE_EVENT_PRE_FRAMES + IMU_SERVICE_EVENT_POST_FRAMES)
 
@@ -54,7 +54,7 @@ extern "C"
         uint32_t int1_irq_count;   /**< service task 已处理的 INT1 GPIO 中断次数。 */
         int64_t last_int1_irq_time_us; /**< 最近一次 INT1 GPIO 中断处理时间戳，单位微秒。 */
         bool sampling_active;      /**< true 表示 50Hz 周期采样循环已经运行。 */
-        bool sample_window_ready;  /**< true 表示 5 秒 / 250 帧事件窗口缓冲已经填满过。 */
+        bool sample_window_ready;  /**< true 表示 2 秒 / 100 帧事件窗口缓冲已经填满过。 */
         uint16_t sample_rate_hz;   /**< 当前 service 采样频率，单位 Hz。 */
         uint16_t window_frame_count; /**< 当前 service 窗口帧数。 */
         uint32_t sample_count;     /**< 成功读取并写入环形缓冲的样本数。 */
@@ -66,9 +66,9 @@ extern "C"
     } imu_service_snapshot_t;
 
     /**
-     * @brief IMU service 发布给上层算法的 5 秒事件窗口副本。
+     * @brief IMU service 发布给上层算法的 2 秒事件窗口副本。
      *
-     * 窗口固定为 50Hz / 250 帧 / 5 秒，其中事件点位于第
+     * 窗口固定为 50Hz / 100 帧 / 2 秒，其中事件点位于第
      * `IMU_SERVICE_EVENT_PRE_FRAMES` 帧。`accel` 和 `gyro` 是当前板级右手系
      * 物理轴语义下的物理量：`+X` 朝手表顶部、`+Y` 朝手表右侧、`+Z`
      * 朝表背/向下。模型消费方负责自己的坐标契约，例如 Fall V1 输入层
@@ -122,7 +122,7 @@ extern "C"
      * @brief 注册 IMU 完整窗口输出队列。
      *
      * 队列 item 必须是 `imu_service_accel_window_t`，推荐长度为 1。
-     * `imu_service` 只在实时事件触发并收满 5 秒窗口后使用 `xQueueOverwrite()`
+     * `imu_service` 只在实时事件触发并收满 2 秒窗口后使用 `xQueueOverwrite()`
      * 发布最新窗口，避免模型推理慢时阻塞 50Hz 采样 task。传入 `NULL`
      * 表示取消注册。
      *

@@ -1,0 +1,43 @@
+{
+  "model_name": "cnn_v1_recall90_6ch_2s",
+  "source_run": "D:\\esp32S3\\imu\\self_trained_cnn_transformer_v1\\runs\\weda_v3_event2s_6ch_cnn_c24_k3_pool10_e500_recall90",
+  "asset": "cnn_v1_recall90_6ch_2s_with_test.espdl",
+  "sha256": "cbe18c7e089bac506ff5229f2ed8c4b728148df5902dce9527aad3a315504684",
+  "target": "esp32s3",
+  "input_shape": [1, 600],
+  "input_contract": {
+    "sample_rate_hz": 50,
+    "window_seconds": 2,
+    "frames": 100,
+    "pre_event_frames": 35,
+    "post_event_frames": 65,
+    "channels": ["accX", "accY", "accZ", "gyroX", "gyroY", "gyroZ"],
+    "acc_unit": "m/s^2",
+    "gyro_unit": "rad/s",
+    "firmware_mapping": ["+imuX", "+imuY", "-imuZ", "+gyroX", "+gyroY", "-gyroZ"]
+  },
+  "threshold": {
+    "fall_default": 0.30,
+    "selection_rule": {
+      "threshold_min_recall": 0.90,
+      "source": "metrics.validation_selected_threshold"
+    },
+    "validation_selected_metrics": {
+      "accuracy": 0.9962962962962963,
+      "fall_precision": 0.9615384615384616,
+      "fall_recall": 1.0,
+      "fall_f1": 0.9803921568627451,
+      "adl_false_positives": 1,
+      "fall_false_negatives": 0
+    },
+    "test_at_validation_selected_threshold": {
+      "accuracy": 0.9606099110546379,
+      "fall_precision": 0.7291666666666666,
+      "fall_recall": 0.9333333333333333,
+      "fall_f1": 0.8187134502923976,
+      "adl_false_positives": 26,
+      "fall_false_negatives": 5
+    },
+    "firmware_note": "Recall90 2s CNN debug deployment; lower threshold improves recall and triggerability but raises ADL false-positive risk."
+  }
+}

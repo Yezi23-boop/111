@@ -78,7 +78,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("fall_model_runner_create", source)
         self.assertIn("fall_model_runner_self_test", source)
         self.assertIn("fall_model_runner_run", source)
-        self.assertIn("tcn_v1_rf5s_6ch_5s", source)
+        self.assertIn("cnn_v1_recall90_6ch_2s", source)
         self.assertIn("跌倒表 |", source)
         self.assertIn("事件窗口契约不匹配", source)
         self.assertIn("window->trigger_frame_index !=\n                IMU_SERVICE_EVENT_PRE_FRAMES", source)

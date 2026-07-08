@@ -36,7 +36,7 @@ D:\esp32S3\imu\FALL_DETECTION_V1_TRAINING_MODEL_DESIGN.md
 
 ## 当前实现差距
 
-- 当前固件已部署 RF5s retry `6ch / 5s / [1,1500]` 模型，`imu_service` 只在 Event Trigger 后发布 250 帧事件窗口；旧 `3ch / 4s / [1,600]` 周期滑窗链路已退出当前推理入口。
+- 当前固件已部署 recall90 调试 CNN `6ch / 2s / [1,600]` 模型，`imu_service` 只在 Event Trigger 后发布 100 帧事件窗口；旧 `3ch / 4s / [1,600]` 周期滑窗链路已退出当前推理入口。
 - 当前已修复背面朝上误告警的直接路径：`flags=0` 定期窗口不再发布，也不会参与推理、确认或清除；本地告警/红屏确认后最多保持 5 秒，之后由 `fall_detection_service` 自动 clear。
 - 当前仍缺少 V1 post-check：低运动 + 姿态变化尚未接入，因此模型高分事件仍可能直接确认告警。
 - 因此静止姿态或普通 ADL 出现较高 `fall_prob` 时，不应只调模型阈值当作最终修复；下一步应补 post-check，使模型回到训练侧设计的事件后确认流程。
@@ -341,6 +341,7 @@ smoke FALL / ADL 样本
 - `[x]` 2026-07-08：修复背面朝上误告警路径：删除 `imu_service` 定期窗口发布，`fall_detection_service` 拒绝 `flags=0` 非事件窗口；只有 `flags!=0` 的 Event Trigger 窗口可进入模型推理和确认。
 - `[x]` 2026-07-08：本地告警/红屏确认后最多保持 5 秒；`fall_detection_service` 通过 1 秒 queue timeout 和每次推理后的超时检查自动 clear，后续低风险事件窗口仍可提前 clear。
 - `[x]` 2026-07-08：新增 `fall_detection_service_destroy()` 对外一键销毁入口；销毁只断开 fall 模型窗口队列，不停止 `imu_service` 后台采样；运行中的 `fall_detect` task 进入 `STOPPING` 并在安全点释放 ESP-DL runner、static queue、queue storage、current window 和 model input PSRAM 缓冲。
+- `[x]` 2026-07-08：部署 recall90 调试 CNN `cnn_v1_recall90_6ch_2s_with_test.espdl`（SHA256=cbe18c7e089bac506ff5229f2ed8c4b728148df5902dce9527aad3a315504684），输入改为 `[1,600]`；`imu_service` 事件窗口同步为 event 前 35 帧 + event 后 65 帧，默认 FALL 阈值为 `0.30`。
 - `[ ]` 实现 post-check：低运动 + 姿态变化；普通确认和强置信兜底都必须满足 `low_motion`。
 - `[x]` 2026-07-08：默认策略确认：跌倒告警可以上传 `danger alert`，但 `APP_ALERT_SOURCE_FALL_DETECTION` 不播放危险提示音，也不抢占普通音频输出。
 - `[ ]` 板端验收静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒。
@@ -358,6 +359,7 @@ smoke FALL / ADL 样本
 - 2026-07-08：删除定期窗口推理路径；`imu_service` 不再发布 `flags=0` 周期窗口，`fall_detection_service` 也会拒绝任何 `flags=0` 非事件窗口。背面朝上等姿态误判应先被 Event Trigger / flags 门控挡住，后续 post-check 再做第二层过滤。
 - 2026-07-08：本地告警/红屏不再依赖后续窗口退出，确认后最多保持 5 秒；App danger alert 可上传一次，本机危险语音继续跳过。
 - 2026-07-08：Fall 模型运行时生命周期由 `fall_detection_service` 自己持有；外部只能调用 `fall_detection_service_destroy()` 表达销毁意图，禁止 UI 或其他 owner 直接删除 `fall_detect` task、释放 runner 或停止 `imu_service` 后台采样。
+- 2026-07-08：按调试召回优先路线部署 2s/6ch CNN recall90 模型，临时偏离原 5s RF5s 目标态。该模型阈值 `0.30` 来自训练 run 的 `validation_selected_threshold`：验证集 `fall_recall=1.0`、ADL false positives=1/245；测试集 `fall_recall=0.9333`、ADL false positives=26/712，误报风险高于 RF5s，需要板端 ADL/FALL 日志回调。
 
 ## 验证与验收
 
@@ -368,6 +370,7 @@ smoke FALL / ADL 样本
 - 2026-07-08 删除定期窗口与 5 秒本地告警退出验证：source tests 16 passed；`idf.py build` 通过；context standard 错误 0、警告 0；COM7 `board_logs/2026-07-08-17-16-14-fall-no-periodic-5s-clear.log` 显示 `定期窗口表=0`、fall/imu `flags=0x00=0`、确认后约 5 秒 clear，且 `panic_log_seen=0`。完整静止佩戴、背面朝上、快速翻腕和模拟跌倒分场景验收仍需补采。
 - 2026-07-08 调试阈值 `0.65` 验证：fall source tests 16 passed；`idf.py build` 通过；COM7 `board_logs/2026-07-08-17-39-30-fall-threshold-065.log` 显示 `threshold=0.65`、`Model: Test Pass!`、`panic_log_seen=0`；context standard 错误 0、警告 0。
 - 2026-07-08 一键销毁入口验证：`uv run python -m unittest tests.test_fall_detection_service_source tests.test_fall_detection_inference_source tests.test_imu_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin` `0xace0b0`，app free `0x331f50`/23%。板端实际点击销毁/重启模型的 RAM 日志仍需补采。
+- 2026-07-08 2s CNN recall90 部署验证：`uv run python -m unittest tests.test_fall_detection_inference_source tests.test_fall_detection_service_source tests.test_imu_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin` `0xac65e0`，app free `0x339a20`/23%。当前机器仅发现 `COM1`，未执行板端 `app-flash-monitor`；接板后需补 `Model::test()`、RAM、静止 ADL 和模拟 FALL 日志。
 
 ## 幂等与恢复
 
@@ -376,4 +379,4 @@ smoke FALL / ADL 样本
 
 ## 下一步
 
-- 下一步最小动作：实现 post-check（低运动 + 姿态变化），再做静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒的完整板端验收。
+- 下一步最小动作：接板后先补 2s CNN recall90 的 `Model::test()`、RAM、静止 ADL 和模拟 FALL 行为日志；随后实现 post-check（低运动 + 姿态变化），再做静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒的完整板端验收。
