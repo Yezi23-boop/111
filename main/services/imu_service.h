@@ -69,9 +69,10 @@ extern "C"
      * @brief IMU service 发布给上层算法的 5 秒事件窗口副本。
      *
      * 窗口固定为 50Hz / 250 帧 / 5 秒，其中事件点位于第
-     * `IMU_SERVICE_EVENT_PRE_FRAMES` 帧。`accel` 和 `gyro` 保持芯片寄存器
-     * 坐标系下的物理量，模型坐标系重映射和 gyro `deg/s -> rad/s` 转换由
-     * 消费方负责。
+     * `IMU_SERVICE_EVENT_PRE_FRAMES` 帧。`accel` 和 `gyro` 是当前板级右手系
+     * 物理轴语义下的物理量：`+X` 朝手表顶部、`+Y` 朝手表右侧、`+Z`
+     * 朝表背/向下。模型消费方负责自己的坐标契约，例如 Fall V1 输入层
+     * 对 Z 轴取反，并将 gyro 从 `deg/s` 转换为 `rad/s`。
      */
     typedef struct
     {

@@ -1,0 +1,34 @@
+{
+  "model_name": "tcn_v1_rf5s_6ch_5s",
+  "source_run": "D:\\esp32S3\\imu\\self_trained_cnn_transformer_v1\\runs\\weda_v3_event5s_6ch_tcn_c16_k3_rf5s_pool25_e500_strongaug_full_retry",
+  "asset": "tcn_v1_rf5s_6ch_5s_with_test.espdl",
+  "sha256": "105b389d696c649114fd4fa520ab57cc626d772489ed31df9281b9d40d8df0ca",
+  "target": "esp32s3",
+  "input_shape": [1, 1500],
+  "input_contract": {
+    "sample_rate_hz": 50,
+    "window_seconds": 5,
+    "frames": 250,
+    "channels": ["accX", "accY", "accZ", "gyroX", "gyroY", "gyroZ"],
+    "acc_unit": "m/s^2",
+    "gyro_unit": "rad/s",
+    "firmware_mapping": ["+imuX", "+imuY", "-imuZ", "+gyroX", "+gyroY", "-gyroZ"]
+  },
+  "threshold": {
+    "fall_default": 0.65,
+    "training_recommended": 0.85,
+    "firmware_note": "0.65 is the current firmware debug threshold; 0.85 is the training-run recommended threshold.",
+    "selection_rule": {
+      "min_precision": 0.95,
+      "max_adl_false_positives": 10
+    },
+    "selected_metrics": {
+      "accuracy": 0.9705014749262537,
+      "fall_precision": 0.9508196721311475,
+      "fall_recall": 0.7733333333333333,
+      "fall_f1": 0.8529411764705883,
+      "adl_false_positives": 3,
+      "fall_false_negatives": 17
+    }
+  }
+}

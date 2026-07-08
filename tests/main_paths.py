@@ -242,7 +242,7 @@ FALL_DETECTION_MODEL_ASSET = (
     FALL_DETECTION_INFERENCE_DIR
     / "models"
     / "esp32s3"
-    / "cnn_c24_pool225_do015_e80_with_test.espdl"
+    / "tcn_v1_rf5s_6ch_5s_with_test.espdl"
 )
 FALL_DETECTION_SERVICE_SOURCE = SERVICES_DIR / "fall_detection_service.c"
 FALL_DETECTION_SERVICE_HEADER = SERVICES_DIR / "fall_detection_service.h"

@@ -36,10 +36,10 @@ D:\esp32S3\imu\FALL_DETECTION_V1_TRAINING_MODEL_DESIGN.md
 
 ## 当前实现差距
 
-- 当前固件仍在运行旧临时链路：`3ch / 4s / [1,600]` 加速度 CNN，`imu_service` 每约 2 秒发布任意 4 秒滑窗，`fall_detection_service` 直接按 `fall_prob >= 0.80` 确认告警。
-- V1 目标链路是 `6ch / 5s / [1,1500]` 事件窗口：先由 Event Trigger 捕获候选，再冻结事件前后窗口，模型只做 Model Check，最后由 post-check 决定是否 ALARM。
-- 当前旧链路只吃三轴加速度，缺少陀螺仪 `rad/s` 输入，也缺少 `acc_norm / gyro_norm / jerk_norm` 事件触发和摔后低运动、姿态变化确认。
-- 因此静止姿态出现较高 `fall_prob` 时，不应先调阈值当作最终修复；应先补事件触发层和 post-check，使模型回到训练侧设计的使用场景。
+- 当前固件已部署 RF5s retry `6ch / 5s / [1,1500]` 模型，`imu_service` 只在 Event Trigger 后发布 250 帧事件窗口；旧 `3ch / 4s / [1,600]` 周期滑窗链路已退出当前推理入口。
+- 当前已修复背面朝上误告警的直接路径：`flags=0` 定期窗口不再发布，也不会参与推理、确认或清除；本地告警/红屏确认后最多保持 5 秒，之后由 `fall_detection_service` 自动 clear。
+- 当前仍缺少 V1 post-check：低运动 + 姿态变化尚未接入，因此模型高分事件仍可能直接确认告警。
+- 因此静止姿态或普通 ADL 出现较高 `fall_prob` 时，不应只调模型阈值当作最终修复；下一步应补 post-check，使模型回到训练侧设计的事件后确认流程。
 
 ## 板端总体流水线
 
@@ -120,19 +120,21 @@ gyro = rad/s
 
 ## 当前坐标映射
 
-保持当前已测映射：
+`imu_service` 输出已经是当前板修正后的右手系物理轴，不再等同于原始 raw chip 轴；后续实现禁止把旧 `-chip X` 映射再次套到模型输入上。
+
+保持当前模型输入映射：
 
 ```text
-model accX  = -chip accX
-model accY  =  chip accY
-model accZ  = -chip accZ
+model accX  =  imu accX
+model accY  =  imu accY
+model accZ  = -imu accZ
 
-model gyroX = -chip gyroX
-model gyroY =  chip gyroY
-model gyroZ = -chip gyroZ
+model gyroX =  imu gyroX
+model gyroY =  imu gyroY
+model gyroZ = -imu gyroZ
 ```
 
-gyro 输入模型前转换为 `rad/s`。若未来重新做坐标契约测试，必须先更新测试记录和模型输入契约，再考虑重训或替换模型。
+其中 `imu` 指 `imu_service` 发布的修正后板级坐标：`+X` 朝手表顶部，`+Y` 朝手表右侧，`+Z` 朝表背/向下。当前模型输入仅对 Z 轴取反，gyro 输入模型前必须从 `deg/s` 转换为 `rad/s`。若未来重新做坐标契约测试，必须先更新测试记录和模型输入契约，再考虑重训或替换模型。
 
 ## 事件触发层
 
@@ -255,6 +257,7 @@ V1 本地报警动作：
 ```text
 - 串口日志打印 FALL alarm
 - 屏幕提示 FALL
+- 本地红屏/告警保持 5 秒后自动退出
 - 可选震动 / 蜂鸣
 - 记录最近一次 fall event snapshot
 ```
@@ -326,10 +329,17 @@ smoke FALL / ADL 样本
 - `[x]` 已有旧 `3ch / 4s / [1,600]` ESP-DL 临时部署和日志闭环，用于验证 loader、PSRAM 缓冲和告警通路。
 - `[x]` 已确认当前临时链路会把任意静止滑窗送入模型，和 V1 事件窗口设计不一致。
 - `[x]` 2026-07-08：`imu_service` 改为事件触发后发布 50Hz / 5s / 250 帧事件窗口，窗口 payload 保留 acc+gyro 物理量；本阶段仍不替换模型资产。
-- `[x]` 2026-07-08：实现 Event Trigger：逐帧计算 `acc_norm / gyro_norm / jerk_norm`，用 `A_high=21.57m/s^2`、`G_high=3.84rad/s`、`J_high=5.39m/s^2/frame` 捕获候选事件。
+- `[x]` 2026-07-08：实现 Event Trigger：逐帧计算 `acc_norm / gyro_norm / jerk_norm`；当前固件阈值已下调为 `A_high=15.0m/s^2`、`G_high=2.5rad/s`、`J_high=3.5m/s^2/frame`，用于提高事件窗口召回。
 - `[x]` 2026-07-08：冻结 5 秒事件窗口：event 前 75 帧 + event 后 175 帧；`fall_detection_service` 只消费事件窗口，旧模型暂按 legacy 200 帧 / 3ch 加速度输入兼容运行。
-- `[ ]` 接入 V1 6ch 输入构造：按坐标映射生成 `[1,1500]`，并将 gyro 从 `deg/s` 转换为 `rad/s`。
-- `[ ]` 替换 V1 6ch `.espdl` 资产，更新模型名、SHA256、输入元素数、推荐阈值和 smoke/test values。
+- `[x]` 2026-07-08：接入 V1 6ch 输入构造：`fall_detection_fill_model_input()` 改为 250帧×6ch 布局，gyro 从 `deg/s` 转换为 `rad/s`，坐标映射 `[+X,+Y,-Z,+gx,+gy,-gz]`。
+- `[x]` 2026-07-08：历史 RF4s 部署：`tcn_v1_rf4s_6ch_5s_with_test.espdl`（SHA256=4566d13b...），`FALL_MODEL_INPUT_ELEMENTS` 改为 1500，阈值为 0.50；COM7 板端 `Model::test()` 通过，internal RAM=32KB。
+- `[x]` 2026-07-08：部署 RF5s retry 6ch/5s 模型 `tcn_v1_rf5s_6ch_5s_with_test.espdl`（SHA256=105b389d696c649114fd4fa520ab57cc626d772489ed31df9281b9d40d8df0ca），输入仍为 `[1,1500]`，来源为 `weda_v3_event5s_6ch_tcn_c16_k3_rf5s_pool25_e500_strongaug_full_retry`。
+- `[x]` 2026-07-08：按调试需求将 RF5s 默认 FALL 告警阈值从 `0.85` 降为 `0.65`，让中等置信事件更容易进入本地告警/上传路径；后续量产阈值需结合 ADL 误报日志回调。
+- `[x]` 2026-07-08：按用户要求清理旧模型资产，`components/fall_detection_inference/models/esp32s3/` 只保留当前 RF5s `.espdl` 和 meta；旧 3ch CNN 与 RF4s `.espdl` 已删除。验证：fall source tests 16 passed，meta JSON 解析通过，`idf.py build` 通过。
+- `[x]` 2026-07-08：修正 V1 输入契约文档和代码注释：当前输入来自修正后右手系 `imu_service` 板级坐标，禁止继续按旧 raw chip 轴理解或额外套 `-chip X`。
+- `[x]` 2026-07-08：修正 `imu_service_accel_window_t` 注释契约：5s 事件窗口发布当前板级右手系物理轴语义，Fall V1 消费方只负责 Z 轴取反和 gyro `rad/s` 转换。
+- `[x]` 2026-07-08：修复背面朝上误告警路径：删除 `imu_service` 定期窗口发布，`fall_detection_service` 拒绝 `flags=0` 非事件窗口；只有 `flags!=0` 的 Event Trigger 窗口可进入模型推理和确认。
+- `[x]` 2026-07-08：本地告警/红屏确认后最多保持 5 秒；`fall_detection_service` 通过 1 秒 queue timeout 和每次推理后的超时检查自动 clear，后续低风险事件窗口仍可提前 clear。
 - `[ ]` 实现 post-check：低运动 + 姿态变化；普通确认和强置信兜底都必须满足 `low_motion`。
 - `[x]` 2026-07-08：默认策略确认：跌倒告警可以上传 `danger alert`，但 `APP_ALERT_SOURCE_FALL_DETECTION` 不播放危险提示音，也不抢占普通音频输出。
 - `[ ]` 板端验收静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒。
@@ -340,18 +350,27 @@ smoke FALL / ADL 样本
 - 2026-07-08：修复 context 检索路由时保留本文为 active plan，不晋升为 knowledge；后续实现应先读本文，再读当前 IMU runtime plan 和代码。
 - 2026-07-08：第一阶段只落地 Event Trigger + 5s 事件窗口，不替换 `.espdl`；旧 3ch / `[1,600]` 模型仅作为临时兼容消费者，避免静止任意滑窗继续直接触发推理。
 - 2026-07-08：跌倒告警默认保留 `watch_endpoint_service_post_danger_alert()` 上传，但本机不播放 `audio_alert_player` 的危险提示音；本地仍可保留屏幕/震动告警证据。
+- 2026-07-08：当前 IMU 输出已按板级右手系修正，V1 输入构造不再使用旧 raw chip 轴描述；保持数值映射 `[+X,+Y,-Z,+gx,+gy,-gz]` 和 gyro `rad/s` 单位。
+- 2026-07-08：`imu_service` 事件触发阈值以当前源码为准：`A_high=15.0m/s^2`、`G_high=2.5rad/s`、`J_high=3.5m/s^2/frame`；文档中的 `21.57/3.84/5.39` 保留为初始建议值，不代表当前固件。
+- 2026-07-08：RF5s retry 模型阈值采用训练 run 的 `weda_v3_threshold_selection.json` 推荐值 `0.85`，对应验证集 `fall_precision=0.9508`、`fall_recall=0.7733`、ADL false positives=3；清除阈值 `k_fall_clear_threshold=0.50` 仍只用于已确认后的恢复证据。
+- 2026-07-08：调试期将当前固件默认 FALL 阈值改为 `0.65`，偏离训练 run 推荐值 `0.85`；这会提高召回和告警触发率，也会提高 ADL 误报风险。
+- 2026-07-08：删除定期窗口推理路径；`imu_service` 不再发布 `flags=0` 周期窗口，`fall_detection_service` 也会拒绝任何 `flags=0` 非事件窗口。背面朝上等姿态误判应先被 Event Trigger / flags 门控挡住，后续 post-check 再做第二层过滤。
+- 2026-07-08：本地告警/红屏不再依赖后续窗口退出，确认后最多保持 5 秒；App danger alert 可上传一次，本机危险语音继续跳过。
 
 ## 验证与验收
 
 - context routing：修改本文、`validate_context.py` 或 golden query 后运行 `uv run python scripts/context/validate_context.py --level routing --q "FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN event trigger post-check 5s 6ch" --brief`。
 - light 检索：运行 `uv run python scripts/context/validate_context.py --level light --q "FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN event trigger post-check 5s 6ch" --brief`，期望 plans 检索 top1 或 top3 命中本文。
 - 固件实现阶段才运行 source tests、`idf.py build` 和 COM7 板端验证；仅规整本文不要求构建固件。
+- 2026-07-08 RF5s retry 板端验证：`board_logs/2026-07-08-16-39-22-fall-rf5s-deploy.log` 显示 `tcn_v1_rf5s_6ch_5s` 加载为 `shape=[1, 1500]`、`threshold=0.85`，`dl::Model: Test Pass!`；静止窗口判定 ADL，`fall_prob=0.0000`，推理约 8.9~10.9ms，无 panic。
+- 2026-07-08 删除定期窗口与 5 秒本地告警退出验证：source tests 16 passed；`idf.py build` 通过；context standard 错误 0、警告 0；COM7 `board_logs/2026-07-08-17-16-14-fall-no-periodic-5s-clear.log` 显示 `定期窗口表=0`、fall/imu `flags=0x00=0`、确认后约 5 秒 clear，且 `panic_log_seen=0`。完整静止佩戴、背面朝上、快速翻腕和模拟跌倒分场景验收仍需补采。
+- 2026-07-08 调试阈值 `0.65` 验证：fall source tests 16 passed；`idf.py build` 通过；COM7 `board_logs/2026-07-08-17-39-30-fall-threshold-065.log` 显示 `threshold=0.65`、`Model: Test Pass!`、`panic_log_seen=0`；context standard 错误 0、警告 0。
 
 ## 幂等与恢复
 
-- 如果中途中断，下次先从 `## 当前实现差距` 和 `## 进度` 未完成项继续，不要把旧 `3ch / 4s` 临时链路当作 V1 完成态。
+- 如果中途中断，下次先从 `## 当前实现差距` 和 `## 进度` 未完成项继续，不要恢复旧周期滑窗推理路径。
 - 如果 V1 6ch 模型接入失败，保留 IMU 50Hz 采样和旧临时日志链路作为诊断入口，但不得把旧模型阈值调参当作 V1 闭环。
 
 ## 下一步
 
-- 下一步最小动作：先实现事件触发与 5 秒事件窗口，再替换 6ch 模型，最后接 post-check 和本地 ALARM。
+- 下一步最小动作：实现 post-check（低运动 + 姿态变化），再做静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒的完整板端验收。

@@ -1,5 +1,11 @@
 # 上下文库变更记录
 
+- 2026-07-08：清理 Fall Detection 旧模型资产，只保留当前 RF5s 模型。`components/fall_detection_inference/models/esp32s3/` 删除旧 `cnn_c24_pool225_do015_e80_with_test.espdl` 和 `tcn_v1_rf4s_6ch_5s_with_test.espdl`，保留当前 CMake 嵌入的 `tcn_v1_rf5s_6ch_5s_with_test.espdl` 及 meta；source test 锁定目录内只能有这一份 `.espdl`。RF5s meta 的当前固件阈值同步为 `0.65`，并保留训练推荐 `0.85` 作为说明。验证：fall source tests 16 passed；RF5s meta JSON 解析通过；`idf.py build` 通过，`111.bin` `0xad3d30`，app free `0x32c2d0`/23%。
+
+- 2026-07-08：调低 Fall RF5s 默认告警阈值用于更容易触发跌倒链路。`FALL_MODEL_THRESHOLD_DEFAULT` 从 `0.85` 改为 `0.65`；Event Trigger 阈值不变，模型仍为 `tcn_v1_rf5s_6ch_5s` / `[1,1500]`。这是调试期提高召回和告警触发率的设置，会提高 ADL 误报风险；后续量产阈值需结合板端 ADL/FALL 日志回调。验证：fall source tests 16 passed；`idf.py build` 通过，`111.bin` `0xad3d30`，app free `0x32c2d0`/23%；COM7 `app-flash-monitor` 显示 `threshold=0.65`、`Model: Test Pass!`、`panic_log_seen=0`；context standard 错误 0、警告 0。
+
+- 2026-07-08：修复 Fall RF5s 背面朝上误告警路径并限制本地告警时长。`imu_service` 删除 `flags=0` 定期窗口发布，模型只接收 Event Trigger 后的 50Hz / 5s / 250 帧窗口；`fall_detection_service` 拒绝非事件窗口，确认后本地红屏/告警最多保持 5 秒并自动 clear，仍保留一次 App `danger_type="fall"` 上传且不播放危险提示音。原因是板端日志显示 `flags=0` 定期窗口曾给出 `fall_prob=0.9997` 并直接确认 FALL，绕过 V1 事件触发设计。验证：source tests 16 passed；`idf.py build` 通过，`111.bin` `0xad3d30`，app free `0x32c2d0`/23%；context standard 错误 0、警告 0；COM7 `app-flash-monitor` 无 panic，`定期窗口表=0`，fall/imu `flags=0x00=0`，确认后约 5 秒 clear。attempt log：`docs/context/runs/2026-07-08-attempt-fall-remove-periodic-window-5s-clear.md`。
+
 - 2026-07-08：固定跌倒告警默认静音策略。`fall_detection_service` 继续在确认跌倒后上传 `danger_type="fall"` 的 `danger alert`；`app_alert_manager` 对 `APP_ALERT_SOURCE_FALL_DETECTION` 保留本地屏幕/震动告警，但跳过 `audio_alert_player` 危险提示音播放，也不抢占普通音频输出。验证：相关 source tests 33 passed；`idf.py build` 通过，`111.bin` `0xae0cb0`，app free `0x31f350`/22%。attempt log：`docs/context/runs/2026-07-08-attempt-fall-danger-alert-silent-audio.md`。
 
 - 2026-07-08：完成 Fall Detection V1 第一阶段 Event Trigger + 5s 事件窗口。`imu_service` 从每约 2 秒发布任意 4 秒加速度滑窗，改为逐帧计算 `acc_norm/gyro_norm/jerk_norm`，仅在高动态事件触发并收满 50Hz / 250 帧窗口后发布事件窗口；窗口 payload 保留 acc+gyro 物理量和 trigger 元数据。`fall_detection_service` 暂不替换 `.espdl`，旧 3ch / `[1,600]` 模型仅作为事件窗口后的 legacy 兼容消费者，避免静止任意滑窗继续直接进入推理。验证：目标 source tests 13 passed；`idf.py build` 通过，`111.bin` `0xae0bd0`，app free `0x31f430`/22%。attempt log：`docs/context/runs/2026-07-08-attempt-fall-event-trigger-5s-window.md`。

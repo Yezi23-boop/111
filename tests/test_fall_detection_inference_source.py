@@ -8,7 +8,7 @@ from tests.main_paths import FALL_MODEL_RUNNER_SOURCE
 
 
 EXPECTED_MODEL_SHA256 = (
-    "10526143f02d047b0e5b2c29f29802396171998cfb4071cb54d7858375a98d54"
+    "105b389d696c649114fd4fa520ab57cc626d772489ed31df9281b9d40d8df0ca"
 )
 
 
@@ -17,9 +17,12 @@ class FallDetectionInferenceSourceTests(unittest.TestCase):
         self.assertTrue(FALL_DETECTION_MODEL_ASSET.exists())
         digest = hashlib.sha256(FALL_DETECTION_MODEL_ASSET.read_bytes()).hexdigest()
         self.assertEqual(digest, EXPECTED_MODEL_SHA256)
+        model_dir = FALL_DETECTION_MODEL_ASSET.parent
+        espdl_assets = sorted(path.name for path in model_dir.glob("*.espdl"))
+        self.assertEqual(espdl_assets, ["tcn_v1_rf5s_6ch_5s_with_test.espdl"])
 
         cmake = FALL_DETECTION_INFERENCE_CMAKE.read_text(encoding="utf-8")
-        self.assertIn("cnn_c24_pool225_do015_e80_with_test.espdl", cmake)
+        self.assertIn("tcn_v1_rf5s_6ch_5s_with_test.espdl", cmake)
         self.assertIn("target_add_aligned_binary_data", cmake)
         self.assertIn("esp-dl", cmake)
         self.assertNotIn("managed_components", cmake)
@@ -27,11 +30,11 @@ class FallDetectionInferenceSourceTests(unittest.TestCase):
     def test_runner_declares_fall_model_contract(self) -> None:
         header = FALL_MODEL_RUNNER_HEADER.read_text(encoding="utf-8")
 
-        self.assertIn("#define FALL_MODEL_INPUT_ELEMENTS 600U", header)
+        self.assertIn("#define FALL_MODEL_INPUT_ELEMENTS 1500U", header)
         self.assertIn("#define FALL_MODEL_CLASS_COUNT 2U", header)
         self.assertIn("#define FALL_MODEL_LABEL_ADL 0", header)
         self.assertIn("#define FALL_MODEL_LABEL_FALL 1", header)
-        self.assertIn("#define FALL_MODEL_THRESHOLD_DEFAULT 0.80f", header)
+        self.assertIn("#define FALL_MODEL_THRESHOLD_DEFAULT 0.65f", header)
         self.assertIn("float adl_prob", header)
         self.assertIn("float fall_prob", header)
         self.assertIn("int64_t infer_us", header)

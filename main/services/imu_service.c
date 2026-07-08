@@ -22,10 +22,11 @@ static const TickType_t k_sample_period_ticks =
 static const uint32_t k_sample_log_interval = IMU_SERVICE_SAMPLE_RATE_HZ * 2U;
 static const float k_standard_gravity = 9.80665f;
 static const float k_degrees_to_radians = 0.017453292519943295f;
-static const float k_event_acc_norm_high_mps2 = 21.57f;
-static const float k_event_gyro_norm_high_radps = 3.84f;
-static const float k_event_jerk_high_mps2_per_frame = 5.39f;
-static const float k_event_gyro_jerk_min_mps2_per_frame = 2.45f;
+/* 事件触发阈值：降低以捕获更多跌倒场景。 */
+static const float k_event_acc_norm_high_mps2 = 15.0f;
+static const float k_event_gyro_norm_high_radps = 2.5f;
+static const float k_event_jerk_high_mps2_per_frame = 3.5f;
+static const float k_event_gyro_jerk_min_mps2_per_frame = 1.5f;
 static const uint32_t k_event_cooldown_frames =
     IMU_SERVICE_WINDOW_FRAME_COUNT;
 
@@ -458,17 +459,11 @@ static bool imu_service_build_event_window(uint32_t source_sample_count,
     return true;
 }
 
+
 static void imu_service_publish_window_if_ready(uint32_t sample_count)
 {
-    if (!s_imu_service.event_trigger.active ||
-        sample_count < IMU_SERVICE_WINDOW_FRAME_COUNT)
-    {
-        return;
-    }
-
-    const uint32_t collected_post_frames =
-        sample_count - s_imu_service.event_trigger.trigger_sample_count + 1U;
-    if (collected_post_frames < IMU_SERVICE_EVENT_POST_FRAMES)
+    if (sample_count < IMU_SERVICE_WINDOW_FRAME_COUNT ||
+        !s_imu_service.event_trigger.active)
     {
         return;
     }
@@ -478,41 +473,40 @@ static void imu_service_publish_window_if_ready(uint32_t sample_count)
     taskEXIT_CRITICAL(&s_imu_service.lock);
     if (window_queue == NULL || s_imu_service.publish_window == NULL)
     {
-        s_imu_service.event_trigger.active = false;
-        s_imu_service.event_trigger.last_published_trigger_sample_count =
-            s_imu_service.event_trigger.trigger_sample_count;
         return;
     }
-
-    if (!imu_service_build_event_window(sample_count,
-                                        s_imu_service.publish_window))
+    const uint32_t collected_post_frames =
+        sample_count - s_imu_service.event_trigger.trigger_sample_count + 1U;
+    if (collected_post_frames >= IMU_SERVICE_EVENT_POST_FRAMES)
     {
-        return;
-    }
-
-    const BaseType_t sent =
-        xQueueOverwrite(window_queue, s_imu_service.publish_window);
-    if (sent == pdPASS)
-    {
-        ESP_LOGI(TAG,
-                 "事件窗口表 | 序号=%-4u 来源采样=%-6u 触发采样=%-6u 帧数=%-3u 触发帧=%-3u flags=0x%02x | 起始_us=%-12lld 触发_us=%-12lld 结束_us=%-12lld",
-                 (unsigned)s_imu_service.publish_window->sequence,
-                 (unsigned)s_imu_service.publish_window->source_sample_count,
-                 (unsigned)s_imu_service.publish_window->trigger_sample_count,
-                 (unsigned)s_imu_service.publish_window->frame_count,
-                 (unsigned)s_imu_service.publish_window->trigger_frame_index,
-                 (unsigned)s_imu_service.publish_window->trigger_flags,
-                 (long long)s_imu_service.publish_window->start_time_us,
-                 (long long)s_imu_service.publish_window->trigger_time_us,
-                 (long long)s_imu_service.publish_window->end_time_us);
-        s_imu_service.event_trigger.last_published_trigger_sample_count =
-            s_imu_service.event_trigger.trigger_sample_count;
-        s_imu_service.event_trigger.active = false;
-    }
-    else
-    {
-        ESP_LOGW(TAG, "事件窗口发布失败: 序号=%u",
-                 (unsigned)s_imu_service.publish_window->sequence);
+        if (imu_service_build_event_window(sample_count,
+                                            s_imu_service.publish_window))
+        {
+            const BaseType_t sent =
+                xQueueOverwrite(window_queue, s_imu_service.publish_window);
+            if (sent == pdPASS)
+            {
+                ESP_LOGI(TAG,
+                         "事件窗口表 | 序号=%-4u 来源采样=%-6u 触发采样=%-6u 帧数=%-3u 触发帧=%-3u flags=0x%02x | 起始_us=%-12lld 触发_us=%-12lld 结束_us=%-12lld",
+                         (unsigned)s_imu_service.publish_window->sequence,
+                         (unsigned)s_imu_service.publish_window->source_sample_count,
+                         (unsigned)s_imu_service.publish_window->trigger_sample_count,
+                         (unsigned)s_imu_service.publish_window->frame_count,
+                         (unsigned)s_imu_service.publish_window->trigger_frame_index,
+                         (unsigned)s_imu_service.publish_window->trigger_flags,
+                         (long long)s_imu_service.publish_window->start_time_us,
+                         (long long)s_imu_service.publish_window->trigger_time_us,
+                         (long long)s_imu_service.publish_window->end_time_us);
+                s_imu_service.event_trigger.last_published_trigger_sample_count =
+                    s_imu_service.event_trigger.trigger_sample_count;
+                s_imu_service.event_trigger.active = false;
+            }
+            else
+            {
+                ESP_LOGW(TAG, "事件窗口发布失败: 序号=%u",
+                         (unsigned)s_imu_service.publish_window->sequence);
+            }
+        }
     }
 }
 

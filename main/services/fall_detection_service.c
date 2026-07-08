@@ -1,7 +1,8 @@
 #include "services/fall_detection_service.h"
 
-#include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_timer.h"
 #include "fall_model_runner.h"
 #include "features/alerts/app_alert_manager.h"
 #include "freertos/FreeRTOS.h"
@@ -14,19 +15,21 @@
 static const char *k_fall_app_danger_type = "fall";
 static const char *k_fall_app_message = "检测到跌倒";
 
-extern const uint8_t cnn_c24_pool225_do015_e80_with_test_espdl[]
-    asm("_binary_cnn_c24_pool225_do015_e80_with_test_espdl_start");
+extern const uint8_t tcn_v1_rf5s_6ch_5s_with_test_espdl[]
+    asm("_binary_tcn_v1_rf5s_6ch_5s_with_test_espdl_start");
 
 static const char *TAG = "fall_detection";
 
 static const UBaseType_t k_window_queue_length = 1U;
 static const uint32_t k_task_stack_bytes = 6144U;
 static const UBaseType_t k_task_priority = 2U;
-static const char *k_model_name = "cnn_c24_pool225_do015_e80";
-static const uint16_t k_legacy_model_frame_count =
-    FALL_MODEL_INPUT_ELEMENTS / 3U;
-static const float k_fall_clear_threshold = 0.50f; // 连续低于该 FALL 概率才允许解除已确认跌倒。
-static const uint32_t k_fall_clear_window_count = 2U; // 4s 滑窗每 2s 发布一次，2 个低风险窗口约等于 4s 恢复证据。
+static const char *k_model_name = "tcn_v1_rf5s_6ch_5s";
+/* V1 模型输入：50Hz × 5s × 6ch = 250 × 6 = 1500 */
+static const float k_degrees_to_radians = 0.017453292519943295f;
+static const float k_fall_clear_threshold = 0.50f; // 后续事件窗口低风险时允许提前解除已确认跌倒。
+static const uint32_t k_fall_clear_window_count = 2U; // 仅作为事件窗口低风险恢复证据。
+static const TickType_t k_alert_receive_timeout_ticks = pdMS_TO_TICKS(1000);
+static const int64_t k_fall_alert_auto_clear_us = 5LL * 1000LL * 1000LL; // 本地红屏/告警最多保持 5 秒。
 typedef enum
 {
     FALL_DETECTION_ALERT_EVENT_NONE = 0,
@@ -56,6 +59,7 @@ typedef struct
     fall_model_runner_t *runner;
     imu_service_accel_window_t *current_window;
     float *model_input;
+    int64_t last_alert_time_us;
 } fall_detection_context_t;
 
 static fall_detection_context_t s_fall_detection = {
@@ -77,6 +81,7 @@ static fall_detection_context_t s_fall_detection = {
     .runner = NULL,
     .current_window = NULL,
     .model_input = NULL,
+    .last_alert_time_us = 0,
 };
 
 static void fall_detection_store_state(fall_detection_service_state_t state,
@@ -200,26 +205,35 @@ static QueueHandle_t fall_detection_prepare_window_queue(void)
     return s_fall_detection.window_queue;
 }
 
+/**
+ * @brief 将 5s 事件窗口填充为 V1 6ch 模型输入。
+ *
+ * 布局按帧交错：[accX, accY, accZ, gyroX, gyroY, gyroZ] × 250帧。
+ * 输入窗口已是 imu_service 输出的修正后右手系板级物理轴，禁止再套旧 raw chip
+ * 轴的 X 反号。坐标映射沿用当前 V1 训练约定：
+ *   model accX  =  imu accX
+ *   model accY  =  imu accY
+ *   model accZ  = -imu accZ
+ *   model gyroX =  imu gyroX
+ *   model gyroY =  imu gyroY
+ *   model gyroZ = -imu gyroZ
+ * gyro 从 deg/s 转换为 rad/s。
+ */
 static void fall_detection_fill_model_input(
     const imu_service_accel_window_t *window,
     float input[FALL_MODEL_INPUT_ELEMENTS])
 {
-    /*
-     * Board orientation from six-face test:
-     * model +X = watch right / USB side = -chip X,
-     * model +Y = watch top = +chip Y,
-     * model +Z = watch front/dial = -chip Z.
-     */
-    /*
-     * 本阶段只接入 Event Trigger + 5s 事件窗口，不替换模型资产。
-     * 旧 3ch 模型仍固定读取 200 帧加速度；后续 6ch / [1,1500]
-     * 模型接入时再把 gyro 转为 rad/s 并扩展输入构造。
-     */
-    for (uint16_t frame = 0; frame < k_legacy_model_frame_count; ++frame)
+    for (uint16_t frame = 0; frame < IMU_SERVICE_WINDOW_FRAME_COUNT; ++frame)
     {
-        input[(frame * 3U) + 0U] = -window->accel[frame].x;
-        input[(frame * 3U) + 1U] = window->accel[frame].y;
-        input[(frame * 3U) + 2U] = -window->accel[frame].z;
+        const uint16_t base = frame * 6U;
+        /* 加速度：m/s^2，按坐标映射 */
+        input[base + 0U] =  window->accel[frame].x;
+        input[base + 1U] =  window->accel[frame].y;
+        input[base + 2U] = -window->accel[frame].z;
+        /* 陀螺仪：deg/s -> rad/s，按坐标映射 */
+        input[base + 3U] =  window->gyro[frame].x * k_degrees_to_radians;
+        input[base + 4U] =  window->gyro[frame].y * k_degrees_to_radians;
+        input[base + 5U] = -window->gyro[frame].z * k_degrees_to_radians;
     }
 }
 
@@ -227,6 +241,7 @@ static fall_detection_alert_event_t fall_detection_update_alert_state(
     const imu_service_accel_window_t *window,
     const fall_model_result_t *result)
 {
+    const bool is_event_window = window->trigger_flags != 0U;
     fall_detection_alert_event_t event = {
         .type = FALL_DETECTION_ALERT_EVENT_NONE,
         .window_sequence = window->sequence,
@@ -239,7 +254,8 @@ static fall_detection_alert_event_t fall_detection_update_alert_state(
         FALL_DETECTION_ALERT_STATE_IDLE)
     {
         s_fall_detection.snapshot.clear_window_count = 0;
-        if (result->fall_prob >= FALL_MODEL_THRESHOLD_DEFAULT)
+        if (is_event_window &&
+            result->fall_prob >= FALL_MODEL_THRESHOLD_DEFAULT)
         {
             s_fall_detection.snapshot.alert_state =
                 FALL_DETECTION_ALERT_STATE_CONFIRMED;
@@ -249,6 +265,7 @@ static fall_detection_alert_event_t fall_detection_update_alert_state(
             s_fall_detection.snapshot.last_alert_fall_prob =
                 result->fall_prob;
             s_fall_detection.snapshot.last_alert_error = ESP_OK;
+            s_fall_detection.last_alert_time_us = window->end_time_us;
 
             event.type = FALL_DETECTION_ALERT_EVENT_CONFIRMED;
             event.alert_sequence = s_fall_detection.snapshot.alert_sequence;
@@ -265,6 +282,7 @@ static fall_detection_alert_event_t fall_detection_update_alert_state(
             s_fall_detection.snapshot.alert_state =
                 FALL_DETECTION_ALERT_STATE_IDLE;
             s_fall_detection.snapshot.clear_window_count = 0;
+            s_fall_detection.last_alert_time_us = 0;
             event.type = FALL_DETECTION_ALERT_EVENT_CLEARED;
             event.alert_sequence = s_fall_detection.snapshot.alert_sequence;
         }
@@ -272,6 +290,37 @@ static fall_detection_alert_event_t fall_detection_update_alert_state(
     else
     {
         s_fall_detection.snapshot.clear_window_count = 0;
+    }
+    taskEXIT_CRITICAL(&s_fall_detection.lock);
+
+    return event;
+}
+
+static fall_detection_alert_event_t fall_detection_update_alert_timeout(
+    int64_t now_us)
+{
+    fall_detection_alert_event_t event = {
+        .type = FALL_DETECTION_ALERT_EVENT_NONE,
+        .window_end_time_us = now_us,
+    };
+
+    taskENTER_CRITICAL(&s_fall_detection.lock);
+    if (s_fall_detection.snapshot.alert_state ==
+            FALL_DETECTION_ALERT_STATE_CONFIRMED &&
+        s_fall_detection.last_alert_time_us > 0 &&
+        (now_us - s_fall_detection.last_alert_time_us) >=
+            k_fall_alert_auto_clear_us)
+    {
+        s_fall_detection.snapshot.alert_state =
+            FALL_DETECTION_ALERT_STATE_IDLE;
+        s_fall_detection.snapshot.clear_window_count = 0;
+        s_fall_detection.last_alert_time_us = 0;
+
+        event.type = FALL_DETECTION_ALERT_EVENT_CLEARED;
+        event.alert_sequence = s_fall_detection.snapshot.alert_sequence;
+        event.window_sequence =
+            s_fall_detection.snapshot.last_alert_window_sequence;
+        event.fall_prob = s_fall_detection.snapshot.last_alert_fall_prob;
     }
     taskEXIT_CRITICAL(&s_fall_detection.lock);
 
@@ -372,8 +421,11 @@ static void fall_detection_task(void *arg)
     {
         if (xQueueReceive(s_fall_detection.window_queue,
                           s_fall_detection.current_window,
-                          portMAX_DELAY) != pdTRUE)
+                          k_alert_receive_timeout_ticks) != pdTRUE)
         {
+            const fall_detection_alert_event_t timeout_event =
+                fall_detection_update_alert_timeout(esp_timer_get_time());
+            fall_detection_handle_alert_event(&timeout_event);
             continue;
         }
         const imu_service_accel_window_t *window =
@@ -394,6 +446,16 @@ static void fall_detection_task(void *arg)
                      (unsigned)window->sample_rate_hz,
                      (unsigned)window->trigger_frame_index);
             fall_detection_store_inference_error(ESP_ERR_INVALID_SIZE);
+            continue;
+        }
+
+        if (window->trigger_flags == 0U)
+        {
+            ESP_LOGW(TAG,
+                     "非事件窗口已拒绝: 序号=%u 来源采样=%u flags=0x%02x",
+                     (unsigned)window->sequence,
+                     (unsigned)window->source_sample_count,
+                     (unsigned)window->trigger_flags);
             continue;
         }
 
@@ -432,6 +494,10 @@ static void fall_detection_task(void *arg)
         const fall_detection_alert_event_t alert_event =
             fall_detection_update_alert_state(window, &result);
         fall_detection_handle_alert_event(&alert_event);
+
+        const fall_detection_alert_event_t timeout_event =
+            fall_detection_update_alert_timeout(esp_timer_get_time());
+        fall_detection_handle_alert_event(&timeout_event);
     }
 }
 
@@ -464,7 +530,7 @@ esp_err_t fall_detection_service_start(void)
 
     ret = fall_model_runner_create(
         &s_fall_detection.runner,
-        cnn_c24_pool225_do015_e80_with_test_espdl,
+        tcn_v1_rf5s_6ch_5s_with_test_espdl,
         k_model_name);
     if (ret != ESP_OK)
     {

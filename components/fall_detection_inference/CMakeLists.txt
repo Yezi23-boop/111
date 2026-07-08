@@ -16,7 +16,7 @@ set(cmake_dir ${espdl_dir}/fbs_loader/cmake)
 include(${cmake_dir}/utilities.cmake)
 
 set(embed_files
-    models/esp32s3/cnn_c24_pool225_do015_e80_with_test.espdl
+    models/esp32s3/tcn_v1_rf5s_6ch_5s_with_test.espdl
 )
 
 idf_component_register(

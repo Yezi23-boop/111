@@ -102,6 +102,8 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         self.assertIn("icon_font", source)
         self.assertIn("ui_font_assets_compute_checksum", source)
         self.assertIn("ESP_ERR_INVALID_CRC", source)
+        self.assertIn("index.json has no icon_font, use compiled icon fallback", source)
+        self.assertNotIn("index.json missing icon_font, keep compiled fallback", source)
 
     def test_font_assets_source_no_longer_short_circuits_lvgl_93(self) -> None:
         source = FONT_ASSETS_SOURCE.read_text(encoding="utf-8")

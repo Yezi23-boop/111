@@ -352,7 +352,7 @@ static esp_err_t ui_font_assets_load_from_partition(void) {
             ESP_LOGW(TAG, "icon font asset not found: %s", icon_item->valuestring);
         }
     } else {
-        ESP_LOGW(TAG, "index.json missing icon_font, keep compiled fallback");
+        ESP_LOGI(TAG, "index.json has no icon_font, use compiled icon fallback");
     }
 
     cJSON_Delete(index_root);

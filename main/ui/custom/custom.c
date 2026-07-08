@@ -32,7 +32,7 @@
 
 void custom_init(lv_ui *ui)
 {
-    //    setup_vertical_scroll(ui->screen_rotating_interface);
+    (void)ui;
 }
 /*
  * @param e LVGL事件对象，包含事件相关信息

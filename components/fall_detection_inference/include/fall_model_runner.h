@@ -8,11 +8,11 @@
 extern "C" {
 #endif
 
-#define FALL_MODEL_INPUT_ELEMENTS 600U
+#define FALL_MODEL_INPUT_ELEMENTS 1500U
 #define FALL_MODEL_CLASS_COUNT 2U
 #define FALL_MODEL_LABEL_ADL 0
 #define FALL_MODEL_LABEL_FALL 1
-#define FALL_MODEL_THRESHOLD_DEFAULT 0.80f
+#define FALL_MODEL_THRESHOLD_DEFAULT 0.65f
 
 typedef struct fall_model_runner_t fall_model_runner_t;
 
@@ -55,10 +55,10 @@ void fall_model_runner_destroy(fall_model_runner_t *runner);
 esp_err_t fall_model_runner_self_test(fall_model_runner_t *runner);
 
 /**
- * @brief Run one 4-second IMU fall-detection window.
+ * @brief Run one 5-second IMU fall-detection window.
  *
  * @param[in] runner Model runner.
- * @param[in] input Flattened float input, shape `[1,600]`.
+ * @param[in] input Flattened float input, shape `[1,1500]` (250帧×6ch)。
  * @param[out] result Inference result.
  * @return `ESP_OK` on success.
  */

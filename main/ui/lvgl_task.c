@@ -20,6 +20,7 @@
 #include "printf_esp32.h"
 #include "services/startup_readiness.h"
 #include "ui/custom/ai_ui_controller.h"
+#include "ui/custom/custom.h"
 #include "ui/custom/danger_detection_controller.h"
 #include "ui/custom/memory_watch_controller.h"
 #include "ui/custom/mini_games_controller.h"
@@ -97,6 +98,7 @@ void lvgl_task(void *pvParameter)
     mini_games_controller_init(&guider_ui);
     wifi_management_controller_init(&guider_ui);
     events_init(&guider_ui);
+    custom_init(&guider_ui);
     ui_refresh_policy_init();
     startup_readiness_mark_ui_first_frame_ready();
     ESP_LOGI(TAG, "boot_stage: ui_first_frame_ready");

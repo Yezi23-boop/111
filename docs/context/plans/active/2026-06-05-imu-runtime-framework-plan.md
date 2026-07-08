@@ -82,6 +82,7 @@ board_imu board facts
 - `[x]` 2026-07-07：跌倒确认告警状态机接入完成；`IDLE -> FALL_CONFIRMED` 不再要求连续 2 个 FALL，单窗口 `fall_prob>=0.80` 即触发一次本地完整告警和 App 上传；`FALL_CONFIRMED` 期间不重复告警/上传，连续约 4 秒低风险窗口 `fall_prob<0.50` 后 clear。
 - `[x]` 2026-07-07：将 IMU/Fall 大窗口缓冲迁到 PSRAM：`imu_service` 的 200 帧 ring 与 publish window、`fall_detection_service` 的 queue storage/current window/model input 均改为 `heap_caps_*` + `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`；`fall_detect` task 栈改为 `xTaskCreateWithCaps(..., MALLOC_CAP_SPIRAM)`。
 - `[x]` 2026-07-07：按用户要求将当前 QMI8658C/IMU/Fall 关键运行日志中文化，并统一为表格化单行输出；QMI 原始采样调试、`imu_service` 50Hz 采样日志、窗口发布和 fall 推理结果按约 2s 输出（50Hz 下每 100 个样本）。低风险清除窗口数同步改为 2，约 4s 恢复证据。
+- `[x]` 2026-07-08：部署 V1 6ch TCN 模型 `tcn_v1_rf4s_6ch_5s`，输入从旧 3ch/200帧/600元素升级为 6ch/250帧/1500元素；gyro 转 rad/s，阈值 0.80→0.50；COM7 板端 `Model::test()` 通过，internal RAM=32KB。
 - `[ ]` 后续补离线 replay/evaluator，把真实样本与规则阈值调参从固件循环中拆出来。
 - `[ ]` 后续讨论并实现真实抬腕识别策略。
 
