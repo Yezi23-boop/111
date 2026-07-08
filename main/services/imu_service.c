@@ -23,10 +23,10 @@ static const uint32_t k_sample_log_interval = IMU_SERVICE_SAMPLE_RATE_HZ * 2U;
 static const float k_standard_gravity = 9.80665f;
 static const float k_degrees_to_radians = 0.017453292519943295f;
 /* 事件触发阈值：降低以捕获更多跌倒场景。 */
-static const float k_event_acc_norm_high_mps2 = 15.0f;
-static const float k_event_gyro_norm_high_radps = 2.5f;
-static const float k_event_jerk_high_mps2_per_frame = 3.5f;
-static const float k_event_gyro_jerk_min_mps2_per_frame = 1.5f;
+static const float k_event_acc_norm_high_mps2 = 25.0f;
+static const float k_event_gyro_norm_high_radps = 5.0f;
+static const float k_event_jerk_high_mps2_per_frame = 10.0f;
+static const float k_event_gyro_jerk_min_mps2_per_frame = 5.0f;
 static const uint32_t k_event_cooldown_frames =
     IMU_SERVICE_WINDOW_FRAME_COUNT;
 
@@ -45,26 +45,26 @@ typedef struct
 
 typedef struct
 {
-    bool active;                  /**< 已捕获事件，等待 post frames 收满。 */
-    uint32_t trigger_sample_count; /**< 事件触发帧对应的累计采样数。 */
-    uint16_t trigger_ring_index;  /**< 事件触发帧在 ring buffer 中的位置。 */
-    uint32_t trigger_flags;       /**< 触发原因 bitset。 */
-    float acc_norm_mps2;          /**< 触发帧加速度模长，单位 `m/s^2`。 */
-    float gyro_norm_radps;        /**< 触发帧角速度模长，单位 `rad/s`。 */
-    float jerk_mps2_per_frame;    /**< 触发帧加速度模长变化，单位 `m/s^2/frame`。 */
+    bool active;                                  /**< 已捕获事件，等待 post frames 收满。 */
+    uint32_t trigger_sample_count;                /**< 事件触发帧对应的累计采样数。 */
+    uint16_t trigger_ring_index;                  /**< 事件触发帧在 ring buffer 中的位置。 */
+    uint32_t trigger_flags;                       /**< 触发原因 bitset。 */
+    float acc_norm_mps2;                          /**< 触发帧加速度模长，单位 `m/s^2`。 */
+    float gyro_norm_radps;                        /**< 触发帧角速度模长，单位 `rad/s`。 */
+    float jerk_mps2_per_frame;                    /**< 触发帧加速度模长变化，单位 `m/s^2/frame`。 */
     uint32_t last_published_trigger_sample_count; /**< 最近已发布事件采样数，用于冷却去重。 */
-    bool has_last_acc_norm;       /**< 是否已有上一帧 acc_norm 可计算 jerk。 */
-    float last_acc_norm_mps2;     /**< 上一帧加速度模长，单位 `m/s^2`。 */
+    bool has_last_acc_norm;                       /**< 是否已有上一帧 acc_norm 可计算 jerk。 */
+    float last_acc_norm_mps2;                     /**< 上一帧加速度模长，单位 `m/s^2`。 */
 } imu_service_event_trigger_t;
 
 typedef struct
 {
-    uint8_t accel_fs_code;    /**< CTRL2 bit[6:4]，统一配置为 ±16g。 */
-    uint8_t accel_odr_code;   /**< CTRL2 bit[3:0]，加速度 ODR。 */
-    uint8_t gyro_fs_code;     /**< CTRL3 bit[6:4]，统一配置为 ±2048 dps。 */
-    uint8_t gyro_odr_code;    /**< CTRL3 bit[3:0]，陀螺仪 ODR。 */
-    bool accel_enable;        /**< true 时开启加速度计。 */
-    bool gyro_enable;         /**< true 时开启陀螺仪。 */
+    uint8_t accel_fs_code;  /**< CTRL2 bit[6:4]，统一配置为 ±16g。 */
+    uint8_t accel_odr_code; /**< CTRL2 bit[3:0]，加速度 ODR。 */
+    uint8_t gyro_fs_code;   /**< CTRL3 bit[6:4]，统一配置为 ±2048 dps。 */
+    uint8_t gyro_odr_code;  /**< CTRL3 bit[3:0]，陀螺仪 ODR。 */
+    bool accel_enable;      /**< true 时开启加速度计。 */
+    bool gyro_enable;       /**< true 时开启陀螺仪。 */
 } imu_service_profile_t;
 
 typedef struct
@@ -424,13 +424,11 @@ static bool imu_service_build_event_window(uint32_t source_sample_count,
         return false;
     }
 
-    const uint16_t start_index = (uint16_t)(
-        (event->trigger_ring_index + IMU_SERVICE_WINDOW_FRAME_COUNT -
-         IMU_SERVICE_EVENT_PRE_FRAMES) %
-        IMU_SERVICE_WINDOW_FRAME_COUNT);
-    const uint16_t end_index = (uint16_t)(
-        (start_index + IMU_SERVICE_WINDOW_FRAME_COUNT - 1U) %
-        IMU_SERVICE_WINDOW_FRAME_COUNT);
+    const uint16_t start_index = (uint16_t)((event->trigger_ring_index + IMU_SERVICE_WINDOW_FRAME_COUNT -
+                                             IMU_SERVICE_EVENT_PRE_FRAMES) %
+                                            IMU_SERVICE_WINDOW_FRAME_COUNT);
+    const uint16_t end_index = (uint16_t)((start_index + IMU_SERVICE_WINDOW_FRAME_COUNT - 1U) %
+                                          IMU_SERVICE_WINDOW_FRAME_COUNT);
 
     window->sequence = ++s_imu_service.window_sequence;
     window->source_sample_count = source_sample_count;
@@ -459,7 +457,6 @@ static bool imu_service_build_event_window(uint32_t source_sample_count,
     return true;
 }
 
-
 static void imu_service_publish_window_if_ready(uint32_t sample_count)
 {
     if (sample_count < IMU_SERVICE_WINDOW_FRAME_COUNT ||
@@ -480,7 +477,7 @@ static void imu_service_publish_window_if_ready(uint32_t sample_count)
     if (collected_post_frames >= IMU_SERVICE_EVENT_POST_FRAMES)
     {
         if (imu_service_build_event_window(sample_count,
-                                            s_imu_service.publish_window))
+                                           s_imu_service.publish_window))
         {
             const BaseType_t sent =
                 xQueueOverwrite(window_queue, s_imu_service.publish_window);
