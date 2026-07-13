@@ -130,6 +130,9 @@ class _StubServer:
                 if content_length:
                     self.rfile.read(content_length)
                 path = urlparse(self.path).path
+                if path == "/internal/watch/inbox" and path in private_statuses:
+                    self._send_private_status(private_statuses[path])
+                    return
                 if path == "/v1/watch/voice-command":
                     self._send_json(
                         200,
@@ -228,6 +231,39 @@ def test_runtime_status_flags_public_private_paths_with_unexpected_status(tmp_pa
     assert checks["/internal/watch/inbox"]["ok"] is True
 
 
+def test_runtime_status_rejects_reachable_internal_post_route(tmp_path: Path) -> None:
+    watch_env, hermes_env = _write_fake_env_files(tmp_path)
+    with _StubServer(
+        {
+            "/health": 404,
+            "/v1/models": 404,
+            "/v1/responses": 404,
+            "/internal/watch/inbox": 405,
+        }
+    ) as server:
+        result = _run_script(
+            "runtime_status.ps1",
+            "-BaseUrl",
+            server.base_url,
+            "-WatchEnvFile",
+            str(watch_env),
+            "-HermesEnvFile",
+            str(hermes_env),
+            "-SkipDocker",
+            "-SkipHermesApi",
+            "-SkipServiceHealth",
+            "-AssertPrivateNotExposed",
+        )
+
+    payload = _json_stdout(result)
+    checks = {
+        item["path"]: item
+        for item in payload["endpoints"]["private_exposure"]["checks"]
+    }
+    assert checks["/internal/watch/inbox"]["status_code"] == 405
+    assert checks["/internal/watch/inbox"]["ok"] is False
+
+
 def test_acceptance_fails_when_public_private_path_has_unexpected_status(tmp_path: Path) -> None:
     watch_env, hermes_env = _write_fake_env_files(tmp_path)
     with _StubServer(
@@ -269,7 +305,7 @@ def test_acceptance_passes_when_public_private_paths_are_rejected(tmp_path: Path
             "/health": 403,
             "/v1/models": 404,
             "/v1/responses": 410,
-            "/internal/watch/inbox": 405,
+            "/internal/watch/inbox": 404,
         }
     ) as server:
         result = _run_script(
@@ -294,7 +330,7 @@ def test_acceptance_passes_when_public_private_paths_are_rejected(tmp_path: Path
     assert payload["status"] == "passed"
     private_exposure = payload["runtime_before"]["private_exposure"]
     assert private_exposure["ok"] is True
-    assert {item["status_code"] for item in private_exposure["checks"]} == {403, 404, 405, 410}
+    assert {item["status_code"] for item in private_exposure["checks"]} == {403, 404, 410}
 
 
 def test_smoke_test_removes_generated_dummy_audio(tmp_path: Path) -> None:

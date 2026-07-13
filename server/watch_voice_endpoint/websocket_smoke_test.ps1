@@ -132,6 +132,10 @@ try {
         request_id = $requestId
     } | ConvertTo-Json -Compress)
 
+    $accepted = Receive-JsonFrame -Socket $socket
+    if ($accepted.type -ne "request_accepted") {
+        throw "expected request_accepted, got $($accepted.type)"
+    }
     $asr = Receive-JsonFrame -Socket $socket
     $task = Receive-JsonFrame -Socket $socket
     $reply = Receive-JsonFrame -Socket $socket
@@ -141,6 +145,7 @@ try {
         base_url = $BaseUrl
         request_id = $requestId
         snapshot_count = @($snapshot.messages).Count
+        accepted_type = $accepted.type
         asr_type = $asr.type
         asr_text_present = [bool]$asr.text
         asr_text_chars = if ($asr.text) { [string]$asr.text | ForEach-Object { $_.Length } } else { 0 }

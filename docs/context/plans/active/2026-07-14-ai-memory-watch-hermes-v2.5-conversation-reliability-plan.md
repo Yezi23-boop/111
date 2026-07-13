@@ -595,6 +595,7 @@ git diff --check -- . ':!managed_components'
 - `[x]` 阶段 4：修复 ESP32 pending timeout 与 UTF-8 byte contract；未扩大缓存，因此无需 PSRAM 迁移。
 - `[x]` 阶段 5：迁移 internal Inbox 写入鉴权并关闭公网 create。
 - `[x]` 阶段 6：补 WS 分段观测、同设备串行、Hermes HTTP 连接复用和 `bytearray` 音频累计。
+- `[x]` 审查修复：补 terminal replay、Hermes run 瞬时重试/未知态、重连动态投递、`request_accepted` pending 门槛、readiness、真实 POST 私有 gate 与容器最小权限。
 - `[ ]` 阶段 7（部分完成）：阿里云部署、公网 gate、HTTP/WSS smoke 已完成；Windows Docker 未启动且 ESP32 COM3 不在线，待补本地容器与真机闭环。
 
 ## 决策记录
@@ -608,6 +609,8 @@ git diff --check -- . ':!managed_components'
 - 2026-07-14：采用 Hermes `0.18.2` 原生 `/v1/runs`，而不是自建 SQLite worker 执行 Hermes。watch session 持久化 run ID；Hermes run 404 映射为 `interrupted`，不自动重放。
 - 2026-07-14：HTTP compatibility 默认也接入 session + `/v1/runs`，115 秒只限制 caller 等待；`WATCH_HTTP_ASYNC_RUNS_ENABLED=false` 仅作为旧 `/v1/responses` 紧急回退。
 - 2026-07-14：保持 ESP32 现有 128-byte 对话 buffer，不迁 PSRAM；server reply 上限收敛到 120 UTF-8 bytes，避免为了 V2.5 增加 internal RAM。
+- 2026-07-14：WS 增加 `request_accepted`，ESP32 只有在 accepted 或 ASR 已确认后才进入后台 pending。原因：TCP/WS 发送成功不等于 server 已创建 session，未确认断线不能无限补拉不存在的 request。
+- 2026-07-14：Hermes `0.18.2` `/v1/runs` 未消费 `Idempotency-Key`；启动 POST 仍携带稳定 request_id 作未来兼容，但响应不确定时不自动重试并标记 `interrupted`。原因：未知副作用任务不能自动重放，也不能伪装成普通失败。
 
 ## 意外与发现
 
@@ -619,12 +622,14 @@ git diff --check -- . ':!managed_components'
 - Hermes run 状态只存在于 Hermes 进程内且 terminal TTL 为 3600 秒；该限制决定了 endpoint 只能持久化 run ID 并在丢失时中断，不能承诺 Hermes 重启后的结果恢复。
 - Windows Docker Desktop 当前未运行；为避免同名 cloudflared connector 与云端重复上线，本轮没有启动本地 Compose。
 - Windows 当前只枚举到 `COM1`，ESP32 `COM3` 不在线，因此真机阶段不能在本轮自动执行。
+- 审查发现 readiness 失败后其他业务入口仍可能继续 lazy 初始化；现已统一 gate，并允许短暂 repository 初始化失败后重试。
+- 审查发现 GET 无法证明内部 POST 路由未暴露；private gate 已改为无凭据 POST，405 不再视为安全。
 
 ## 验证与验收
 
 截至 2026-07-14 本轮实际结果：
 
-- server pytest：`161 passed`，仅保留 1 条既有 Pydantic `dict()` deprecated warning。
+- server pytest：`174 passed`，仅保留 1 条既有 Pydantic `dict()` deprecated warning。
 - ESP32 Hermes source tests：`55 passed`。
 - ESP-IDF 5.5.3 build：通过；`111.bin` 约 10.77 MiB，最小 app partition 余量约 23%。
 - 阿里云：Hermes、watch endpoint、cloudflared 均运行；新 watch endpoint healthy。
@@ -632,7 +637,8 @@ git diff --check -- . ':!managed_components'
 - 公网 private gate：`/health`、`/v1/models`、`/v1/responses`、`/internal/watch/inbox` 均未暴露。
 - 公网 HTTP mock Ogg、cancel、invalid token 与 WSS smoke 全部通过；HTTP/WSS 同 request 测试只启动一次 Hermes run。
 - 云端一次 WSS 指标：upload `351 ms`、Hermes `16031 ms`、persist `2 ms`、delivery `ws`。
-- context 证据：`docs/context/runs/2026-07-14-attempt-hermes-v25-conversation-reliability.md`。
+- 审查修复后公网 WSS mock Ogg 再次通过，顺序为 `request_accepted -> asr_result -> task_started -> conversation_message`；云端容器以 UID 10001、read-only rootfs、cap-drop ALL 运行。
+- context 证据：`docs/context/runs/2026-07-14-attempt-hermes-v25-conversation-reliability.md`、`docs/context/runs/2026-07-14-attempt-hermes-v25-review-fixes.md`。
 
 最终验收必须同时满足：
 

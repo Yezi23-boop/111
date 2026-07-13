@@ -17,6 +17,7 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
 
         self.assertIn('MEMORY_WATCH_WS_PATH "/v1/watch/ws"', header)
         self.assertIn("memory_watch_ws_event_kind_t", header)
+        self.assertIn("MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED", header)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ASR_READY", header)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE", header)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ERROR", header)
@@ -53,6 +54,8 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         self.assertIn("OnData", source)
         self.assertIn("DispatchJson", source)
         self.assertIn("MapEventKind", source)
+        self.assertIn('type == "request_accepted"', source)
+        self.assertIn("MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED", source)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ASR_READY", source)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE", source)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ERROR", source)
@@ -138,6 +141,12 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         self.assertIn("kWsWaitConversationBit", ws_section)
         self.assertIn("kWsWaitErrorBit", ws_section)
         self.assertIn("kWsWaitDisconnectedBit", ws_section)
+        self.assertIn("kWsWaitRequestAcceptedBit", ws_section)
+        self.assertIn("server_accepted_seen", ws_section)
+        disconnected_branch = ws_section.split(
+            "if ((bits & kWsWaitDisconnectedBit) != 0)", 1
+        )[1].split("if (asr_ready_seen)", 1)[0]
+        self.assertIn("server_accepted_seen || asr_ready_seen", disconnected_branch)
         self.assertIn("memory_watch_ws_client_close();", ws_section)
         wait_tail = ws_section.split("xEventGroupWaitBits", 1)[1]
         self.assertIn("memory_watch_ws_client_close();", wait_tail)

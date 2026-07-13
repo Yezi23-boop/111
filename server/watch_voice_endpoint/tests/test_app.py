@@ -873,6 +873,67 @@ async def test_service_health_exposes_non_secret_request_metrics(watch_app, monk
 
 
 @pytest.mark.anyio
+async def test_service_health_rejects_failed_runtime_initialization(
+    watch_app, monkeypatch
+):
+    monkeypatch.setattr(watch_app, "_runtime_initialized", False)
+    monkeypatch.setattr(watch_app, "_runtime_ready", False)
+
+    def fail_repo_init():
+        raise RuntimeError("migration failed with private details")
+
+    monkeypatch.setattr(watch_app, "_get_conversation_repo", fail_repo_init)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await watch_app.service_health()
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "service_not_ready"
+    assert watch_app._runtime_error_code == "repository_init_failed"
+
+
+@pytest.mark.anyio
+async def test_runtime_initialization_retries_after_transient_repo_failure(
+    watch_app, monkeypatch
+):
+    monkeypatch.setattr(watch_app, "_runtime_initialized", False)
+    monkeypatch.setattr(watch_app, "_runtime_ready", False)
+    original = watch_app._get_conversation_repo
+    calls = 0
+
+    def fail_once():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("transient migration lock")
+        return original()
+
+    monkeypatch.setattr(watch_app, "_get_conversation_repo", fail_once)
+
+    assert watch_app._initialize_runtime() is False
+    assert watch_app._initialize_runtime() is True
+    assert calls == 2
+
+
+@pytest.mark.anyio
+async def test_runtime_not_ready_blocks_watch_http_route(watch_app, monkeypatch):
+    monkeypatch.setattr(watch_app, "_runtime_initialized", False)
+    monkeypatch.setattr(watch_app, "_runtime_ready", False)
+    monkeypatch.setattr(watch_app, "_get_conversation_repo", lambda: (_ for _ in ()).throw(RuntimeError("locked")))
+    transport = httpx.ASGITransport(app=watch_app.app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/v1/watch/sync",
+            params={"device_id": "watch-001"},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "service_not_ready"}
+
+
+@pytest.mark.anyio
 async def test_mimo_asr_adapter_uses_openai_compatible_audio_payload(watch_app, monkeypatch):
     seen = {}
     transcode_seen = {}

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib
 import asyncio
+import json
 import time
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -26,6 +28,7 @@ def ws_app(monkeypatch, tmp_path):
     module._watch_run_tasks.clear()
     module._ws_background_tasks.clear()
     module._device_run_locks.clear()
+    module._watch_ws_connections.clear()
     module._ws_request_status_counts.clear()
     module._last_ws_request_summary.clear()
     return module
@@ -97,6 +100,10 @@ def test_websocket_audio_flow_returns_asr_and_reply(ws_app, monkeypatch):
         websocket.send_bytes(b"OggS\x00\x01")
         websocket.send_json({"type": "audio_end", "request_id": "watch-001-ws-0001"})
 
+        assert websocket.receive_json() == {
+            "type": "request_accepted",
+            "request_id": "watch-001-ws-0001",
+        }
         asr_result = websocket.receive_json()
         assert asr_result["type"] == "asr_result"
         assert asr_result["request_id"] == "watch-001-ws-0001"
@@ -114,6 +121,56 @@ def test_websocket_audio_flow_returns_asr_and_reply(ws_app, monkeypatch):
         assert reply["role"] == "assistant"
         assert reply["text"] == "分析完成，主要问题是待机耗电偏高。"
         assert reply["status"] == "done"
+
+
+@pytest.mark.anyio
+async def test_start_run_unknown_is_not_retried_without_upstream_idempotency(
+    ws_app, monkeypatch
+):
+    seen_keys: list[str] = []
+
+    class FakeClient:
+        async def post(self, url, headers, json, timeout):
+            seen_keys.append(headers["Idempotency-Key"])
+            raise httpx.ReadTimeout(
+                "lost response", request=httpx.Request("POST", url)
+            )
+
+    monkeypatch.setattr(ws_app, "_get_hermes_run_client", lambda: FakeClient())
+
+    with pytest.raises(ws_app.HermesRunStartUncertain):
+        await ws_app._start_hermes_run(
+            "watch-001", "watch-001-idempotent", "测试"
+        )
+
+    assert seen_keys == ["watch-001-idempotent"]
+
+
+@pytest.mark.anyio
+async def test_start_run_unknown_marks_session_interrupted(ws_app, monkeypatch):
+    session, _ = ws_app._get_session_repo().create_or_get(
+        "watch-001", "watch-001-uncertain", "watch-001-uncertain"
+    )
+    ws_app._get_session_repo().transition(
+        session.device_id,
+        session.session_id,
+        "asr_ready",
+        user_text="执行一个任务",
+    )
+
+    async def uncertain_start(device_id, request_id, asr_text):
+        raise ws_app.HermesRunStartUncertain()
+
+    monkeypatch.setattr(ws_app, "_start_hermes_run", uncertain_start)
+    await ws_app._ws_run_hermes_job_serialized(
+        None, "watch-001", "watch-001-uncertain", "执行一个任务"
+    )
+
+    stored = ws_app._get_session_repo().get(
+        "watch-001", "watch-001-uncertain"
+    )
+    assert stored.state == "interrupted"
+    assert stored.error_code == "hermes_run_start_uncertain"
 
 
 def test_websocket_reconnect_sends_conversation_snapshot(ws_app):
@@ -489,6 +546,95 @@ async def test_ws_run_outlives_legacy_http_wait_timeout(ws_app, monkeypatch):
     )
     assert session.state == "done"
     assert session.reply_text == "后台长任务完成"
+
+
+@pytest.mark.anyio
+async def test_transient_hermes_poll_failure_retries_without_terminal_error(
+    ws_app, monkeypatch
+):
+    polls = 0
+
+    async def fake_start(device_id: str, request_id: str, asr_text: str) -> str:
+        return "run-transient"
+
+    async def fake_get(run_id: str) -> dict[str, object]:
+        nonlocal polls
+        polls += 1
+        if polls == 1:
+            raise httpx.ReadTimeout("temporary poll timeout")
+        return {"status": "completed", "output": "重试后完成"}
+
+    monkeypatch.setattr(ws_app, "_start_hermes_run", fake_start)
+    monkeypatch.setattr(ws_app, "_get_hermes_run", fake_get)
+    monkeypatch.setattr(ws_app, "HERMES_RUN_POLL_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(ws_app, "HERMES_RUN_RETRY_MAX_SECONDS", 0)
+
+    await ws_app._ws_finish_audio(
+        None, "watch-001", "watch-001-transient", b"OggS", "重试测试"
+    )
+    for _ in range(100):
+        if not ws_app._watch_run_tasks:
+            break
+        await asyncio.sleep(0.01)
+
+    session = ws_app._get_session_repo().get(
+        "watch-001", "watch-001-transient"
+    )
+    assert polls == 2
+    assert session.state == "done"
+    assert session.reply_text == "重试后完成"
+
+
+@pytest.mark.anyio
+async def test_running_job_delivers_to_reconnected_device_sink(ws_app, monkeypatch):
+    poll_started = asyncio.Event()
+    release_poll = asyncio.Event()
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.payloads: list[dict[str, object]] = []
+
+        async def send_text(self, rendered: str) -> None:
+            self.payloads.append(json.loads(rendered))
+
+    async def fake_start(device_id: str, request_id: str, asr_text: str) -> str:
+        return "run-reconnect"
+
+    async def fake_get(run_id: str) -> dict[str, object]:
+        poll_started.set()
+        await release_poll.wait()
+        return {"status": "completed", "output": "发送到新连接"}
+
+    monkeypatch.setattr(ws_app, "_start_hermes_run", fake_start)
+    monkeypatch.setattr(ws_app, "_get_hermes_run", fake_get)
+    monkeypatch.setattr(ws_app, "HERMES_RUN_POLL_INTERVAL_SECONDS", 0)
+
+    old_socket = FakeWebSocket()
+    old_conn = ws_app.WsConnectionState(old_socket, asyncio.Lock())
+    ws_app._watch_ws_connections["watch-001"] = old_conn
+    await ws_app._ws_finish_audio(
+        old_conn, "watch-001", "watch-001-reconnect", b"OggS", "重连测试"
+    )
+    await asyncio.wait_for(poll_started.wait(), timeout=1)
+
+    new_socket = FakeWebSocket()
+    new_conn = ws_app.WsConnectionState(new_socket, asyncio.Lock())
+    ws_app._watch_ws_connections["watch-001"] = new_conn
+    release_poll.set()
+    for _ in range(100):
+        if not ws_app._watch_run_tasks:
+            break
+        await asyncio.sleep(0.01)
+
+    assert not any(
+        payload.get("type") == "conversation_message"
+        for payload in old_socket.payloads
+    )
+    assert any(
+        payload.get("type") == "conversation_message"
+        and payload.get("text") == "发送到新连接"
+        for payload in new_socket.payloads
+    )
 
 
 @pytest.mark.anyio

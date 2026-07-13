@@ -83,6 +83,9 @@ std::string JsonStringField(cJSON *root, const char *name) {
 
 memory_watch_ws_event_kind_t MapEventKind(const std::string &type,
                                           const std::string &role) {
+  if (type == "request_accepted") {
+    return MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED;
+  }
   if (type == "asr_result") {
     return MEMORY_WATCH_WS_EVENT_TURN_ASR_READY;
   }
@@ -221,7 +224,7 @@ extern "C" esp_err_t memory_watch_ws_client_connect(
 }
 
 extern "C" esp_err_t memory_watch_ws_client_send_audio_start(
-    const char *request_id) {
+    const char *request_id, const char *clarification_id) {
   cJSON *root = cJSON_CreateObject();
   if (root == nullptr) {
     return ESP_ERR_NO_MEM;
@@ -232,6 +235,10 @@ extern "C" esp_err_t memory_watch_ws_client_send_audio_start(
   }
   if (err == ESP_OK) {
     err = AddString(root, "format", "ogg_opus");
+  }
+  if (err == ESP_OK && clarification_id != nullptr &&
+      clarification_id[0] != '\0') {
+    err = AddString(root, "clarification_id", clarification_id);
   }
   if (err == ESP_OK) {
     err = SendJsonObject(root);
@@ -269,14 +276,15 @@ extern "C" esp_err_t memory_watch_ws_client_send_audio_end(
 }
 
 extern "C" esp_err_t memory_watch_ws_client_send_audio_turn(
-    const char *request_id, const uint8_t *audio, size_t audio_len,
-    size_t chunk_size) {
+    const char *request_id, const char *clarification_id,
+    const uint8_t *audio, size_t audio_len, size_t chunk_size) {
   if (request_id == nullptr || audio == nullptr || audio_len == 0 ||
       chunk_size == 0) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  esp_err_t err = memory_watch_ws_client_send_audio_start(request_id);
+  esp_err_t err =
+      memory_watch_ws_client_send_audio_start(request_id, clarification_id);
   for (size_t offset = 0; err == ESP_OK && offset < audio_len;) {
     const size_t remaining = audio_len - offset;
     const size_t part_len = remaining > chunk_size ? chunk_size : remaining;

@@ -430,9 +430,11 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertNotIn('strcmp(event->type, "conversation_message")', ws_event_section)
         self.assertNotIn('strcmp(event->type, "error")', ws_event_section)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ASR_READY", ws_event_section)
+        self.assertIn("MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED", ws_event_section)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE", ws_event_section)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ERROR", ws_event_section)
         self.assertIn("kWsWaitAsrReadyBit", source)
+        self.assertIn("kWsWaitRequestAcceptedBit", source)
         asr_section = ws_event_section.split(
             "MEMORY_WATCH_WS_EVENT_TURN_ASR_READY"
         )[1].split(
@@ -445,7 +447,8 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
             "static esp_err_t memory_watch_service_send_voice_over_ws"
         )[1].split("static esp_err_t memory_watch_service_post_worker_result", 1)[0]
         self.assertIn("bool asr_ready_seen = false", ws_send_section)
-        self.assertIn("if (asr_ready_seen)", ws_send_section)
+        self.assertIn("bool server_accepted_seen = false", ws_send_section)
+        self.assertIn("if (server_accepted_seen || asr_ready_seen)", ws_send_section)
         self.assertIn("kWsWaitAsrReadyBit", ws_send_section)
         self.assertIn(
             "memory_watch_service_append_response_conversation(&result->response)",
@@ -618,9 +621,9 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
 
         self.assertIn("UTF-8 continuation bytes", source)
         self.assertIn("((const uint8_t *)src)[copy_len] & 0xC0U", source)
-        self.assertIn("if (asr_ready_seen)", source)
         self.assertIn("memory_watch_service_fill_pending_response(result, job->request_id)", source)
         self.assertIn("本地前台等待期限只控制 WS 资源占用", source)
+        self.assertIn("if (server_accepted_seen || asr_ready_seen)", source)
 
 
 if __name__ == "__main__":

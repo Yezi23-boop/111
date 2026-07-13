@@ -72,6 +72,7 @@ static const EventBits_t kWsWaitConversationBit = BIT0;
 static const EventBits_t kWsWaitErrorBit = BIT1;
 static const EventBits_t kWsWaitDisconnectedBit = BIT2;
 static const EventBits_t kWsWaitAsrReadyBit = BIT3;
+static const EventBits_t kWsWaitRequestAcceptedBit = BIT4;
 static const char *kEndpointNvsNamespace = "memory_watch";
 static const char *kEndpointNvsBaseUrlKey = "base_url";
 static const char *kEndpointNvsDeviceIdKey = "device_id";
@@ -1285,6 +1286,13 @@ static void memory_watch_service_ws_event_cb(
         return;
     }
 
+    if (event->kind == MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED)
+    {
+        xEventGroupSetBits(s_ws_wait_event_group,
+                           kWsWaitRequestAcceptedBit);
+        return;
+    }
+
     if (event->kind == MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE)
     {
         memory_watch_service_copy_text(ctx->result->response.request_id,
@@ -1380,7 +1388,8 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
                          kWsWaitConversationBit |
                              kWsWaitErrorBit |
                              kWsWaitDisconnectedBit |
-                             kWsWaitAsrReadyBit);
+                             kWsWaitAsrReadyBit |
+                             kWsWaitRequestAcceptedBit);
     char last_seen_conversation_id[64];
     memory_watch_service_copy_last_seen_conversation_id(
         last_seen_conversation_id, sizeof(last_seen_conversation_id));
@@ -1399,7 +1408,8 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
     }
 
     err = memory_watch_ws_client_send_audio_turn(
-        job->request_id, audio_buffer->data, audio_buffer->len,
+        job->request_id, job->clarification_id,
+        audio_buffer->data, audio_buffer->len,
         kWsAudioChunkBytes);
     if (err != ESP_OK)
     {
@@ -1413,13 +1423,14 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
             : MEMORY_WATCH_VOICE_CLIENT_DEFAULT_TIMEOUT_MS;
     EventBits_t bits = 0;
     bool asr_ready_seen = false;
+    bool server_accepted_seen = false;
     const int64_t wait_deadline_ms = esp_timer_get_time() / 1000LL +
                                      (int64_t)timeout_ms;
     while (true)
     {
         if (!memory_watch_service_is_foreground_active())
         {
-            if (asr_ready_seen)
+            if (server_accepted_seen || asr_ready_seen)
             {
                 memory_watch_service_fill_pending_response(result, job->request_id);
                 memory_watch_ws_client_close();
@@ -1430,18 +1441,22 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
         bits = xEventGroupWaitBits(
             s_ws_wait_event_group,
             kWsWaitConversationBit | kWsWaitErrorBit | kWsWaitDisconnectedBit |
-                kWsWaitAsrReadyBit,
+                kWsWaitAsrReadyBit | kWsWaitRequestAcceptedBit,
             pdTRUE,
             pdFALSE,
             pdMS_TO_TICKS(250U));
-        if ((bits & (kWsWaitConversationBit | kWsWaitErrorBit |
-                     kWsWaitDisconnectedBit)) != 0)
+        if ((bits & kWsWaitRequestAcceptedBit) != 0)
         {
-            break;
+            server_accepted_seen = true;
         }
         if ((bits & kWsWaitAsrReadyBit) != 0)
         {
             asr_ready_seen = true;
+        }
+        if ((bits & (kWsWaitConversationBit | kWsWaitErrorBit |
+                     kWsWaitDisconnectedBit)) != 0)
+        {
+            break;
         }
         if ((esp_timer_get_time() / 1000LL) >= wait_deadline_ms)
         {
@@ -1449,6 +1464,12 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
         }
     }
     memory_watch_ws_client_close();
+    const EventBits_t final_bits = xEventGroupGetBits(s_ws_wait_event_group);
+    bits |= final_bits;
+    server_accepted_seen = server_accepted_seen ||
+                           ((final_bits & kWsWaitRequestAcceptedBit) != 0);
+    asr_ready_seen = asr_ready_seen ||
+                     ((final_bits & kWsWaitAsrReadyBit) != 0);
 
     if ((bits & kWsWaitConversationBit) != 0)
     {
@@ -1460,13 +1481,17 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
     }
     if ((bits & kWsWaitDisconnectedBit) != 0)
     {
-        memory_watch_service_fill_pending_response(result, job->request_id);
-        return ESP_OK;
+        if (server_accepted_seen || asr_ready_seen)
+        {
+            memory_watch_service_fill_pending_response(result, job->request_id);
+            return ESP_OK;
+        }
+        return ESP_FAIL;
     }
-    if (asr_ready_seen)
+    if (server_accepted_seen || asr_ready_seen)
     {
         /* 本地前台等待期限只控制 WS 资源占用，不代表 server/Hermes 任务失败。
-         * server 已确认 ASR 后转入后台 /sync，由 session 真相源决定终态。 */
+         * server 已 claim request 后转入后台 /sync，由 session 真相源决定终态。 */
         memory_watch_service_fill_pending_response(result, job->request_id);
         return ESP_OK;
     }

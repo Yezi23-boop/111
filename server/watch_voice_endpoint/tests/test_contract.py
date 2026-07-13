@@ -167,9 +167,12 @@ def test_public_domain_gate_checks_private_paths_without_dumping_private_payload
     assert "[switch]$AssertPrivateNotExposed" in runtime_source
     assert "Invoke-PrivateExposureCheck" in runtime_source
     assert "AllowedStatusCodes = @(403, 404, 410)" in runtime_source
+    assert '[string]$Method = "GET"' in private_function
+    assert "-Method $Method" in private_function
     assert '"$privateBaseUrl/health"' in runtime_source
     assert '"$privateBaseUrl/v1/models"' in runtime_source
     assert '"$privateBaseUrl/v1/responses"' in runtime_source
+    assert '-Method POST -AllowedStatusCodes @(404, 410)' in runtime_source
     assert "status_code" in runtime_source
     assert "allowed_status_codes" in runtime_source
     assert "exposed" in runtime_source
@@ -180,6 +183,23 @@ def test_public_domain_gate_checks_private_paths_without_dumping_private_payload
     assert "Authorization" not in private_function
     assert "WATCH_DEVICE_TOKENS" not in private_function
     assert "payload" not in private_function
+
+
+def test_watch_endpoint_container_is_pinned_and_hardened():
+    root = Path(__file__).resolve().parents[1]
+    dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+    cloud_compose = (root / "compose.cloud.yml").read_text(encoding="utf-8")
+    local_compose = (root / "compose.local.yml").read_text(encoding="utf-8")
+
+    assert "python:3.12-slim@sha256:" in dockerfile
+    assert "--trusted-host" not in dockerfile
+    assert "USER 10001:10001" in dockerfile
+    for source in (cloud_compose, local_compose):
+        assert "read_only: true" in source
+        assert "no-new-privileges:true" in source
+        assert "cap_drop:" in source
+        assert "- ALL" in source
+        assert ":/data" in source
 
 
 def test_runtime_status_reports_ws_main_path_metrics():

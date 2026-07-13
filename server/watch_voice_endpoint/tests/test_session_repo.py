@@ -79,6 +79,12 @@ def test_create_rejects_blank_request_id(tmp_path):
         repo.create(device_id="watch-001", session_id="s1", request_id="")
 
 
+def test_create_rejects_session_id_different_from_request_id(tmp_path):
+    repo = SessionRepo(tmp_path / "test.db")
+    with pytest.raises(SessionValidationError, match="must equal"):
+        repo.create_or_get("watch-001", "session-1", "request-1")
+
+
 # ── 状态转移 ─────────────────────────────────────────────────────────────────
 
 def test_full_transition_path_accepted_to_done(tmp_path):
@@ -291,6 +297,33 @@ def test_attach_hermes_run_requires_running_session(tmp_path):
 
     with pytest.raises(SessionValidationError, match="not running"):
         repo.attach_hermes_run("watch-001", "attach", "run_abc")
+
+
+def test_attach_hermes_run_persists_absolute_start_time(tmp_path):
+    repo = SessionRepo(tmp_path / "test.db")
+    _create(repo, session_id="timed", request_id="timed")
+    _transition(repo, "watch-001", "timed", "asr_ready", user_text="test")
+    _transition(repo, "watch-001", "timed", "running")
+
+    session = repo.attach_hermes_run("watch-001", "timed", "run_timed")
+
+    assert session.hermes_run_id == "run_timed"
+    assert session.run_started_at.endswith("Z")
+
+
+def test_transition_persists_clarification_id_for_restart(tmp_path):
+    repo = SessionRepo(tmp_path / "test.db")
+    _create(repo, session_id="clarify", request_id="clarify")
+
+    session = repo.transition(
+        "watch-001",
+        "clarify",
+        "asr_ready",
+        user_text="补充内容",
+        clarification_id="question-123",
+    )
+
+    assert session.clarification_id == "question-123"
 
 
 def test_list_active_all_returns_resumable_sessions(tmp_path):

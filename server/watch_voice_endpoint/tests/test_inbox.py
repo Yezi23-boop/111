@@ -46,7 +46,6 @@ _tmp_dir = tempfile.mkdtemp(prefix="test_inbox_")
 os.environ["INBOX_DB_PATH"] = str(Path(_tmp_dir) / "test_inbox.db")
 os.environ["WATCH_DEVICE_TOKENS"] = f"{DEVICE_ID}={DEVICE_TOKEN}"
 os.environ["WATCH_INTERNAL_API_KEY"] = INTERNAL_TOKEN
-os.environ["WATCH_PUBLIC_INBOX_CREATE_ENABLED"] = "false"
 
 import app as _app  # noqa: E402  必须在 INBOX_DB_PATH 设好后 import
 
@@ -67,7 +66,6 @@ def set_device_tokens(monkeypatch):
     """强制每次测试函数执行时 env 都是正确值（防止其他测试污染）。"""
     monkeypatch.setenv("WATCH_DEVICE_TOKENS", f"{DEVICE_ID}={DEVICE_TOKEN}")
     monkeypatch.setattr(_app, "WATCH_INTERNAL_API_KEY", INTERNAL_TOKEN)
-    monkeypatch.setattr(_app, "WATCH_PUBLIC_INBOX_CREATE_ENABLED", False)
 
 
 
@@ -127,7 +125,7 @@ class TestAuth:
                   "title": "标题", "preview": "预览", "body": "正文"},
             headers=AUTH_HEADER,
         )
-        assert r.status_code == 404
+        assert r.status_code == 405
 
     def test_missing_token_list(self, client):
         r = _list(client, headers={})

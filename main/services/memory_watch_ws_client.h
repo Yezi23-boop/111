@@ -27,6 +27,7 @@ extern "C"
     typedef enum
     {
         MEMORY_WATCH_WS_EVENT_UNKNOWN = 0,
+        MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED,
         MEMORY_WATCH_WS_EVENT_TURN_ASR_READY,
         MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE,
         MEMORY_WATCH_WS_EVENT_TURN_ERROR,
@@ -83,7 +84,8 @@ extern "C"
      * @brief 发送 audio_start 控制帧。
      */
     esp_err_t memory_watch_ws_client_send_audio_start(
-        const char *request_id);
+        const char *request_id,
+        const char *clarification_id);
 
     /**
      * @brief 发送一段 Ogg Opus binary frame。
@@ -105,6 +107,7 @@ extern "C"
      */
     esp_err_t memory_watch_ws_client_send_audio_turn(
         const char *request_id,
+        const char *clarification_id,
         const uint8_t *audio,
         size_t audio_len,
         size_t chunk_size);

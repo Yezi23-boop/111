@@ -72,6 +72,8 @@ class WatchSession:
     updated_at: str         # ISO 8601 UTC
     last_delivered_message_id: str  # 最近一次推送给手表的 conversation message_id
     hermes_run_id: str      # Hermes /v1/runs 返回的可轮询 run_id
+    run_started_at: str     # Hermes 接受 run 的 UTC 时间；恢复后继续使用同一 deadline
+    clarification_id: str   # 可选追问 ID；重启恢复时必须保留相同输入语义
     error_code: str         # server 侧终态错误码，不包含上游原始响应
 
 
@@ -110,6 +112,8 @@ class SessionRepo:
                     updated_at                 TEXT NOT NULL,
                     last_delivered_message_id  TEXT NOT NULL DEFAULT '',
                     hermes_run_id               TEXT NOT NULL DEFAULT '',
+                    run_started_at               TEXT NOT NULL DEFAULT '',
+                    clarification_id              TEXT NOT NULL DEFAULT '',
                     error_code                  TEXT NOT NULL DEFAULT '',
                     UNIQUE(device_id, session_id)
                 )
@@ -137,6 +141,17 @@ class SessionRepo:
                     "ALTER TABLE watch_session ADD COLUMN error_code "
                     "TEXT NOT NULL DEFAULT ''"
                 )
+            if "run_started_at" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE watch_session ADD COLUMN run_started_at "
+                    "TEXT NOT NULL DEFAULT ''"
+                )
+            if "clarification_id" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE watch_session ADD COLUMN clarification_id "
+                    "TEXT NOT NULL DEFAULT ''"
+                )
+            self._conn.execute("PRAGMA user_version=2")
 
     def _recover_on_startup(self) -> None:
         """保留可恢复任务；无法证明可恢复的任务标记 interrupted。"""
@@ -185,6 +200,8 @@ class SessionRepo:
             raise SessionValidationError("session_id must not be blank")
         if not request_id or not request_id.strip():
             raise SessionValidationError("request_id must not be blank")
+        if session_id != request_id:
+            raise SessionValidationError("session_id must equal request_id")
 
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         state = "accepted"
@@ -196,8 +213,9 @@ class SessionRepo:
                     INSERT OR IGNORE INTO watch_session
                         (session_id, device_id, request_id, state,
                          user_text, reply_text, created_at, updated_at,
-                         last_delivered_message_id, hermes_run_id, error_code)
-                    VALUES (?, ?, ?, ?, '', '', ?, ?, '', '', '')
+                         last_delivered_message_id, hermes_run_id,
+                         run_started_at, clarification_id, error_code)
+                    VALUES (?, ?, ?, ?, '', '', ?, ?, '', '', '', '', '')
                     """,
                     (session_id, device_id, request_id, state, now_utc, now_utc),
                 )
@@ -235,6 +253,7 @@ class SessionRepo:
         reply_text: str | None = None,
         last_delivered_message_id: str | None = None,
         hermes_run_id: str | None = None,
+        clarification_id: str | None = None,
         error_code: str | None = None,
     ) -> WatchSession:
         """转移 session 到 new_state。
@@ -284,6 +303,9 @@ class SessionRepo:
                 if hermes_run_id is not None:
                     set_parts.append("hermes_run_id=?")
                     params.append(hermes_run_id)
+                if clarification_id is not None:
+                    set_parts.append("clarification_id=?")
+                    params.append(clarification_id)
                 if error_code is not None:
                     set_parts.append("error_code=?")
                     params.append(error_code)
@@ -320,10 +342,10 @@ class SessionRepo:
             cursor = self._conn.execute(
                 """
                 UPDATE watch_session
-                SET hermes_run_id=?, updated_at=?
+                SET hermes_run_id=?, run_started_at=?, updated_at=?
                 WHERE device_id=? AND session_id=? AND state='running'
                 """,
-                (hermes_run_id, now_utc, device_id, session_id),
+                (hermes_run_id, now_utc, now_utc, device_id, session_id),
             )
         if cursor.rowcount != 1:
             raise SessionValidationError(
@@ -461,5 +483,7 @@ def _row_to_session(row: sqlite3.Row) -> WatchSession:
         updated_at=row["updated_at"],
         last_delivered_message_id=row["last_delivered_message_id"] or "",
         hermes_run_id=row["hermes_run_id"] or "",
+        run_started_at=row["run_started_at"] or "",
+        clarification_id=row["clarification_id"] or "",
         error_code=row["error_code"] or "",
     )

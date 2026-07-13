@@ -9,6 +9,15 @@ services:
       - "127.0.0.1:8787:8787"
     env_file:
       - D:/Docker_data/hermes/watch_voice_endpoint.env
+    volumes:
+      - watch-endpoint-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test:
         - CMD
@@ -19,3 +28,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  watch-endpoint-data:

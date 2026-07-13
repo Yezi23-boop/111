@@ -90,12 +90,14 @@ function Invoke-PrivateExposureCheck {
   param(
     [string]$Uri,
     [string]$Path,
+    [ValidateSet("GET", "POST")]
+    [string]$Method = "GET",
     [int[]]$AllowedStatusCodes = @(403, 404, 410),
     [int]$TimeoutSec = 10
   )
 
   try {
-    $response = Invoke-WebRequest -Uri $Uri -TimeoutSec $TimeoutSec -SkipHttpErrorCheck
+    $response = Invoke-WebRequest -Uri $Uri -Method $Method -TimeoutSec $TimeoutSec -SkipHttpErrorCheck
     $statusCode = [int]$response.StatusCode
     $isAllowed = $AllowedStatusCodes -contains $statusCode
     return [pscustomobject]@{
@@ -103,15 +105,17 @@ function Invoke-PrivateExposureCheck {
       ok = $isAllowed
       exposed = -not $isAllowed
       status_code = $statusCode
+      method = $Method
       allowed_status_codes = $AllowedStatusCodes
       error = $null
     }
   } catch {
     return [pscustomobject]@{
       path = $Path
-      ok = $true
+      ok = $false
       exposed = $false
       status_code = $null
+      method = $Method
       allowed_status_codes = $AllowedStatusCodes
       error = $_.Exception.Message
     }
@@ -189,7 +193,7 @@ if ($AssertPrivateNotExposed) {
     Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/health" -Path "/health" -TimeoutSec 10
     Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/v1/models" -Path "/v1/models" -TimeoutSec 10
     Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/v1/responses" -Path "/v1/responses" -TimeoutSec 10
-    Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/internal/watch/inbox" -Path "/internal/watch/inbox" -AllowedStatusCodes @(403, 404, 405, 410) -TimeoutSec 10
+    Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/internal/watch/inbox" -Path "/internal/watch/inbox" -Method POST -AllowedStatusCodes @(404, 410) -TimeoutSec 10
   )
 }
 $privateExposureOk = $null

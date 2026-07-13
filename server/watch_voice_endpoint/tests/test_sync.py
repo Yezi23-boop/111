@@ -18,6 +18,8 @@ AUTH_HEADER = {"Authorization": f"Bearer {DEVICE_TOKEN}"}
 @pytest.fixture()
 def sync_app(monkeypatch, tmp_path):
     monkeypatch.setenv("WATCH_DEVICE_TOKENS", f"{DEVICE_ID}={DEVICE_TOKEN}")
+    monkeypatch.setenv("WATCH_INTERNAL_API_KEY", "test-internal-server-key")
+    monkeypatch.setenv("HERMES_API_KEY", "test-hermes-key")
     monkeypatch.setenv("CONVERSATION_DB_PATH", str(tmp_path / "conversation.db"))
     monkeypatch.setenv("INBOX_DB_PATH", str(tmp_path / "inbox.db"))
     monkeypatch.setenv("SESSION_DB_PATH", str(tmp_path / "session.db"))
@@ -181,6 +183,44 @@ def test_pending_done_returns_assistant_message_when_not_seen(sync_app, client):
     assert payload["conversation"]["session_state"] == "done"
     assert [item["message_id"] for item in payload["conversation"]["messages"]] == [
         message.message_id
+    ]
+
+
+def test_pending_done_replays_session_when_assistant_message_is_missing(
+    sync_app, client
+):
+    repo = sync_app._get_session_repo()
+    repo.create(DEVICE_ID, "req-replay", "req-replay")
+    repo.transition(
+        DEVICE_ID, "req-replay", "asr_ready", user_text="原问题"
+    )
+    repo.transition(DEVICE_ID, "req-replay", "running")
+    repo.transition(
+        DEVICE_ID,
+        "req-replay",
+        "done",
+        reply_text="session 保留的回复",
+        last_delivered_message_id="msg_evicted",
+    )
+
+    response = _auth_get(
+        client,
+        mode="background",
+        pending_request_id="req-replay",
+        max_messages=10,
+    )
+
+    payload = response.json()["conversation"]
+    assert payload["session_state"] == "done"
+    assert payload["messages"] == [
+        {
+            "message_id": "msg_evicted",
+            "request_id": "req-replay",
+            "role": "assistant",
+            "text": "session 保留的回复",
+            "created_at": repo.get(DEVICE_ID, "req-replay").updated_at,
+            "status": "done",
+        }
     ]
 
 

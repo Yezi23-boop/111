@@ -1,4 +1,4 @@
-FROM docker.1ms.run/python:3.12-slim
+FROM docker.1ms.run/python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -12,12 +12,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir \
         --index-url https://mirrors.aliyun.com/pypi/simple/ \
-        --trusted-host mirrors.aliyun.com \
         -r requirements.txt
-COPY app.py .
-COPY inbox_repo.py .
-COPY conversation_repo.py .
-COPY session_repo.py .
+RUN groupadd --gid 10001 watch-endpoint \
+    && useradd --uid 10001 --gid 10001 --no-create-home watch-endpoint \
+    && mkdir -p /data \
+    && chown 10001:10001 /data
+COPY --chown=10001:10001 app.py .
+COPY --chown=10001:10001 inbox_repo.py .
+COPY --chown=10001:10001 conversation_repo.py .
+COPY --chown=10001:10001 session_repo.py .
 
 EXPOSE 8787
+USER 10001:10001
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8787"]
