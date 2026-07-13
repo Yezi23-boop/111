@@ -1,0 +1,22 @@
+[Unit]
+Description=AI Memory Watch encrypted relay to Aliyun
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=AUTOSSH_GATETIME=0
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -o BatchMode=yes \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=yes \
+  -i /root/.ssh/aliyun-watch-relay \
+  -L 127.0.0.1:18787:127.0.0.1:8787 \
+  watchrelay@8.134.203.76
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
