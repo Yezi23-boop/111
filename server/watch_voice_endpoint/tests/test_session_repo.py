@@ -49,6 +49,17 @@ def test_create_duplicate_session_id_returns_existing(tmp_path):
     assert second.state == first.state
 
 
+def test_create_or_get_reports_only_first_claim_as_created(tmp_path):
+    repo = SessionRepo(tmp_path / "test.db")
+
+    first, first_created = repo.create_or_get("watch-001", "claim", "claim")
+    second, second_created = repo.create_or_get("watch-001", "claim", "claim")
+
+    assert first_created is True
+    assert second_created is False
+    assert second.session_id == first.session_id
+
+
 def test_create_rejects_blank_device_id(tmp_path):
     repo = SessionRepo(tmp_path / "test.db")
     for blank in ("", "   "):
@@ -134,7 +145,9 @@ def test_running_can_transition_to_error(tmp_path):
 
 # ── 终态不可回退 ─────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("terminal_state", ["done", "error", "timeout", "canceled"])
+@pytest.mark.parametrize(
+    "terminal_state", ["done", "error", "timeout", "canceled", "interrupted"]
+)
 def test_terminal_state_cannot_transition(tmp_path, terminal_state):
     """终态不可转移到任何其他状态。"""
     repo = SessionRepo(tmp_path / "test.db")
@@ -240,8 +253,8 @@ def test_list_recent_returns_ordered_by_updated_at(tmp_path):
 
 # ── 启动恢复 ──────────────────────────────────────────────────────────────────
 
-def test_startup_recovery_turns_non_terminal_to_timeout(tmp_path):
-    """重启后 accepted/asr_ready/running 应变为 timeout。"""
+def test_startup_recovery_preserves_only_safely_resumable_sessions(tmp_path):
+    """重启后只保留可续跑的 asr_ready 和带 run_id 的 running。"""
     repo1 = SessionRepo(tmp_path / "test.db")
     _create(repo1, session_id="s_acc", request_id="s_acc")
     _create(repo1, session_id="s_asr", request_id="s_asr")
@@ -249,6 +262,10 @@ def test_startup_recovery_turns_non_terminal_to_timeout(tmp_path):
     _create(repo1, session_id="s_run", request_id="s_run")
     _transition(repo1, "watch-001", "s_run", "asr_ready", user_text="test")
     _transition(repo1, "watch-001", "s_run", "running")
+    _create(repo1, session_id="s_run_attached", request_id="s_run_attached")
+    _transition(repo1, "watch-001", "s_run_attached", "asr_ready", user_text="test")
+    _transition(repo1, "watch-001", "s_run_attached", "running")
+    repo1.attach_hermes_run("watch-001", "s_run_attached", "run_abc")
     # 终态保持不变
     _create(repo1, session_id="s_done", request_id="s_done")
     _transition(repo1, "watch-001", "s_done", "asr_ready", user_text="d")
@@ -258,10 +275,34 @@ def test_startup_recovery_turns_non_terminal_to_timeout(tmp_path):
     # 模拟重启：创建新 repo 实例（同一 db 文件）
     repo2 = SessionRepo(tmp_path / "test.db")
 
-    assert repo2.get("watch-001", "s_acc").state == "timeout"
-    assert repo2.get("watch-001", "s_asr").state == "timeout"
-    assert repo2.get("watch-001", "s_run").state == "timeout"
+    assert repo2.get("watch-001", "s_acc").state == "interrupted"
+    assert repo2.get("watch-001", "s_acc").error_code == "server_restarted_before_asr"
+    assert repo2.get("watch-001", "s_asr").state == "asr_ready"
+    assert repo2.get("watch-001", "s_run").state == "interrupted"
+    assert repo2.get("watch-001", "s_run").error_code == "server_restarted_without_run_id"
+    assert repo2.get("watch-001", "s_run_attached").state == "running"
+    assert repo2.get("watch-001", "s_run_attached").hermes_run_id == "run_abc"
     assert repo2.get("watch-001", "s_done").state == "done"
+
+
+def test_attach_hermes_run_requires_running_session(tmp_path):
+    repo = SessionRepo(tmp_path / "test.db")
+    _create(repo, session_id="attach", request_id="attach")
+
+    with pytest.raises(SessionValidationError, match="not running"):
+        repo.attach_hermes_run("watch-001", "attach", "run_abc")
+
+
+def test_list_active_all_returns_resumable_sessions(tmp_path):
+    repo = SessionRepo(tmp_path / "test.db")
+    _create(repo, session_id="ready", request_id="ready")
+    _transition(repo, "watch-001", "ready", "asr_ready", user_text="test")
+    _create(repo, session_id="running", request_id="running")
+    _transition(repo, "watch-001", "running", "asr_ready", user_text="test")
+    _transition(repo, "watch-001", "running", "running")
+    repo.attach_hermes_run("watch-001", "running", "run_abc")
+
+    assert [item.session_id for item in repo.list_active_all()] == ["ready", "running"]
 
 
 # ── 淘汰 ──────────────────────────────────────────────────────────────────────

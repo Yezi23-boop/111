@@ -350,13 +350,19 @@ static void memory_watch_service_copy_text(char *dst, size_t dst_len,
         return;
     }
 
-    size_t index = 0;
-    while (index + 1U < dst_len && src[index] != '\0')
+    size_t copy_len = strnlen(src, dst_len - 1U);
+    if (copy_len == dst_len - 1U && src[copy_len] != '\0')
     {
-        dst[index] = src[index];
-        ++index;
+        /* UTF-8 continuation bytes are 10xxxxxx。若容量落在一个多字节字符
+         * 中间，回退到该字符的首字节并整体舍弃，避免 UI 渲染收到非法编码。 */
+        while (copy_len > 0U &&
+               (((const uint8_t *)src)[copy_len] & 0xC0U) == 0x80U)
+        {
+            --copy_len;
+        }
     }
-    dst[index] = '\0';
+    memcpy(dst, src, copy_len);
+    dst[copy_len] = '\0';
 }
 
 static bool memory_watch_service_is_safe_user_text(const char *text)
@@ -1454,6 +1460,13 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
     }
     if ((bits & kWsWaitDisconnectedBit) != 0)
     {
+        memory_watch_service_fill_pending_response(result, job->request_id);
+        return ESP_OK;
+    }
+    if (asr_ready_seen)
+    {
+        /* 本地前台等待期限只控制 WS 资源占用，不代表 server/Hermes 任务失败。
+         * server 已确认 ASR 后转入后台 /sync，由 session 真相源决定终态。 */
         memory_watch_service_fill_pending_response(result, job->request_id);
         return ESP_OK;
     }

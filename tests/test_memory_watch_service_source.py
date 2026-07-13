@@ -613,6 +613,15 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertNotIn("API_SERVER_KEY", source)
         self.assertNotIn("XIAOMI_API_KEY", source)
 
+    def test_conversation_text_truncation_keeps_utf8_boundary(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("UTF-8 continuation bytes", source)
+        self.assertIn("((const uint8_t *)src)[copy_len] & 0xC0U", source)
+        self.assertIn("if (asr_ready_seen)", source)
+        self.assertIn("memory_watch_service_fill_pending_response(result, job->request_id)", source)
+        self.assertIn("本地前台等待期限只控制 WS 资源占用", source)
+
 
 if __name__ == "__main__":
     unittest.main()

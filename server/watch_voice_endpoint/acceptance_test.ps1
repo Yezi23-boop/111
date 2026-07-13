@@ -95,6 +95,8 @@ function Select-RuntimeSummary {
     inflight_requests = $serviceHealth.inflight_requests
     request_events = $serviceHealth.request_events
     request_status_counts = $serviceHealth.request_status_counts
+    ws_request_status_counts = $serviceHealth.ws_request_status_counts
+    last_ws_request = $serviceHealth.last_ws_request
     auth_failures = $serviceHealth.auth_failures
     last_auth_failure = $serviceHealth.last_auth_failure
     private_exposure = $Runtime.endpoints.private_exposure

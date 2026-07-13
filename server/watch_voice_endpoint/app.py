@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
+import logging
 import os
 import re
 import time
+import uuid
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -17,13 +22,17 @@ from starlette.websockets import WebSocketDisconnect
 
 from conversation_repo import ConversationMessage, ConversationRepo, ConversationValidationError
 from inbox_repo import InboxRepo, InboxValidationError
-from session_repo import SessionRepo, SessionValidationError
+from session_repo import TERMINAL_STATES, SessionRepo, SessionValidationError, WatchSession
 
 
 HERMES_API_URL = os.getenv("HERMES_API_URL", "http://127.0.0.1:8642").rstrip("/")
 HERMES_API_KEY = os.getenv("HERMES_API_KEY", "")
 HERMES_MODEL = os.getenv("HERMES_MODEL", "hermes-agent")
 HERMES_TIMEOUT_SECONDS = float(os.getenv("HERMES_TIMEOUT_SECONDS", "120"))
+HERMES_RUN_TIMEOUT_SECONDS = float(os.getenv("HERMES_RUN_TIMEOUT_SECONDS", "3600"))
+HERMES_RUN_POLL_INTERVAL_SECONDS = float(
+    os.getenv("HERMES_RUN_POLL_INTERVAL_SECONDS", "1")
+)
 WATCH_REQUEST_TIMEOUT_SECONDS = float(os.getenv("WATCH_REQUEST_TIMEOUT_SECONDS", "115"))
 WATCH_CONVERSATION_SUFFIX = os.getenv("WATCH_CONVERSATION_SUFFIX", "ai-memory-watch")
 WATCH_MOCK_ASR_TEXT = os.getenv("WATCH_MOCK_ASR_TEXT", "记一下明天看电池日志")
@@ -39,11 +48,21 @@ MIMO_ASR_TRANSCODE_TIMEOUT_SECONDS = float(os.getenv("MIMO_ASR_TRANSCODE_TIMEOUT
 MAX_AUDIO_BYTES = int(os.getenv("WATCH_MAX_AUDIO_BYTES", str(6 * 1024 * 1024)))
 MAX_TEXT_CHARS = int(os.getenv("WATCH_MAX_TEXT_CHARS", "240"))
 REPLY_MAX_CHARS = int(os.getenv("WATCH_REPLY_MAX_CHARS", "80"))
+WATCH_REPLY_MAX_UTF8_BYTES = int(os.getenv("WATCH_REPLY_MAX_UTF8_BYTES", "120"))
+WATCH_ASR_MAX_UTF8_BYTES = int(os.getenv("WATCH_ASR_MAX_UTF8_BYTES", "255"))
+WATCH_INTERNAL_API_KEY = os.getenv("WATCH_INTERNAL_API_KEY", "")
+WATCH_PUBLIC_INBOX_CREATE_ENABLED = os.getenv(
+    "WATCH_PUBLIC_INBOX_CREATE_ENABLED", "false"
+).strip().lower() in ("1", "true", "yes", "on")
+WATCH_HTTP_ASYNC_RUNS_ENABLED = os.getenv(
+    "WATCH_HTTP_ASYNC_RUNS_ENABLED", "true"
+).strip().lower() in ("1", "true", "yes", "on")
 WATCH_WS_ENABLED = os.getenv("WATCH_WS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
 WATCH_WS_MAX_MESSAGE_BYTES = int(os.getenv("WATCH_WS_MAX_MESSAGE_BYTES", str(6 * 1024 * 1024)))
 MIMO_ASR_DIRECT_MIME_TYPES = {"audio/wav", "audio/mp3", "audio/mpeg"}
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,96}$")
 INVALID_REQUEST_ID = "invalid-request"
+logger = logging.getLogger("watch_voice_endpoint")
 
 WATCH_INSTRUCTIONS = (
     "你是 AI Memory Watch 的 Hermes 大脑。输入来自 ESP32-S3 手表短语音转写或手表文本。"
@@ -87,7 +106,26 @@ class DangerAlertIn(BaseModel):
     message: str | None = None
 
 
-app = FastAPI(title="AI Memory Watch Endpoint", version="0.1.0")
+_hermes_run_client: httpx.AsyncClient | None = None
+
+
+@asynccontextmanager
+async def _app_lifespan(_: FastAPI):
+    """关闭进程级 Hermes 连接池，避免 reload/shutdown 遗留连接。"""
+    try:
+        yield
+    finally:
+        global _hermes_run_client
+        if _hermes_run_client is not None:
+            await _hermes_run_client.aclose()
+            _hermes_run_client = None
+
+
+app = FastAPI(
+    title="AI Memory Watch Endpoint",
+    version="0.1.0",
+    lifespan=_app_lifespan,
+)
 _canceled_requests: set[tuple[str, str]] = set()
 _completed_requests: dict[tuple[str, str], WatchResponse] = {}
 _inflight_requests: dict[tuple[str, str], asyncio.Task[WatchResponse]] = {}
@@ -100,6 +138,8 @@ _inbox_repo: InboxRepo | None = None
 _conversation_repo: ConversationRepo | None = None
 _session_repo: SessionRepo | None = None
 _ws_background_tasks: set[asyncio.Task[None]] = set()
+_watch_run_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
+_device_run_locks: dict[str, asyncio.Lock] = {}
 _alert_ws_clients: set[WebSocket] = set()
 _alert_ws_lock = asyncio.Lock()
 
@@ -111,6 +151,25 @@ class WsConnectionState:
     websocket: WebSocket
     send_lock: asyncio.Lock
     connected: bool = True
+
+
+@dataclass
+class WsRequestMetrics:
+    """单次 WS turn 的非秘密分段耗时；只保留最近一次用于现场诊断。"""
+
+    device_id: str
+    request_id: str
+    upload_bytes: int = 0
+    upload_ms: int = 0
+    asr_ms: int = 0
+    queue_wait_ms: int = 0
+    hermes_ms: int = 0
+    persist_ms: int = 0
+    delivery_mode: str = "sync"
+    terminal_state: str = "running"
+    error_stage: str | None = None
+    error_code: str | None = None
+    recorded: bool = False
 
 
 def _get_inbox_repo() -> InboxRepo:
@@ -160,6 +219,8 @@ _auth_failure_counts = {
 _request_error_counts: dict[str, int] = {}
 _last_request_summary: dict[str, str | int | float | None] = {}
 _last_auth_failure_summary: dict[str, str | int] = {}
+_ws_request_status_counts: dict[str, int] = {}
+_last_ws_request_summary: dict[str, str | int | None] = {}
 _request_lock = asyncio.Lock()
 
 
@@ -208,10 +269,31 @@ def _require_device(device_id: str, authorization: str | None, endpoint: str) ->
         _raise_auth_failure(endpoint, device_id, 403, "invalid_device_token")
 
 
+def _require_internal(authorization: str | None) -> None:
+    """校验 server-to-server credential；该 key 不下发给 ESP32。"""
+    if not WATCH_INTERNAL_API_KEY:
+        raise HTTPException(status_code=503, detail="internal_api_key_not_configured")
+    prefix = "Bearer "
+    if not authorization or not authorization.startswith(prefix):
+        raise HTTPException(status_code=401, detail="missing_internal_token")
+    if not hmac.compare_digest(
+        authorization[len(prefix) :], WATCH_INTERNAL_API_KEY
+    ):
+        raise HTTPException(status_code=403, detail="invalid_internal_token")
+
+
 def _hermes_headers() -> dict[str, str]:
     if not HERMES_API_KEY:
         raise HTTPException(status_code=500, detail="hermes_api_key_missing")
     return {"Authorization": f"Bearer {HERMES_API_KEY}"}
+
+
+def _get_hermes_run_client() -> httpx.AsyncClient:
+    """复用 Hermes run 轮询连接；请求级 timeout 仍由各调用点控制。"""
+    global _hermes_run_client
+    if _hermes_run_client is None or _hermes_run_client.is_closed:
+        _hermes_run_client = httpx.AsyncClient(trust_env=False)
+    return _hermes_run_client
 
 
 def _conversation_for_device(device_id: str) -> str:
@@ -232,6 +314,24 @@ def _extract_output_text(payload: dict) -> str:
     return str(payload.get("output_text") or "").strip()
 
 
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    """按 UTF-8 字节上限截断，绝不返回半个多字节字符。"""
+    if max_bytes <= 0:
+        return ""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _watch_reply_text(text: str) -> str:
+    return _truncate_utf8(text[:REPLY_MAX_CHARS], WATCH_REPLY_MAX_UTF8_BYTES)
+
+
+def _watch_asr_text(text: str) -> str:
+    return _truncate_utf8(text, WATCH_ASR_MAX_UTF8_BYTES)
+
+
 def _infer_action(asr_text: str, reply_text: str) -> str:
     combined = f"{asr_text}\n{reply_text}"
     if "提醒" in combined:
@@ -248,7 +348,7 @@ def _canceled_watch_response(request_id: str, asr_text: str = "") -> WatchRespon
         request_id=request_id,
         status="canceled",
         action="no_action",
-        asr_text=asr_text,
+        asr_text=_watch_asr_text(asr_text),
         reply_text="已取消等待",
     )
 
@@ -262,8 +362,8 @@ def _error_watch_response(
         request_id=request_id,
         status="error",
         action="error",
-        asr_text=asr_text,
-        reply_text=reply_text,
+        asr_text=_watch_asr_text(asr_text),
+        reply_text=_watch_reply_text(reply_text),
         error_code="asr_or_agent_error",
     )
 
@@ -273,7 +373,7 @@ def _timeout_watch_response(request_id: str, asr_text: str = "") -> WatchRespons
         request_id=request_id,
         status="timeout",
         action="error",
-        asr_text=asr_text,
+        asr_text=_watch_asr_text(asr_text),
         reply_text="Hermes 处理超时",
         error_code="server_timeout",
     )
@@ -317,6 +417,34 @@ def _record_request_result(
         }
     )
     return response
+
+
+def _record_ws_request_metrics(metrics: WsRequestMetrics) -> None:
+    """发布 WS 主链路指标，不包含用户文本、音频内容或鉴权信息。"""
+    if metrics.recorded:
+        return
+    metrics.recorded = True
+    _ws_request_status_counts[metrics.terminal_state] = (
+        _ws_request_status_counts.get(metrics.terminal_state, 0) + 1
+    )
+    _last_ws_request_summary.clear()
+    _last_ws_request_summary.update(
+        {
+            "device_id": metrics.device_id,
+            "request_id": metrics.request_id,
+            "upload_bytes": metrics.upload_bytes,
+            "upload_ms": metrics.upload_ms,
+            "asr_ms": metrics.asr_ms,
+            "queue_wait_ms": metrics.queue_wait_ms,
+            "hermes_ms": metrics.hermes_ms,
+            "persist_ms": metrics.persist_ms,
+            "delivery_mode": metrics.delivery_mode,
+            "terminal_state": metrics.terminal_state,
+            "error_stage": metrics.error_stage,
+            "error_code": metrics.error_code,
+            "completed_at": int(time.time()),
+        }
+    )
 
 
 def _trim_completed_requests() -> None:
@@ -476,6 +604,68 @@ async def _call_hermes(device_id: str, asr_text: str, clarification_id: str | No
         return _extract_output_text(response.json())
 
 
+def _hermes_run_history(device_id: str, request_id: str) -> list[dict[str, str]]:
+    """构建 `/v1/runs` 的短历史，排除本次已单独作为 input 的 user 消息。"""
+    history: list[dict[str, str]] = []
+    for message in _get_conversation_repo().list_recent(device_id):
+        if message.request_id == request_id and message.role == "user":
+            continue
+        history.append({"role": message.role, "content": message.text})
+    return history
+
+
+async def _start_hermes_run(device_id: str, request_id: str, asr_text: str) -> str:
+    """启动 Hermes 原生异步 run，立即返回可轮询 run_id。"""
+    body = {
+        "model": HERMES_MODEL,
+        "instructions": (
+            f"{WATCH_INSTRUCTIONS}\n当前 watch request_id：{request_id}。"
+            "工具如支持幂等键，应使用该 request_id。"
+        ),
+        "input": f"手表用户说：{asr_text}",
+        "conversation_history": _hermes_run_history(device_id, request_id),
+        "session_id": _conversation_for_device(device_id),
+    }
+    timeout = httpx.Timeout(connect=10.0, write=30.0, read=30.0, pool=10.0)
+    response = await _get_hermes_run_client().post(
+        f"{HERMES_API_URL}/v1/runs",
+        headers={**_hermes_headers(), "Idempotency-Key": request_id},
+        json=body,
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    run_id = str(payload.get("run_id") or "")
+    if response.status_code != 202 or not run_id:
+        raise RuntimeError("hermes_run_not_accepted")
+    return run_id
+
+
+async def _get_hermes_run(run_id: str) -> dict[str, object]:
+    timeout = httpx.Timeout(connect=10.0, write=10.0, read=15.0, pool=10.0)
+    response = await _get_hermes_run_client().get(
+        f"{HERMES_API_URL}/v1/runs/{run_id}",
+        headers=_hermes_headers(),
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("invalid_hermes_run_status")
+    return payload
+
+
+async def _stop_hermes_run(run_id: str) -> None:
+    timeout = httpx.Timeout(connect=10.0, write=10.0, read=15.0, pool=10.0)
+    response = await _get_hermes_run_client().post(
+        f"{HERMES_API_URL}/v1/runs/{run_id}/stop",
+        headers=_hermes_headers(),
+        timeout=timeout,
+    )
+    if response.status_code not in (200, 404):
+        response.raise_for_status()
+
+
 async def _process_voice_command_inner(
     request_id: str,
     device_id: str,
@@ -518,7 +708,7 @@ async def _process_voice_command_inner(
             request_id=request_id,
             status="error",
             action="error",
-            asr_text=asr_text,
+            asr_text=_watch_asr_text(asr_text),
             reply_text="没有处理成功，请再说一次",
             error_code="asr_or_agent_error",
         )
@@ -527,7 +717,7 @@ async def _process_voice_command_inner(
             request_id=request_id,
             status="error",
             action="error",
-            asr_text=asr_text,
+            asr_text=_watch_asr_text(asr_text),
             reply_text="没有处理成功，请再说一次",
             error_code="asr_or_agent_error",
         )
@@ -539,8 +729,8 @@ async def _process_voice_command_inner(
         request_id=request_id,
         status="done",
         action=_infer_action(asr_text, reply_text),
-        asr_text=asr_text,
-        reply_text=reply_text[:REPLY_MAX_CHARS],
+        asr_text=_watch_asr_text(asr_text),
+        reply_text=_watch_reply_text(reply_text),
         clarification_id=None,
         error_code=None,
     )
@@ -565,7 +755,7 @@ async def _process_text_command_inner(
             request_id=request_id,
             status="error",
             action="error",
-            asr_text=text,
+            asr_text=_watch_asr_text(text),
             reply_text="没有处理成功，请再发送一次",
             error_code="asr_or_agent_error",
         )
@@ -574,7 +764,7 @@ async def _process_text_command_inner(
             request_id=request_id,
             status="error",
             action="error",
-            asr_text=text,
+            asr_text=_watch_asr_text(text),
             reply_text="没有处理成功，请再发送一次",
             error_code="asr_or_agent_error",
         )
@@ -586,8 +776,8 @@ async def _process_text_command_inner(
         request_id=request_id,
         status="done",
         action=_infer_action(text, reply_text),
-        asr_text=text,
-        reply_text=reply_text[:REPLY_MAX_CHARS],
+        asr_text=_watch_asr_text(text),
+        reply_text=_watch_reply_text(reply_text),
         clarification_id=None,
         error_code=None,
     )
@@ -602,20 +792,34 @@ async def _process_voice_command(
     mock_asr_text: str | None,
 ) -> WatchResponse:
     started_at = time.monotonic()
-    try:
-        response = await asyncio.wait_for(
-            _process_voice_command_inner(
-                request_id=request_id,
-                device_id=device_id,
-                audio_bytes=audio_bytes,
-                audio_content_type=audio_content_type,
-                clarification_id=clarification_id,
-                mock_asr_text=mock_asr_text,
-            ),
-            timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
+    if WATCH_HTTP_ASYNC_RUNS_ENABLED:
+        await _ws_finish_audio(
+            None,
+            device_id,
+            request_id,
+            audio_bytes,
+            mock_asr_text,
         )
-    except asyncio.TimeoutError:
-        response = _timeout_watch_response(request_id)
+        response = await _await_compat_session(
+            device_id,
+            request_id,
+            fallback_user_text="",
+        )
+    else:
+        try:
+            response = await asyncio.wait_for(
+                _process_voice_command_inner(
+                    request_id=request_id,
+                    device_id=device_id,
+                    audio_bytes=audio_bytes,
+                    audio_content_type=audio_content_type,
+                    clarification_id=clarification_id,
+                    mock_asr_text=mock_asr_text,
+                ),
+                timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            response = _timeout_watch_response(request_id)
     return _record_request_result(device_id, request_id, response, started_at, len(audio_bytes))
 
 
@@ -626,21 +830,27 @@ async def _process_text_command(
     clarification_id: str | None,
 ) -> WatchResponse:
     started_at = time.monotonic()
-    try:
-        response = await asyncio.wait_for(
-            _process_text_command_inner(
-                request_id=request_id,
-                device_id=device_id,
-                text=text,
-                clarification_id=clarification_id,
-            ),
-            timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
+    if WATCH_HTTP_ASYNC_RUNS_ENABLED:
+        await _ws_finish_text(None, device_id, request_id, text)
+        response = await _await_compat_session(
+            device_id,
+            request_id,
+            fallback_user_text=text,
         )
-    except asyncio.TimeoutError:
-        response = _timeout_watch_response(request_id, text)
+    else:
+        try:
+            response = await asyncio.wait_for(
+                _process_text_command_inner(
+                    request_id=request_id,
+                    device_id=device_id,
+                    text=text,
+                    clarification_id=clarification_id,
+                ),
+                timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            response = _timeout_watch_response(request_id, text)
     return _record_request_result(device_id, request_id, response, started_at, 0)
-
-
 async def _await_request_task(
     key: tuple[str, str],
     task: asyncio.Task[WatchResponse],
@@ -658,7 +868,14 @@ async def _await_request_task(
                 _record_request_result(device_id, request_id, response, time.monotonic(), 0)
         if key in _canceled_requests:
             return _canceled_watch_response(request_id, response.asr_text)
-        if response.status != "canceled":
+        cache_response = response.status != "canceled"
+        if response.status == "timeout":
+            try:
+                session = _get_session_repo().get_by_request_id(device_id, request_id)
+                cache_response = session.state in TERMINAL_STATES
+            except SessionValidationError:
+                pass
+        if cache_response:
             _completed_requests[key] = response
             _trim_completed_requests()
         return response
@@ -687,17 +904,22 @@ async def _ws_send_error(websocket: WebSocket, request_id: str | None, code: str
     await _ws_send_json(websocket, payload)
 
 
-async def _ws_try_send_json(conn: WsConnectionState | None, payload: dict[str, object]) -> None:
+async def _ws_try_send_json(
+    conn: WsConnectionState | None,
+    payload: dict[str, object],
+) -> bool:
     """向仍在线的 WS 连接 best-effort 推送；断线不影响后台任务落库。"""
     if conn is None or not conn.connected:
-        return
+        return False
     async with conn.send_lock:
         if not conn.connected:
-            return
+            return False
         try:
             await _ws_send_json(conn.websocket, payload)
+            return True
         except Exception:
             conn.connected = False
+            return False
 
 
 async def _ws_try_send_error(
@@ -711,138 +933,378 @@ async def _ws_try_send_error(
     await _ws_try_send_json(conn, payload)
 
 
+def _session_replay_message(session: WatchSession) -> ConversationMessage | None:
+    """从 session 重建已淘汰的 terminal reply，不重新执行 Hermes。"""
+    if not session.reply_text:
+        return None
+    message_id = session.last_delivered_message_id
+    if not message_id:
+        digest = hashlib.sha256(
+            f"{session.device_id}:{session.request_id}".encode("utf-8")
+        ).hexdigest()[:24]
+        message_id = f"msg_replay_{digest}"
+    status = session.state if session.state in ("done", "error", "timeout", "canceled") else "error"
+    return ConversationMessage(
+        message_id=message_id,
+        request_id=session.request_id,
+        role="assistant",
+        text=session.reply_text,
+        created_at=session.updated_at,
+        status=status,
+    )
+
+
+async def _replay_terminal_session(
+    conn: WsConnectionState | None,
+    session: WatchSession,
+) -> None:
+    message = _get_conversation_repo().get_for_request_role(
+        session.device_id, session.request_id, "assistant"
+    )
+    if message is None:
+        message = _session_replay_message(session)
+    if message is not None:
+        await _ws_try_send_json(
+            conn,
+            {"type": "conversation_message", **_conversation_message_payload(message)},
+        )
+        return
+    await _ws_try_send_error(
+        conn,
+        session.request_id,
+        session.error_code or f"session_{session.state}",
+    )
+
+
+def _watch_run_task_done(
+    key: tuple[str, str],
+    task: asyncio.Task[None],
+) -> None:
+    _ws_background_tasks.discard(task)
+    if _watch_run_tasks.get(key) is task:
+        _watch_run_tasks.pop(key, None)
+
+
+def _track_watch_run_task(
+    device_id: str,
+    request_id: str,
+    task: asyncio.Task[None],
+) -> bool:
+    key = (device_id, request_id)
+    existing = _watch_run_tasks.get(key)
+    if existing is not None and not existing.done():
+        task.cancel()
+        return False
+    _watch_run_tasks[key] = task
+    _ws_background_tasks.add(task)
+    task.add_done_callback(lambda finished: _watch_run_task_done(key, finished))
+    return True
+
+
+async def _finish_ws_session_error(
+    conn: WsConnectionState | None,
+    device_id: str,
+    request_id: str,
+    error_code: str,
+    metrics: WsRequestMetrics | None = None,
+    error_stage: str = "hermes",
+) -> None:
+    """只有抢到 running -> error 的 caller 才写错误消息。"""
+    session_repo = _get_session_repo()
+    reply_text = "没有处理成功，请再说一次"
+    message_id = f"msg_{uuid.uuid4().hex}"
+    persist_started_at = time.monotonic()
+    try:
+        session_repo.transition(
+            device_id,
+            request_id,
+            "error",
+            reply_text=reply_text,
+            last_delivered_message_id=message_id,
+            error_code=error_code,
+        )
+    except SessionValidationError:
+        return
+    try:
+        message = _get_conversation_repo().add_message_once(
+            device_id=device_id,
+            request_id=request_id,
+            role="assistant",
+            text=reply_text,
+            status="error",
+            message_id=message_id,
+        )
+        if metrics is not None:
+            metrics.persist_ms = int(
+                (time.monotonic() - persist_started_at) * 1000
+            )
+        delivered = await _ws_try_send_json(
+            conn,
+            {"type": "conversation_message", **_conversation_message_payload(message)},
+        )
+        if metrics is not None:
+            metrics.delivery_mode = "ws" if delivered else "sync"
+            metrics.terminal_state = "error"
+            metrics.error_stage = error_stage
+            metrics.error_code = error_code
+            _record_ws_request_metrics(metrics)
+    except ConversationValidationError:
+        await _ws_try_send_error(conn, request_id, error_code)
+
+
 async def _ws_run_hermes_job(
     conn: WsConnectionState | None,
     device_id: str,
     request_id: str,
     asr_text: str,
+    existing_run_id: str = "",
+    metrics: WsRequestMetrics | None = None,
 ) -> None:
-    repo = _get_conversation_repo()
-    session_repo = _get_session_repo()
-    session_id = request_id  # V2.3: session_id == request_id
-
-    # 标记 session 进入 running 状态
-    try:
-        session_repo.transition(device_id, session_id, "running")
-    except SessionValidationError:
-        pass  # session 可能已被取消或已终态，继续尽力执行
-
-    await _ws_try_send_json(conn, {"type": "task_started", "request_id": request_id})
-    try:
-        reply_text = await _call_hermes(device_id, asr_text, None)
-        if not reply_text:
-            raise RuntimeError("empty_hermes_reply")
-        message = repo.add_message(
-            device_id=device_id,
-            request_id=request_id,
-            role="assistant",
-            text=reply_text[:REPLY_MAX_CHARS],
-            status="done",
-        )
-        # 更新 session 为 done
-        try:
-            session_repo.transition(device_id, session_id, "done",
-                                    reply_text=reply_text[:REPLY_MAX_CHARS],
-                                    last_delivered_message_id=message.message_id)
-        except SessionValidationError:
-            pass
-        await _ws_try_send_json(
+    """按 device 串行 Hermes conversation，避免同一历史并发乱序。"""
+    request_metrics = metrics or WsRequestMetrics(
+        device_id=device_id,
+        request_id=request_id,
+    )
+    queued_at = time.monotonic()
+    device_lock = _device_run_locks.setdefault(device_id, asyncio.Lock())
+    async with device_lock:
+        request_metrics.queue_wait_ms = int((time.monotonic() - queued_at) * 1000)
+        await _ws_run_hermes_job_serialized(
             conn,
-            {"type": "conversation_message", **_conversation_message_payload(message)},
+            device_id,
+            request_id,
+            asr_text,
+            existing_run_id=existing_run_id,
+            metrics=request_metrics,
         )
-    except Exception:
-        try:
-            message = repo.add_message(
-                device_id=device_id,
-                request_id=request_id,
-                role="assistant",
-                text="没有处理成功，请再说一次",
-                status="error",
-            )
+
+
+async def _ws_run_hermes_job_serialized(
+    conn: WsConnectionState | None,
+    device_id: str,
+    request_id: str,
+    asr_text: str,
+    existing_run_id: str = "",
+    metrics: WsRequestMetrics | None = None,
+) -> None:
+    """启动或重新挂接 Hermes run，结果先落 session 再写 conversation。"""
+    session_repo = _get_session_repo()
+    run_id = existing_run_id
+    started_at = time.monotonic()
+    try:
+        session = session_repo.get(device_id, request_id)
+        if session.state == "asr_ready":
+            session = session_repo.transition(device_id, request_id, "running")
+        elif session.state != "running":
+            return
+
+        await _ws_try_send_json(conn, {"type": "task_started", "request_id": request_id})
+        if not run_id:
+            run_id = await _start_hermes_run(device_id, request_id, asr_text)
             try:
-                session_repo.transition(device_id, session_id, "error",
-                                        reply_text="没有处理成功，请再说一次",
-                                        last_delivered_message_id=message.message_id)
+                session_repo.attach_hermes_run(device_id, request_id, run_id)
+            except SessionValidationError:
+                await _stop_hermes_run(run_id)
+                return
+
+        while True:
+            if time.monotonic() - started_at >= HERMES_RUN_TIMEOUT_SECONDS:
+                await _stop_hermes_run(run_id)
+                await _finish_ws_session_error(
+                    conn,
+                    device_id,
+                    request_id,
+                    "hermes_run_timeout",
+                    metrics,
+                )
+                return
+
+            payload = await _get_hermes_run(run_id)
+            status = str(payload.get("status") or "")
+            if status == "completed":
+                reply_text = str(payload.get("output") or "").strip()
+                if not reply_text:
+                    raise RuntimeError("empty_hermes_reply")
+                reply_text = _watch_reply_text(reply_text)
+                message_id = f"msg_{uuid.uuid4().hex}"
+                persist_started_at = time.monotonic()
+                try:
+                    session_repo.transition(
+                        device_id,
+                        request_id,
+                        "done",
+                        reply_text=reply_text,
+                        last_delivered_message_id=message_id,
+                    )
+                except SessionValidationError:
+                    return
+                message = _get_conversation_repo().add_message_once(
+                    device_id=device_id,
+                    request_id=request_id,
+                    role="assistant",
+                    text=reply_text,
+                    status="done",
+                    message_id=message_id,
+                )
+                if metrics is not None:
+                    metrics.hermes_ms = int(
+                        (persist_started_at - started_at) * 1000
+                    )
+                    metrics.persist_ms = int(
+                        (time.monotonic() - persist_started_at) * 1000
+                    )
+                delivered = await _ws_try_send_json(
+                    conn,
+                    {"type": "conversation_message", **_conversation_message_payload(message)},
+                )
+                if metrics is not None:
+                    metrics.delivery_mode = "ws" if delivered else "sync"
+                    metrics.terminal_state = "done"
+                    _record_ws_request_metrics(metrics)
+                return
+            if status == "failed":
+                await _finish_ws_session_error(
+                    conn,
+                    device_id,
+                    request_id,
+                    "hermes_run_failed",
+                    metrics,
+                )
+                return
+            if status == "cancelled":
+                try:
+                    session_repo.transition(
+                        device_id, request_id, "canceled", error_code="request_canceled"
+                    )
+                except SessionValidationError:
+                    pass
+                if metrics is not None:
+                    metrics.hermes_ms = int(
+                        (time.monotonic() - started_at) * 1000
+                    )
+                    metrics.terminal_state = "canceled"
+                    metrics.error_stage = "hermes"
+                    metrics.error_code = "request_canceled"
+                    _record_ws_request_metrics(metrics)
+                return
+            if status not in ("queued", "running", "waiting_for_approval", "stopping"):
+                raise RuntimeError(f"unknown_hermes_run_status:{status}")
+            await asyncio.sleep(HERMES_RUN_POLL_INTERVAL_SECONDS)
+    except asyncio.CancelledError:
+        if metrics is not None:
+            metrics.hermes_ms = int((time.monotonic() - started_at) * 1000)
+            metrics.terminal_state = "canceled"
+            metrics.error_stage = "hermes"
+            metrics.error_code = "request_canceled"
+            _record_ws_request_metrics(metrics)
+        raise
+    except httpx.HTTPStatusError as exc:
+        code = "hermes_run_not_found" if exc.response.status_code == 404 else "hermes_http_error"
+        logger.warning(
+            "Hermes run HTTP failure request_id=%s status=%s",
+            request_id,
+            exc.response.status_code,
+        )
+        if code == "hermes_run_not_found":
+            try:
+                session_repo.transition(
+                    device_id,
+                    request_id,
+                    "interrupted",
+                    error_code="hermes_run_lost",
+                )
             except SessionValidationError:
                 pass
-            await _ws_try_send_json(
-                conn,
-                {"type": "conversation_message", **_conversation_message_payload(message)},
-            )
-        except Exception:
-            try:
-                session_repo.transition(device_id, session_id, "error")
-            except SessionValidationError:
-                pass
-            await _ws_try_send_error(conn, request_id, "hermes_error")
+            if metrics is not None:
+                metrics.hermes_ms = int((time.monotonic() - started_at) * 1000)
+                metrics.terminal_state = "interrupted"
+                metrics.error_stage = "hermes"
+                metrics.error_code = "hermes_run_lost"
+                _record_ws_request_metrics(metrics)
+            return
+        await _finish_ws_session_error(
+            conn, device_id, request_id, code, metrics
+        )
+    except Exception as exc:
+        logger.warning(
+            "Hermes run failure request_id=%s stage=run error=%s",
+            request_id,
+            type(exc).__name__,
+        )
+        await _finish_ws_session_error(
+            conn,
+            device_id,
+            request_id,
+            "hermes_run_error",
+            metrics,
+        )
 
 
 async def _ws_finish_audio(
     conn: WsConnectionState | None,
     device_id: str,
     request_id: str,
-    audio_bytes: bytes,
+    audio_bytes: bytes | bytearray,
     mock_asr_text: str | None,
+    upload_ms: int = 0,
 ) -> None:
+    metrics = WsRequestMetrics(
+        device_id=device_id,
+        request_id=request_id,
+        upload_bytes=len(audio_bytes),
+        upload_ms=upload_ms,
+    )
     if not audio_bytes:
         await _ws_try_send_error(conn, request_id, "empty_audio")
+        metrics.terminal_state = "error"
+        metrics.error_stage = "upload"
+        metrics.error_code = "empty_audio"
+        _record_ws_request_metrics(metrics)
         return
 
     session_repo = _get_session_repo()
     session_id = request_id  # V2.3: session_id == request_id
 
-    # ── 幂等检查：相同 request_id 不重复处理 ──
-    try:
-        existing = session_repo.get(device_id, session_id)
-        if existing.state in ("done", "error", "timeout", "canceled"):
-            # 终态 → 重放已有结果，不重新处理
-            conv_repo = _get_conversation_repo()
-            recent = conv_repo.list_recent(device_id)
-            for msg in reversed(recent):
-                if msg.request_id == request_id and msg.role == "assistant":
-                    await _ws_try_send_json(
-                        conn,
-                        {"type": "conversation_message",
-                         **_conversation_message_payload(msg)},
-                    )
-                    return
-            # 有 session 但找不到 conversation message（异常情况），继续处理
+    existing, created = session_repo.create_or_get(
+        device_id=device_id,
+        session_id=session_id,
+        request_id=request_id,
+    )
+    if not created:
+        if existing.state in TERMINAL_STATES:
+            await _replay_terminal_session(conn, existing)
         else:
-            # 非终态 → 已在处理中
             await _ws_try_send_error(conn, request_id, "duplicate_request")
-            return
-    except SessionValidationError:
-        pass  # session 不存在，正常处理
-
-    # ── 创建 session ──
-    try:
-        session_repo.create(device_id=device_id, session_id=session_id,
-                            request_id=request_id)
-    except SessionValidationError:
-        pass  # 并发创建，继续
+        return
 
     try:
+        asr_started_at = time.monotonic()
         asr_text = await _transcribe_audio(audio_bytes, "audio/ogg", mock_asr_text)
+        metrics.asr_ms = int((time.monotonic() - asr_started_at) * 1000)
         if not asr_text:
             await _ws_try_send_error(conn, request_id, "empty_asr_text")
             try:
-                session_repo.transition(device_id, session_id, "error")
+                session_repo.transition(
+                    device_id, session_id, "error", error_code="empty_asr_text"
+                )
             except SessionValidationError:
                 pass
+            metrics.terminal_state = "error"
+            metrics.error_stage = "asr"
+            metrics.error_code = "empty_asr_text"
+            _record_ws_request_metrics(metrics)
             return
 
-        # 更新 session 为 asr_ready
-        try:
-            session_repo.transition(device_id, session_id, "asr_ready",
-                                    user_text=asr_text)
-        except SessionValidationError:
-            pass
+        session_repo.transition(
+            device_id, session_id, "asr_ready", user_text=asr_text
+        )
+        device_asr_text = _watch_asr_text(asr_text)
 
-        message = _get_conversation_repo().add_message(
+        message = _get_conversation_repo().add_message_once(
             device_id=device_id,
             request_id=request_id,
             role="user",
-            text=asr_text,
+            text=device_asr_text,
             status="done",
         )
         await _ws_try_send_json(
@@ -851,27 +1313,224 @@ async def _ws_finish_audio(
                 "type": "asr_result",
                 "request_id": request_id,
                 "message_id": message.message_id,
-                "text": asr_text,
+                "text": device_asr_text,
             },
         )
-        await _ws_run_hermes_job(conn, device_id, request_id, asr_text)
+        task = asyncio.create_task(
+            _ws_run_hermes_job(
+                conn,
+                device_id,
+                request_id,
+                asr_text,
+                metrics=metrics,
+            )
+        )
+        _track_watch_run_task(device_id, request_id, task)
     except ConversationValidationError:
         try:
-            session_repo.transition(device_id, session_id, "error")
+            if session_repo.get(device_id, session_id).state == "canceled":
+                return
+        except SessionValidationError:
+            pass
+        try:
+            session_repo.transition(
+                device_id,
+                session_id,
+                "error",
+                error_code="conversation_store_error",
+            )
         except SessionValidationError:
             pass
         await _ws_try_send_error(conn, request_id, "conversation_store_error")
-    except Exception:
+        metrics.terminal_state = "error"
+        metrics.error_stage = "persist"
+        metrics.error_code = "conversation_store_error"
+        _record_ws_request_metrics(metrics)
+    except Exception as exc:
+        logger.warning(
+            "Watch WS request failure request_id=%s stage=asr error=%s",
+            request_id,
+            type(exc).__name__,
+        )
         try:
-            session_repo.transition(device_id, session_id, "error")
+            if session_repo.get(device_id, session_id).state == "canceled":
+                return
+        except SessionValidationError:
+            pass
+        try:
+            session_repo.transition(
+                device_id, session_id, "error", error_code="asr_or_agent_error"
+            )
         except SessionValidationError:
             pass
         await _ws_try_send_error(conn, request_id, "asr_or_agent_error")
+        metrics.terminal_state = "error"
+        metrics.error_stage = "asr"
+        metrics.error_code = "asr_or_agent_error"
+        _record_ws_request_metrics(metrics)
+
+
+async def _ws_finish_text(
+    conn: WsConnectionState | None,
+    device_id: str,
+    request_id: str,
+    text: str,
+) -> None:
+    """让 HTTP text compatibility 与 WS 共用 session claim 和 Hermes run。"""
+    metrics = WsRequestMetrics(device_id=device_id, request_id=request_id)
+    session_repo = _get_session_repo()
+    existing, created = session_repo.create_or_get(
+        device_id=device_id,
+        session_id=request_id,
+        request_id=request_id,
+    )
+    if not created:
+        if existing.state in TERMINAL_STATES:
+            await _replay_terminal_session(conn, existing)
+        return
+
+    try:
+        session_repo.transition(
+            device_id,
+            request_id,
+            "asr_ready",
+            user_text=text,
+        )
+        _get_conversation_repo().add_message_once(
+            device_id=device_id,
+            request_id=request_id,
+            role="user",
+            text=_watch_asr_text(text),
+            status="done",
+        )
+        task = asyncio.create_task(
+            _ws_run_hermes_job(
+                conn,
+                device_id,
+                request_id,
+                text,
+                metrics=metrics,
+            )
+        )
+        _track_watch_run_task(device_id, request_id, task)
+    except (ConversationValidationError, SessionValidationError) as exc:
+        logger.warning(
+            "Watch text request failure request_id=%s stage=persist error=%s",
+            request_id,
+            type(exc).__name__,
+        )
+        try:
+            session_repo.transition(
+                device_id,
+                request_id,
+                "error",
+                error_code="conversation_store_error",
+            )
+        except SessionValidationError:
+            pass
+        metrics.terminal_state = "error"
+        metrics.error_stage = "persist"
+        metrics.error_code = "conversation_store_error"
+        _record_ws_request_metrics(metrics)
+
+
+def _watch_response_from_session(
+    session: WatchSession,
+    fallback_user_text: str,
+) -> WatchResponse:
+    user_text = session.user_text or fallback_user_text
+    if session.state == "done":
+        return WatchResponse(
+            request_id=session.request_id,
+            status="done",
+            action=_infer_action(user_text, session.reply_text),
+            asr_text=_watch_asr_text(user_text),
+            reply_text=_watch_reply_text(session.reply_text),
+            error_code=None,
+        )
+    if session.state == "canceled":
+        return _canceled_watch_response(session.request_id, user_text)
+    if session.state in ("error", "interrupted"):
+        return WatchResponse(
+            request_id=session.request_id,
+            status="error",
+            action="error",
+            asr_text=_watch_asr_text(user_text),
+            reply_text=_watch_reply_text(
+                session.reply_text or "没有处理成功，请再说一次"
+            ),
+            error_code=session.error_code or f"session_{session.state}",
+        )
+    if session.state == "timeout":
+        return _timeout_watch_response(session.request_id, user_text)
+    return _timeout_watch_response(session.request_id, user_text)
+
+
+async def _await_compat_session(
+    device_id: str,
+    request_id: str,
+    fallback_user_text: str,
+) -> WatchResponse:
+    """HTTP caller 最多等待 115 秒；超时不取消持久化 Hermes run。"""
+    try:
+        session = _get_session_repo().get_by_request_id(device_id, request_id)
+    except SessionValidationError:
+        return _error_watch_response(request_id)
+
+    _ensure_watch_session_task(session)
+    task = _watch_run_tasks.get((device_id, request_id))
+    if task is not None and not task.done():
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return _timeout_watch_response(
+                request_id,
+                session.user_text or fallback_user_text,
+            )
+        except asyncio.CancelledError:
+            pass
+
+    try:
+        session = _get_session_repo().get_by_request_id(device_id, request_id)
+    except SessionValidationError:
+        return _error_watch_response(request_id)
+    return _watch_response_from_session(session, fallback_user_text)
 
 
 def _ws_track_background_task(task: asyncio.Task[None]) -> None:
     _ws_background_tasks.add(task)
     task.add_done_callback(_ws_background_tasks.discard)
+
+
+def _ensure_watch_session_task(
+    session: WatchSession,
+    conn: WsConnectionState | None = None,
+) -> None:
+    """为可恢复 session 补建本进程轮询 task；重复调用无副作用。"""
+    key = (session.device_id, session.request_id)
+    existing = _watch_run_tasks.get(key)
+    if existing is not None and not existing.done():
+        return
+    if session.state not in ("asr_ready", "running"):
+        return
+    task = asyncio.create_task(
+        _ws_run_hermes_job(
+            conn,
+            session.device_id,
+            session.request_id,
+            session.user_text,
+            existing_run_id=session.hermes_run_id,
+        )
+    )
+    _track_watch_run_task(session.device_id, session.request_id, task)
+
+
+def _resume_active_watch_sessions() -> None:
+    for session in _get_session_repo().list_active_all():
+        _ensure_watch_session_task(session)
 
 
 def _normalize_danger_alert(alert: DangerAlertIn) -> dict[str, object]:
@@ -943,8 +1602,9 @@ async def watch_websocket(websocket: WebSocket) -> None:
     conn = WsConnectionState(websocket=websocket, send_lock=asyncio.Lock())
     device_id: str | None = None
     current_request_id: str | None = None
-    audio_chunks: list[bytes] = []
+    audio_buffer = bytearray()
     audio_total = 0
+    audio_started_at: float | None = None
     mock_asr_text: str | None = None
 
     try:
@@ -964,6 +1624,7 @@ async def watch_websocket(websocket: WebSocket) -> None:
             conn,
             {"type": "auth_ok", "server_time": int(time.time())},
         )
+        _resume_active_watch_sessions()
         last_seen = auth.get("last_seen_conversation_id")
         messages = _get_conversation_repo().list_after(
             device_id,
@@ -990,11 +1651,12 @@ async def watch_websocket(websocket: WebSocket) -> None:
                 audio_total += len(chunk)
                 if audio_total > min(MAX_AUDIO_BYTES, WATCH_WS_MAX_MESSAGE_BYTES):
                     current_request_id = None
-                    audio_chunks.clear()
+                    audio_buffer.clear()
                     audio_total = 0
+                    audio_started_at = None
                     await _ws_try_send_error(conn, None, "audio_too_large")
                     continue
-                audio_chunks.append(chunk)
+                audio_buffer.extend(chunk)
                 continue
             text = message.get("text")
             if not text:
@@ -1014,8 +1676,9 @@ async def watch_websocket(websocket: WebSocket) -> None:
                     await _ws_try_send_error(conn, request_id, "unsupported_audio_format")
                     continue
                 current_request_id = request_id
-                audio_chunks = []
+                audio_buffer = bytearray()
                 audio_total = 0
+                audio_started_at = time.monotonic()
                 mock_asr_text = event.get("mock_asr_text")
                 if mock_asr_text is not None:
                     mock_asr_text = str(mock_asr_text)
@@ -1027,10 +1690,14 @@ async def watch_websocket(websocket: WebSocket) -> None:
                     await _ws_try_send_error(conn, request_id or current_request_id, "request_id_mismatch")
                     continue
                 finished_request_id = current_request_id
-                finished_audio = b"".join(audio_chunks)
+                finished_audio = audio_buffer
+                upload_ms = int(
+                    (time.monotonic() - audio_started_at) * 1000
+                ) if audio_started_at is not None else 0
                 current_request_id = None
-                audio_chunks = []
+                audio_buffer = bytearray()
                 audio_total = 0
+                audio_started_at = None
                 task = asyncio.create_task(
                     _ws_finish_audio(
                         conn,
@@ -1038,6 +1705,7 @@ async def watch_websocket(websocket: WebSocket) -> None:
                         finished_request_id,
                         finished_audio,
                         mock_asr_text,
+                        upload_ms,
                     )
                 )
                 _ws_track_background_task(task)
@@ -1192,7 +1860,12 @@ async def session_list(
     else:
         sessions = session_repo.list_recent(device_id)
 
-    active_count = sum(1 for s in sessions if s.state not in ("done", "error", "timeout", "canceled"))
+    active_count = sum(
+        1
+        for session in sessions
+        if session.state
+        not in ("done", "error", "timeout", "canceled", "interrupted")
+    )
     return SessionListResponse(
         sessions=[
             SessionStateOut(
@@ -1219,6 +1892,7 @@ async def watch_sync(
 ) -> WatchSyncResponse:
     """ESP32 后台统一 delta sync；server 内部仍分 session/conversation/inbox 三本账。"""
     _require_device(device_id, authorization, "watch_sync")
+    _resume_active_watch_sessions()
 
     session_state: Literal["none", "running", "done", "error", "timeout", "canceled"] = "none"
     messages: list[ConversationMessage] = []
@@ -1413,6 +2087,58 @@ async def cancel_request(
         return _record_request_result(device_id, INVALID_REQUEST_ID, response, time.monotonic(), 0)
     request_id = normalized_request_id
     key = (device_id, request_id)
+
+    try:
+        session = _get_session_repo().get_by_request_id(device_id, request_id)
+    except SessionValidationError:
+        session = None
+
+    if session is not None:
+        if session.state == "done":
+            return WatchResponse(
+                request_id=request_id,
+                status="done",
+                action=_infer_action(session.user_text, session.reply_text),
+                asr_text=session.user_text,
+                reply_text=session.reply_text,
+                error_code=None,
+            )
+        if session.state in TERMINAL_STATES:
+            if session.state == "canceled":
+                return _canceled_watch_response(request_id, session.user_text)
+            return WatchResponse(
+                request_id=request_id,
+                status="timeout" if session.state == "timeout" else "error",
+                action="error",
+                asr_text=session.user_text,
+                reply_text=session.reply_text,
+                error_code=session.error_code or f"session_{session.state}",
+            )
+
+        try:
+            session = _get_session_repo().transition(
+                device_id,
+                session.session_id,
+                "canceled",
+                error_code="request_canceled",
+            )
+        except SessionValidationError:
+            session = _get_session_repo().get_by_request_id(device_id, request_id)
+        if session.state == "canceled":
+            if session.hermes_run_id:
+                try:
+                    await _stop_hermes_run(session.hermes_run_id)
+                except Exception as exc:
+                    logger.warning(
+                        "Hermes stop failure request_id=%s error=%s",
+                        request_id,
+                        type(exc).__name__,
+                    )
+            run_task = _watch_run_tasks.get(key)
+            if run_task is not None and not run_task.done():
+                run_task.cancel()
+            return _canceled_watch_response(request_id, session.user_text)
+
     should_record_cancel = False
     async with _request_lock:
         if key in _completed_requests:
@@ -1444,6 +2170,10 @@ async def service_health() -> dict[str, object]:
         "request_status_counts": dict(_request_status_counts),
         "auth_failures": dict(_auth_failure_counts),
         "websocket_enabled": WATCH_WS_ENABLED,
+        "ws_request_status_counts": dict(_ws_request_status_counts),
+        "last_ws_request": (
+            dict(_last_ws_request_summary) if _last_ws_request_summary else None
+        ),
         "request_error_counts": dict(_request_error_counts),
         "last_request": dict(_last_request_summary) if _last_request_summary else None,
         "last_auth_failure": (
@@ -1482,20 +2212,13 @@ class InboxMarkReadResponse(BaseModel):
 
 # ── Inbox 路由（薄适配层，所有校验与幂等逻辑在 inbox_repo.py）──────────────
 
-@app.post("/v1/watch/inbox", status_code=201)
-async def inbox_create(
+async def _create_inbox_response(
     request: Request,
     device_id: str = Query(...),
-    authorization: str | None = Header(default=None),
 ) -> InboxCreateResponse:
-    """
-    Hermes 主动提示写入。调用方：hermes_server。
-    首次创建返回 201 + created=true；相同 device_id+notification_id 重复调用返回 200 + created=false。
-    FastAPI 不支持在同一函数同时返回 201/200，因此用 JSONResponse 承载状态码差异。
-    """
+    """解析并幂等写入 Inbox；鉴权由 public/internal adapter 分别负责。"""
     from fastapi.responses import JSONResponse
 
-    _require_device(device_id, authorization, "inbox_create")
     try:
         body = await request.json()
     except Exception:
@@ -1525,6 +2248,32 @@ async def inbox_create(
     payload = InboxCreateResponse(created=result.created, item=item_out)
     status_code = 201 if result.created else 200
     return JSONResponse(content=payload.model_dump(), status_code=status_code)
+
+
+@app.post("/internal/watch/inbox", status_code=201)
+async def internal_inbox_create(
+    request: Request,
+    device_id: str = Query(...),
+    authorization: str | None = Header(default=None),
+) -> InboxCreateResponse:
+    """Hermes/server 内部主动提示写入，不接受手表 device token。"""
+    _require_internal(authorization)
+    if device_id not in _device_tokens():
+        raise HTTPException(status_code=403, detail="device_not_allowed")
+    return await _create_inbox_response(request, device_id)
+
+
+@app.post("/v1/watch/inbox", status_code=201)
+async def inbox_create(
+    request: Request,
+    device_id: str = Query(...),
+    authorization: str | None = Header(default=None),
+) -> InboxCreateResponse:
+    """迁移期兼容入口；默认关闭，避免 device token 具备通知生产权限。"""
+    if not WATCH_PUBLIC_INBOX_CREATE_ENABLED:
+        raise HTTPException(status_code=404, detail="not_found")
+    _require_device(device_id, authorization, "inbox_create")
+    return await _create_inbox_response(request, device_id)
 
 
 @app.get("/v1/watch/inbox", response_model=InboxListResponse)

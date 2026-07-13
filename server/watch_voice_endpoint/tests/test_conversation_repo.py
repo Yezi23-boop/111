@@ -50,3 +50,25 @@ def test_conversation_repo_rejects_invalid_role(tmp_path):
         assert "role" in str(exc)
     else:
         raise AssertionError("expected ConversationValidationError")
+
+
+def test_conversation_repo_add_message_once_returns_existing(tmp_path):
+    repo = ConversationRepo(tmp_path / "conversation.db")
+
+    first = repo.add_message_once("watch-001", "req-1", "assistant", "完成")
+    second = repo.add_message_once("watch-001", "req-1", "assistant", "完成")
+
+    assert second.message_id == first.message_id
+    assert len(repo.list_recent("watch-001")) == 1
+
+
+def test_conversation_repo_rejects_conflicting_retry(tmp_path):
+    repo = ConversationRepo(tmp_path / "conversation.db")
+    repo.add_message_once("watch-001", "req-1", "assistant", "原结果")
+
+    try:
+        repo.add_message_once("watch-001", "req-1", "assistant", "不同结果")
+    except ConversationValidationError as exc:
+        assert "different content" in str(exc)
+    else:
+        raise AssertionError("expected ConversationValidationError")

@@ -49,6 +49,7 @@ def watch_app(monkeypatch):
     monkeypatch.setenv("WATCH_DEVICE_TOKENS", "watch-001=test-token")
     monkeypatch.setenv("HERMES_API_KEY", "test-hermes-key")
     monkeypatch.setenv("WATCH_REPLY_MAX_CHARS", "20")
+    monkeypatch.setenv("WATCH_HTTP_ASYNC_RUNS_ENABLED", "false")
     import app
 
     module = importlib.reload(app)
@@ -928,6 +929,16 @@ async def test_mimo_asr_adapter_uses_openai_compatible_audio_payload(watch_app, 
     content = body["messages"][0]["content"][0]
     assert content["type"] == "input_audio"
     assert content["input_audio"]["data"].startswith("data:audio/wav;base64,")
+
+
+def test_utf8_truncation_never_returns_partial_codepoint(watch_app):
+    text = "测试🙂测试"
+
+    truncated = watch_app._truncate_utf8(text, 8)
+
+    assert truncated == "测试"
+    assert len(truncated.encode("utf-8")) <= 8
+    truncated.encode("utf-8").decode("utf-8")
 
 
 # ── V2.3 session endpoint ────────────────────────────────────────────────────

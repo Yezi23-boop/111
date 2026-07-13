@@ -33,13 +33,13 @@
       "path": "/v1/watch/request/{request_id}/cancel",
       "content_type": "multipart/form-data"
     },
-    "inbox_create": {
+    "internal_inbox_create": {
       "method": "POST",
-      "path": "/v1/watch/inbox",
-      "query": ["device_id"],
+      "path": "/internal/watch/inbox",
       "content_type": "application/json",
       "caller": "hermes_server",
-      "note": "Hermes 主动提示写入；source 由服务端固定为 hermes，不由请求方提供。"
+      "auth": "Bearer <WATCH_INTERNAL_API_KEY>",
+      "note": "Hermes 主动提示写入；使用独立 server-to-server credential，不向 ESP32 或 Cloudflare 公网暴露。"
     },
     "inbox_list": {
       "method": "GET",
@@ -133,7 +133,8 @@
   "security": {
     "esp32_must_not_store": ["HERMES_API_KEY", "API_SERVER_KEY", "XIAOMI_API_KEY"],
     "esp32_must_not_call": ["Hermes Dashboard", "Hermes API Server"],
-    "public_proxy_scope": "/v1/watch/*"
+    "public_proxy_scope": "/v1/watch/*",
+    "internal_paths_must_not_be_public": ["/internal/watch/inbox"]
   },
   "inbox": {
     "description": "Hermes 收件箱。V1 使用 SQLite 持久化，每设备最近保留 20 条。",
@@ -156,8 +157,8 @@
     },
     "errors": {
       "422": "字段缺失、空白、超字节限制或 kind 非法",
-      "401": "missing_bearer_token",
-      "403": "device_not_allowed 或 invalid_device_token",
+      "401": "internal create 缺少 internal token，或设备读接口缺少 bearer token",
+      "403": "internal token 无效，或设备读接口 device_not_allowed / invalid_device_token",
       "404": "inbox_mark_read 目标消息不存在或已被淘汰"
     },
     "list_response": {

@@ -189,6 +189,7 @@ if ($AssertPrivateNotExposed) {
     Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/health" -Path "/health" -TimeoutSec 10
     Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/v1/models" -Path "/v1/models" -TimeoutSec 10
     Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/v1/responses" -Path "/v1/responses" -TimeoutSec 10
+    Invoke-PrivateExposureCheck -Uri "$privateBaseUrl/internal/watch/inbox" -Path "/internal/watch/inbox" -AllowedStatusCodes @(403, 404, 405, 410) -TimeoutSec 10
   )
 }
 $privateExposureOk = $null
@@ -244,9 +245,11 @@ if ($hermesModels -and $hermesModels.ok -and $hermesModels.payload.data) {
       inflight_requests = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.inflight_requests } else { $null })
       request_events = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.request_events } else { $null })
       request_status_counts = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.request_status_counts } else { $null })
+      ws_request_status_counts = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.ws_request_status_counts } else { $null })
       auth_failures = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.auth_failures } else { $null })
       request_error_counts = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.request_error_counts } else { $null })
       last_request = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.last_request } else { $null })
+      last_ws_request = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.last_ws_request } else { $null })
       last_auth_failure = $(if ($serviceHealth -and $serviceHealth.payload) { $serviceHealth.payload.last_auth_failure } else { $null })
     }
     private_exposure = [pscustomobject]@{

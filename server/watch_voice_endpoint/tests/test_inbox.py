@@ -27,7 +27,9 @@ from fastapi.testclient import TestClient
 # ── 常量（必须在 env 设置和 import app 之前定义）──────────────────────────────
 DEVICE_ID = "watch-test-001"
 DEVICE_TOKEN = "test-token-abc"
+INTERNAL_TOKEN = "test-internal-token"
 AUTH_HEADER = {"Authorization": f"Bearer {DEVICE_TOKEN}"}
+INTERNAL_AUTH_HEADER = {"Authorization": f"Bearer {INTERNAL_TOKEN}"}
 
 # 确保 server 目录在 import 路径
 _APP_DIR = Path(__file__).resolve().parents[1]
@@ -43,6 +45,8 @@ import inbox_repo as _repo_module
 _tmp_dir = tempfile.mkdtemp(prefix="test_inbox_")
 os.environ["INBOX_DB_PATH"] = str(Path(_tmp_dir) / "test_inbox.db")
 os.environ["WATCH_DEVICE_TOKENS"] = f"{DEVICE_ID}={DEVICE_TOKEN}"
+os.environ["WATCH_INTERNAL_API_KEY"] = INTERNAL_TOKEN
+os.environ["WATCH_PUBLIC_INBOX_CREATE_ENABLED"] = "false"
 
 import app as _app  # noqa: E402  必须在 INBOX_DB_PATH 设好后 import
 
@@ -62,6 +66,8 @@ def fresh_repo(tmp_path):
 def set_device_tokens(monkeypatch):
     """强制每次测试函数执行时 env 都是正确值（防止其他测试污染）。"""
     monkeypatch.setenv("WATCH_DEVICE_TOKENS", f"{DEVICE_ID}={DEVICE_TOKEN}")
+    monkeypatch.setattr(_app, "WATCH_INTERNAL_API_KEY", INTERNAL_TOKEN)
+    monkeypatch.setattr(_app, "WATCH_PUBLIC_INBOX_CREATE_ENABLED", False)
 
 
 
@@ -76,11 +82,11 @@ def client():
 def _create(client, notification_id="msg-001", kind="reminder", title="标题",
             preview="预览文字", body="正文内容", device_id=DEVICE_ID,
             headers=None):
-    headers = AUTH_HEADER if headers is None else headers
+    headers = INTERNAL_AUTH_HEADER if headers is None else headers
     payload = {"notification_id": notification_id, "kind": kind,
                 "title": title, "preview": preview, "body": body}
     return client.post(
-        f"/v1/watch/inbox?device_id={device_id}",
+        f"/internal/watch/inbox?device_id={device_id}",
         json=payload,
         headers=headers,
     )
@@ -111,8 +117,17 @@ class TestAuth:
 
     def test_unknown_device_create(self, client):
         r = _create(client, device_id="unknown-device",
-                    headers={"Authorization": f"Bearer {DEVICE_TOKEN}"})
+                    headers=INTERNAL_AUTH_HEADER)
         assert r.status_code == 403
+
+    def test_device_token_cannot_create_on_public_route(self, client):
+        r = client.post(
+            f"/v1/watch/inbox?device_id={DEVICE_ID}",
+            json={"notification_id": "public-denied", "kind": "info",
+                  "title": "标题", "preview": "预览", "body": "正文"},
+            headers=AUTH_HEADER,
+        )
+        assert r.status_code == 404
 
     def test_missing_token_list(self, client):
         r = _list(client, headers={})
@@ -127,9 +142,9 @@ class TestAuth:
 class TestCreateValidation:
     def test_missing_notification_id(self, client):
         r = client.post(
-            f"/v1/watch/inbox?device_id={DEVICE_ID}",
+            f"/internal/watch/inbox?device_id={DEVICE_ID}",
             json={"kind": "reminder", "title": "t", "preview": "p", "body": "b"},
-            headers=AUTH_HEADER,
+            headers=INTERNAL_AUTH_HEADER,
         )
         assert r.status_code == 422
 

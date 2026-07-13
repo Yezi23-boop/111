@@ -182,6 +182,17 @@ def test_public_domain_gate_checks_private_paths_without_dumping_private_payload
     assert "payload" not in private_function
 
 
+def test_runtime_status_reports_ws_main_path_metrics():
+    root = Path(__file__).resolve().parents[1]
+    runtime_source = (root / "runtime_status.ps1").read_text(encoding="utf-8")
+    acceptance_source = (root / "acceptance_test.ps1").read_text(encoding="utf-8")
+
+    assert "ws_request_status_counts" in runtime_source
+    assert "last_ws_request" in runtime_source
+    assert "ws_request_status_counts" in acceptance_source
+    assert "last_ws_request" in acceptance_source
+
+
 def test_cloudflared_connector_script_uses_token_file_not_token_argument():
     script_path = (
         Path(__file__).resolve().parents[1]

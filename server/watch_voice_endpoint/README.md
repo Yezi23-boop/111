@@ -5,7 +5,11 @@ This is the narrow server-side adapter between the ESP32-S3 watch and Hermes.
 Flow:
 
 ```text
-ESP32-S3 watch -> /v1/watch/voice-command -> Hermes /v1/responses -> watch JSON
+Foreground watch -> WSS /v1/watch/ws -> MiMo ASR -> Hermes /v1/runs
+                 -> SQLite session/conversation -> WS delivery or /v1/watch/sync
+
+Compatibility smoke -> POST /v1/watch/voice-command -> the same SQLite session + Hermes /v1/runs
+                    -> wait up to 115 seconds -> fixed seven-field watch JSON
 ```
 
 V1 keeps ASR on the server side so the watch can validate Ogg Opus upload, auth, timeout, cancel, and text rendering without changing the ESP32 protocol. The adapter can run in fast mock mode or MiMo ASR mode through `WATCH_ASR_PROVIDER`.
@@ -16,6 +20,7 @@ V1 keeps ASR on the server side so the watch can validate Ogg Opus upload, auth,
 GET  /v1/watch/health?device_id=watch-001
 POST /v1/watch/voice-command
 POST /v1/watch/request/{request_id}/cancel
+GET  /v1/watch/sync
 WS   /v1/watch/ws
 ```
 
@@ -27,7 +32,7 @@ Authorization: Bearer <device_token>
 
 The Hermes API key is only configured on this server through `HERMES_API_KEY`; it must not be written into ESP32 firmware.
 
-`/v1/watch/ws` is the V2.1 experimental Hermes conversation path. It is disabled by default with `WATCH_WS_ENABLED=false` so the already-validated HTTP V1/V2 routes remain the rollback path. Enable it in the same `ai-memory-watch-voice-endpoint` container with:
+`/v1/watch/ws` is the primary Hermes conversation path. It is disabled by default with `WATCH_WS_ENABLED=false` so the HTTP V1/V2 compatibility routes remain available as a rollback path. Enable it in the same `ai-memory-watch-voice-endpoint` container with:
 
 ```text
 WATCH_WS_ENABLED=true
@@ -42,6 +47,8 @@ auth -> conversation_snapshot -> audio_start -> binary audio chunks -> audio_end
 
 The server stores conversation messages in `CONVERSATION_DB_PATH` or `/data/conversation.db` by default and keeps the most recent 20 messages per device for reconnect replay.
 
+After ASR, the server starts Hermes through native `POST /v1/runs`, persists the returned `run_id`, and polls `GET /v1/runs/{run_id}`. Runs for one device are serialized because they share one Hermes conversation history. A disconnected watch does not cancel a run; the final result is committed to SQLite first and then delivered best-effort through WS or recovered through `/v1/watch/sync`.
+
 ## Request Contract
 
 The machine-readable ESP32-facing V1 contract lives in [watch_contract.v1.json](watch_contract.v1.json). Keep it in sync with `app.py`; `tests/test_contract.py` locks the response fields, enums, request limits, and timeout budget against the FastAPI model.
@@ -50,7 +57,7 @@ The machine-readable ESP32-facing V1 contract lives in [watch_contract.v1.json](
 
 For V1, normal bad watch input such as an invalid `request_id`, an empty upload, or an audio body larger than `WATCH_MAX_AUDIO_BYTES` returns the same seven-field watch JSON with `status=error` and `error_code=asr_or_agent_error`. Device authentication failures still use HTTP 401/403.
 
-`WATCH_REQUEST_TIMEOUT_SECONDS` caps the whole ASR + Hermes request. Keep it below the ESP32 wait window; the default is `115` seconds so the server can return `status=timeout` and `error_code=server_timeout` before the watch-side 120 second timer expires.
+`WATCH_REQUEST_TIMEOUT_SECONDS` only caps how long the synchronous HTTP compatibility caller waits. Keep it below the ESP32 legacy wait window; the default is `115` seconds. Both HTTP and WS use the same persisted Hermes run, whose server-side limit is `HERMES_RUN_TIMEOUT_SECONDS` (default `3600`), so a caller timeout or WS disconnect does not convert a running session into a terminal timeout. Set `WATCH_HTTP_ASYNC_RUNS_ENABLED=false` only for emergency rollback to the legacy synchronous `/v1/responses` implementation.
 
 ## Request Idempotency
 
@@ -62,6 +69,19 @@ For V1, normal bad watch input such as an invalid `request_id`, an empty upload,
 - Cancel after completion returns the completed result, because server-side tools may already have run.
 
 This keeps ESP32 retry behavior from duplicating memory or reminder actions during unstable Wi-Fi.
+
+For the WS path, SQLite `watch_session` is the durable request claim and Hermes receives the same `request_id` as `Idempotency-Key`. If the endpoint restarts after Hermes accepted a run, it resumes polling by persisted `run_id`. If no recoverable run ID exists, the session becomes `interrupted` and is never automatically replayed because a tool may already have produced side effects.
+
+## Internal Inbox Write
+
+Hermes or another trusted server component creates proactive watch notifications through:
+
+```http
+POST /internal/watch/inbox
+Authorization: Bearer <WATCH_INTERNAL_API_KEY>
+```
+
+This credential is separate from the device token and must remain on the server. Public `POST /v1/watch/inbox` is disabled by default with `WATCH_PUBLIC_INBOX_CREATE_ENABLED=false`; device-token routes may only list notifications and mark them read. Reverse proxies must not expose `/internal/*`.
 
 ## Local Run
 
@@ -167,7 +187,7 @@ Inspect local runtime status without printing tokens:
 .\runtime_status.ps1
 ```
 
-`/health` and `runtime_status.ps1` expose non-secret request metrics for debugging: event counters, response status counters, error-code counters, auth failure counters, and the latest request/auth-failure summaries with status, action, reason, duration, and audio byte size. They do not include ASR text, reply text, audio contents, API keys, Authorization headers, or bearer tokens.
+`/health` and `runtime_status.ps1` expose non-secret request metrics for debugging: event counters, response status counters, error-code counters, auth failure counters, and the latest request/auth-failure summaries with status, action, reason, duration, and audio byte size. The WS main path additionally reports upload, ASR, queue wait, Hermes, persist and delivery timing for the latest turn. These metrics do not include ASR text, reply text, audio contents, API keys, Authorization headers, or bearer tokens.
 If Docker inspect is blocked by the current shell permissions, container status is reported as `inspect_unavailable`; use the endpoint checks in the same output as the authoritative service availability signal.
 
 Run the full local acceptance loop before server-side iteration commits:

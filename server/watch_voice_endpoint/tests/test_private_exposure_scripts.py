@@ -197,6 +197,7 @@ def test_runtime_status_flags_public_private_paths_with_unexpected_status(tmp_pa
             "/health": 200,
             "/v1/models": 404,
             "/v1/responses": 404,
+            "/internal/watch/inbox": 404,
         }
     ) as server:
         result = _run_script(
@@ -224,6 +225,7 @@ def test_runtime_status_flags_public_private_paths_with_unexpected_status(tmp_pa
     assert checks["/health"]["status_code"] == 200
     assert checks["/v1/models"]["ok"] is True
     assert checks["/v1/responses"]["ok"] is True
+    assert checks["/internal/watch/inbox"]["ok"] is True
 
 
 def test_acceptance_fails_when_public_private_path_has_unexpected_status(tmp_path: Path) -> None:
@@ -233,6 +235,7 @@ def test_acceptance_fails_when_public_private_path_has_unexpected_status(tmp_pat
             "/health": 200,
             "/v1/models": 404,
             "/v1/responses": 404,
+            "/internal/watch/inbox": 404,
         }
     ) as server:
         result = _run_script(
@@ -266,6 +269,7 @@ def test_acceptance_passes_when_public_private_paths_are_rejected(tmp_path: Path
             "/health": 403,
             "/v1/models": 404,
             "/v1/responses": 410,
+            "/internal/watch/inbox": 405,
         }
     ) as server:
         result = _run_script(
@@ -290,7 +294,7 @@ def test_acceptance_passes_when_public_private_paths_are_rejected(tmp_path: Path
     assert payload["status"] == "passed"
     private_exposure = payload["runtime_before"]["private_exposure"]
     assert private_exposure["ok"] is True
-    assert {item["status_code"] for item in private_exposure["checks"]} == {403, 404, 410}
+    assert {item["status_code"] for item in private_exposure["checks"]} == {403, 404, 405, 410}
 
 
 def test_smoke_test_removes_generated_dummy_audio(tmp_path: Path) -> None:
