@@ -6,7 +6,7 @@ status: active
 last_reviewed: 2026-07-07
 memory_type: project_plan
 scope: repo
-owners: components/axp2101, main/app/board_power.c, main/services/power_policy.c, main/services/sleep_coordinator.c
+owners: components/axp2101, main/app/board_power.c, main/services/power/power_policy.c, main/services/power/sleep_coordinator.c
 triggers: AXP2101, AXP, PMIC, 电源轨, 外设断电, LDO, DCDC, LIGHT_ALLOWED, runtime save
 evidence_level: design
 depends_on: docs/context/knowledge/project/axp2101-power-component-design.md, docs/context/knowledge/esp32-s3/axp2101-deep-dive.md, docs/context/knowledge/project/power-wakeup-control-map.md, docs/context/plans/active/2026-07-07-light-allowed-runtime-save-plan.md

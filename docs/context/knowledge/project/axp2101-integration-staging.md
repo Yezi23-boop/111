@@ -5,7 +5,7 @@ summary: 当前仓库接入 AXP2101 的推荐分层、最小只读阶段和后�
 last_reviewed: 2026-04-09
 memory_type: semantic
 scope: repo
-owners: components/axp2101, main/app/board_power.c, main/services/power_service.c
+owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c
 triggers: axp2101, integration, staging
 evidence_level: observed
 ---

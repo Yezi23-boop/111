@@ -109,7 +109,6 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         self.assertIn('"/v1/watch/alerts"', source)
         self.assertIn("memory_watch_voice_client_validate_danger_alert_request", source)
         self.assertIn("memory_watch_voice_client_write_json_body", source)
-        self.assertIn("BACKGROUND_HTTPS_GATE_REASON_MEMORY_WATCH_ALERT", source)
         for field in [
             "device_id",
             "danger_type",
@@ -289,7 +288,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_voice_client.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_voice_client.c",
             cmake,
         )
         self.assertIn("esp_http_client", cmake)

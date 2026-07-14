@@ -30,6 +30,9 @@ class KnownException:
 
 
 RULES: tuple[BoundaryRule, ...] = (
+    BoundaryRule("main/ui/generated", re.compile(r"#include\s*[<\"](?:services|features)/"), "Generated UI must not depend directly on feature/service owners."),
+    BoundaryRule("main/ui/generated", re.compile(r"\besp_http_client_\w+|\bhttpd_\w+|\b#include\s*[<\"]esp_http"), "Generated UI must not own HTTP work."),
+    BoundaryRule("main/ui/generated", re.compile(r"\besp_wifi_\w+|\bwifi_\w+|\binclude\s*[<\"](?:esp_wifi|wifi_control)"), "Generated UI must not own Wi-Fi work."),
     BoundaryRule("main/ui", re.compile(r"\besp_wifi_\w+|\b#include\s*[<\"]esp_wifi\.h[>\"]"), "UI should go through network_service/network_manager, not esp_wifi directly."),
     BoundaryRule("main/ui", re.compile(r"\bwifi_prov_mgr_\w+|\b#include\s*[<\"]wifi_provisioning/"), "UI should not own provisioning manager calls."),
     BoundaryRule("main/ui", re.compile(r"\bhttpd_\w+|\b#include\s*[<\"]esp_http_server\.h[>\"]"), "UI should not own HTTP server/provisioning portal details."),
@@ -41,6 +44,7 @@ RULES: tuple[BoundaryRule, ...] = (
     BoundaryRule("main/features", re.compile(r"\bwifi_prov_mgr_\w+|\bhttpd_\w+|\b#include\s*[<\"]esp_http_server\.h[>\"]"), "Feature code should route provisioning/network server work through service/manager owners."),
     BoundaryRule("main/features", re.compile(r"\besp_lcd_\w+|\bco5300_panel_\w+|\btouch_ft5x06_\w+"), "Feature code should not depend on raw display/touch drivers."),
     BoundaryRule("main/services", re.compile(r"\besp_lcd_\w+|\bco5300_panel_\w+|\btouch_ft5x06_\w+"), "Service code should not directly own display/touch driver details."),
+    BoundaryRule("main/services", re.compile(r"#include\s*[<\"](?:qmi8658c|axp2101|ds2413|co5300_panel|touch_ft5x06|i2c_manager)\.h[>\"]"), "Service code should depend on board/domain adapters instead of raw device drivers."),
 )
 
 KNOWN_EXCEPTIONS: tuple[KnownException, ...] = (
@@ -49,10 +53,25 @@ KNOWN_EXCEPTIONS: tuple[KnownException, ...] = (
         re.compile(r"\bco5300_panel_set_brightness_percent\s*\("),
         "Documented current low-power brightness path; keep visible but do not count as a new warning.",
     ),
+    KnownException(
+        "main/services/power/wakeup_evidence_service.c",
+        re.compile(r"#include\s*[<\"]axp2101\.h[>\"]"),
+        "Existing PMIC wake-evidence path; directory reorganization does not change its owner contract.",
+    ),
 )
 
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".hpp"}
-SKIP_PARTS = {"generated", "build", "managed_components"}
+SKIP_PARTS = {"build", "managed_components"}
+I2C_BUS_HANDLE_PATTERN = re.compile(r"\bi2c_manager_get_bus_handle\s*\(")
+I2C_BUS_HANDLE_ALLOWLIST = {
+    "components/audio_codec/audio_codec.c",
+    "components/axp2101/axp2101.c",
+    "components/i2c_manager/include/i2c_manager.h",
+    "components/i2c_manager/i2c_manager.c",
+    "components/pcf85063atl/pcf85063atl.c",
+    "components/qmi8658c/qmi8658c.c",
+    "components/touch_ft5x06/touch_ft5x06.c",
+}
 
 
 def resolve_project_root(project_root_arg: str | None) -> Path:
@@ -77,6 +96,65 @@ def collect_files(project_root: Path) -> list[Path]:
             continue
         files.extend(path for path in sorted(root.rglob("*")) if path.is_file() and should_scan(path, project_root))
     return files
+
+
+def collect_i2c_bus_handle_warnings(project_root: Path) -> list[dict[str, Any]]:
+    """限制 raw I2C bus handle 只在已登记的 device adapter 内使用。"""
+    warnings: list[dict[str, Any]] = []
+    roots = (project_root / "main", project_root / "components")
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or not should_scan(path, project_root):
+                continue
+            rel_path = path.relative_to(project_root).as_posix()
+            for line_no, line in enumerate(
+                path.read_text(encoding="utf-8", errors="replace").splitlines(),
+                start=1,
+            ):
+                if not I2C_BUS_HANDLE_PATTERN.search(line):
+                    continue
+                if rel_path in I2C_BUS_HANDLE_ALLOWLIST:
+                    break
+                warnings.append(
+                    {
+                        "path": rel_path,
+                        "line": line_no,
+                        "scope": "raw-i2c-handle",
+                        "reason": "Raw I2C bus handle is restricted to registered device adapters.",
+                        "text": line.strip()[:160],
+                    }
+                )
+                break
+    return warnings
+
+
+def collect_memory_watch_ownership_warnings(project_root: Path) -> list[dict[str, Any]]:
+    """确保 Memory Watch runtime 文件不会重新散落到 services 根目录。"""
+    warnings: list[dict[str, Any]] = []
+    services_root = project_root / "main" / "services"
+    if not services_root.exists():
+        return warnings
+
+    for path in sorted(services_root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in SOURCE_SUFFIXES:
+            continue
+        if not (path.name.startswith("memory_watch_") or path.name.startswith("watch_endpoint_service")):
+            continue
+        rel_path = path.relative_to(project_root).as_posix()
+        if rel_path.startswith("main/services/memory_watch/"):
+            continue
+        warnings.append(
+            {
+                "path": rel_path,
+                "line": 1,
+                "scope": "memory-watch-owner",
+                "reason": "Memory Watch runtime files belong under main/services/memory_watch/.",
+                "text": path.name,
+            }
+        )
+    return warnings
 
 
 def matching_rules(rel_path: str) -> list[BoundaryRule]:
@@ -138,6 +216,8 @@ def run_check(project_root: Path) -> dict[str, Any]:
         file_warnings, file_exceptions = scan_file(path, project_root)
         warnings.extend(file_warnings)
         exceptions.extend(file_exceptions)
+    warnings.extend(collect_i2c_bus_handle_warnings(project_root))
+    warnings.extend(collect_memory_watch_ownership_warnings(project_root))
     return {
         "checked_files": len(files),
         "warnings": warnings,

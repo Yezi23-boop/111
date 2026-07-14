@@ -5,7 +5,7 @@ summary: 固定当前 ESP32-S3 手表固件的运行时 owner 合同：启动阶
 last_reviewed: 2026-06-02
 memory_type: project_knowledge
 scope: repo
-owners: main/app/app_main.c, main/app/hardware_init.c, main/ui/lvgl_task.c, main/services/power_policy.c, main/services/background_service_manager.c, main/services/safety_monitor_session.c, main/services/network_service.c, main/services/official_chat_service.c, components/audio_codec, components/network_manager, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c
+owners: main/app/app_main.c, main/app/hardware_init.c, main/ui/lvgl_task.c, main/services/power/power_policy.c, main/services/safety/background_service_manager.c, main/services/safety/safety_monitor_session.c, main/services/network/network_service.c, main/services/official_chat_service.c, components/audio_codec, components/network_manager, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c
 triggers: runtime owner, owner contract, framework, 启动阶段, 资源 owner, 后台能力, power_policy, background_service_manager, safety monitor, official_chat, ui_refresh_policy
 evidence_level: design
 status: active

@@ -31,8 +31,6 @@ class RuntimeResourceGateBoardTestSourceTests(unittest.TestCase):
         self.assertIn("runtime_resource_gate_board_test_start", header)
         self.assertIn("memory_watch_service_set_foreground(true)", source)
         self.assertIn("memory_watch_service_set_foreground(false)", source)
-        self.assertIn("background_https_gate_acquire", source)
-        self.assertIn("background_https_gate_quiet_for", source)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING", source)
         self.assertIn(
             "background_service_manager_notify_foreground_runtime_changed",
@@ -56,11 +54,11 @@ class RuntimeResourceGateBoardTestSourceTests(unittest.TestCase):
         )
         self.assertIn("NVS/flash", source)
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/runtime_resource_gate_board_test.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/runtime_gate/runtime_resource_gate_board_test.c",
             cmake,
         )
         self.assertIn(
-            '#include "services/runtime_resource_gate_board_test.h"',
+            '#include "services/runtime_gate/runtime_resource_gate_board_test.h"',
             app_main,
         )
         self.assertIn("runtime_resource_gate_board_test_start()", app_main)

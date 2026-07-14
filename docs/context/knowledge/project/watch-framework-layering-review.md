@@ -28,7 +28,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 本次由主线程和多个只读 subagent 分别审查：
 
 - 总框架与 owner 文档一致性。
-- `power_policy`、`foreground_runtime_gate`、`background_https_gate`、BLE/Hermes/ESP-DL 资源冲突。
+- `power_policy`、`foreground_runtime_gate`、BLE/Hermes/ESP-DL 资源冲突。
 - AI Memory Watch / Hermes 固件、server、endpoint 边界。
 - `network_manager`、`network_service`、BLE provisioning、SoftAP portal 边界。
 - UI/LVGL/generated/custom/runtime 越界风险。
@@ -42,7 +42,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 - Hermes 大方向正确：ESP32 固件只面向 watch endpoint 和 device token，不直连 Hermes Dashboard、Hermes API Server 或 MiMo API key。
 - `audio_codec` session owner 边界基本正确：official_chat、Hermes recorder、ESP-DL 不应绕过 input/output session。
 - `power_policy` / `sleep_coordinator` 当前保持克制：只发布预算和 dry-run，不直接控制硬件、模型或 `esp_sleep_*`。
-- `foreground_runtime_gate` 和 `background_https_gate` 当前仍是薄 gate，没有直接 start/stop 业务 task 或释放硬件资源。
+- `foreground_runtime_gate` 当前仍是薄 gate，没有直接 start/stop 业务 task 或释放硬件资源；`background_https_gate` 已于 2026-07-14 撤除，后台网络恢复为各 owner 自治。
 
 ## 主要问题
 
@@ -66,7 +66,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 
 ### P1: BLE enable 仍在 UI 点击路径做重资源动作
 
-主界面 Bluetooth 点击路径会触碰 foreground/runtime gate、HTTPS quiet window、`network_manager_set_ble_enabled(true)`，并在 `ESP_ERR_NO_MEM` 后延时重试。
+主界面 Bluetooth 点击路径会触碰 foreground runtime gate、`network_manager_set_ble_enabled(true)`，并在 `ESP_ERR_NO_MEM` 后延时重试。
 
 这不是 Wi-Fi SDK 越层，但 UI 已经承载了重资源过程和等待。
 
@@ -79,7 +79,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 优先建议：
 
 - UI 只提交“打开蓝牙”意图并展示 snapshot/toast。
-- BLE enable、quiet window、失败重试放到 network owner 或 service task。
+- BLE enable 和失败重试放到 network owner 或 service task。
 - 保留当前 fail-closed 语义，但不要让 UI 执行延时和重试。
 
 ### P1: `memory_watch_service` 已接近产品服务总线
@@ -116,14 +116,9 @@ memory_watch_upload_worker.c    upload / cancel / health job
 memory_watch_foreground.c       foreground gate / WS 状态协调
 ```
 
-### P2: runtime gate 边界没有被框架文档充分吸收
+### P2: foreground runtime gate 边界没有被框架文档充分吸收
 
-项目文档强调 V1 不做 runtime lease 或中心化资源管家，但代码中已经存在：
-
-- `foreground_runtime_gate`
-- `background_https_gate`
-
-当前它们仍然较薄，是资源事实和错峰信号，不是硬件 owner。问题在于文档没有把这条现实边界讲清楚，后续容易被误用成通用仲裁层。
+项目文档强调 V1 不做 runtime lease 或中心化资源管家，但代码中仍存在 `foreground_runtime_gate`。它是强前台 owner 事实，不是硬件 owner；原 `background_https_gate` 已撤除。问题在于后续仍可能把 foreground gate 误用成通用仲裁层。
 
 建议：
 

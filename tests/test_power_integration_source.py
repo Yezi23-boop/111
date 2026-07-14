@@ -218,17 +218,17 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         register_block = _extract_cmake_call_body(source, "idf_component_register")
 
         self.assertIn("${CMAKE_CURRENT_LIST_DIR}/app/board_power.c", app_srcs)
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/power_service.c", service_srcs)
+        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/power/power_service.c", service_srcs)
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/sleep_coordinator.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/power/sleep_coordinator.c",
             service_srcs,
         )
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/startup_readiness.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/startup/startup_readiness.c",
             service_srcs,
         )
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/safety_monitor_session.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/safety/safety_monitor_session.c",
             service_srcs,
         )
         self.assertRegex(
@@ -358,7 +358,7 @@ class PowerIntegrationSourceTests(unittest.TestCase):
     def test_standby_network_budget_enables_wifi_ps_without_disconnect(self) -> None:
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "services/power_policy.h"', source)
+        self.assertIn('#include "services/power/power_policy.h"', source)
         self.assertIn('#include "wifi_control.h"', source)
         self.assertIn("network_service_apply_power_budget", source)
         self.assertIn("POWER_POLICY_STATE_STANDBY", source)

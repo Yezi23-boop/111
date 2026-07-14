@@ -5,7 +5,7 @@ summary: 当前仓库已落地的运行态 STANDBY、电源观测与时间唤醒
 last_reviewed: 2026-06-01
 memory_type: semantic
 scope: repo
-owners: components/axp2101, main/app/board_power.c, main/services/power_service.c, main/ui/ui_refresh_policy.c
+owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c, main/ui/ui_refresh_policy.c
 triggers: low, power, management, baseline
 evidence_level: observed
 ---
@@ -22,7 +22,7 @@ evidence_level: observed
 
 - `components/axp2101/axp2101.c` 已能探测 `AXP2101` 并读取 `VBUS / battery / vsys / charging` 等快照。
 - `main/app/board_power.c` 把 PMIC 原始快照转换成板级统一语义，并维护最近一次成功采样缓存。
-- `main/services/power_service.c` 以后台任务方式发布稳定电源状态：
+- `main/services/power/power_service.c` 以后台任务方式发布稳定电源状态：
   - 正常路径默认 `1s` 轮询；
   - 连续失败时退避到 `2s / 5s`；
   - 对 `battery_mv / system_mv` 使用 `20mV` 抖动阈值；
@@ -47,8 +47,8 @@ evidence_level: observed
 - `components/lvgl_port/lv_port_input.c` 在触摸命中时调用 `ui_refresh_policy_notify_touch()`，触摸会把 UI 从 `STANDBY` 拉回 `ACTIVE`。
 - `main/ui/generated/events_init.c` 中的亮度滑条会调用 `ui_refresh_policy_set_user_brightness_percent()`，说明用户亮度设置已经纳入策略层。
 - `components/co5300_panel/co5300_panel.c` 已提供 `co5300_panel_set_brightness_percent()`，`ui_refresh_policy` 通过它实际下发屏幕亮度。
-- `main/services/power_policy.c` 只读消费 UI activity snapshot，把 `STANDBY` 转译成整机预算，不直接控制 LVGL、亮度或面板。
-- `main/services/network_service.c` 消费预算后只切换 `wifi_control_set_power_save()` 并暂停非关键云端探测，不断开 AP 或销毁 IP 状态。
+- `main/services/power/power_policy.c` 只读消费 UI activity snapshot，把 `STANDBY` 转译成整机预算，不直接控制 LVGL、亮度或面板。
+- `main/services/network/network_service.c` 消费预算后只切换 `wifi_control_set_power_save()` 并暂停非关键云端探测，不断开 AP 或销毁 IP 状态。
 
 结论：
 
@@ -77,7 +77,7 @@ evidence_level: observed
 
 ### 1. 系统级睡眠入口已有默认关闭测试门控
 
-当前 `main/services/sleep_coordinator.c` 只保留 sleep 预算 dry-run，不再保留手动 Light-sleep 测试入口：
+当前 `main/services/power/sleep_coordinator.c` 只保留 sleep 预算 dry-run，不再保留手动 Light-sleep 测试入口：
 
 - 不调用 `esp_light_sleep_start`
 - 不调用 `esp_sleep_enable_timer_wakeup`
@@ -90,10 +90,10 @@ evidence_level: observed
 当前代码里已经能看到：
 
 - 只读电源事实源：`components/axp2101`、`main/app/board_power.c`
-- 电源状态发布层：`main/services/power_service.c`
+- 电源状态发布层：`main/services/power/power_service.c`
 - UI 运行态省电：`main/ui/ui_refresh_policy.c`
-- 整机预算发布层：`main/services/power_policy.c`
-- 网络预算消费者：`main/services/network_service.c` + `components/wifi_control`
+- 整机预算发布层：`main/services/power/power_policy.c`
+- 网络预算消费者：`main/services/network/network_service.c` + `components/wifi_control`
 
 但当前第一版仍主要覆盖运行态预算和默认关闭的 sleep 测试门控，还没有编排：
 
@@ -107,7 +107,7 @@ evidence_level: observed
 当前已新增：
 
 - `components/pcf85063atl`
-- `main/services/wakeup_evidence_service.[ch]`
+- `main/services/power/wakeup_evidence_service.[ch]`
 
 当前边界是：
 
@@ -178,8 +178,8 @@ evidence_level: observed
 - `main/app/hardware_init.c`
 - `main/app/board_power.c`
 - `main/app/board_power.h`
-- `main/services/power_service.c`
-- `main/services/wakeup_evidence_service.c`
+- `main/services/power/power_service.c`
+- `main/services/power/wakeup_evidence_service.c`
 - `components/pcf85063atl/pcf85063atl.c`
 - `main/ui/lvgl_task.c`
 - `main/ui/ui_refresh_policy.c`

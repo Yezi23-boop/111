@@ -60,9 +60,9 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
     def test_service_uses_owner_task_queue_and_snapshot(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "network_service.h"', source)
+        self.assertIn('#include "services/network/network_service.h"', source)
         self.assertIn('#include "nvs.h"', source)
-        self.assertIn('#include "services/memory_watch_voice_client.h"', source)
+        self.assertIn('#include "services/memory_watch/memory_watch_voice_client.h"', source)
         self.assertIn('#include "esp_random.h"', source)
         self.assertIn("xQueueCreateStatic(", source)
         self.assertIn("xQueueSend(", source)
@@ -212,7 +212,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
     def test_service_runs_recorder_and_http_only_in_workers(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "services/memory_watch_recorder.h"', source)
+        self.assertIn('#include "services/memory_watch/memory_watch_recorder.h"', source)
         self.assertIn('#include "esp_heap_caps.h"', source)
         self.assertIn("memory_watch_service_upload_worker_task", source)
         self.assertIn("memory_watch_service_health_worker_task", source)
@@ -471,7 +471,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
 
         self.assertIn("memory_watch_service_set_foreground", header)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND", source)
-        self.assertIn('#include "services/foreground_runtime_gate.h"', source)
+        self.assertIn('#include "services/runtime_gate/foreground_runtime_gate.h"', source)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_HERMES", source)
         self.assertIn("foreground_runtime_gate_acquire", source)
         self.assertIn("foreground_runtime_gate_release", source)
@@ -598,7 +598,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_service.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_service.c",
             cmake,
         )
 

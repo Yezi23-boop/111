@@ -8,7 +8,7 @@
 #include "esp_log.h"
 #include "lvgl.h"
 #include "memory_watch_view.h"
-#include "services/memory_watch_service.h"
+#include "services/memory_watch/memory_watch_service.h"
 #include "ui_chinese_fonts.h"
 
 static const char *TAG = "memory_watch_ui";

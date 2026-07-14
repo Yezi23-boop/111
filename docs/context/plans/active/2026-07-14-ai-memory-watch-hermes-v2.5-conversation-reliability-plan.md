@@ -5,7 +5,7 @@ summary: AI Memory Watch / Hermes V2.5 对话可靠性修复计划：修复 120 
 last_reviewed: 2026-07-14
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-07-14-ai-memory-watch-hermes-v2.5-conversation-reliability-plan.md, server/watch_voice_endpoint/app.py, server/watch_voice_endpoint/session_repo.py, server/watch_voice_endpoint/conversation_repo.py, server/watch_voice_endpoint/tests, main/services/memory_watch_service.c, main/services/memory_watch_voice_client.c, main/services/memory_watch_ws_client.cc
+owners: docs/context/plans/active/2026-07-14-ai-memory-watch-hermes-v2.5-conversation-reliability-plan.md, server/watch_voice_endpoint/app.py, server/watch_voice_endpoint/session_repo.py, server/watch_voice_endpoint/conversation_repo.py, server/watch_voice_endpoint/tests, main/services/memory_watch/memory_watch_service.c, main/services/memory_watch/memory_watch_voice_client.c, main/services/memory_watch/memory_watch_ws_client.cc
 triggers: Hermes conversation reliability, Hermes 长任务, watch request 幂等, WebSocket cancel, watch session recovery, UTF-8 truncation, internal inbox auth, watch job worker
 evidence_level: design
 status: active

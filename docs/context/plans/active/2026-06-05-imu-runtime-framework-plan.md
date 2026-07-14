@@ -6,7 +6,7 @@ last_reviewed: 2026-07-07
 memory_type: task
 scope: imu
 status: active
-owners: components/qmi8658c, components/imu_sensor, main/app/board_imu.c, main/services/imu_service.c, main/services/fall_detection_service.c, components/fall_detection_inference, components/imu_motion
+owners: components/qmi8658c, components/imu_sensor, main/app/board_imu.c, main/services/sensors/imu_service.c, main/services/fall_detection_service.c, components/fall_detection_inference, components/imu_motion
 triggers: IMU framework, imu runtime, qmi8658c, imu_sensor, board_imu, imu_service, imu_motion, physical_6axis, unified config, fall detection, ESP-DL
 evidence_level: design
 route_area: "IMU / motion framework"
@@ -30,7 +30,7 @@ route_area: "IMU / motion framework"
 - `components/qmi8658c`：只做芯片协议 owner，包括 I2C register 读写、WHO_AM_I/revision probe、寄存器 raw 解码、物理量换算、量程/ODR/sensor enable 统一配置和最小错误码；对 board/service 层只输出 `m/s^2` / `deg/s` 等物理量，不暴露 raw sample；不得持有板级 GPIO、安装方向、产品阈值或 FreeRTOS 任务生命周期。
 - `components/imu_sensor`：只做通用 IMU 窄接口和当前 QMI8658C 适配，包括 `init/probe/config/read` 的类型转换；不得持有当前板 GPIO、安装方向、FreeRTOS task、ISR 或采样窗口。
 - `main/app/board_imu.c`：只做板级事实 owner，包括 I2C 地址、INT1/INT2/GPIO 事实和安装方向/轴映射；当前保留 `QMI_INT1 -> GPIO21` 作为真实连线事实，但不代表当前固件启用该 GPIO 中断；不得实现抬腕识别规则，也不得直接推进长期运行状态。
-- `main/services/imu_service.c`：做运行 owner。当前第一版随 deferred services 默认启动，用 FreeRTOS task 完成 `board_imu facts -> imu_sensor init/probe/config`，安装 ESP32 GPIO21 ISR 并通过 task notification 处理 INT1 GPIO 事件；同时用 `vTaskDelayUntil` 做稳定 50Hz 周期采样，并维护 200 帧 / 4 秒环形缓冲。不消费 WoM、不启用芯片侧 INT 事件源。后续若启用 fall service queue/window 投递或 data-ready 中断，应继续落在 service 层。
+- `main/services/sensors/imu_service.c`：做运行 owner。当前第一版随 deferred services 默认启动，用 FreeRTOS task 完成 `board_imu facts -> imu_sensor init/probe/config`，安装 ESP32 GPIO21 ISR 并通过 task notification 处理 INT1 GPIO 事件；同时用 `vTaskDelayUntil` 做稳定 50Hz 周期采样，并维护 200 帧 / 4 秒环形缓冲。不消费 WoM、不启用芯片侧 INT 事件源。后续若启用 fall service queue/window 投递或 data-ready 中断，应继续落在 service 层。
 - `components/imu_motion`：做纯算法接口 owner，输入标准化 motion window，输出 `raise_detected / reject_reason / debug metrics`；不得访问 I2C、GPIO、FreeRTOS 或 board 配置。
 
 ## Runtime Data Flow

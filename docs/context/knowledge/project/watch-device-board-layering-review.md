@@ -47,8 +47,8 @@ main/app/board_button.*
 服务层负责运行 profile、轮询、重试、状态机、snapshot 和产品策略：
 
 ```text
-main/services/imu_service.*
-main/services/power_service.*
+main/services/sensors/imu_service.*
+main/services/power/power_service.*
 features/alerts/haptic_alert_player.*
 ```
 
@@ -65,7 +65,7 @@ components/axp2101
 main/app/board_power.*
   -> 将 PMIC 原始快照转换成当前板级电源语义
 
-main/services/power_service.*
+main/services/power/power_service.*
   -> 周期刷新、去抖、状态发布、UI/策略接缝
 ```
 
@@ -264,7 +264,7 @@ imu_service -> qmi8658c
 
 设备层 / 板层整改时，至少做这些静态验证：
 
-- `main/services/imu_service.c` 不再直接 include `qmi8658c.h`。
+- `main/services/sensors/imu_service.c` 不再直接 include `qmi8658c.h`。
 - `main/ui` 不直接 include `qmi8658c.h`、`axp2101.h`、`ds2413.h`、`i2c_manager.h`、`co5300_panel.h`。
 - `main/services` 非例外路径不直接调用设备层 raw API。
 - `components/*` 不反向 include `main/app`、`main/services`、`main/ui`。

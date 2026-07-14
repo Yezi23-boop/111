@@ -93,7 +93,7 @@ class UiRefreshPolicySourceTests(unittest.TestCase):
         self.assertNotIn("ui_refresh_policy_set_throttle_mode", body)
         self.assertNotIn("ui_refresh_policy_apply_brightness_if_needed", body)
         self.assertNotIn("co5300_panel_set_brightness", body)
-        self.assertNotIn('#include "services/power_policy.h"', source)
+        self.assertNotIn('#include "services/power/power_policy.h"', source)
         self.assertNotIn("power_policy_get_budget", source)
         self.assertNotIn("power_policy_", body)
 

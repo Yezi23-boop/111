@@ -6,7 +6,7 @@ status: active
 last_reviewed: 2026-06-01
 memory_type: project_plan
 scope: repo
-owners: main/services/power_policy.c, main/services/power_service.c, main/ui, components/system_time, main/services/system_time_service.c
+owners: main/services/power/power_policy.c, main/services/power/power_service.c, main/ui, components/system_time, main/services/time/system_time_service.c
 triggers: LOW_BATTERY_WARN, power_policy, system_time, 电源状态, 时间状态, STANDBY 前置, low power framework
 evidence_level: design
 ---

@@ -151,6 +151,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 模拟器预览与截图交付原则（默认生效）
 
+- Host 预览工具统一位于 `tools/ui_preview/`；板端正式 UI 仍位于 `main/ui/generated` 与 `main/ui/custom`，不要把 host mock 或构建产物放回 `main/ui`。
 - 当执行了修改 UI 布局、样式或交互的任务，并在后台重新编译运行了 host 模拟器（如 `agent_preview_host.exe`）时，**必须强制**额外执行一次截图脚本（如 `capture_apple_watch_s5_preview.ps1`），并将生成的截图作为绝对路径图片（`![预览图](/绝对路径/截图.png)`）附带在当次对话的回答中。
 - 严禁仅在后台静默启动模拟器进程而不提供截图。因为后台进程唤起的 GUI 窗口极易失去焦点、被编辑器遮挡，或因对话上下文截断而意外闪退。必须用稳定可见的截图作为 UI 修改的闭环交付证据。
 

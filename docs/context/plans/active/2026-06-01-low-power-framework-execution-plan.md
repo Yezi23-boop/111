@@ -6,7 +6,7 @@ status: active
 last_reviewed: 2026-06-01
 memory_type: project_plan
 scope: repo
-owners: main/services/power_policy.c, main/services/background_service_manager.c, main/services/network_service.c, main/ui/ui_refresh_policy.c, main/services/wakeup_evidence_service.c, components/pcf85063atl, components/axp2101
+owners: main/services/power/power_policy.c, main/services/safety/background_service_manager.c, main/services/network/network_service.c, main/ui/ui_refresh_policy.c, main/services/power/wakeup_evidence_service.c, components/pcf85063atl, components/axp2101
 triggers: low-power-framework-architecture, power_budget, sleep_coordinator, STANDBY, Light Sleep, Deep Sleep, low power execution plan, 低功耗框架执行计划
 evidence_level: design
 supersedes: docs/context/plans/completed/2026-06-01-light-sleep-readiness-framework-plan.md
@@ -187,7 +187,7 @@ V1 不关 codec/I2S，只提供 blocker：
 
 当前进度（2026-06-01）：
 
-- 已新增 `main/services/sleep_coordinator.[ch]`。
+- 已新增 `main/services/power/sleep_coordinator.[ch]`。
 - 默认启动 `DRY_RUN` 后台任务，只读取 `power_policy_get_budget()`。
 - dry-run 日志记录 `sleep_permission / sleep_blockers / sleep_interval_hint_ms`。
 - 手动 `LIGHT_TEST / DEEP_TEST` 已移除，不调用真实 ESP sleep API。

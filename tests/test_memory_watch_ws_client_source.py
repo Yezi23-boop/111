@@ -94,7 +94,7 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         kconfig = MAIN_KCONFIG.read_text(encoding="utf-8")
 
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_ws_client.cc",
+            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_ws_client.cc",
             cmake,
         )
         self.assertIn("official_chat", cmake)
@@ -104,7 +104,7 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
     def test_service_uses_ws_only_inside_upload_worker_with_http_fallback(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "services/memory_watch_ws_client.h"', source)
+        self.assertIn('#include "services/memory_watch/memory_watch_ws_client.h"', source)
         self.assertIn("StaticEventGroup_t s_ws_wait_event_buffer", source)
         self.assertIn("xEventGroupCreateStatic", source)
         self.assertIn("memory_watch_service_send_voice_over_ws", source)

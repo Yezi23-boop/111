@@ -5,7 +5,7 @@ summary: 记录当前仓库把正式主流程从阻塞联网切换到后台联�
 last_reviewed: 2026-04-21
 memory_type: semantic
 scope: repo
-owners: main/services/network_service.c, components/network_manager, components/wifi_control
+owners: main/services/network/network_service.c, components/network_manager, components/wifi_control
 triggers: nonblocking, boot, network, service
 evidence_level: observed
 ---

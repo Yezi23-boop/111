@@ -5,7 +5,7 @@ summary: ESP32-S3 智能手表待机功耗优化检查清单。
 last_reviewed: 2026-06-07
 memory_type: procedural
 scope: board
-owners: components/axp2101, main/services/power_service.c, main/ui/ui_refresh_policy.c
+owners: components/axp2101, main/services/power/power_service.c, main/ui/ui_refresh_policy.c
 triggers: power, optimization, checklist
 evidence_level: design
 ---

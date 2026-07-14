@@ -12,7 +12,7 @@ class ImuServiceSourceTests(unittest.TestCase):
     def test_main_cmake_registers_imu_service_and_dependencies(self) -> None:
         self.assertTrue(MAIN_CMAKE.exists(), "main/CMakeLists.txt should exist")
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/imu_service.c", cmake)
+        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/sensors/imu_service.c", cmake)
         self.assertIn("${CMAKE_CURRENT_LIST_DIR}/app/board_imu.c", cmake)
         self.assertIn("imu_sensor", cmake)
         self.assertNotIn("qmi8658c", cmake)
@@ -52,7 +52,7 @@ class ImuServiceSourceTests(unittest.TestCase):
     def test_app_main_starts_imu_service_by_default(self) -> None:
         self.assertTrue(APP_MAIN_SOURCE.exists(), "main/app/app_main.c should exist")
         source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
-        self.assertIn('#include "services/imu_service.h"', source)
+        self.assertIn('#include "services/sensors/imu_service.h"', source)
         self.assertIn("imu_service_start()", source)
         self.assertIn("boot_stage: imu_service_ready", source)
         self.assertIn("IMU service 当前做统一配置、GPIO21 ISR 事件计数和 50Hz 周期采样", source)
@@ -63,7 +63,7 @@ class ImuServiceSourceTests(unittest.TestCase):
         self.assertGreater(imu_start_index, source.index("official_chat_service_init()"))
 
     def test_header_exposes_config_snapshot_getter_contract(self) -> None:
-        self.assertTrue(IMU_SERVICE_HEADER.exists(), "main/services/imu_service.h should exist")
+        self.assertTrue(IMU_SERVICE_HEADER.exists(), "main/services/sensors/imu_service.h should exist")
         header = IMU_SERVICE_HEADER.read_text(encoding="utf-8")
         self.assertIn("#define IMU_SERVICE_SAMPLE_RATE_HZ 50U", header)
         self.assertIn("#define IMU_SERVICE_EVENT_PRE_FRAMES 35U", header)
@@ -116,7 +116,7 @@ class ImuServiceSourceTests(unittest.TestCase):
         self.assertNotIn("qmi8658c_wom_status_t", header)
 
     def test_service_uses_imu_sensor_and_owns_gpio21_isr(self) -> None:
-        self.assertTrue(IMU_SERVICE_SOURCE.exists(), "main/services/imu_service.c should exist")
+        self.assertTrue(IMU_SERVICE_SOURCE.exists(), "main/services/sensors/imu_service.c should exist")
         source = IMU_SERVICE_SOURCE.read_text(encoding="utf-8")
         self.assertIn('#include "app/board_imu.h"', source)
         self.assertIn('#include "esp_heap_caps.h"', source)

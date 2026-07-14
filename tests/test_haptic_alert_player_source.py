@@ -51,7 +51,7 @@ class HapticAlertPlayerSourceTests(unittest.TestCase):
     def test_haptic_player_respects_power_budget_without_policy_ownership(self) -> None:
         source = HAPTIC_ALERT_PLAYER_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "services/power_policy.h"', source)
+        self.assertIn('#include "services/power/power_policy.h"', source)
         self.assertIn("power_policy_get_budget()", source)
         self.assertIn("budget.haptic_alert_allowed", source)
         self.assertIn("haptic skipped by power budget", source)

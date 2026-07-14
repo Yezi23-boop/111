@@ -5,7 +5,7 @@ summary: 当前板级硬件已经接入的能力与仍未闭环的中断、唤�
 last_reviewed: 2026-06-04
 memory_type: semantic
 scope: repo
-owners: components/axp2101, components/pcf85063atl, components/qmi8658c, main/app/board_power.c, main/app/board_imu.c, main/services/wakeup_evidence_service.c, main/services/imu_service.c
+owners: components/axp2101, components/pcf85063atl, components/qmi8658c, main/app/board_power.c, main/app/board_imu.c, main/services/power/wakeup_evidence_service.c, main/services/sensors/imu_service.c
 triggers: hardware, capability, gap, map, qmi8658c, gpio21, rtc-int, axp-irq
 evidence_level: observed
 ---

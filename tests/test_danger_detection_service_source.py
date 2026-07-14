@@ -20,7 +20,7 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("app_alert_manager_raise", service_source)
         self.assertIn("app_alert_manager_clear", service_source)
         self.assertIn("watch_endpoint_service_post_danger_alert", service_source)
-        self.assertNotIn('#include "services/memory_watch_service.h"', service_source)
+        self.assertNotIn('#include "services/memory_watch/memory_watch_service.h"', service_source)
         self.assertIn("audio_alert_player_play_warning_once", alert_source)
 
     def test_espdl_backend_is_single_model_default(self) -> None:

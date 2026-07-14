@@ -78,7 +78,7 @@ class DangerDetectionControllerSourceTests(unittest.TestCase):
         )
         combined_ui = source + "\n" + view_header + "\n" + view_source
 
-        self.assertIn("services/audio_mic_test_service.h", source)
+        self.assertIn("services/audio_diag/audio_mic_test_service.h", source)
         self.assertIn("audio_mic_test_service_start()", source)
         self.assertIn("audio_mic_test_service_get_snapshot", source)
         self.assertIn("mic_test_cb", view_header)

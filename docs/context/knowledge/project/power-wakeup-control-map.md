@@ -5,7 +5,7 @@ summary: 基于原理图与现有代码整理的电源、按键、RTC 和唤醒�
 last_reviewed: 2026-06-01
 memory_type: semantic
 scope: repo
-owners: components/axp2101, main/app/board_power.c, main/services/power_service.c
+owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c
 triggers: power, wakeup, control, map
 evidence_level: observed
 ---
@@ -35,8 +35,8 @@ evidence_level: observed
   - `components/axp2101`
   - `components/pcf85063atl`
   - `main/app/board_power.[ch]`
-  - `main/services/power_service.[ch]`
-  - `main/services/wakeup_evidence_service.[ch]`
+  - `main/services/power/power_service.[ch]`
+  - `main/services/power/wakeup_evidence_service.[ch]`
 - 当前代码中仍未发现：
   - `AXP_IRQ` GPIO 中断处理链路
   - `RTC_INT` 作为 ESP sleep wakeup source 的链路

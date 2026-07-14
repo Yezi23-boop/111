@@ -6,7 +6,7 @@ last_reviewed: 2026-07-08
 memory_type: task
 scope: imu
 status: active
-owners: main/services/imu_service.c, main/services/fall_detection_service.c, components/fall_detection_inference, components/imu_sensor, components/qmi8658c, docs/context/plans/active/FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN.md
+owners: main/services/sensors/imu_service.c, main/services/fall_detection_service.c, components/fall_detection_inference, components/imu_sensor, components/qmi8658c, docs/context/plans/active/FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN.md
 triggers: FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN, fall detection V1, IMU fall, event trigger, post-check, 5s window, 6ch, input 1500, validate_context light
 evidence_level: design
 route_area: "IMU fall detection V1"

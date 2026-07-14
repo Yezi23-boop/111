@@ -19,9 +19,8 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "official_chat.h"', source)
-        self.assertIn('#include "background_https_gate.h"', source)
-        self.assertIn('#include "background_service_manager.h"', source)
-        self.assertIn('#include "foreground_runtime_gate.h"', source)
+        self.assertIn('#include "services/safety/background_service_manager.h"', source)
+        self.assertIn('#include "services/runtime_gate/foreground_runtime_gate.h"', source)
         self.assertIn("official_chat_create(", source)
         self.assertIn("official_chat_destroy(", source)
         self.assertIn("official_chat_set_event_callback(", source)
@@ -44,7 +43,6 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT", source)
         self.assertIn("foreground_runtime_gate_acquire(", source)
         self.assertIn("foreground_runtime_gate_release(", source)
-        self.assertIn("background_https_gate_quiet_for(8000U", source)
         self.assertIn("background_service_manager_notify_foreground_runtime_changed()",
                       source)
         self.assertIn("official_chat_get_state(", source)

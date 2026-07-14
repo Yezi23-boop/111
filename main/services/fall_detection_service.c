@@ -11,8 +11,8 @@
 #include "freertos/idf_additions.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-#include "services/imu_service.h"
-#include "services/watch_endpoint_service.h"
+#include "services/sensors/imu_service.h"
+#include "services/memory_watch/watch_endpoint_service.h"
 
 static const char *k_fall_app_danger_type = "fall";
 static const char *k_fall_app_message = "检测到跌倒";

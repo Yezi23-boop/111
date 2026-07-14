@@ -104,10 +104,10 @@ Owner：
 
 Owner：
 
-- `main/services/power_service.c`
-- `main/services/power_policy.c`
-- `main/services/wakeup_evidence_service.c`
-- `main/services/system_time_service.c`
+- `main/services/power/power_service.c`
+- `main/services/power/power_policy.c`
+- `main/services/power/wakeup_evidence_service.c`
+- `main/services/time/system_time_service.c`
 
 职责：
 
@@ -118,8 +118,8 @@ Owner：
 
 Owner：
 
-- `main/services/background_service_manager.c`
-- `main/services/safety_monitor_session.c`
+- `main/services/safety/background_service_manager.c`
+- `main/services/safety/safety_monitor_session.c`
 
 职责：
 
@@ -131,7 +131,7 @@ Owner：
 
 Owner：
 
-- `main/services/network_service.c`
+- `main/services/network/network_service.c`
 - `main/services/official_chat_service.c`
 
 职责：

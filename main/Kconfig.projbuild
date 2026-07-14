@@ -145,8 +145,8 @@ config RUNTIME_RESOURCE_GATE_BOARD_TEST
     default n
     help
         Run a one-shot board-side stress sequence after boot to exercise the
-        foreground runtime gate, background HTTPS gate, Hermes foreground
-        owner, Safety Monitor yield path, and BLE quiet-window resource model.
+        foreground runtime gate, Hermes foreground owner, Safety Monitor
+        yield path, and BLE foreground/fail-closed resource model.
         Keep disabled for normal images.
 
 config RUNTIME_RESOURCE_GATE_BOARD_TEST_START_DELAY_MS

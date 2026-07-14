@@ -70,7 +70,7 @@ class MemoryWatchOggOpusMuxerSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_ogg_opus_muxer.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_ogg_opus_muxer.c",
             cmake,
         )
 

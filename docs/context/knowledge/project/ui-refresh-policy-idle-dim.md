@@ -38,7 +38,7 @@ evidence_level: observed
   - 再通过 `ui_refresh_policy_adjust_delay()` 决定 `vTaskDelay`
 - `components/lvgl_port/lv_port_input.c`
   - 读到有效触点后调用 `ui_refresh_policy_notify_touch()`
-- `main/services/power_policy.c`
+- `main/services/power/power_policy.c`
   - 只读消费 activity snapshot，把 `STANDBY` 转换成整机预算
   - 不反向调用 UI poll、亮度、LVGL 或面板接口
 - `main/ui/generated/events_init.c`

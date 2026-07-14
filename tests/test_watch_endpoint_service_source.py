@@ -17,7 +17,7 @@ class WatchEndpointServiceSourceTests(unittest.TestCase):
         self.assertIn("watch_endpoint_service_post_danger_alert", header)
         self.assertIn("watch_endpoint_service_init", source)
         self.assertIn("watch_endpoint_service_post_danger_alert", source)
-        self.assertIn("services/watch_endpoint_service.c", cmake)
+        self.assertIn("services/memory_watch/watch_endpoint_service.c", cmake)
         self.assertNotIn("memory_watch_service_post_danger_alert", source)
         self.assertNotIn("memory_watch_service_danger_alert_t", source)
 
@@ -35,8 +35,8 @@ class WatchEndpointServiceSourceTests(unittest.TestCase):
         self.assertIn('#include "freertos/queue.h"', source)
         self.assertIn('#include "freertos/task.h"', source)
         self.assertIn('#include "freertos/idf_additions.h"', source)
-        self.assertIn('#include "network_service.h"', source)
-        self.assertIn('#include "services/memory_watch_voice_client.h"', source)
+        self.assertIn('#include "services/network/network_service.h"', source)
+        self.assertIn('#include "services/memory_watch/memory_watch_voice_client.h"', source)
         self.assertIn("watch_endpoint_alert_job_t", source)
         self.assertIn("s_alert_worker_queue", source)
         self.assertIn("xQueueCreateStatic(", source)
@@ -56,7 +56,7 @@ class WatchEndpointServiceSourceTests(unittest.TestCase):
     def test_app_main_starts_watch_endpoint_after_memory_watch_config_owner(self) -> None:
         source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "services/watch_endpoint_service.h"', source)
+        self.assertIn('#include "services/memory_watch/watch_endpoint_service.h"', source)
         self.assertIn("watch_endpoint_service_init()", source)
         self.assertIn("boot_stage: watch_endpoint_ready", source)
         self.assertLess(

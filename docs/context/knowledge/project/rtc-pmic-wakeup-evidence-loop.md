@@ -5,7 +5,7 @@ summary: RTC_INT(GPIO39) 与 PMIC IRQ 的首版只读证据闭环，先观测中
 last_reviewed: 2026-05-30
 memory_type: semantic
 scope: repo
-owners: components/pcf85063atl, components/axp2101, main/services/wakeup_evidence_service.c
+owners: components/pcf85063atl, components/axp2101, main/services/power/wakeup_evidence_service.c
 triggers: rtc, pmic, wakeup, evidence, rtc_int, axp_irq, pcf85063atl
 evidence_level: source
 ---
@@ -31,7 +31,7 @@ evidence_level: source
 - `components/pcf85063atl/pcf85063atl.c`
   - 最小 RTC driver。
   - 只实现 probe、读时间、读 `Control_2`、清中断标志、启动/停止秒级 countdown timer。
-- `main/services/wakeup_evidence_service.c`
+- `main/services/power/wakeup_evidence_service.c`
   - 只做证据日志，不拥有低功耗策略。
   - 固定观察 `GPIO39`，并复用 `axp2101_read_irq_status()` / `axp2101_clear_irq_status()`。
 - `main/app/app_main.c`

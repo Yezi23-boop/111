@@ -2,7 +2,7 @@
 id: watch-interface-config-layering-review
 tags: project, architecture, layering, interface, config, owner, review
 summary: 记录 2026-07-07 多 agent 对当前 ESP32-S3 手表固件接口配置与层级衔接的专项审查结论：网络、Hermes、UI/generated、CMake/include 公共面主线可用，但存在 sdkconfig token 治理、contract 漂移、getter 副作用、UI 重动作、generated 依赖 service 和 public header 泄漏等问题。
-last_reviewed: 2026-07-07
+last_reviewed: 2026-07-14
 memory_type: project_knowledge
 scope: repo
 owners: docs/context/knowledge/project/watch-interface-config-layering-review.md
@@ -40,7 +40,15 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 - CMake/include 公共面：`main/CMakeLists.txt`、`components/*/include`、`check_layering.py` 缺口。
 - AI Memory Watch / Hermes：Kconfig、NVS、SoftAP、WS、sync、inbox、server contract。
 
-本文件只记录审查结论，不代表已经完成代码整改。
+本文件保留初始审查结论，并在下方单独记录后续整改状态。
+
+## 2026-07-14 整改状态
+
+- 已将 host preview 从 `main/ui/agent_preview` 迁到 `tools/ui_preview`。
+- 已将 `main/services` 按窄 owner 子目录整理，Memory Watch runtime 收敛到 `services/memory_watch`。
+- 已将主屏电量/天气刷新迁到 `main/ui/custom/main_screen_runtime`，`ui/generated` 不再直接 include feature/service。
+- 已将天气拆为 `services/weather/weather_service` 与内部 `weather_http_client`；client 返回 DTO，service 独占 mutex 和 snapshot。
+- 已确认 IMU 当前链路为 `services/sensors/imu_service -> board_imu + imu_sensor -> qmi8658c`，旧“service 直连 qmi8658c”结论已过期。
 
 ## 配置入口矩阵
 
@@ -53,8 +61,8 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 | Memory Watch endpoint | NVS `memory_watch/base_url/device_id/device_token/timeout_ms/allow_http` | 合理，`memory_watch_service` 是配置 owner | 默认 fallback 入口过多 |
 | Memory Watch Kconfig fallback | `CONFIG_MEMORY_WATCH_DEFAULT_*` | 可作为开发期 fallback | tracked `sdkconfig` 不应保留真实 device token |
 | Hermes/MiMo/API key | server env / Docker data | 合理，ESP32 不持有 | 固件侧不得新增 Hermes/MiMo/API Server 私有配置 |
-| Weather API/location | `main/features/weather/hptts.c` | 有偏离 | API key/location/URL、HTTP client、JSON 解析混在 feature 中 |
-| IMU board facts | `main/app/board_imu.*` | 合理方向 | `imu_service` 当前仍直接 include/call `qmi8658c`，和文档链路不一致 |
+| Weather API/location | `main/services/weather/weather_http_client.c` | 已收敛 | HTTP/JSON 留在内部 client，snapshot 由 weather service 持有 |
+| IMU board facts | `main/app/board_imu.*` | 已收敛 | `imu_service` 通过 `imu_sensor` adapter 使用 QMI8658C |
 
 ## 当前合理的接口衔接
 
@@ -120,7 +128,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 - gate、quiet window、NO_MEM retry、delay 放到 network owner/service task。
 - UI 只展示 snapshot/toast。
 
-### P1: `generated/widgets_init.c` 直接 include service
+### P1（已完成）: `generated/widgets_init.c` 直接 include service
 
 `main/ui/generated/widgets_init.c` 直接 include `services/power_service.h` 并调用 `power_service_get_snapshot()` 刷新电量。这破坏 generated 只负责对象结构的边界，也容易被 GUI Guider 重生成覆盖。
 
@@ -129,6 +137,8 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 - generated 只保留 LVGL 对象和事件桥接。
 - 电量/天气/网络等数据刷新迁到 `custom` controller 或 runtime updater。
 - 加 source test 禁止 `main/ui/generated` include `services/*`、`features/*` 和 driver adapter。
+
+完成证据：电量/天气刷新已迁到 `main/ui/custom/main_screen_runtime.*`，`check_layering.py --verbose` 为 `warning_count=0`。
 
 ### P1: SoftAP 门户承接 Memory Watch 配置 schema
 
@@ -139,7 +149,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 - 明确写成过渡例外，并补 source test：不打印 token、不回显 token、只走 callback、不吞 official `prov-*` endpoint。
 - 或后续拆出 app/memory_watch portal extension，`ap_portal_adapter` 只保留 HTTPD 壳和静态路由挂载能力。
 
-### P1: `imu_service` 直接依赖 `qmi8658c`
+### P1（已完成）: `imu_service` 直接依赖 `qmi8658c`
 
 文档推荐链路是：
 
@@ -154,15 +164,19 @@ imu_service -> board_imu -> qmi8658c
 - 后续把 bus/probe/config 接缝收敛到 `board_imu` 或窄 board adapter。
 - `imu_service` 保留运行 profile、窗口、状态机和 snapshot。
 
-### P1: 天气模块混层
+完成证据：当前实现为 `services/sensors/imu_service -> board_imu + imu_sensor -> qmi8658c`，service 不 include `qmi8658c.h`。
 
-`main/features/weather/hptts.c` 直接持有 URL/API key/location、`esp_http_client` 和 JSON 解析。它同时像 feature、service 和 SDK adapter。
+### P1（已完成）: 天气模块混层
+
+`main/services/weather/weather_http_client.c` 直接持有 URL/API key/location、`esp_http_client` 和 JSON 解析。它同时像 feature、service 和 SDK adapter。
 
 建议：
 
 - 抽成 `weather_service` snapshot + 内部 `weather_http_client`。
 - API key/location/base URL 迁出 HTTP 函数，先用最小配置结构承接。
 - UI 只读 snapshot，不直接触发 HTTP SDK 路径。
+
+完成证据：`services/weather/weather_service` 持有任务、刷新策略与 snapshot；`weather_http_client` 只返回值类型 DTO，不反向写 service。
 
 ## P2 问题
 

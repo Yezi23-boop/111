@@ -5,7 +5,7 @@ summary: 当前手表项目接入 AXP2101 新电源管理组件的分层设计�
 last_reviewed: 2026-04-10
 memory_type: semantic
 scope: repo
-owners: components/axp2101, main/app/board_power.c, main/services/power_service.c
+owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c
 triggers: axp2101, power, component, design
 evidence_level: design
 ---
@@ -117,7 +117,7 @@ evidence_level: design
 - 思路：
   - `components/axp2101` 只做芯片层。
   - `main/app/board_power.[ch]` 做板级语义层。
-  - `main/services/power_service.[ch]` 做策略与状态发布层。
+  - `main/services/power/power_service.[ch]` 做策略与状态发布层。
 - 优点：
   - 同时吸收 `AXP2101` 硬件事实和 `xiaozhi-esp32` 的上层抽象思路。
   - 便于第一版只读接入，后续再逐步放权。
@@ -137,7 +137,7 @@ components/axp2101
 main/app/board_power.[ch]
   -> 将 PMIC 状态翻译为当前板子的电源语义
 
-main/services/power_service.[ch]
+main/services/power/power_service.[ch]
   -> 周期刷新、状态变更通知、UI/策略接缝
 ```
 
@@ -176,7 +176,7 @@ main/services/power_service.[ch]
 - 缓存最近一次有效状态。
 - 第一版只做状态面，不做策略控制。
 
-### 3. `main/services/power_service.[ch]`
+### 3. `main/services/power/power_service.[ch]`
 
 职责：
 

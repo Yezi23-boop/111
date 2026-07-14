@@ -6,7 +6,7 @@ status: active
 last_reviewed: 2026-07-07
 memory_type: project_plan
 scope: repo
-owners: main/ui/ui_refresh_policy.c, main/services/power_policy.c, main/services/network_service.c, main/services/sleep_coordinator.c, main/services/background_service_manager.c
+owners: main/ui/ui_refresh_policy.c, main/services/power/power_policy.c, main/services/network/network_service.c, main/services/power/sleep_coordinator.c, main/services/safety/background_service_manager.c
 triggers: LIGHT_ALLOWED, STANDBY, runtime save, low power experience, LVGL 2000ms, 省电体验, 运行态深省电
 evidence_level: design
 depends_on: docs/context/knowledge/project/low-power-framework-architecture.md, docs/context/knowledge/project/runtime-owner-contract.md

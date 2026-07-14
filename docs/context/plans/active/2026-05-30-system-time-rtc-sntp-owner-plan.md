@@ -6,7 +6,7 @@ status: active
 last_reviewed: 2026-05-30
 memory_type: project_plan
 scope: repo
-owners: components/pcf85063atl, components/system_time, main/services/system_time_service.c, main/services/official_chat_service.c, components/official_chat, main/features/weather/time_weather.c
+owners: components/pcf85063atl, components/system_time, main/services/time/system_time_service.c, main/services/official_chat_service.c, components/official_chat, main/services/weather/weather_service.c
 triggers: system_time, system_time_service, pcf85063atl, sntp, rtc, get_time, official_chat, tls, 时间同步, 授时
 evidence_level: design
 ---
@@ -19,7 +19,7 @@ evidence_level: design
 - 目标态：
   - `PCF85063ATL` 只做 RTC 寄存器驱动。
   - `components/system_time` 做可复用时间核心，内部封装 ESP-IDF SNTP、RTC 读写和 `settimeofday()`。
-  - `main/services/system_time_service` 做应用启动编排、网络 ready 后触发同步和快照日志。
+  - `main/services/time/system_time_service` 做应用启动编排、网络 ready 后触发同步和快照日志。
   - `official_chat` 在 HTTPS/TLS 前只通过回调索要有效系统时间，不直接调用 `esp_sntp_init()` 或 `esp_sntp_restart()`。
   - 旧 `components/get_time` 删除，避免形成第二套时间 owner。
 
@@ -39,13 +39,13 @@ evidence_level: design
 - `components/system_time`
   - 负责：判断系统时间是否可信、从 RTC bootstrap 系统时间、启动/重启 SNTP、SNTP 成功后写 RTC、提供本地时间格式化读取。
   - 不负责：启动顺序、网络 ready 轮询、UI 状态展示、official_chat 生命周期。
-- `main/services/system_time_service`
+- `main/services/time/system_time_service`
   - 负责：应用层启动编排、网络 ready 后触发 SNTP 同步、保存快照、输出关键日志。
   - 不负责：RTC 寄存器细节、official_chat 内部 HTTP 逻辑、天气 UI 刷新。
 - `components/official_chat`
   - 负责：在 HTTPS/TLS 请求前调用外部注入的 `ensure_time_valid` 回调。
   - 不负责：直接启动 SNTP、直接访问 RTC、直接依赖 `main/services`。
-- `main/features/weather/time_weather.c`
+- `main/services/weather/weather_service.c`
   - 负责：读取当前本地时间快照并刷新 UI。
   - 不负责：阻塞等待 SNTP、维护全局 `now_time`。
 
@@ -55,7 +55,7 @@ evidence_level: design
 
 - 新增 `pcf85063atl_set_time()`、`pcf85063atl_clear_oscillator_stopped()`、`pcf85063atl_read_status()`。
 - 新增 `components/system_time`。
-- 新增 `main/services/system_time_service`。
+- 新增 `main/services/time/system_time_service`。
 - 修改 `official_chat` 为回调索要有效时间。
 - 删除 `components/get_time` 及其 CMake 依赖。
 - 迁移 `time_weather.c` 的旧时间读取。
@@ -152,7 +152,7 @@ time_weather loop
 
 ### Gate 3: 应用层 system_time_service
 
-- `[x]` 新增 `main/services/system_time_service.h/.c`。
+- `[x]` 新增 `main/services/time/system_time_service.h/.c`。
 - `[x]` `app_main()` 在 core policy 附近启动 service。
 - `[x]` `network_service` 进入 `SERVICE_READY` 时通知 `system_time_service`。
 - `[x]` getter 只返回快照，不做 I2C/SNTP。

@@ -39,7 +39,7 @@ class NonblockingBootSourceTests(unittest.TestCase):
     def test_formal_entry_starts_background_network_service(self) -> None:
         source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "services/network_service.h"', source)
+        self.assertIn('#include "services/network/network_service.h"', source)
         self.assertIn("network_service_start()", source)
         self.assertIn(
             'xTaskCreatePinnedToCore(lvgl_task, "lvgl_task"',

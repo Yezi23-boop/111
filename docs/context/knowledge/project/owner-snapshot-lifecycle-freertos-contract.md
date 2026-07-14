@@ -39,8 +39,8 @@ owner snapshot
 | --- | --- | --- | --- |
 | 器件驱动 / Driver Adapter | `components/axp2101`、`components/pcf85063atl`、`components/co5300_panel`、`components/touch_ft5x06`、`components/wifi_control`、`components/lvgl_port` | SDK/寄存器/总线时序/错误码翻译/器件初始化细节 | 产品状态、页面文案、跨模块策略、后台生命周期 |
 | 板级语义 / Board BSP | `main/app/board_power.c`、`main/app/hardware_init.c`、`main/app/board_button.c` | 把板上器件组合成“本板能力”，处理启动基础设施 | 长期后台循环、产品策略、UI 状态机 |
-| 长期系统能力 / Service | `main/services/power_service.c`、`power_policy.c`、`network_service.c`、`official_chat_service.c`、`background_service_manager.c`、`sleep_coordinator.c` | FreeRTOS task、后台生命周期、ready gate、预算聚合、状态推进 | 直接写寄存器、直接改 LVGL 对象、替 domain owner 释放资源 |
-| 资源语义 / Domain owner | `components/audio_codec`、网络语义门面、`components/system_time`、`main/services/safety_monitor_session.c`、`main/features/danger_detection/danger_detection_service.c`、`app_alert_manager.c` | session、领域状态机、资源占用事实、可读快照 | 页面对象、启动阶段总编排、跨领域总调度 |
+| 长期系统能力 / Service | `main/services/power/power_service.c`、`power_policy.c`、`network_service.c`、`official_chat_service.c`、`background_service_manager.c`、`sleep_coordinator.c` | FreeRTOS task、后台生命周期、ready gate、预算聚合、状态推进 | 直接写寄存器、直接改 LVGL 对象、替 domain owner 释放资源 |
+| 资源语义 / Domain owner | `components/audio_codec`、网络语义门面、`components/system_time`、`main/services/safety/safety_monitor_session.c`、`main/features/danger_detection/danger_detection_service.c`、`app_alert_manager.c` | session、领域状态机、资源占用事实、可读快照 | 页面对象、启动阶段总编排、跨领域总调度 |
 
 判断口诀：
 

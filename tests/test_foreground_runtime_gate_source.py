@@ -58,7 +58,7 @@ class ForegroundRuntimeGateSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/foreground_runtime_gate.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/runtime_gate/foreground_runtime_gate.c",
             cmake,
         )
 

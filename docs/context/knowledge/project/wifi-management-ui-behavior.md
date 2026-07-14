@@ -100,7 +100,7 @@ evidence_level: observed
   - `network_manager_start_ble_provisioning()`
   - `network_manager_start_softap_provisioning()`
   - `network_manager_set_ble_enabled()`
-- `main/services/network_service.[ch]` 仍存在，但当前已经退化为旧消费者兼容层 + service-ready 探测层，而不是新的 UI 主控制面。
+- `main/services/network/network_service.[ch]` 仍存在，但当前已经退化为旧消费者兼容层 + service-ready 探测层，而不是新的 UI 主控制面。
 
 ## 关键实现边界
 

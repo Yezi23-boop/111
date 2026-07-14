@@ -78,9 +78,9 @@ class WakeupEvidenceSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
         app_main = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/wakeup_evidence_service.c", cmake)
+        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/power/wakeup_evidence_service.c", cmake)
         self.assertRegex(cmake, r"\bREQUIRES\b[\s\S]*?\bpcf85063atl\b")
-        self.assertIn('#include "services/wakeup_evidence_service.h"', app_main)
+        self.assertIn('#include "services/power/wakeup_evidence_service.h"', app_main)
         self.assertIn("wakeup_evidence_service_start()", app_main)
         self.assertLess(
             app_main.index("power_policy_start()"),

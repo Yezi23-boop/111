@@ -15,7 +15,7 @@ from tests.main_paths import SYSTEM_TIME_HEADER
 from tests.main_paths import SYSTEM_TIME_SERVICE_HEADER
 from tests.main_paths import SYSTEM_TIME_SERVICE_SOURCE
 from tests.main_paths import SYSTEM_TIME_SOURCE
-from tests.main_paths import TIME_WEATHER_SOURCE
+from tests.main_paths import WEATHER_SERVICE_SOURCE
 from tests.main_paths import UI_GENERATED_DIR
 
 
@@ -83,11 +83,11 @@ class SystemTimeOwnerSourceTests(unittest.TestCase):
         self.assertIn("system_time_sync_sntp_and_write_rtc", service_source)
         self.assertIn("system_time_service_log_boot_summary", service_source)
         self.assertIn("system_time_boot: rtc_present=%d os=%d source=%s sys_valid=%d rtc=%s reason=%s", service_source)
-        self.assertIn('#include "services/system_time_service.h"', app_main)
+        self.assertIn('#include "services/time/system_time_service.h"', app_main)
         self.assertIn("system_time_service_start()", app_main)
-        self.assertIn('#include "system_time_service.h"', network_service)
+        self.assertIn('#include "services/time/system_time_service.h"', network_service)
         self.assertIn("system_time_service_note_network_ready()", network_service)
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/system_time_service.c", main_cmake)
+        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/time/system_time_service.c", main_cmake)
         self.assertRegex(main_cmake, r"\bREQUIRES\b[\s\S]*?\bsystem_time\b")
         self.assertNotRegex(main_cmake, r"\bREQUIRES\b[\s\S]*?\bget_time\b")
 
@@ -113,18 +113,17 @@ class SystemTimeOwnerSourceTests(unittest.TestCase):
         self.assertIn("system_time_service_ensure_valid_for_tls", service_source)
         self.assertIn("system_time_service_apply_server_time", service_source)
 
-    def test_get_time_component_is_removed_and_weather_reads_snapshot(self) -> None:
+    def test_get_time_component_is_removed_and_weather_does_not_reown_time(self) -> None:
         self.assertFalse((GET_TIME_DIR / "CMakeLists.txt").exists())
         self.assertFalse((GET_TIME_DIR / "get_time.c").exists())
         self.assertFalse((GET_TIME_DIR / "get_time.h").exists())
 
-        time_weather = TIME_WEATHER_SOURCE.read_text(encoding="utf-8")
-        self.assertIn('#include "services/system_time_service.h"', time_weather)
-        self.assertIn("system_time_service_get_local_time", time_weather)
-        self.assertNotIn('#include "get_time.h"', time_weather)
-        self.assertNotIn("esp_wait_sntp_sync", time_weather)
-        self.assertNotIn("update_now_time", time_weather)
-        self.assertNotIn("now_time", time_weather)
+        weather_service = WEATHER_SERVICE_SOURCE.read_text(encoding="utf-8")
+        self.assertNotIn('#include "get_time.h"', weather_service)
+        self.assertNotIn("esp_wait_sntp_sync", weather_service)
+        self.assertNotIn("update_now_time", weather_service)
+        self.assertNotIn("now_time", weather_service)
+        self.assertNotIn("system_time_service", weather_service)
 
     def test_main_screen_clock_reads_system_time_owner(self) -> None:
         widgets = UI_WIDGETS_INIT_SOURCE.read_text(encoding="utf-8")

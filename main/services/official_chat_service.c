@@ -11,13 +11,12 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
-#include "background_https_gate.h"
-#include "background_service_manager.h"
-#include "foreground_runtime_gate.h"
-#include "network_service.h"
+#include "services/safety/background_service_manager.h"
+#include "services/runtime_gate/foreground_runtime_gate.h"
+#include "services/network/network_service.h"
 #include "official_chat.h"
 #include "sdkconfig.h"
-#include "system_time_service.h"
+#include "services/time/system_time_service.h"
 
 /*
  * 官方聊天服务实现说明：
@@ -197,7 +196,6 @@ static void official_chat_service_set_foreground_runtime_active(bool active)
 {
     if (active)
     {
-        background_https_gate_quiet_for(8000U, "official_chat_foreground");
         if (s_foreground_runtime_gate_held)
         {
             return;
@@ -448,7 +446,6 @@ static void official_chat_service_handle_command(
     case OFFICIAL_CHAT_SERVICE_CMD_PREPARE_AUDIO_CHANNEL:
         if (s_chat_handle != NULL && !s_shutdown_requested)
         {
-            background_https_gate_quiet_for(8000U, "official_chat_preconnect");
             const esp_err_t ret =
                 official_chat_prepare_audio_channel(s_chat_handle);
             if (ret != ESP_OK)

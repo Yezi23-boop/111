@@ -55,7 +55,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
 
         self.assertIn('#include "esp_heap_caps.h"', source)
         self.assertIn('#include "freertos/idf_additions.h"', source)
-        self.assertIn('#include "services/imu_service.h"', source)
+        self.assertIn('#include "services/sensors/imu_service.h"', source)
         self.assertIn('#include "fall_model_runner.h"', source)
         self.assertIn("fall_detection_prepare_buffers", source)
         self.assertIn("uint8_t *window_queue_storage", source)
@@ -83,7 +83,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("事件窗口契约不匹配", source)
         self.assertIn("window->trigger_frame_index !=\n                IMU_SERVICE_EVENT_PRE_FRAMES", source)
         self.assertIn('#include "features/alerts/app_alert_manager.h"', source)
-        self.assertIn('#include "services/watch_endpoint_service.h"', source)
+        self.assertIn('#include "services/memory_watch/watch_endpoint_service.h"', source)
         self.assertNotIn("qmi8658c_", source)
         self.assertNotIn("imu_sensor_read", source)
         self.assertNotIn("lv_", source)

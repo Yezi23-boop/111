@@ -48,7 +48,7 @@ class AiUiEntrySourceTests(unittest.TestCase):
         self.assertIn('#include "ai_chat_view.h"', source)
         self.assertTrue(NETWORK_SERVICE_HEADER.exists())
         self.assertTrue(OFFICIAL_CHAT_SERVICE_HEADER.exists())
-        self.assertIn('#include "services/network_service.h"', source)
+        self.assertIn('#include "services/network/network_service.h"', source)
         self.assertIn('#include "services/official_chat_service.h"', source)
         self.assertIn("network_service_get_state()", source)
         self.assertNotIn("network_service_request_portal()", source)

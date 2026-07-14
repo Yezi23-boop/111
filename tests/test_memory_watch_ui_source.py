@@ -31,7 +31,7 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
     def test_app_main_starts_memory_watch_owner_without_server_call(self) -> None:
         source = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn('#include "services/memory_watch_service.h"', source)
+        self.assertIn('#include "services/memory_watch/memory_watch_service.h"', source)
         self.assertIn("memory_watch_service_init()", source)
         self.assertIn("boot_stage: memory_watch_ready", source)
         self.assertLess(
@@ -141,9 +141,8 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")
         host_cmake = (
             REPO_ROOT
-            / "main"
-            / "ui"
-            / "agent_preview"
+            / "tools"
+            / "ui_preview"
             / "host_runner"
             / "CMakeLists.txt"
         ).read_text(encoding="utf-8")
@@ -192,9 +191,8 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
     def test_host_runner_observes_sdl_quit_without_consuming_input_events(self) -> None:
         source = (
             REPO_ROOT
-            / "main"
-            / "ui"
-            / "agent_preview"
+            / "tools"
+            / "ui_preview"
             / "host_runner"
             / "main.c"
         ).read_text(encoding="utf-8")

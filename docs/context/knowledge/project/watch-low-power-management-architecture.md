@@ -5,7 +5,7 @@ summary: 历史低功耗路线记录，已被 low-power-framework-architecture.m
 last_reviewed: 2026-05-12
 memory_type: semantic
 scope: repo
-owners: components/axp2101, main/app/board_power.c, main/services/power_service.c, main/ui/ui_refresh_policy.c
+owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c, main/ui/ui_refresh_policy.c
 triggers: watch, low, power, management, architecture
 evidence_level: design
 status: superseded
@@ -55,10 +55,10 @@ components/axp2101
 main/app/board_power.[ch]
   -> 板级电源语义
 
-main/services/power_service.[ch]
+main/services/power/power_service.[ch]
   -> 状态采样与发布
 
-main/services/power_policy.[ch]
+main/services/power/power_policy.[ch]
   -> 历史写法：低功耗状态机与跨模块编排
 ```
 

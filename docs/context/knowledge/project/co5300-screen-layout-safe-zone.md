@@ -197,7 +197,7 @@ lv_obj_set_size(card, 160, 120);
 
 ## 与 host 预览的关系
 
-host 预览模拟器（`agent_preview_host.exe`）的窗口尺寸与物理屏幕保持 1:1，圆角遮罩一致。
+`tools/ui_preview/` 下的 host 预览模拟器（`agent_preview_host.exe`）窗口尺寸与物理屏幕保持 1:1，圆角遮罩一致。
 
 - **在模拟器看到被截断 = 在真实屏幕也会被截断**，两者等效。
 - 每次调整控件位置后，先重编译模拟器验证，再烧录板端。

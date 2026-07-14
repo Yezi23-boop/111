@@ -5,7 +5,7 @@ summary: AXP2101 第一阶段只读电源组件的实际落地文件、状态语
 last_reviewed: 2026-04-13
 memory_type: semantic
 scope: component
-owners: components/axp2101, main/app/board_power.c, main/services/power_service.c
+owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c
 triggers: axp2101, board_power, power_service, owner, snapshot
 evidence_level: observed
 route_area: "Power / PMIC"
@@ -21,8 +21,8 @@ route_area: "Power / PMIC"
 - `components/axp2101/axp2101_regs.h`
 - `main/app/board_power.h`
 - `main/app/board_power.c`
-- `main/services/power_service.h`
-- `main/services/power_service.c`
+- `main/services/power/power_service.h`
+- `main/services/power/power_service.c`
 
 ## 第一阶段行为边界
 

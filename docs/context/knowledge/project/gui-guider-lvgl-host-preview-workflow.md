@@ -2,10 +2,10 @@
 id: gui-guider-lvgl-host-preview-workflow
 tags: project, ui, lvgl, gui-guider, preview, pc-sim, host-runner, skill
 summary: 记录 gui-guider-lvgl-preview 的稳定定位：先用 host/pc_sim 预览 LVGL 页面、卡片、弹层和小功能，让用户判断 UI 是否合格，再决定是否接入板端。
-last_reviewed: 2026-05-08
+last_reviewed: 2026-07-14
 memory_type: framework
 scope: repo
-owners: main/ui/agent_preview, main/ui/generated, main/ui/custom
+owners: tools/ui_preview, main/ui/generated, main/ui/custom
 triggers: gui-guider-lvgl-preview, agent画ui, agent_preview, pc_sim, host preview, LVGL预览, UI草图, 子页面, 卡片区, 弹层, 状态区, 设置区
 evidence_level: observed
 status: active
@@ -50,15 +50,15 @@ host / `pc_sim` 预览用于快速判断：
 
 当前仓库旧 `pc_sim/` 已被清理；如果没有现成 preview runner，默认在隔离目录创建最小 host runner：
 
-- 页面主体：`main/ui/agent_preview/pages/`
-- 最小 runner：`main/ui/agent_preview/host_runner/`
-- 构建/截图脚本：`main/ui/agent_preview/scripts/`
-- 截图产物：`main/ui/agent_preview/artifacts/`
+- 页面主体：`tools/ui_preview/pages/`
+- 最小 runner：`tools/ui_preview/host_runner/`
+- 构建/截图脚本：`tools/ui_preview/scripts/`
+- 截图产物：`tools/ui_preview/artifacts/`
 
 构建产物和截图默认不要进入版本控制：
 
-- `main/ui/agent_preview/host_runner/build*/`
-- `main/ui/agent_preview/artifacts/*.png`
+- `tools/ui_preview/host_runner/build*/`
+- `tools/ui_preview/artifacts/*.png`
 
 ## 代码组织约定
 
@@ -84,13 +84,13 @@ host / `pc_sim` 预览用于快速判断：
 当前仓库的稳定截图入口是：
 
 ```powershell
-& "D:\esp32S3\111\main\ui\agent_preview\scripts\capture_apple_watch_s5_preview.ps1"
+& "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1"
 ```
 
 Hermes 首屏截图可加 `-OpenHermes`。脚本默认输出：
 
 ```text
-D:\esp32S3\111\main\ui\agent_preview\artifacts\wifi-management-image-to-code.png
+D:\esp32S3\111\tools\ui_preview\artifacts\wifi-management-image-to-code.png
 ```
 
 不要把截图链路改回 `PowerShell + C# + EnumWindows + PrintWindow`。该路线在当前 Windows/SDL2 host 下曾出现 `agent_preview_host.exe` 进程存在但拿不到可靠顶层 HWND，导致脚本超时；同时 `System.Drawing` 在 PowerShell/.NET 组合下也有程序集兼容风险。
@@ -105,7 +105,7 @@ D:\esp32S3\111\main\ui\agent_preview\artifacts\wifi-management-image-to-code.png
 
 不要使用 `lodepng_encode32_file()` 写 Windows 文件。LVGL 集成版 lodepng 的 file helper 走 `lv_fs_open()`，host runner 默认没有挂 PC filesystem driver，会返回 `failed to open file for writing`。`lodepng_encode32()` 返回的 buffer 由 LVGL allocator 分配，释放必须用 `lv_free()`。
 
-就近操作说明见 `main/ui/agent_preview/README.md`。
+就近操作说明见 `tools/ui_preview/README.md`。
 
 ## 中文字体边界
 

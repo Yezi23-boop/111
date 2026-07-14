@@ -18,7 +18,7 @@ evidence_level: observed
   - Wi-Fi 管理页中的 `BLE Provision` / `AP Web Fallback` 显式启动配网
 - 对应实现位于：
   - `main/app/hardware_init.c`
-  - `main/services/network_service.c`
+  - `main/services/network/network_service.c`
   - `main/ui/custom/main_dropdown_controller.c`
   - `main/ui/generated/events_init.c`
 - 当前 BOOT 键仍然会初始化 `espressif__button` 驱动，但只保留：

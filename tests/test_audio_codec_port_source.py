@@ -41,7 +41,7 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         source = AUDIO_APP_SOURCE.read_text(encoding="utf-8")
         self.assertIn('#include "audio_platform_config.h"', source)
         self.assertIn("audio_codec_read(", source)
-        self.assertIn('#include "services/background_service_manager.h"', source)
+        self.assertIn('#include "services/safety/background_service_manager.h"', source)
         self.assertIn(
             "background_service_manager_set_foreground_audio_active(\n"
             "        true, \"recording\")",

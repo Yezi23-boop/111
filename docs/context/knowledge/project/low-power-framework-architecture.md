@@ -5,7 +5,7 @@ summary: 当前手表项目低功耗总框架设计，固定产品状态、事�
 last_reviewed: 2026-06-02
 memory_type: project_knowledge
 scope: repo
-owners: main/services/power_policy.c, main/services/background_service_manager.c, main/services/network_service.c, main/ui/ui_refresh_policy.c
+owners: main/services/power/power_policy.c, main/services/safety/background_service_manager.c, main/services/network/network_service.c, main/ui/ui_refresh_policy.c
 triggers: low power framework, power_policy, standby, sleep_coordinator, power_budget, 低功耗框架
 evidence_level: design
 status: active

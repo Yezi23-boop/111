@@ -2,7 +2,7 @@
 id: layering-boundary-map
 tags: project, architecture, layering, boundary, owner, esp32-s3
 summary: 记录当前仓库推荐采用的 App/UI、Service、Manager/Domain、Driver Adapter、Vendor/SDK 分层边界，以及 UI/Service/Manager/Adapter 的调用红线和越界检查重点。
-last_reviewed: 2026-05-05
+last_reviewed: 2026-07-14
 memory_type: semantic
 scope: repo
 owners: main/app, main/services, main/features, main/ui, components
@@ -28,9 +28,9 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 
 ## 当前目录映射
 
-- App/UI：`main/app`、`main/ui`、`main/features/*`，负责业务入口、页面交互和用户可见功能。
+- App/UI：`main/app`、`main/ui`、`main/features/*`，负责业务入口、页面交互和用户可见产品语义；host 预览工具位于 `tools/ui_preview`。
 - Board Facts / Board Adapter：`main/app/board_*.c` 或现有 board owner，负责本板 GPIO/中断线、I2C 地址、片选、传感器安装轴向、板级阈值、硬件变体和上电基础设施事实。
-- Service：`main/services/*`，负责后台生命周期、状态推进、重试、超时、任务协作和跨模块编排。
+- Service：`main/services/*`，按 `memory_watch/power/network/sensors/runtime_gate/startup/time/weather/safety/audio_diag` 等窄 owner 子目录组织，负责后台生命周期、状态推进、重试、超时、任务协作和跨模块编排。
 - Manager/Domain：`components/network_manager`、`components/audio_codec`、`components/mp3_player`、`components/espdl_inference`、`main/app/board_power.c`，负责领域语义和资源 owner。
 - Driver Adapter：`components/network_provisioning_adapter`、`components/ap_portal_adapter`、`components/wifi_control`、`components/co5300_panel`、`components/touch_ft5x06`、`components/axp2101`、`components/lvgl_port`，负责把项目语义适配到具体 SDK、协议或器件。
 - Vendor/SDK：ESP-IDF、LVGL、ESP-DL、official_chat、芯片手册、I2C/SPI/I2S/Wi-Fi/provisioning/httpd 等原始 API。
@@ -38,6 +38,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 ## 红线
 
 - `main/ui` 默认不直接 include 或调用 `esp_wifi_*`、`wifi_prov_mgr_*`、`httpd_*`、`esp_lcd_*`、`i2s_*`、`axp2101_*`、`co5300_panel_*`、`touch_ft5x06_*`。
+- `main/ui/generated` 不直接 include `services/*`、`features/*` 或 raw driver；运行时数据刷新放入 `main/ui/custom`。
 - UI 高频路径只读快照或调用 service/manager 的语义接口，不顺手推进联网、硬件、播放、低功耗状态机。
 - Service 拥有后台状态推进和生命周期；UI 不抢 service 的重试、超时、stop/start owner。
 - Service 不长期硬编码 GPIO/I2C 地址/片选/中断线/传感器安装轴向/板级阈值；需要这些事实时只读取 board 配置接口。
@@ -52,7 +53,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 
 ```text
 main/ui
-  -> main/services/network_service.c
+  -> main/services/network/network_service.c
   -> components/network_manager
   -> components/network_provisioning_adapter / ap_portal_adapter / wifi_control
   -> ESP-IDF network_provisioning / esp_wifi / httpd
@@ -61,8 +62,8 @@ main/ui
 电源链路：
 
 ```text
-main/ui
-  -> main/services/power_service.c
+main/ui/custom
+  -> main/services/power/power_service.c
   -> main/app/board_power.c
   -> components/axp2101
   -> I2C / AXP2101 registers
@@ -98,10 +99,20 @@ UI/alerts
 IMU / 抬腕链路：
 
 ```text
-main/services/imu_service.c
+main/services/sensors/imu_service.c
   -> main/app/board_imu.c
+  -> components/imu_sensor
   -> components/qmi8658c
   -> I2C / QMI8658C registers
+```
+
+天气链路：
+
+```text
+main/ui/custom
+  -> main/services/weather/weather_service.c (snapshot)
+  -> main/services/weather/weather_http_client.c
+  -> ESP HTTP Client / cJSON
 ```
 
 ## 常见风险

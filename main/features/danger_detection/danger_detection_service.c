@@ -8,7 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
-#include "services/watch_endpoint_service.h"
+#include "services/memory_watch/watch_endpoint_service.h"
 #include "traffic_audio_runtime.h"
 #include "traffic_inference_postprocess.h"
 #include "espdl_audio_runtime.h"

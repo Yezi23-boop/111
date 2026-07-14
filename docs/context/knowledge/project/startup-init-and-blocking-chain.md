@@ -5,7 +5,7 @@ summary: 当前仓库从上电到 UI 启动的初始化顺序、后台联网分�
 last_reviewed: 2026-04-25
 memory_type: semantic
 scope: repo
-owners: main/app/app_main.c, main/app/hardware_init.c, main/services/network_service.c, main/services/power_service.c
+owners: main/app/app_main.c, main/app/hardware_init.c, main/services/network/network_service.c, main/services/power/power_service.c
 triggers: startup, init, and, blocking, chain
 evidence_level: observed
 ---
@@ -25,9 +25,9 @@ evidence_level: observed
    - `button_init()`
 4. `hardware_init()` 返回 `ESP_OK` 后，`app_main()` 会继续：
    - 创建 `main/ui/lvgl_task.c` 中的 `lvgl_task`
-   - 启动 `main/services/network_service.c` 后台任务
+   - 启动 `main/services/network/network_service.c` 后台任务
    - 调用 `main/services/official_chat_service.c` 完成 service 初始化
-5. `time_and_weather` 任务实现仍保留在 `main/features/weather/time_weather.c`，但正式入口中的任务创建当前保持注释。
+5. `time_and_weather` 任务实现仍保留在 `main/services/weather/weather_service.c`，但正式入口中的任务创建当前保持注释。
 
 ## 当前阻塞点
 
@@ -68,5 +68,5 @@ evidence_level: observed
 
 ## 适用边界
 
-- 本文基于 `main/app/app_main.c`、`main/app/hardware_init.c`、`main/services/network_service.c`、`components/network_manager`、`components/network_provisioning_adapter`、`components/wifi_control` 的当前实现整理。
+- 本文基于 `main/app/app_main.c`、`main/app/hardware_init.c`、`main/services/network/network_service.c`、`components/network_manager`、`components/network_provisioning_adapter`、`components/wifi_control` 的当前实现整理。
 - 若后续把 UI 提前启动、增加离线模式或修改配网策略，需要同步更新本文。

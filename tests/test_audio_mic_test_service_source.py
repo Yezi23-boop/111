@@ -1,10 +1,10 @@
 import unittest
 
-from tests.main_paths import MAIN_CMAKE, SERVICES_DIR
+from tests.main_paths import AUDIO_DIAG_SERVICES_DIR, MAIN_CMAKE
 
 
-MIC_TEST_SOURCE = SERVICES_DIR / "audio_mic_test_service.c"
-MIC_TEST_HEADER = SERVICES_DIR / "audio_mic_test_service.h"
+MIC_TEST_SOURCE = AUDIO_DIAG_SERVICES_DIR / "audio_mic_test_service.c"
+MIC_TEST_HEADER = AUDIO_DIAG_SERVICES_DIR / "audio_mic_test_service.h"
 
 
 class AudioMicTestServiceSourceTests(unittest.TestCase):
@@ -88,7 +88,7 @@ class AudioMicTestServiceSourceTests(unittest.TestCase):
     def test_main_cmake_includes_service(self) -> None:
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
-        self.assertIn("services/audio_mic_test_service.c", cmake)
+        self.assertIn("services/audio_diag/audio_mic_test_service.c", cmake)
 
 
 if __name__ == "__main__":

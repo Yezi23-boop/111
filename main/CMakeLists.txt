@@ -20,46 +20,48 @@ set(app_srcs
 
 set(service_srcs
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/network_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/network/network_service.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/background_https_gate.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/runtime_gate/foreground_runtime_gate.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/foreground_runtime_gate.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/runtime_resource_gate_board_test.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/runtime_gate/runtime_resource_gate_board_test.c
 
     ${CMAKE_CURRENT_LIST_DIR}/services/official_chat_service.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_service.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_ogg_opus_muxer.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_ogg_opus_muxer.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_recorder.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_recorder.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/audio_mic_test_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/audio_diag/audio_mic_test_service.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_voice_client.c
-    ${CMAKE_CURRENT_LIST_DIR}/services/watch_endpoint_service.c
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_ws_client.cc
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_voice_client.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/watch_endpoint_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_ws_client.cc
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/power_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/power/power_service.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/power_policy.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/power/power_policy.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/sleep_coordinator.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/power/sleep_coordinator.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/wakeup_evidence_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/power/wakeup_evidence_service.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/system_time_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/time/system_time_service.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/imu_service.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/weather/weather_service.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/weather/weather_http_client.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/services/sensors/imu_service.c
     ${CMAKE_CURRENT_LIST_DIR}/services/fall_detection_service.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/startup_readiness.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/startup/startup_readiness.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/safety_monitor_session.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/safety/safety_monitor_session.c
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/background_service_manager.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/safety/background_service_manager.c
 
 )
 
@@ -86,10 +88,6 @@ set(feature_srcs
     ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_flappy.c
 
     ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_dino.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/weather/hptts.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/weather/time_weather.c
 
 )
 
@@ -118,6 +116,8 @@ set(ui_runtime_srcs
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_view.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/main_dropdown_controller.c
+
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/main_screen_runtime.c
 
     ${CMAKE_CURRENT_LIST_DIR}/ui/custom/memory_watch_controller.c
 

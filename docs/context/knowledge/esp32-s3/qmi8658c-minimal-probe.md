@@ -5,7 +5,7 @@ summary: QMI8658C Rev A 在当前板上的稳定接线、可用能力、历史 I
 last_reviewed: 2026-07-07
 memory_type: semantic
 scope: board
-owners: components/qmi8658c, main/app/board_imu.c, main/services/imu_service.c
+owners: components/qmi8658c, main/app/board_imu.c, main/services/sensors/imu_service.c
 triggers: qmi8658c, imu, wom, qmi_int1, gpio21, revision-a, status0 sda, ctrl9 0x0c, unified-config
 evidence_level: observed
 status: active
@@ -26,7 +26,7 @@ status: active
 
 - 芯片协议与寄存器操作：`components/qmi8658c`
 - 板级地址、中断 GPIO 与安装方向：`main/app/board_imu.c`
-- 当前统一配置与采样服务：`main/services/imu_service.c`
+- 当前统一配置与采样服务：`main/services/sensors/imu_service.c`
 - 默认调用方向：`imu_service -> imu_sensor -> qmi8658c -> shared I2C`；`board_imu` 只提供 I2C 地址、GPIO21 和安装方向事实。
 - QMI8658C 已不是“未接入器件”；当前固件以统一配置、物理六轴读取和 50Hz service 采样为主，不启用芯片 WoM 或芯片侧 INT 事件源。
 

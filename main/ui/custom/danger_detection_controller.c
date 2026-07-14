@@ -5,8 +5,8 @@
 
 #include "features/alerts/app_alert_manager.h"
 #include "features/danger_detection/danger_detection_service.h"
-#include "services/audio_mic_test_service.h"
-#include "services/background_service_manager.h"
+#include "services/audio_diag/audio_mic_test_service.h"
+#include "services/safety/background_service_manager.h"
 #include "danger_detection_view.h"
 #include "esp_err.h"
 #include "esp_log.h"

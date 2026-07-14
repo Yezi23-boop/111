@@ -5,7 +5,7 @@ summary: 记录当前仓库在替换 GUI Guider 新导出层并升级到 LVGL 9.
 last_reviewed: 2026-04-17
 memory_type: semantic
 scope: repo
-owners: main/ui/custom/ai_ui_controller.c, main/ui/custom/ai_chat_view.c, main/services/network_service.c
+owners: main/ui/custom/ai_ui_controller.c, main/ui/custom/ai_chat_view.c, main/services/network/network_service.c
 triggers: ai, ui, entry, network, guidance
 evidence_level: observed
 ---

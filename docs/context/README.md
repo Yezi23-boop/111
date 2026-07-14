@@ -32,7 +32,7 @@ last_reviewed: YYYY-MM-DD
 ```yaml
 memory_type: project_plan | trial_error | project_knowledge | framework | constraints | stable_preferences
 scope: repo | component | board | task
-owners: main/services/network_service.c, components/network_manager
+owners: main/services/network/network_service.c, components/network_manager
 triggers: wifi, provisioning, softap
 evidence_level: observed | inferred | design
 status: active | stale | superseded | retired | deprecated | archived

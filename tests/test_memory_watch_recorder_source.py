@@ -28,7 +28,7 @@ class MemoryWatchRecorderSourceTests(unittest.TestCase):
         source = MEMORY_WATCH_RECORDER_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "audio_codec.h"', source)
-        self.assertIn('#include "services/background_service_manager.h"', source)
+        self.assertIn('#include "services/safety/background_service_manager.h"', source)
         self.assertIn("background_service_manager_set_foreground_audio_active", source)
         self.assertIn("true, \"memory_watch_recording\"", source)
         self.assertIn("false, \"memory_watch_recording_done\"", source)
@@ -79,7 +79,7 @@ class MemoryWatchRecorderSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch_recorder.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_recorder.c",
             cmake,
         )
         self.assertIn("espressif__esp_audio_codec", cmake)

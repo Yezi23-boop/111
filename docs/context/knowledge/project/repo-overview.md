@@ -5,7 +5,7 @@ summary: 当前仓库的模块地图、启动链路和构建依赖摘要，便�
 last_reviewed: 2026-04-21
 memory_type: semantic
 scope: repo
-owners: main/app/app_main.c, main/services/network_service.c, components/network_manager
+owners: main/app/app_main.c, main/services/network/network_service.c, components/network_manager
 triggers: repo-overview, startup, owner, architecture, network-manager, provisioning
 evidence_level: observed
 ---
@@ -34,12 +34,12 @@ evidence_level: observed
   - `services/official_chat_service.c`
 - `main/app/hardware_init.c` 当前负责初始化 `NVS`、音频 SPIFFS、SD 卡、音频编解码器、按键和 `board_power`，但不再同步初始化旧 `wifi_provision`，也不再阻塞等待 Wi-Fi 连接成功。
 - `main/app/hardware_init.c` 还会初始化 `board_power`，并在启动时打印首帧 `Board power boot snapshot`。
-- `main/services/network_service.c` 在 UI 启动后于后台继续执行：
+- `main/services/network/network_service.c` 在 UI 启动后于后台继续执行：
   - `network_manager_start()`
   - STA 联网状态轮询
   - `api.tenclass.net` / `mqtt.xiaozhi.me` 服务就绪探测
-- `main/services/power_service.c` 在后台轮询 `board_power` 快照，并以双缓冲方式向 UI 与上层服务发布稳定电源状态。
-- `main/features/weather/time_weather.c` 当前仍保留时间天气任务实现，但正式入口里的任务创建保持注释状态。
+- `main/services/power/power_service.c` 在后台轮询 `board_power` 快照，并以双缓冲方式向 UI 与上层服务发布稳定电源状态。
+- `main/services/weather/weather_service.c` 当前仍保留时间天气任务实现，但正式入口里的任务创建保持注释状态。
 - 当前仓库的正式启动模型已经从“联网成功后再进 UI”切换为“硬件 ready 后先起 UI，联网后台继续”，这样没网时也能先使用手表基础功能。
 
 ## 模块地图
@@ -55,7 +55,7 @@ evidence_level: observed
 - `components/touch_ft5x06`：`FT5x06` 触摸驱动。
 - `components/audio_codec`：音频编解码器与 I2S 相关初始化封装。
 - `components/mp3_player`：基于 `esp-audio-player` 的播放封装。
-- `components/mp3_player` 当前保留为独立底层播放器组件，已不再由 `main/features/weather/time_weather.c` 在启动时隐式初始化。
+- `components/mp3_player` 当前保留为独立底层播放器组件，已不再由 `main/services/weather/weather_service.c` 在启动时隐式初始化。
 - `components/wifi_control`：纯 `Wi-Fi STA runtime control`，负责初始化、连接、断开、自动重连和 IP 查询。
 - `components/ble_control`：BLE 总开关偏好与 active 状态。
 - `components/network_credentials`：最近成功连接的 Wi-Fi 列表。
@@ -68,8 +68,8 @@ evidence_level: observed
 - `components/sd_card`：SD 卡挂载和文件访问。
 - `main/app/board_power.c`：把 AXP2101 快照转换成板级统一电源语义，并缓存最近一次成功状态。
 - `main/app/board_imu.c`：持有 QMI8658C 地址、INT1 GPIO、安装方向和抬腕阈值等板级事实。
-- `main/services/imu_service.c`：长期管理 WoM、原始六轴动作窗口、最终姿态与抬腕结果。
-- `main/features/weather/time_weather.c`、`main/features/audio/audio_app.c`：时间天气和音频初始化相关应用逻辑；当前配网与联网主链路已经收敛到 `network_manager + network_provisioning_adapter + ap_portal_adapter`。
+- `main/services/sensors/imu_service.c`：长期管理 WoM、原始六轴动作窗口、最终姿态与抬腕结果。
+- `main/services/weather/weather_service.c`、`main/features/audio/audio_app.c`：时间天气和音频初始化相关应用逻辑；当前配网与联网主链路已经收敛到 `network_manager + network_provisioning_adapter + ap_portal_adapter`。
 - `components/ap_portal_adapter/web/` 当前承载自定义 AP 门户网页资源；`components/sd_card/sd_manager.c` 把 SD 卡挂载到 `/sdcard` 并显式放到 `SPI3_HOST` 以避开屏幕的 `SPI2_HOST`。
 
 ## 板级与总线要点
@@ -88,8 +88,8 @@ evidence_level: observed
 
 - 显示/触摸问题先看 `components/lvgl_port`、`components/co5300_panel`、`components/touch_ft5x06` 和 `main/ui`。
 - 音频播放问题先看 `main/features/audio/audio_app.c`、`components/audio_codec`、`components/mp3_player` 和存储路径。
-- 配网/联网问题先看 `main/app/hardware_init.c`、`main/services/network_service.c`、`components/network_manager`、`components/network_provisioning_adapter`、`components/ap_portal_adapter` 和 `components/wifi_control`。
-- 电源/低功耗问题先看 `components/axp2101`、`main/app/board_power.c`、`main/services/power_service.c` 和 `main/ui/ui_refresh_policy.c`。
+- 配网/联网问题先看 `main/app/hardware_init.c`、`main/services/network/network_service.c`、`components/network_manager`、`components/network_provisioning_adapter`、`components/ap_portal_adapter` 和 `components/wifi_control`。
+- 电源/低功耗问题先看 `components/axp2101`、`main/app/board_power.c`、`main/services/power/power_service.c` 和 `main/ui/ui_refresh_policy.c`。
 
 ## 约束提示
 

@@ -206,7 +206,7 @@ ESP-IDF 头文件 `esp_additions/include/freertos/idf_additions.h` 明确：
 
 `xTaskCreateWithCaps` / `xTaskCreatePinnedToCoreWithCaps` / `xTaskCreate` / `xTaskCreatePinnedToCore` 的栈参数单位**统一为 bytes**。
 
-⚠️ `main/services/memory_watch_service.c` 中常量命名 `kTaskStackWords` / `kUploadWorkerStackWords` / `kHealthWorkerStackWords` / `kCancelWorkerStackWords` / `kConversationWorkerStackWords` / `INBOX_WORKER_STACK_WORDS` 为**误导性命名**——实际按 bytes 处理，并非 words。建议后续重命名为 `*StackBytes`。
+⚠️ `main/services/memory_watch/memory_watch_service.c` 中常量命名 `kTaskStackWords` / `kUploadWorkerStackWords` / `kHealthWorkerStackWords` / `kCancelWorkerStackWords` / `kConversationWorkerStackWords` / `INBOX_WORKER_STACK_WORDS` 为**误导性命名**——实际按 bytes 处理，并非 words。建议后续重命名为 `*StackBytes`。
 
 ---
 

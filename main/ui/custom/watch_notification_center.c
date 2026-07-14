@@ -17,10 +17,10 @@
 
 #include "esp_log.h"
 #include "lvgl.h"
-#include "services/memory_watch_service.h"
+#include "services/memory_watch/memory_watch_service.h"
 #include "ui_chinese_fonts.h"
 #include "features/danger_detection/danger_detection_service.h"
-#include "services/background_service_manager.h"
+#include "services/safety/background_service_manager.h"
 
 static const char *TAG = "watch_nc";
 

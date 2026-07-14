@@ -24,11 +24,11 @@ evidence_level: observed
 - 硬件 ready 后启动 `main/ui/lvgl_task.c` 的 UI 任务。
 - 当前启动骨架按 `docs/context/knowledge/project/runtime-owner-contract.md` 固定为：`Board Foundation -> Display Foundation -> UI First Frame -> Core Policy -> Service Managers -> Deferred Services`。
 - UI 起来后再由后台服务继续推进，典型 owner 包括：
-  - `main/services/power_service.c`
-  - `main/services/power_policy.c`
-  - `main/services/background_service_manager.c`
-  - `main/services/safety_monitor_session.c`
-  - `main/services/network_service.c`
+  - `main/services/power/power_service.c`
+  - `main/services/power/power_policy.c`
+  - `main/services/safety/background_service_manager.c`
+  - `main/services/safety/safety_monitor_session.c`
+  - `main/services/network/network_service.c`
   - `main/services/official_chat_service.c`
 - 当前正式模型已经切到“先起 UI，联网后台继续”；不要再按“联网成功后再进 UI”的旧路径理解仓库。
 
@@ -36,10 +36,10 @@ evidence_level: observed
 
 - 显示/触摸：`components/lvgl_port`、`components/co5300_panel`、`components/touch_ft5x06`、`main/ui`
 - 音频：`components/audio_codec`、`components/mp3_player`、`main/features/audio`
-- 联网/配网：`components/network_manager`、`components/network_provisioning_adapter`、`components/ap_portal_adapter`、`components/wifi_control`、`main/services/network_service.c`
-- 电源：`components/axp2101`、`main/app/board_power.c`、`main/services/power_service.c`
+- 联网/配网：`components/network_manager`、`components/network_provisioning_adapter`、`components/ap_portal_adapter`、`components/wifi_control`、`main/services/network/network_service.c`
+- 电源：`components/axp2101`、`main/app/board_power.c`、`main/services/power/power_service.c`
 - 危险识别：`components/espdl_inference`、`main/features/danger_detection`
-- AI Memory Watch / Hermes：`main/services/memory_watch_service.c`、`main/services/memory_watch_voice_client.c`、`main/services/memory_watch_recorder.c`、`server/watch_voice_endpoint`；固件侧只面向 watch endpoint 和 device token，不直连 Hermes Dashboard、Hermes API Server 或 MiMo API。
+- AI Memory Watch / Hermes：`main/services/memory_watch/memory_watch_service.c`、`main/services/memory_watch/memory_watch_voice_client.c`、`main/services/memory_watch/memory_watch_recorder.c`、`server/watch_voice_endpoint`；固件侧只面向 watch endpoint 和 device token，不直连 Hermes Dashboard、Hermes API Server 或 MiMo API。
 - 运行时骨架：`docs/context/knowledge/project/runtime-owner-contract.md` 是后续新增功能、跨模块改动、低功耗、OTA、后台能力和资源仲裁的 owner 合同；默认不新增大而全 `ResourceManager`、`resource_policy`、`session_router` 或默认 `ui_manager`。
 
 ## 当前已退场或不要再当正式主线的旧链路

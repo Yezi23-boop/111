@@ -44,7 +44,7 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("danger_blocked_by_foreground_audio", header)
         self.assertIn("danger_blocked_by_foreground_runtime", header)
         self.assertIn(".danger_enabled_by_user = false", source)
-        self.assertIn('#include "services/foreground_runtime_gate.h"', source)
+        self.assertIn('#include "services/runtime_gate/foreground_runtime_gate.h"', source)
         self.assertIn(
             "background_service_manager_set_foreground_audio_active",
             header,
@@ -100,11 +100,13 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         )
 
     def test_power_policy_only_notifies_background_manager_on_budget_change(self) -> None:
-        source = (REPO_ROOT / "main" / "services" / "power_policy.c").read_text(
+        source = (
+            REPO_ROOT / "main" / "services" / "power" / "power_policy.c"
+        ).read_text(
             encoding="utf-8"
         )
 
-        self.assertIn('#include "services/background_service_manager.h"', source)
+        self.assertIn('#include "services/safety/background_service_manager.h"', source)
         self.assertIn("background_service_manager_notify_policy_changed()", source)
         self.assertNotIn("background_service_manager_set_danger_detection_enabled", source)
         self.assertNotIn("safety_monitor_session_apply", source)
@@ -113,7 +115,7 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         source = MAIN_CMAKE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/safety_monitor_session.c",
+            "${CMAKE_CURRENT_LIST_DIR}/services/safety/safety_monitor_session.c",
             source,
         )
 
