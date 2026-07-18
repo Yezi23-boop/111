@@ -166,6 +166,52 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
             source,
         )
 
+    def test_foreground_gate_is_fail_closed_and_released_after_destroy(self) -> None:
+        source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        gate_section = source.split(
+            "static esp_err_t official_chat_service_set_foreground_runtime_active"
+        )[1].split("static void official_chat_service_clear_cached_text_locked", 1)[0]
+        self.assertIn("return ret;", gate_section)
+        release_section = gate_section.split("if (!s_foreground_runtime_gate_held)", 1)[1]
+        self.assertLess(
+            release_section.index("foreground_runtime_gate_release"),
+            release_section.index("s_foreground_runtime_gate_held = false"),
+        )
+
+        enter_section = source.split(
+            "case OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND:"
+        )[1].split("case OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP:", 1)[0]
+        self.assertIn("official_chat_service_set_foreground_runtime_active(true)", enter_section)
+        self.assertIn("if (gate_ret != ESP_OK)", enter_section)
+        self.assertLess(
+            enter_section.index("if (gate_ret != ESP_OK)"),
+            enter_section.index("s_foreground_requested = true"),
+        )
+
+        begin_shutdown_section = source.split(
+            "static void official_chat_service_begin_shutdown_from_task"
+        )[1].split("static void official_chat_service_handle_command", 1)[0]
+        self.assertNotIn(
+            "official_chat_service_set_foreground_runtime_active(false)",
+            begin_shutdown_section,
+        )
+
+        shutdown_section = source.split("if (s_shutdown_requested)", 1)[1].split(
+            "if (!s_foreground_requested)", 1
+        )[0]
+        self.assertIn("official_chat_destroy(chat_handle)", shutdown_section)
+        self.assertIn(
+            "official_chat_service_set_foreground_runtime_active(false)",
+            shutdown_section,
+        )
+        self.assertLess(
+            shutdown_section.index("official_chat_destroy(chat_handle)"),
+            shutdown_section.index(
+                "official_chat_service_set_foreground_runtime_active(false)"
+            ),
+        )
+
     def test_ui_exit_is_frontend_leave_not_blocking_shutdown(self) -> None:
         ui_source = AI_UI_SOURCE.read_text(encoding="utf-8")
 

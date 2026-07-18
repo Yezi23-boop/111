@@ -191,14 +191,15 @@ static void official_chat_service_set_foreground_audio_active(bool active,
  * ESP-DL 等可抢占后台任务让路，并暂时阻止低优先级 HTTPS 新请求叠加握手峰值。
  *
  * @param active true 表示进入 official_chat 前台窗口。
+ * @return `ESP_OK` 表示 gate 状态已收敛；失败时本地 held 状态保持不变。
  */
-static void official_chat_service_set_foreground_runtime_active(bool active)
+static esp_err_t official_chat_service_set_foreground_runtime_active(bool active)
 {
     if (active)
     {
         if (s_foreground_runtime_gate_held)
         {
-            return;
+            return ESP_OK;
         }
 
         const esp_err_t ret = foreground_runtime_gate_acquire(
@@ -207,22 +208,31 @@ static void official_chat_service_set_foreground_runtime_active(bool active)
         {
             ESP_LOGW(TAG, "official_chat foreground gate acquire failed: %s",
                      esp_err_to_name(ret));
-            return;
+            return ret;
         }
 
         s_foreground_runtime_gate_held = true;
         (void)background_service_manager_notify_foreground_runtime_changed();
-        return;
+        return ESP_OK;
     }
 
     if (!s_foreground_runtime_gate_held)
     {
-        return;
+        return ESP_OK;
+    }
+
+    const esp_err_t ret = foreground_runtime_gate_release(
+        FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "official_chat foreground gate release failed: %s",
+                 esp_err_to_name(ret));
+        return ret;
     }
 
     s_foreground_runtime_gate_held = false;
-    (void)foreground_runtime_gate_release(FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT);
     (void)background_service_manager_notify_foreground_runtime_changed();
+    return ESP_OK;
 }
 
 /**
@@ -406,8 +416,6 @@ static bool official_chat_service_requires_shutdown_quiet_period(
  */
 static void official_chat_service_begin_shutdown_from_task(void)
 {
-    official_chat_service_set_foreground_audio_active(false, "official_chat");
-    official_chat_service_set_foreground_runtime_active(false);
     s_foreground_requested = false;
     s_shutdown_requested = true;
     s_shutdown_stop_requested = false;
@@ -430,15 +438,27 @@ static void official_chat_service_handle_command(
     switch (command->type)
     {
     case OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND:
+    {
         s_shutdown_requested = false;
         s_shutdown_stop_requested = false;
         s_shutdown_destroy_deadline_ticks = 0;
+        const esp_err_t gate_ret =
+            official_chat_service_set_foreground_runtime_active(true);
+        if (gate_ret != ESP_OK)
+        {
+            s_foreground_requested = false;
+            official_chat_service_set_lifecycle_intent(false, false);
+            official_chat_service_set_last_error(gate_ret);
+            official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
+            ESP_LOGW(TAG, "command: enter_foreground denied by gate");
+            break;
+        }
         s_foreground_requested = true;
         official_chat_service_set_lifecycle_intent(true, false);
         official_chat_service_set_foreground_audio_active(true, "official_chat");
-        official_chat_service_set_foreground_runtime_active(true);
         ESP_LOGI(TAG, "command: enter_foreground");
         break;
+    }
     case OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP:
         official_chat_service_begin_shutdown_from_task();
         ESP_LOGI(TAG, "command: leave_foreground_and_stop");
@@ -818,11 +838,23 @@ static void official_chat_service_task(void *arg)
                 official_chat_destroy(chat_handle);
             }
 
+            s_chat_handle = NULL;
+
             official_chat_service_lock();
             official_chat_service_clear_cached_text_locked();
             official_chat_service_unlock();
 
-            s_chat_handle = NULL;
+            official_chat_service_set_foreground_audio_active(false, "official_chat");
+            const esp_err_t gate_ret =
+                official_chat_service_set_foreground_runtime_active(false);
+            if (gate_ret != ESP_OK)
+            {
+                official_chat_service_set_last_error(gate_ret);
+                official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
+                vTaskDelay(pdMS_TO_TICKS(50));
+                continue;
+            }
+
             official_chat_service_set_last_error(ESP_OK);
             official_chat_service_set_audio_channel_ready(false);
             official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_STOPPED);
@@ -861,9 +893,13 @@ static void official_chat_service_task(void *arg)
             continue;
         }
 
-        if (official_chat_service_start_internal() != ESP_OK)
+        const esp_err_t start_ret = official_chat_service_start_internal();
+        if (start_ret != ESP_OK)
         {
-            vTaskDelay(pdMS_TO_TICKS(2000));
+            official_chat_service_begin_shutdown_from_task();
+            official_chat_service_set_last_error(start_ret);
+            official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
+            vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 

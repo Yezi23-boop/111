@@ -43,6 +43,20 @@ extern "C"
     } memory_watch_service_state_t;
 
     /**
+     * @brief Hermes 页面强前台资源的生命周期状态。
+     *
+     * 该状态只描述 foreground gate 和前台交互许可，不替代语音请求状态。
+     */
+    typedef enum
+    {
+        MEMORY_WATCH_FOREGROUND_STOPPED = 0, /**< 页面不需要前台资源。 */
+        MEMORY_WATCH_FOREGROUND_STARTING,    /**< owner task 正在申请前台资源。 */
+        MEMORY_WATCH_FOREGROUND_READY,       /**< gate 已持有，可以开始前台交互。 */
+        MEMORY_WATCH_FOREGROUND_STOPPING,    /**< owner task 正在释放前台资源。 */
+        MEMORY_WATCH_FOREGROUND_ERROR,       /**< 本轮申请或释放失败，等待新意图重试。 */
+    } memory_watch_foreground_session_state_t;
+
+    /**
      * @brief UI 读取的 AI Memory Watch 快照。
      *
      * getter 只复制该结构，不做网络请求、不读音频、不推进状态机，避免 LVGL
@@ -57,6 +71,11 @@ extern "C"
         bool request_active;                /**< 是否有未收敛的 active request。 */
         bool clarification_active;          /**< 是否正在回答 Hermes 追问。 */
         esp_err_t last_error;               /**< 最近一次服务层错误。 */
+        bool foreground_desired;            /**< UI 最近提交的 Hermes 页面前台意图。 */
+        bool foreground_resource_ready;     /**< owner task 是否已持有 Hermes foreground gate。 */
+        memory_watch_foreground_session_state_t foreground_session_state; /**< 前台资源生命周期状态。 */
+        uint32_t foreground_generation;     /**< 每次前台意图更新时递增，用于丢弃旧结果。 */
+        esp_err_t foreground_last_error;    /**< 最近一次前台资源申请或释放错误。 */
         char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];      /**< 当前请求 ID。 */
         char clarification_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES]; /**< 当前追问 ID。 */
         char asr_text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];       /**< 最近 ASR 文本。 */
@@ -177,7 +196,8 @@ extern "C"
      * 由 service/worker 按 owner 规则处理，UI 不直接做网络操作。
      *
      * @param[in] foreground true 表示 Hermes 页面前台可见。
-     * @return `ESP_OK` 表示命令已投递或状态已记录。
+     * @return `ESP_OK` 表示意图已记录并唤醒 owner task；服务未初始化时返回
+     *         `ESP_ERR_INVALID_STATE`。
      */
     esp_err_t memory_watch_service_set_foreground(bool foreground);
 

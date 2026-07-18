@@ -1,7 +1,7 @@
 ---
 id: watch-foreground-session-lifecycle-plan
 tags: context, plans, foreground-session, lifecycle, resource-arbitration, freertos, hermes, official-chat, ble, espdl
-summary: 为 Hermes、official_chat 和 BLE provisioning 建立 owner 内部完整的资源创建/销毁机制，再通过异步意图 API、强前台 gate 和后台 quiesced ACK 完成可验证的前台切换。
+summary: 先盘点全系统动态资源的 owner 与生命周期，再为 Hermes、official_chat 和 BLE provisioning 建立完整的前台资源创建/销毁机制，并通过强前台 gate 和后台 quiesced ACK 完成可验证切换。
 last_reviewed: 2026-07-14
 memory_type: task
 scope: task
@@ -118,6 +118,22 @@ UI/controller
 
 - Hermes 最近对话、Inbox、表盘帧等 PSRAM 缓存。
 - 缓存不等于前台 session；页面退出后可按产品需求保留，内存压力出现时允许丢弃或缩减。
+
+### 6. 全系统资源覆盖边界
+
+所有动态资源都必须有明确 owner 和释放路径，但不统一接入 foreground gate，也不机械套用同一组 `create/stop/destroy` 接口：
+
+| 资源类别 | 当前代表 | 生命周期合同 | 是否进入 foreground gate |
+| --- | --- | --- | --- |
+| 强前台 session | Hermes、official_chat、BLE provisioning | 页面或交互进入时创建，离开时停止、等待并销毁 | 是 |
+| 可抢占后台 runtime | Safety Monitor / ESP-DL、Fall 模型 | 强前台进入时 quiesce 并确认重资源已释放，结束后按策略恢复 | 不占 gate，由 gate 状态驱动让路 |
+| 共享硬件 session | audio codec、麦克风、扬声器 | 由真实 domain owner 按 input/output session 申请和释放 | 不直接进入 gate |
+| 基础常驻控制面 | UI/LVGL、Wi-Fi STA、IMU 基础采样、时间、电源及 service 控制 task | 开机初始化并常驻，不随页面退出销毁 | 否 |
+| 单次操作资源 | HTTP client、录音 task/buffer、Opus muxer、临时 JSON、推理窗口 | 操作内部创建，成功、失败或取消后立即清理 | 否 |
+| 可回收缓存 | 对话记录、Inbox、表盘帧及其他 PSRAM 缓存 | 独立提供 trim/clear 边界，不与 session stop 混为一体 | 否 |
+| 维护模式资源 | OTA | 后续建立独立 maintenance 生命周期，执行时排斥强前台 | 后续单独设计 |
+
+阶段 0 必须让每个相关 owner 回答：谁创建、谁停止、如何确认 worker/callback 已退出、谁释放、部分创建失败如何清理、重复停止是否安全，以及页面退出后哪些资源继续保留。
 
 ## 五、目标状态机
 
@@ -261,14 +277,76 @@ ACK 不能只依赖一个可能残留的 event bit。完成条件至少包括：
 
 ## 十、分阶段执行
 
+### 阶段 0 审计结果（2026-07-14）
+
+#### 1. Memory Watch / Hermes
+
+| 分类 | 当前资源与 owner | 当前释放事实 | 审计结论 |
+| --- | --- | --- | --- |
+| 长期控制面 | `memory_watch`、`mw_upload`、`mw_cancel`、`mw_health`、`mw_conv`、Inbox worker；静态 queue/event group/lock；endpoint snapshot | 当前仅初始化，不随页面退出销毁 | 可以继续常驻，但初始化中途失败没有统一回滚；已创建 task 和 PSRAM staging 可能残留，下一次 init 会因“部分 handle 存在”返回错误 |
+| 前台意图 | `s_foreground_active`、`s_foreground_runtime_gate_held` | `set_foreground()` 在调用线程立即改状态和申请 gate，随后又投递 queue | owner 边界未闭合；gate 失败只记录日志，后续录音/WS 仍可能继续，属于 fail-open |
+| 单次语音操作 | recorder PCM/Opus buffer、Ogg muxer、聚合 audio buffer、WS client、临时响应 | recorder buffer 和 audio buffer 有局部 cleanup；WS 在当前 turn 的结束/错误路径 close | 当前 WS/TLS 更接近“单次交互资源”，不能在没有新证据时直接改成长驻连接；阶段 1 应先统一 create/stop/cleanup 合同 |
+| 离页后台能力 | pending conversation `/sync`、Inbox worker/store、最近对话缓存、endpoint 配置 | 页面退出后继续保留 | 这些不属于前台 session，不能随 gate release 销毁 |
+| 可回收缓存 | conversation staging、Inbox store/staging 位于 PSRAM | 当前没有统一 trim API | 暂不阻塞阶段 1；后续只在实测内存压力成立时增加 owner 内部 trim |
+
+必须在阶段 1 修复：foreground desired state 只由 service task 推进；gate acquire 失败不得启动录音/WS；初始化与 session 部分创建失败统一回滚；pending/Inbox/最近对话继续保留。
+
+#### 2. official_chat
+
+| 分类 | 当前资源与 owner | 当前释放事实 | 审计结论 |
+| --- | --- | --- | --- |
+| 长期控制面 | `official_chat_service` task、静态 command queue、snapshot lock、文本 mutex | 初始化后常驻 | 边界成立，不随页面销毁 |
+| 前台 session | `s_chat_handle`；其内部 `Application`、transport、audio worker、codec input/output session | service task 执行 prepare shutdown、等待 idle、transport quiet period、解绑 callback、`official_chat_destroy()` | 已有较完整 owner 内部销毁基础，可作为第一个成熟参考 |
+| 前台 gate | `s_foreground_runtime_gate_held` | enter 时申请；begin shutdown 时先 release，然后底层才进入 prepare/quiet/destroy | 两个缺口：acquire 失败仍保留 foreground requested 并可能继续创建；release 早于重资源真实销毁，存在切换重叠窗口 |
+| 消息缓存 | 固定 8 条历史和最近 user/assistant 文本 | session destroy 时清空 | 当前容量受控；是否跨 session 保留属于产品决定，不应混入资源安全修复 |
+| 迟到 callback | stop pending 后事件回调直接丢弃；destroy 前解绑 callback | 已有保护 | 仍需用 session generation 或等价事实覆盖“旧 callback 迟到到新 session”的边界 |
+
+必须在阶段 2 修复：gate acquire 失败 fail closed；只有 `official_chat_destroy()` 和 audio/transport teardown 完成后才 release gate；所有启动失败和 command 投递失败都收敛到一致 snapshot。
+
+#### 3. BLE presence 与 BLE provisioning
+
+当前代码存在两套不同产品语义，必须分别管理，不能继续统称为一个 BLE 开关：
+
+| 资源 | 当前 owner | 当前创建/销毁 | 审计结论 |
+| --- | --- | --- | --- |
+| 普通 BLE presence | `ble_presence`，由主界面“蓝牙总开关”通过 `network_manager_set_ble_enabled()` 控制 | `nimble_port_init()` + host task + advertising；stop advertising、`nimble_port_stop()`、等待 task、`nimble_port_deinit()` | 当前 UI 在 LVGL 回调同步启动并做 800ms 重试；gate 只包住 start 调用，host/advertising 常驻后立即 release，生命周期不一致 |
+| BLE provisioning | `network_provisioning_adapter`，由 Wi-Fi 配网页面显式启动 | `wifi_prov_mgr_init/start`；失败时 deinit；stop 后 `wifi_prov_mgr_deinit()` | adapter 自身 create/stop/deinit 边界较完整，但尚未成为页面级异步 foreground session，也没有持有完整活跃期 gate |
+| BLE 偏好与状态 | `ble_control` + `network_manager` | 静态状态/mutex/monitor task 常驻 | 只作为控制面；不应随 BLE session 销毁 |
+
+额外风险：`ble_presence_stop()` 等待 host task 超时时当前只记录警告，随后仍调用 `nimble_port_deinit()` 并清空 runtime；需要在阶段 3 明确超时后的 fail-closed 行为，不能把“未确认退出”发布成已销毁。
+
+阶段 3 开始前先确认产品边界：如果 BLE 只用于小程序配网，应删除“普通 presence 长期开关”这一运行模式，收敛为页面级 provisioning session；在确认前不直接删除现有 presence 路径。
+
+#### 4. 可抢占后台与共享资源
+
+| 资源 | 当前 owner | 当前合同 | 后续要求 |
+| --- | --- | --- | --- |
+| Safety Monitor / ESP-DL | `background_service_manager -> safety_monitor_session -> danger_detection_service` | `danger_detection_service_stop()` 同步等待 runtime stop，失败时不伪装为已停止 | 增加可等待的 quiesced generation/ACK；前台创建前确认 runtime、model、audio 和 callback 均已释放 |
+| Fall 模型 | `fall_detection_service` | `destroy()` 断开 IMU queue 并通知 task；task 活跃时函数会在真实资源释放前返回 | 默认不加入 foreground handover；若组合实测要求让路，必须等待 snapshot 从 STOPPING 到已销毁，IMU 基础采样保持运行 |
+| Audio codec | `components/audio_codec` | input/output session 分别记录 active 与 owner，调用方负责成对 acquire/release | 现有 domain owner 继续保留；foreground gate 不重复接管 codec，只验证 session 在 teardown 后已释放 |
+| HTTP/SNTP/天气/Inbox | 各网络 owner | 单次 client/请求，按自身周期和错误语义清理 | 不恢复全局 HTTPS gate；只在可重复冲突证据出现时做具体 owner 错峰 |
+| OTA | 尚未形成完整 maintenance owner | gate 枚举已有预留，但无完整生命周期合同 | 不纳入本轮实现；后续单独建立 maintenance session |
+
+#### 5. 阶段 0 测试基线与后续断言
+
+现有 source tests 可继续锁定目录 owner、foreground gate 调用、Safety/Fall/audio session 基础合同。后续阶段必须新增的行为断言：
+
+- Hermes gate acquire 失败后不能进入录音或 WS create。
+- Memory Watch 部分初始化/部分 session 创建失败必须回到可重试状态。
+- official_chat 在底层 destroy 完成前不能 release gate。
+- BLE start/stop 不在 LVGL callback 内阻塞，且 host 未确认退出时不能发布 STOPPED。
+- Safety quiesced ACK 必须对应当前 generation，旧 event bit 不能放行新 session。
+- Fall 若未来参与让路，必须等待异步 destroy 完成，而不是只检查 `destroy()` 返回值。
+
 ### 阶段 0：资源清单与基线锁定
 
-- 为 Hermes、official_chat、BLE 列出实际 handle、task、queue、buffer、audio/model/transport owner。
-- 标记长期控制面、前台 session、单次操作和缓存。
+- 先建立全系统资源生命周期清单，覆盖强前台 session、可抢占后台 runtime、共享硬件 session、基础常驻控制面、单次操作资源、可回收缓存和维护模式资源。
+- 为 Hermes、official_chat、BLE 列出实际 handle、task、queue、buffer、audio/model/transport owner，作为本计划首批实施对象。
+- 同步审计 Safety Monitor / ESP-DL、Fall、audio codec、网络临时资源、Hermes/Inbox 缓存和 OTA 的现有 owner 与释放合同；审计不等于把它们全部接入 gate。
 - 记录当前 create/stop/destroy 路径和遗漏的错误出口。
 - 增加或调整 source tests，只锁 owner、状态与清理合同，不复述实现细节。
 
-验收：三份资源清单能回答“谁创建、谁销毁、何时确认 STOPPED”。
+验收：全系统覆盖矩阵完整；Hermes、official_chat、BLE 三份详细清单能回答“谁创建、谁销毁、何时确认 STOPPED”；其他资源已明确采用常驻、session、quiesce、单次释放或缓存回收中的哪一种合同。
 
 ### 阶段 1：Memory Watch owner 内部生命周期
 
@@ -337,6 +415,8 @@ ACK 不能只依赖一个可能残留的 event bit。完成条件至少包括：
 
 - 不恢复后台 HTTPS 统一 gate。
 - 不建立所有页面共用的资源 manager。
+- 不把所有动态资源都纳入 foreground gate。
+- 不为了接口形式统一而让基础常驻 service 随页面销毁。
 - 不让 gate 直接释放其他 owner 的资源。
 - 不让 UI 等待 task、关闭 socket、销毁 BLE 或执行延迟重试。
 - 不因为未来可能新增页面而预先建立通用 plugin/lease 框架。
@@ -361,14 +441,33 @@ idf.py build
 ## 进度
 
 - `[x]` 初步计划落地。
-- `[ ]` 阶段 0：资源清单与基线锁定。
-- `[ ]` 阶段 1：Memory Watch owner 内部生命周期。
-- `[ ]` 阶段 2：official_chat owner 内部生命周期。
+- `[x]` 阶段 0：资源清单与基线锁定。已完成全系统覆盖矩阵、三类强前台详细审计以及后续 source-test 断言清单。
+- `[x]` 阶段 1：Memory Watch owner 内部生命周期。desired state 已收回 owner task，foreground snapshot/generation、gate acquire fail-closed、离页 operation stop ACK 和初始化部分失败统一 cleanup 已落地。
+- `[x]` 阶段 2：official_chat owner 内部生命周期。gate acquire 已 fail closed，start 失败进入统一 shutdown，gate/audio blocker 延后到 callback/transport/audio/instance destroy 完成后释放。
 - `[ ]` 阶段 3：BLE provisioning 异步生命周期。
 - `[ ]` 阶段 4：精简 foreground gate。
 - `[ ]` 阶段 5：自动切换与 5 秒超时。
 - `[ ]` 阶段 6：Safety Monitor quiesced ACK。
 - `[ ]` 阶段 7：组合真机回归。
+
+### 阶段 0 验证
+
+- 生命周期相关 source tests：`149 passed / 2 failed`。
+- 两项失败均为本阶段开始前已存在的基线问题：official_chat model partition 偏移断言、Fall 默认阈值 `0.30f` 与当前代码 `0.60f` 的合同差异。
+- 阶段 0 只更新资源审计文档，没有修改固件运行行为，因此不要求本阶段单独执行 build 或 COM3 真机验证。
+
+### 阶段 1 当前验证
+
+- Memory Watch / foreground 相关 source tests：`44 passed`。
+- 全量 source tests：`422 passed / 7 failed`；7 项均为阶段开始前已有漂移。
+- ESP-IDF build：通过；`111.bin=0xac5f30`，最小 app 分区余量 `0x33a0d0`（23%）。
+- 未执行 app-flash/COM3；组合真机行为仍由阶段 7 验收。
+
+### 阶段 2 当前验证
+
+- official_chat / foreground 相关 source tests：`28 passed`。
+- ESP-IDF build：通过；`111.bin=0xac6040`，最小 app 分区余量 `0x339fc0`（23%）。
+- 未执行 app-flash/COM3；连接中离页、start 失败与 gate 冲突的真机顺序留待阶段 7。
 
 ## 十四、待继续讨论
 
@@ -379,4 +478,4 @@ idf.py build
 
 ## 下一步
 
-先执行阶段 0，只做资源清单与当前路径审计，不改变运行行为。完成清单后，再从 Memory Watch 开始做第一个可验证的 owner 内部 create/destroy 小闭环。
+进入阶段 3，先把 BLE presence/provisioning 的启动和停止移出 LVGL 回调，再让 gate 覆盖真实 BLE 活跃期。保留现有 presence 与 provisioning 两套语义，不在本阶段静默删除产品入口；是否最终只保留页面级 provisioning 仍需产品确认。

@@ -93,6 +93,21 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_service_make_request_id(", source)
         self.assertIn("before.request_active", source)
 
+    def test_service_partial_init_failure_is_retryable(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+        init_section = source.split("esp_err_t memory_watch_service_init(void)")[1]
+
+        self.assertIn("memory_watch_service_cleanup_partial_init", source)
+        self.assertIn("vTaskDelete(*task_handle)", source)
+        self.assertIn("memory_watch_service_free(s_conversation_staging)", source)
+        self.assertIn("xQueueReset(s_upload_worker_queue)", source)
+        self.assertIn("xEventGroupClearBits(s_ws_wait_event_group", source)
+        self.assertIn("memory_watch_service_fail_init", init_section)
+        self.assertLess(
+            init_section.index('"mw_conv"'),
+            init_section.index('"memory_watch"'),
+        )
+
     def test_service_exposes_endpoint_snapshot_but_not_alert_worker(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
         header = MEMORY_WATCH_SERVICE_HEADER.read_text(encoding="utf-8")
@@ -470,7 +485,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         client_header = MEMORY_WATCH_VOICE_CLIENT_HEADER.read_text(encoding="utf-8")
 
         self.assertIn("memory_watch_service_set_foreground", header)
-        self.assertIn("MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND", source)
+        self.assertIn("memory_watch_service_reconcile_foreground", source)
         self.assertIn('#include "services/runtime_gate/foreground_runtime_gate.h"', source)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_HERMES", source)
         self.assertIn("foreground_runtime_gate_acquire", source)
@@ -518,6 +533,55 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertNotIn('"/v1/watch/conversation?device_id="', client_source)
         self.assertNotIn('"&after="', client_source)
         self.assertIn('"messages"', client_source)
+
+    def test_foreground_lifecycle_is_owner_driven_and_fail_closed(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+        header = MEMORY_WATCH_SERVICE_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("memory_watch_foreground_session_state_t", header)
+        self.assertIn("foreground_desired", header)
+        self.assertIn("foreground_resource_ready", header)
+        self.assertIn("foreground_generation", header)
+        self.assertIn("foreground_last_error", header)
+
+        self.assertIn("s_foreground_desired", source)
+        self.assertIn("s_foreground_request_generation", source)
+        self.assertIn("memory_watch_service_reconcile_foreground", source)
+        self.assertIn("memory_watch_service_is_foreground_ready", source)
+        self.assertIn("xTaskAbortDelay(s_service_task_handle)", source)
+
+        public_section = source.split(
+            "esp_err_t memory_watch_service_set_foreground"
+        )[1].split("esp_err_t memory_watch_service_begin_recording", 1)[0]
+        self.assertIn("s_foreground_desired = foreground", public_section)
+        self.assertNotIn("foreground_runtime_gate_acquire", public_section)
+        self.assertNotIn("foreground_runtime_gate_release", public_section)
+        self.assertNotIn("memory_watch_service_set_foreground_active", public_section)
+
+        task_section = source.split(
+            "static void memory_watch_service_task"
+        )[1].split("esp_err_t memory_watch_service_init", 1)[0]
+        self.assertIn("memory_watch_service_reconcile_foreground", task_section)
+
+        begin_section = source.split(
+            "static void memory_watch_service_handle_begin_recording"
+        )[1].split("static void memory_watch_service_handle_check_health", 1)[0]
+        self.assertIn("memory_watch_service_is_foreground_ready()", begin_section)
+        self.assertIn("ESP_ERR_INVALID_STATE", begin_section)
+
+        reconcile_section = source.split(
+            "static bool memory_watch_service_reconcile_foreground"
+        )[1].split("static bool memory_watch_service_is_foreground_ready", 1)[0]
+        self.assertIn("kForegroundStopTimeoutMs", reconcile_section)
+        self.assertIn("memory_watch_service_request_record_stop(true)", reconcile_section)
+        self.assertIn("memory_watch_service_is_upload_worker_busy()", reconcile_section)
+        self.assertLess(
+            reconcile_section.index("memory_watch_service_is_upload_worker_busy()"),
+            reconcile_section.rindex("foreground_runtime_gate_release"),
+        )
+        self.assertIn("MEMORY_WATCH_FOREGROUND_STOPPING", reconcile_section)
+        self.assertIn("ESP_ERR_TIMEOUT", reconcile_section)
+        self.assertNotIn("vTaskDelete", reconcile_section)
 
     def test_v24_voice_client_exposes_unified_sync_contract(self) -> None:
         client_source = MEMORY_WATCH_VOICE_CLIENT_SOURCE.read_text(encoding="utf-8")

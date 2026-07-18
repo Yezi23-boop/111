@@ -34,6 +34,43 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
         self.assertIn("NETWORK_MANAGER_PROVISIONING_TRANSPORT_BLE", source)
         self.assertIn("NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP", source)
 
+    def test_ble_toggle_is_reconciled_asynchronously_by_network_owner(self) -> None:
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+        header = NETWORK_SERVICE_HEADER.read_text(encoding="utf-8")
+
+        self.assertIn("ble_desired_enabled", header)
+        self.assertIn("ble_applied_enabled", header)
+        self.assertIn("ble_runtime_ready", header)
+        self.assertIn("ble_transition_pending", header)
+        self.assertIn("ble_last_error", header)
+        self.assertIn("s_ble_desired_enabled", source)
+        self.assertIn("s_ble_request_generation", source)
+        self.assertIn("network_service_reconcile_ble", source)
+        self.assertIn("xTaskNotifyGive(s_network_task_handle)", source)
+        self.assertIn("ulTaskNotifyTake(pdTRUE", source)
+        self.assertIn("FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING", source)
+        self.assertIn("foreground_runtime_gate_acquire", source)
+        self.assertIn("foreground_runtime_gate_release", source)
+        self.assertIn("MALLOC_CAP_INTERNAL", source)
+        self.assertIn("xTaskCreatePinnedToCoreWithCaps(", source)
+        self.assertIn("vTaskDeleteWithCaps(completed_worker)", source)
+        self.assertIn("vTaskSuspend(NULL)", source)
+        self.assertIn("s_ble_transition_completed", source)
+        self.assertIn("kBleRetryDelayMs", source)
+        self.assertIn("ret == ESP_ERR_NO_MEM", source)
+
+        public_section = source.split(
+            "esp_err_t network_service_set_ble_enabled"
+        )[1].split("bool network_service_is_ble_enabled", 1)[0]
+        self.assertIn("s_ble_desired_enabled = enabled", public_section)
+        self.assertNotIn("network_manager_set_ble_enabled(enabled)", public_section)
+        self.assertNotIn("foreground_runtime_gate_acquire", public_section)
+
+        task_section = source.split("static void network_service_task")[1].split(
+            "esp_err_t network_service_start", 1
+        )[0]
+        self.assertIn("network_service_reconcile_ble", task_section)
+
     def test_network_service_maps_softap_provisioning_to_portal_required(self) -> None:
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
 
@@ -72,7 +109,7 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
         self.assertIn("network_service_set_state(", source)
         self.assertIn('ESP_LOGI(TAG, "network state: %s -> %s (%s)"', source)
         self.assertIn(
-            '"bridge BLE enable request to network_manager: enabled=%d"', source
+            '"queue BLE enable request: enabled=%d generation=%u"', source
         )
 
 

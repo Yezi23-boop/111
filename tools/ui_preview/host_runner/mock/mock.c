@@ -56,6 +56,14 @@ esp_err_t network_manager_use_latest_wifi(void) { return ESP_OK; }
 esp_err_t network_manager_disconnect(void) { return ESP_OK; }
 esp_err_t network_manager_start_ble_provisioning(void) { return ESP_OK; }
 esp_err_t network_manager_start_softap_provisioning(void) { return ESP_OK; }
+esp_err_t network_service_set_ble_enabled(bool enabled) { return ESP_OK; }
+esp_err_t network_service_get_snapshot(network_service_snapshot_t *snapshot) {
+    memset(snapshot, 0, sizeof(*snapshot));
+    snapshot->ble_desired_enabled = true;
+    snapshot->ble_applied_enabled = true;
+    snapshot->ble_runtime_ready = true;
+    return ESP_OK;
+}
 
 #include "esp_partition.h"
 const esp_partition_t *esp_partition_find_first(int type, int subtype, const char *label) { return NULL; }
@@ -80,6 +88,11 @@ static memory_watch_service_snapshot_t s_memory_watch_snapshot = {
     .request_active = false,
     .clarification_active = false,
     .last_error = ESP_OK,
+    .foreground_desired = true,
+    .foreground_resource_ready = true,
+    .foreground_session_state = MEMORY_WATCH_FOREGROUND_READY,
+    .foreground_generation = 1,
+    .foreground_last_error = ESP_OK,
     .request_id = "preview-request",
     .clarification_id = "",
     .asr_text = "帮我记住下午三点去取快递",

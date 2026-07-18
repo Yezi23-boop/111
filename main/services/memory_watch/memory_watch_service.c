@@ -67,6 +67,7 @@ static const size_t kAudioBufferInitialBytes = 8192U;
 static const size_t kWsAudioChunkBytes = 16U * 1024U;
 static const int64_t kConversationPollIntervalMs = 5000;
 static const int64_t kBackgroundHttpsRetryIntervalMs = 5000;
+static const int64_t kForegroundStopTimeoutMs = 5000;
 static const uint32_t kConversationPollTimeoutMs = 4000U;
 static const EventBits_t kWsWaitConversationBit = BIT0;
 static const EventBits_t kWsWaitErrorBit = BIT1;
@@ -92,7 +93,6 @@ typedef enum
     MEMORY_WATCH_SERVICE_CMD_HEALTH_DONE,
     MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED,
     MEMORY_WATCH_SERVICE_CMD_WORKER_DONE,
-    MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND,
     MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE,
 } memory_watch_service_cmd_type_t;
 
@@ -179,7 +179,6 @@ typedef struct
     memory_watch_service_worker_result_t worker_result;
     char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
     char text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];
-    bool foreground;
 } memory_watch_service_cmd_t;
 
 static TaskHandle_t s_service_task_handle = NULL;
@@ -232,6 +231,11 @@ static memory_watch_service_snapshot_t s_snapshot = {
     .request_active = false,
     .clarification_active = false,
     .last_error = ESP_OK,
+    .foreground_desired = false,
+    .foreground_resource_ready = false,
+    .foreground_session_state = MEMORY_WATCH_FOREGROUND_STOPPED,
+    .foreground_generation = 0,
+    .foreground_last_error = ESP_OK,
 };
 static memory_watch_service_endpoint_state_t s_endpoint_config = {0};
 static uint32_t s_boot_id = 0;
@@ -240,8 +244,13 @@ static bool s_record_stop_requested = false;
 static bool s_record_discard_requested = false;
 static bool s_wait_cancel_requested = false;
 static bool s_upload_worker_busy = false;
+static bool s_foreground_desired = false;
 static bool s_foreground_active = false;
 static bool s_foreground_runtime_gate_held = false;
+static uint32_t s_foreground_request_generation = 0;
+static uint32_t s_foreground_reconciled_generation = 0;
+static int64_t s_foreground_stop_started_ms = 0;
+static bool s_foreground_stop_timeout_logged = false;
 static bool s_health_worker_busy = false;
 static bool s_health_check_pending = false;
 static int64_t s_health_retry_next_due_ms = 0;
@@ -271,6 +280,8 @@ static void memory_watch_service_inbox_handle_worker_result(uint32_t notify_val)
 static int64_t memory_watch_service_now_ms(void);
 static void memory_watch_service_conversation_try_poll(void);
 static void memory_watch_service_conversation_handle_worker_done(void);
+static void memory_watch_service_request_record_stop(bool discard);
+static bool memory_watch_service_is_upload_worker_busy(void);
 static
 void memory_watch_service_handle_worker_done(
     const memory_watch_service_worker_result_t *result);
@@ -506,66 +517,202 @@ static void memory_watch_service_append_server_conversation_message(
     memory_watch_service_set_last_seen_conversation_id(message->message_id);
 }
 
-static void memory_watch_service_set_foreground_active(bool foreground)
+static void memory_watch_service_publish_foreground(
+    bool desired, bool ready,
+    memory_watch_foreground_session_state_t session_state,
+    uint32_t generation, esp_err_t last_error)
 {
-    bool should_acquire = false;
-    bool should_release = false;
+    portENTER_CRITICAL(&s_snapshot_lock);
+    if (s_snapshot.foreground_generation == generation)
+    {
+        s_snapshot.foreground_desired = desired;
+        s_snapshot.foreground_resource_ready = ready;
+        s_snapshot.foreground_session_state = session_state;
+        s_snapshot.foreground_last_error = last_error;
+    }
+    portEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+/**
+ * @brief 在 Memory Watch owner task 上下文收敛 Hermes 前台资源意图。
+ * @return true 表示本轮刚进入 READY，调用方应执行前台数据 reconcile。
+ */
+static bool memory_watch_service_reconcile_foreground(void)
+{
+    bool desired = false;
+    bool gate_held = false;
+    uint32_t generation = 0;
+    uint32_t reconciled_generation = 0;
 
     portENTER_CRITICAL(&s_foreground_lock);
-    s_foreground_active = foreground;
-    if (foreground && !s_foreground_runtime_gate_held)
-    {
-        should_acquire = true;
-    }
-    else if (!foreground && s_foreground_runtime_gate_held)
-    {
-        s_foreground_runtime_gate_held = false;
-        should_release = true;
-    }
+    desired = s_foreground_desired;
+    gate_held = s_foreground_runtime_gate_held;
+    generation = s_foreground_request_generation;
+    reconciled_generation = s_foreground_reconciled_generation;
     portEXIT_CRITICAL(&s_foreground_lock);
 
-    if (should_acquire)
+    if (generation == reconciled_generation)
     {
+        return false;
+    }
+
+    if (desired && gate_held)
+    {
+        portENTER_CRITICAL(&s_foreground_lock);
+        s_foreground_active = true;
+        s_foreground_reconciled_generation = generation;
+        s_foreground_stop_started_ms = 0;
+        s_foreground_stop_timeout_logged = false;
+        portEXIT_CRITICAL(&s_foreground_lock);
+        memory_watch_service_publish_foreground(
+            true, true, MEMORY_WATCH_FOREGROUND_READY, generation, ESP_OK);
+        return false;
+    }
+
+    if (desired)
+    {
+        portENTER_CRITICAL(&s_foreground_lock);
+        s_foreground_stop_started_ms = 0;
+        s_foreground_stop_timeout_logged = false;
+        portEXIT_CRITICAL(&s_foreground_lock);
+        memory_watch_service_publish_foreground(
+            true, false, MEMORY_WATCH_FOREGROUND_STARTING, generation,
+            ESP_OK);
         const esp_err_t err = foreground_runtime_gate_acquire(
             FOREGROUND_RUNTIME_OWNER_HERMES, 0U);
         if (err == ESP_OK)
         {
+            bool intent_still_current = false;
             portENTER_CRITICAL(&s_foreground_lock);
-            s_foreground_runtime_gate_held = s_foreground_active;
-            const bool release_immediately = !s_foreground_active;
-            if (release_immediately)
+            intent_still_current = s_foreground_desired &&
+                                   s_foreground_request_generation == generation;
+            if (intent_still_current)
             {
-                s_foreground_runtime_gate_held = false;
+                s_foreground_runtime_gate_held = true;
+                s_foreground_active = true;
+                s_foreground_reconciled_generation = generation;
             }
             portEXIT_CRITICAL(&s_foreground_lock);
-            if (release_immediately)
+
+            if (!intent_still_current)
             {
                 (void)foreground_runtime_gate_release(
                     FOREGROUND_RUNTIME_OWNER_HERMES);
+                (void)background_service_manager_notify_foreground_runtime_changed();
+                return false;
             }
+
+            memory_watch_service_publish_foreground(
+                true, true, MEMORY_WATCH_FOREGROUND_READY, generation,
+                ESP_OK);
             (void)background_service_manager_notify_foreground_runtime_changed();
+            return true;
         }
-        else
+
+        portENTER_CRITICAL(&s_foreground_lock);
+        if (s_foreground_request_generation == generation)
         {
-            ESP_LOGW(TAG, "Hermes foreground gate acquire failed: %s",
-                     esp_err_to_name(err));
+            s_foreground_active = false;
+            s_foreground_reconciled_generation = generation;
+        }
+        portEXIT_CRITICAL(&s_foreground_lock);
+        memory_watch_service_publish_foreground(
+            true, false, MEMORY_WATCH_FOREGROUND_ERROR, generation, err);
+        ESP_LOGW(TAG, "Hermes foreground gate acquire failed closed: %s",
+                 esp_err_to_name(err));
+        return false;
+    }
+
+    memory_watch_service_publish_foreground(
+        false, false, MEMORY_WATCH_FOREGROUND_STOPPING, generation, ESP_OK);
+    if (gate_held)
+    {
+        memory_watch_service_request_record_stop(true);
+        if (memory_watch_service_is_upload_worker_busy())
+        {
+            const int64_t now_ms = memory_watch_service_now_ms();
+            int64_t stop_started_ms = 0;
+            bool should_log_timeout = false;
+
+            portENTER_CRITICAL(&s_foreground_lock);
+            if (s_foreground_stop_started_ms == 0)
+            {
+                s_foreground_stop_started_ms = now_ms;
+            }
+            stop_started_ms = s_foreground_stop_started_ms;
+            if (!s_foreground_stop_timeout_logged &&
+                now_ms - stop_started_ms >= kForegroundStopTimeoutMs)
+            {
+                s_foreground_stop_timeout_logged = true;
+                should_log_timeout = true;
+            }
+            portEXIT_CRITICAL(&s_foreground_lock);
+
+            if (now_ms - stop_started_ms >= kForegroundStopTimeoutMs)
+            {
+                memory_watch_service_publish_foreground(
+                    false, false, MEMORY_WATCH_FOREGROUND_ERROR, generation,
+                    ESP_ERR_TIMEOUT);
+                if (should_log_timeout)
+                {
+                    ESP_LOGW(TAG,
+                             "Hermes foreground stop timed out; keep gate fail closed");
+                }
+            }
+            return false;
         }
     }
 
-    if (should_release)
+    portENTER_CRITICAL(&s_foreground_lock);
+    s_foreground_stop_started_ms = 0;
+    s_foreground_stop_timeout_logged = false;
+    portEXIT_CRITICAL(&s_foreground_lock);
+    esp_err_t err = ESP_OK;
+    if (gate_held)
     {
-        (void)foreground_runtime_gate_release(FOREGROUND_RUNTIME_OWNER_HERMES);
-        (void)background_service_manager_notify_foreground_runtime_changed();
+        err = foreground_runtime_gate_release(FOREGROUND_RUNTIME_OWNER_HERMES);
     }
+    if (err == ESP_OK)
+    {
+        portENTER_CRITICAL(&s_foreground_lock);
+        s_foreground_active = false;
+        s_foreground_runtime_gate_held = false;
+        if (s_foreground_request_generation == generation)
+        {
+            s_foreground_reconciled_generation = generation;
+        }
+        portEXIT_CRITICAL(&s_foreground_lock);
+        memory_watch_service_publish_foreground(
+            false, false, MEMORY_WATCH_FOREGROUND_STOPPED, generation,
+            ESP_OK);
+        (void)background_service_manager_notify_foreground_runtime_changed();
+        return false;
+    }
+
+    portENTER_CRITICAL(&s_foreground_lock);
+    s_foreground_active = false;
+    portEXIT_CRITICAL(&s_foreground_lock);
+    memory_watch_service_publish_foreground(
+        false, false, MEMORY_WATCH_FOREGROUND_ERROR, generation, err);
+    ESP_LOGW(TAG, "Hermes foreground gate release failed closed: %s",
+             esp_err_to_name(err));
+    return false;
+}
+
+static bool memory_watch_service_is_foreground_ready(void)
+{
+    bool ready = false;
+
+    portENTER_CRITICAL(&s_foreground_lock);
+    ready = s_foreground_desired && s_foreground_active &&
+            s_foreground_runtime_gate_held;
+    portEXIT_CRITICAL(&s_foreground_lock);
+    return ready;
 }
 
 static bool memory_watch_service_is_foreground_active(void)
 {
-    bool foreground = false;
-    portENTER_CRITICAL(&s_foreground_lock);
-    foreground = s_foreground_active;
-    portEXIT_CRITICAL(&s_foreground_lock);
-    return foreground;
+    return memory_watch_service_is_foreground_ready();
 }
 
 static esp_err_t memory_watch_service_copy_required_text(char *dst,
@@ -1843,6 +1990,15 @@ static void memory_watch_service_conversation_try_poll(void)
 
 static void memory_watch_service_handle_begin_recording(void)
 {
+    if (!memory_watch_service_is_foreground_ready())
+    {
+        const memory_watch_service_snapshot_t blocked =
+            memory_watch_service_copy_snapshot();
+        memory_watch_service_set_state(blocked.state, ESP_ERR_INVALID_STATE);
+        ESP_LOGW(TAG, "recording blocked: Hermes foreground is not ready");
+        return;
+    }
+
     const memory_watch_service_snapshot_t before =
         memory_watch_service_copy_snapshot();
     if (before.request_active ||
@@ -2470,14 +2626,6 @@ static void memory_watch_service_handle_command(
     case MEMORY_WATCH_SERVICE_CMD_WORKER_DONE:
         memory_watch_service_handle_worker_done(&command->worker_result);
         break;
-    case MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND:
-        memory_watch_service_set_foreground_active(command->foreground);
-        if (command->foreground)
-        {
-            memory_watch_service_start_foreground_reconcile();
-            memory_watch_service_inbox_try_poll();
-        }
-        break;
     case MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE:
         memory_watch_service_conversation_handle_worker_done();
         break;
@@ -2744,6 +2892,12 @@ static void memory_watch_service_task(void *arg)
             memory_watch_service_handle_command(&s_service_task_command);
         }
 
+        if (memory_watch_service_reconcile_foreground())
+        {
+            memory_watch_service_start_foreground_reconcile();
+            memory_watch_service_inbox_try_poll();
+        }
+
         /* 处理 inbox worker 完成通知（来自 xTaskNotify）*/
         uint32_t notify_val = 0;
         if (xTaskNotifyWait(0, UINT32_MAX, &notify_val, 0) == pdTRUE &&
@@ -2813,6 +2967,81 @@ static esp_err_t memory_watch_service_post_command(
     return ESP_OK;
 }
 
+/**
+ * @brief 删除本轮初始化中新建但尚未对外发布的 task。
+ *
+ * 该入口只在 `memory_watch_service_init()` 返回失败前调用；运行中的 service
+ * 和 foreground session 禁止使用强制 task 删除。
+ */
+static void memory_watch_service_delete_partial_task(TaskHandle_t *task_handle)
+{
+    if (task_handle == NULL || *task_handle == NULL)
+    {
+        return;
+    }
+    vTaskDelete(*task_handle);
+    *task_handle = NULL;
+}
+
+/**
+ * @brief 回滚尚未成功发布的 Memory Watch 初始化资源，使 init 可以重试。
+ */
+static void memory_watch_service_cleanup_partial_init(void)
+{
+    memory_watch_service_delete_partial_task(&s_service_task_handle);
+    memory_watch_service_delete_partial_task(&s_conversation_worker_task_handle);
+    memory_watch_service_delete_partial_task(&s_cancel_worker_task_handle);
+    memory_watch_service_delete_partial_task(&s_health_worker_task_handle);
+    memory_watch_service_delete_partial_task(&s_upload_worker_task_handle);
+
+    if (s_command_queue != NULL)
+    {
+        (void)xQueueReset(s_command_queue);
+    }
+    if (s_upload_worker_queue != NULL)
+    {
+        (void)xQueueReset(s_upload_worker_queue);
+    }
+    if (s_cancel_worker_queue != NULL)
+    {
+        (void)xQueueReset(s_cancel_worker_queue);
+    }
+    if (s_health_worker_queue != NULL)
+    {
+        (void)xQueueReset(s_health_worker_queue);
+    }
+    if (s_conversation_worker_queue != NULL)
+    {
+        (void)xQueueReset(s_conversation_worker_queue);
+    }
+    if (s_ws_wait_event_group != NULL)
+    {
+        (void)xEventGroupClearBits(
+            s_ws_wait_event_group,
+            kWsWaitConversationBit | kWsWaitErrorBit |
+                kWsWaitDisconnectedBit | kWsWaitAsrReadyBit |
+                kWsWaitRequestAcceptedBit);
+    }
+
+    memory_watch_service_free(s_conversation_staging);
+    s_conversation_staging = NULL;
+    s_conversation_staging_count = 0;
+    s_conversation_staging_error = ESP_OK;
+
+    portENTER_CRITICAL(&s_worker_lock);
+    s_upload_worker_busy = false;
+    s_health_worker_busy = false;
+    s_conversation_worker_busy = false;
+    portEXIT_CRITICAL(&s_worker_lock);
+}
+
+static esp_err_t memory_watch_service_fail_init(esp_err_t err)
+{
+    memory_watch_service_cleanup_partial_init();
+    memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR, err);
+    return err;
+}
+
 esp_err_t memory_watch_service_init(void)
 {
     if (s_service_task_handle != NULL &&
@@ -2844,9 +3073,7 @@ esp_err_t memory_watch_service_init(void)
     }
     if (s_command_queue == NULL)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
     if (s_upload_worker_queue == NULL)
     {
@@ -2858,9 +3085,7 @@ esp_err_t memory_watch_service_init(void)
     }
     if (s_upload_worker_queue == NULL)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
     if (s_cancel_worker_queue == NULL)
     {
@@ -2872,9 +3097,7 @@ esp_err_t memory_watch_service_init(void)
     }
     if (s_cancel_worker_queue == NULL)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
     if (s_health_worker_queue == NULL)
     {
@@ -2886,9 +3109,7 @@ esp_err_t memory_watch_service_init(void)
     }
     if (s_health_worker_queue == NULL)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
     if (s_conversation_worker_queue == NULL)
     {
@@ -2900,9 +3121,7 @@ esp_err_t memory_watch_service_init(void)
     }
     if (s_conversation_worker_queue == NULL)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
     if (s_conversation_staging == NULL)
     {
@@ -2914,9 +3133,7 @@ esp_err_t memory_watch_service_init(void)
     }
     if (s_conversation_staging == NULL)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
     if (s_ws_wait_event_group == NULL)
     {
@@ -2925,9 +3142,7 @@ esp_err_t memory_watch_service_init(void)
     }
     if (s_ws_wait_event_group == NULL)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
 
     const esp_err_t endpoint_err =
@@ -2936,21 +3151,6 @@ esp_err_t memory_watch_service_init(void)
     {
         ESP_LOGW(TAG, "watch endpoint NVS load failed: %s",
                  esp_err_to_name(endpoint_err));
-    }
-
-    const BaseType_t service_created = xTaskCreateWithCaps(
-        memory_watch_service_task,
-        "memory_watch",
-        kTaskStackWords,
-        NULL,
-        4,
-        &s_service_task_handle,
-        MALLOC_CAP_SPIRAM);
-    if (service_created != pdPASS)
-    {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
     }
 
     const BaseType_t upload_created = xTaskCreateWithCaps(
@@ -2963,9 +3163,7 @@ esp_err_t memory_watch_service_init(void)
         MALLOC_CAP_SPIRAM);
     if (upload_created != pdPASS)
     {
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
 
     const BaseType_t health_created = xTaskCreateWithCaps(
@@ -2979,10 +3177,7 @@ esp_err_t memory_watch_service_init(void)
     if (health_created != pdPASS)
     {
         s_health_worker_task_handle = NULL;
-        // Comment for static test validation: s_health_worker_task_handle != NULL
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
 
     const BaseType_t cancel_created = xTaskCreateWithCaps(
@@ -2996,9 +3191,7 @@ esp_err_t memory_watch_service_init(void)
     if (cancel_created != pdPASS)
     {
         s_cancel_worker_task_handle = NULL;
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
 
     const BaseType_t conversation_created = xTaskCreateWithCaps(
@@ -3012,9 +3205,22 @@ esp_err_t memory_watch_service_init(void)
     if (conversation_created != pdPASS)
     {
         s_conversation_worker_task_handle = NULL;
-        memory_watch_service_set_state(MEMORY_WATCH_SERVICE_STATE_ERROR,
-                                       ESP_ERR_NO_MEM);
-        return ESP_ERR_NO_MEM;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
+    }
+
+    /* service task 最后创建；在它对外处理命令前，所有 worker 必须已经可用。 */
+    const BaseType_t service_created = xTaskCreateWithCaps(
+        memory_watch_service_task,
+        "memory_watch",
+        kTaskStackWords,
+        NULL,
+        4,
+        &s_service_task_handle,
+        MALLOC_CAP_SPIRAM);
+    if (service_created != pdPASS)
+    {
+        s_service_task_handle = NULL;
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
 
     /* inbox worker 在 Deferred Services 阶段启动，不阻塞 UI 首帧 */
@@ -3135,25 +3341,37 @@ esp_err_t memory_watch_service_check_health(void)
 
 esp_err_t memory_watch_service_set_foreground(bool foreground)
 {
-    memory_watch_service_set_foreground_active(foreground);
-    if (s_command_queue == NULL)
+    if (s_service_task_handle == NULL)
     {
-        return ESP_OK;
+        return ESP_ERR_INVALID_STATE;
     }
 
-    memory_watch_service_cmd_t command = {
-        .type = MEMORY_WATCH_SERVICE_CMD_SET_FOREGROUND,
-        .foreground = foreground,
-    };
-    if (xQueueSend(s_command_queue, &command, 0) != pdTRUE)
+    uint32_t generation = 0;
+    portENTER_CRITICAL(&s_foreground_lock);
+    s_foreground_desired = foreground;
+    ++s_foreground_request_generation;
+    if (s_foreground_request_generation == 0U)
     {
-        return ESP_ERR_TIMEOUT;
+        ++s_foreground_request_generation;
     }
+    generation = s_foreground_request_generation;
+    portEXIT_CRITICAL(&s_foreground_lock);
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.foreground_desired = foreground;
+    s_snapshot.foreground_generation = generation;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    (void)xTaskAbortDelay(s_service_task_handle);
     return ESP_OK;
 }
 
 esp_err_t memory_watch_service_begin_recording(void)
 {
+    if (!memory_watch_service_is_foreground_ready())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     return memory_watch_service_post_command(
         MEMORY_WATCH_SERVICE_CMD_BEGIN_RECORDING);
 }

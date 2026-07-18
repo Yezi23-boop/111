@@ -6,9 +6,12 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
 #include "freertos/task.h"
 #include "network_manager.h"
 #include "services/power/power_policy.h"
+#include "services/runtime_gate/foreground_runtime_gate.h"
+#include "services/safety/background_service_manager.h"
 #include "services/time/system_time_service.h"
 #include "wifi_control.h"
 
@@ -23,11 +26,23 @@ static const char *TAG = "NETWORK_SERVICE";
 static const char *kProbeHosts[] = {"api.tenclass.net", "mqtt.xiaozhi.me"}; // 关键云端依赖域名列表。
 static const uint32_t kProbeAttemptMax = 15;                                // 单个域名的最大探测次数。
 static const uint32_t kServicePollPeriodMs = 1000U;                         // 服务层轮询 network_manager 的周期。
+static const uint32_t kBleRetryDelayMs = 800U;                              // BLE internal heap 不足后的唯一一次重试间隔。
+static const uint32_t kBleTransitionStackBytes = 4096U;                     // BLE/NVS transition 的 internal task stack 字节数。
+static const UBaseType_t kBleTransitionTaskPriority = 4U;                   // 低于 network owner，确保 handle 发布后 worker 才开始运行。
 
 static TaskHandle_t s_network_task_handle = NULL; // 网络服务后台任务句柄。
+static TaskHandle_t s_ble_transition_task_handle = NULL; // 按需创建的 BLE/NVS transition worker。
 static char s_network_ip[16] = {0}; // 当前缓存的 IPv4 字符串，仅由服务层更新。
 static bool s_runtime_power_save_applied = false; // 最近一次按预算下发的 Wi-Fi 省电状态。
 static bool s_runtime_power_save_known = false;   // false 表示尚未下发过 Wi-Fi 省电配置。
+static bool s_ble_desired_enabled = false; // 仅在 snapshot lock 下更新的 BLE 目标态。
+static bool s_ble_applied_enabled = false; // 最近一次 manager 成功应用的 BLE 状态。
+static bool s_ble_transition_enabled = false; // 当前 worker 捕获的目标态。
+static bool s_ble_transition_completed = false; // worker 已发布结果，等待 owner 回收 task。
+static bool s_ble_foreground_gate_held = false; // 仅由 BLE transition worker 改写。
+static uint32_t s_ble_request_generation = 0U; // 每次目标态提交递增。
+static uint32_t s_ble_applied_generation = 0U; // 最近一次已完成尝试的目标代次。
+static uint32_t s_ble_transition_generation = 0U; // 当前 worker 捕获的代次。
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static network_service_snapshot_t s_snapshot = {
     .state = NETWORK_SERVICE_STATE_OFFLINE,
@@ -36,6 +51,12 @@ static network_service_snapshot_t s_snapshot = {
     .probe_active = false,
     .probe_paused_by_budget = false,
     .power_save_applied = false,
+    .ble_desired_enabled = false,
+    .ble_applied_enabled = false,
+    .ble_runtime_ready = false,
+    .ble_transition_pending = false,
+    .ble_generation = 0U,
+    .ble_last_error = ESP_OK,
     .last_error = ESP_OK,
     .last_probe_result = ESP_ERR_INVALID_STATE,
 };
@@ -58,7 +79,272 @@ network_service_map_transport_to_manager(
 static bool resolve_hostname_once(const char *hostname);
 static esp_err_t probe_network_services_ready(void);
 static void network_service_apply_power_budget(void);
+static void network_service_reconcile_ble(void);
+static void network_service_ble_transition_task(void *pv_parameter);
 static void network_service_task(void *pv_parameter);
+
+/**
+ * @brief 判断 worker 捕获的 BLE 请求是否仍为最新目标态。
+ *
+ * generation 保护快速 ON/OFF 反转，避免 800ms 重试把已过期的 enable 再次执行。
+ */
+static bool network_service_ble_request_is_current(uint32_t generation,
+                                                   bool enabled)
+{
+    bool current = false;
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    current = s_ble_request_generation == generation &&
+              s_ble_desired_enabled == enabled;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+    return current;
+}
+
+/**
+ * @brief 为 BLE 真实启停申请强前台 gate。
+ *
+ * 同 owner acquire 没有引用计数，因此只允许本 worker 维护的一份 held 状态；
+ * 发现外部 BLE owner 时按冲突处理，避免后续误释放别人的 gate。
+ */
+static esp_err_t network_service_ble_acquire_gate(void)
+{
+    if (s_ble_foreground_gate_held)
+    {
+        return ESP_OK;
+    }
+    if (foreground_runtime_gate_current_owner() !=
+        FOREGROUND_RUNTIME_OWNER_NONE)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const esp_err_t ret = foreground_runtime_gate_acquire(
+        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING, 0U);
+    if (ret == ESP_OK)
+    {
+        s_ble_foreground_gate_held = true;
+        (void)background_service_manager_notify_foreground_runtime_changed();
+    }
+    return ret;
+}
+
+/**
+ * @brief 在 BLE 资源确认停止后释放强前台 gate。
+ */
+static esp_err_t network_service_ble_release_gate(void)
+{
+    if (!s_ble_foreground_gate_held)
+    {
+        return ESP_OK;
+    }
+
+    const esp_err_t ret = foreground_runtime_gate_release(
+        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING);
+    if (ret == ESP_OK)
+    {
+        s_ble_foreground_gate_held = false;
+        (void)background_service_manager_notify_foreground_runtime_changed();
+    }
+    return ret;
+}
+
+/**
+ * @brief 发布一次 BLE transition 的完成结果。
+ */
+static void network_service_finish_ble_transition(uint32_t generation,
+                                                  bool enabled,
+                                                  bool applied_enabled,
+                                                  esp_err_t result)
+{
+    bool current = false;
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    current = s_ble_request_generation == generation &&
+              s_ble_desired_enabled == enabled;
+    s_ble_applied_generation = generation;
+    s_ble_applied_enabled = applied_enabled;
+    s_snapshot.ble_applied_enabled = applied_enabled;
+    if (current)
+    {
+        s_snapshot.ble_transition_pending = false;
+        s_snapshot.ble_runtime_ready = (result == ESP_OK);
+        s_snapshot.ble_last_error = result;
+    }
+    s_ble_transition_completed = true;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    xTaskNotifyGive(s_network_task_handle);
+}
+
+/**
+ * @brief 在 internal-stack worker 中执行 BLE 偏好持久化和真实启停。
+ *
+ * `network_manager_set_ble_enabled()` 会写 NVS；flash cache 关闭期间不能使用
+ * PSRAM task stack，因此该 worker 必须由 `xTaskCreateWithCaps(...INTERNAL)` 创建。
+ */
+static void network_service_ble_transition_task(void *pv_parameter)
+{
+    (void)pv_parameter;
+    const bool enabled = s_ble_transition_enabled;
+    const uint32_t generation = s_ble_transition_generation;
+    bool applied_enabled = false;
+    bool gate_acquired_here = false;
+    bool manager_called = false;
+    esp_err_t ret = ESP_OK;
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    applied_enabled = s_ble_applied_enabled;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    if (!network_service_ble_request_is_current(generation, enabled))
+    {
+        network_service_finish_ble_transition(
+            generation, enabled, applied_enabled, ESP_ERR_INVALID_STATE);
+        vTaskSuspend(NULL);
+        return;
+    }
+
+    const bool runtime_may_be_active = network_manager_is_ble_enabled() ||
+                                       network_manager_is_ble_active();
+    if (enabled || runtime_may_be_active || s_ble_foreground_gate_held)
+    {
+        const bool gate_was_held = s_ble_foreground_gate_held;
+        ret = network_service_ble_acquire_gate();
+        gate_acquired_here = !gate_was_held && s_ble_foreground_gate_held;
+    }
+
+    if (ret == ESP_OK &&
+        network_service_ble_request_is_current(generation, enabled))
+    {
+        manager_called = true;
+        ret = network_manager_set_ble_enabled(enabled);
+        if (ret == ESP_OK)
+        {
+            applied_enabled = enabled;
+        }
+        if (enabled && ret == ESP_ERR_NO_MEM &&
+            network_service_ble_request_is_current(generation, enabled))
+        {
+            vTaskDelay(pdMS_TO_TICKS(kBleRetryDelayMs));
+            if (network_service_ble_request_is_current(generation, enabled))
+            {
+                ret = network_manager_set_ble_enabled(true);
+                if (ret == ESP_OK)
+                {
+                    applied_enabled = true;
+                }
+            }
+        }
+    }
+
+    if (!enabled && manager_called && ret == ESP_OK)
+    {
+        ret = network_service_ble_release_gate();
+    }
+    else if (enabled && manager_called && ret != ESP_OK)
+    {
+        const esp_err_t cleanup_ret = network_manager_set_ble_enabled(false);
+        if (cleanup_ret == ESP_OK)
+        {
+            applied_enabled = false;
+            const esp_err_t release_ret = network_service_ble_release_gate();
+            if (release_ret != ESP_OK)
+            {
+                ret = release_ret;
+            }
+        }
+        else
+        {
+            ret = cleanup_ret;
+        }
+    }
+    else if (!manager_called && gate_acquired_here && !applied_enabled)
+    {
+        const esp_err_t release_ret = network_service_ble_release_gate();
+        if (release_ret != ESP_OK)
+        {
+            ret = release_ret;
+        }
+    }
+
+    ESP_LOGI(TAG,
+             "BLE transition complete: enabled=%d generation=%u result=%s gate_held=%d",
+             enabled ? 1 : 0, (unsigned)generation, esp_err_to_name(ret),
+             s_ble_foreground_gate_held ? 1 : 0);
+    network_service_finish_ble_transition(generation, enabled,
+                                          applied_enabled, ret);
+    vTaskSuspend(NULL);
+}
+
+/**
+ * @brief 由 network owner 按最新 generation 创建一个 BLE transition worker。
+ */
+static void network_service_reconcile_ble(void)
+{
+    bool should_start = false;
+    TaskHandle_t completed_worker = NULL;
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    if (s_ble_transition_completed)
+    {
+        completed_worker = s_ble_transition_task_handle;
+        s_ble_transition_task_handle = NULL;
+        s_ble_transition_completed = false;
+    }
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    if (completed_worker != NULL)
+    {
+        vTaskDeleteWithCaps(completed_worker);
+    }
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    should_start = s_ble_transition_task_handle == NULL &&
+                   s_ble_request_generation != s_ble_applied_generation;
+    if (should_start)
+    {
+        s_ble_transition_enabled = s_ble_desired_enabled;
+        s_ble_transition_generation = s_ble_request_generation;
+        s_snapshot.ble_transition_pending = true;
+        s_snapshot.ble_runtime_ready = false;
+        s_snapshot.ble_last_error = ESP_OK;
+    }
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    if (!should_start)
+    {
+        return;
+    }
+
+    TaskHandle_t worker_handle = NULL;
+    const BaseType_t created = xTaskCreatePinnedToCoreWithCaps(
+        network_service_ble_transition_task, "network_ble",
+        kBleTransitionStackBytes, NULL, kBleTransitionTaskPriority,
+        &worker_handle, 0, MALLOC_CAP_INTERNAL);
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    if (created == pdPASS)
+    {
+        s_ble_transition_task_handle = worker_handle;
+    }
+    else
+    {
+        s_ble_applied_generation = s_ble_transition_generation;
+        if (s_ble_request_generation == s_ble_transition_generation &&
+            s_ble_desired_enabled == s_ble_transition_enabled)
+        {
+            s_snapshot.ble_transition_pending = false;
+            s_snapshot.ble_runtime_ready = false;
+            s_snapshot.ble_last_error = ESP_ERR_NO_MEM;
+        }
+    }
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    if (created != pdPASS)
+    {
+        ESP_LOGW(TAG, "BLE transition worker create failed");
+    }
+}
 
 /**
  * @brief 复制网络服务快照。
@@ -393,7 +679,13 @@ static esp_err_t probe_network_services_ready(void)
                 return ESP_ERR_TIMEOUT;
             }
 
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000)) > 0U)
+            {
+                network_service_set_probe_snapshot(
+                    false, false, ESP_ERR_INVALID_STATE);
+                ESP_LOGI(TAG, "network probe yielded to owner command");
+                return ESP_ERR_INVALID_STATE;
+            }
         }
     }
 
@@ -454,6 +746,7 @@ static void network_service_task(void *pv_parameter)
 
     while (1)
     {
+        network_service_reconcile_ble();
         network_service_apply_power_budget();
 
         network_manager_status_t status = {0};
@@ -467,7 +760,8 @@ static void network_service_task(void *pv_parameter)
             network_service_set_probe_snapshot(false, false, ESP_FAIL);
             network_service_set_state(NETWORK_SERVICE_STATE_ERROR,
                                       "network manager status unavailable");
-            vTaskDelay(pdMS_TO_TICKS(kServicePollPeriodMs));
+            (void)ulTaskNotifyTake(pdTRUE,
+                                   pdMS_TO_TICKS(kServicePollPeriodMs));
             continue;
         }
 
@@ -519,7 +813,7 @@ static void network_service_task(void *pv_parameter)
                 "mirrored from network manager");
         }
 
-        vTaskDelay(pdMS_TO_TICKS(kServicePollPeriodMs));
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(kServicePollPeriodMs));
     }
 }
 
@@ -548,6 +842,20 @@ esp_err_t network_service_start(void)
         return ret;
     }
 
+    const bool initial_ble_enabled = network_manager_is_ble_enabled();
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_ble_desired_enabled = initial_ble_enabled;
+    s_ble_applied_enabled = initial_ble_enabled;
+    s_ble_request_generation = 1U;
+    s_ble_applied_generation = 0U;
+    s_snapshot.ble_desired_enabled = s_ble_desired_enabled;
+    s_snapshot.ble_applied_enabled = s_ble_applied_enabled;
+    s_snapshot.ble_runtime_ready = false;
+    s_snapshot.ble_transition_pending = true;
+    s_snapshot.ble_generation = s_ble_request_generation;
+    s_snapshot.ble_last_error = ESP_OK;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
     /* 栈缩为 4096B：高压实测 free=3804B（62% 空闲），缩 2KB 仍有余量。
      * 栈迁 PSRAM：省 internal RAM，该任务不直接做 NVS/flash 写操作。 */
     const BaseType_t result =
@@ -557,6 +865,12 @@ esp_err_t network_service_start(void)
     if (result != pdPASS)
     {
         s_network_task_handle = NULL;
+        portENTER_CRITICAL(&s_snapshot_lock);
+        s_ble_applied_generation = s_ble_request_generation;
+        s_snapshot.ble_transition_pending = false;
+        s_snapshot.ble_runtime_ready = false;
+        s_snapshot.ble_last_error = ESP_FAIL;
+        portEXIT_CRITICAL(&s_snapshot_lock);
         network_service_set_last_error(ESP_FAIL);
         network_service_set_state(NETWORK_SERVICE_STATE_ERROR,
                                   "network service task create failed");
@@ -592,15 +906,39 @@ esp_err_t network_service_get_snapshot(network_service_snapshot_t *snapshot)
 }
 
 /**
- * @brief 设置 BLE 配网总开关。
+ * @brief 提交 BLE 总开关 desired state。
  * @param[in] enabled 目标开关值。
- * @return `network_manager` 的执行结果。
+ * @return `ESP_OK` 表示 owner 已收到目标态；owner 尚未启动时返回
+ *         `ESP_ERR_INVALID_STATE`。
  */
 esp_err_t network_service_set_ble_enabled(bool enabled)
 {
-    ESP_LOGI(TAG, "bridge BLE enable request to network_manager: enabled=%d",
-             enabled ? 1 : 0);
-    return network_manager_set_ble_enabled(enabled);
+    uint32_t generation = 0U;
+
+    if (s_network_task_handle == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    portENTER_CRITICAL(&s_snapshot_lock);
+    s_ble_desired_enabled = enabled;
+    s_ble_request_generation++;
+    if (s_ble_request_generation == 0U)
+    {
+        s_ble_request_generation = 1U;
+    }
+    s_snapshot.ble_desired_enabled = enabled;
+    s_snapshot.ble_runtime_ready = false;
+    s_snapshot.ble_transition_pending = true;
+    s_snapshot.ble_generation = s_ble_request_generation;
+    s_snapshot.ble_last_error = ESP_OK;
+    generation = s_ble_request_generation;
+    portEXIT_CRITICAL(&s_snapshot_lock);
+
+    ESP_LOGI(TAG, "queue BLE enable request: enabled=%d generation=%u",
+             enabled ? 1 : 0, (unsigned)generation);
+    xTaskNotifyGive(s_network_task_handle);
+    return ESP_OK;
 }
 
 /**

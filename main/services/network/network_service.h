@@ -2,6 +2,7 @@
 #define NETWORK_SERVICE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -58,6 +59,12 @@ extern "C"
         bool probe_active;                   /* 当前是否正在执行云端 ready 探测。 */
         bool probe_paused_by_budget;         /* 探测是否被 power budget 暂停。 */
         bool power_save_applied;             /* 最近一次下发的 Wi-Fi PS 目标值。 */
+        bool ble_desired_enabled;            /* UI 最近提交的 BLE 总开关目标态。 */
+        bool ble_applied_enabled;            /* 最近一次成功应用的 BLE 总开关状态。 */
+        bool ble_runtime_ready;              /* 最新 BLE 目标态是否已成功应用。 */
+        bool ble_transition_pending;         /* BLE owner 是否仍在处理目标态。 */
+        uint32_t ble_generation;             /* BLE 目标态代次，用于丢弃过期结果。 */
+        esp_err_t ble_last_error;             /* 最近一次 BLE 目标态应用结果。 */
         esp_err_t last_error;                /* 最近一次服务层错误。 */
         esp_err_t last_probe_result;         /* 最近一次云端 ready 探测结果。 */
     } network_service_snapshot_t;
@@ -81,13 +88,15 @@ extern "C"
     /**
      * @brief 设置 BLE 总开关偏好。
      *
-     * 当前接口只是兼容层桥接，真实语义由 `network_manager` 决定：
+     * 当前接口只提交 desired state，由 network service owner 异步调用
+     * `network_manager` 完成真实启停：
      * - 开启时只允许 BLE 功能，不会自动启动小程序配网；
      * - 关闭时会立即停止当前 BLE provisioning transport；
      * - Wi-Fi 连接状态不受该开关影响，允许 Wi-Fi 与 BLE enabled 并存。
      *
      * @param[in] enabled true 表示允许 BLE；false 表示关闭 BLE。
-     * @return `ESP_OK` 表示状态已更新；其他错误表示偏好持久化或 BLE 停止失败。
+     * @return `ESP_OK` 表示目标态已提交；`ESP_ERR_INVALID_STATE` 表示 owner task
+     *         尚未启动。真实执行结果通过 `network_service_snapshot_t` 发布。
      */
     esp_err_t network_service_set_ble_enabled(bool enabled);
 

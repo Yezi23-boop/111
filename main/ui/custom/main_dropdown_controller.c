@@ -3,8 +3,6 @@
 #include <string.h>
 
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "network_manager.h"
 #include "wifi_management_controller.h"
 #include "watch_notification_center.h"
@@ -12,12 +10,11 @@
 #include "services/memory_watch/memory_watch_service.h"
 #include "features/danger_detection/danger_detection_service.h"
 #include "services/safety/background_service_manager.h"
-#include "services/runtime_gate/foreground_runtime_gate.h"
+#include "services/network/network_service.h"
 
 static const char *TAG = "main_dropdown";
 static const uint32_t kStatusSyncPeriodMs = 250U;
 static const uint32_t kToastDurationMs = 1800U;
-static const uint32_t kBleRetryDelayMs = 800U;
 
 static lv_ui *s_ui = NULL;
 static lv_timer_t *s_status_sync_timer = NULL;
@@ -27,6 +24,7 @@ static bool s_last_wifi_checked = false;
 static bool s_last_wifi_checked_valid = false;
 static bool s_last_bluetooth_checked = false;
 static bool s_last_bluetooth_checked_valid = false;
+static uint32_t s_last_ble_result_generation = 0U;
 
 static lv_obj_t *main_dropdown_controller_get_wifi_button(void);
 static lv_obj_t *main_dropdown_controller_get_bluetooth_button(void);
@@ -153,21 +151,34 @@ static void main_dropdown_controller_sync_wifi_button(void)
 static void main_dropdown_controller_sync_bluetooth_button(void)
 {
     lv_obj_t *button = main_dropdown_controller_get_bluetooth_button();
-    network_manager_status_t status = {0};
-    bool ble_enabled = network_manager_is_ble_enabled();
-    bool ble_active = network_manager_is_ble_active();
-    bool checked = ble_enabled;
+    network_service_snapshot_t service_snapshot = {0};
+    bool ble_enabled = false;
+    bool ble_active = false;
+    bool checked = false;
 
     if (button == NULL)
     {
         return;
     }
 
-    if (main_dropdown_controller_get_network_status(&status))
+    if (network_service_get_snapshot(&service_snapshot) == ESP_OK)
     {
-        ble_enabled = status.ble_enabled;
-        ble_active = status.ble_active;
-        checked = ble_enabled;
+        ble_enabled = service_snapshot.ble_desired_enabled;
+        ble_active = service_snapshot.ble_applied_enabled;
+        checked = service_snapshot.ble_transition_pending
+                      ? service_snapshot.ble_desired_enabled
+                      : service_snapshot.ble_applied_enabled;
+        if (!service_snapshot.ble_transition_pending &&
+            service_snapshot.ble_generation != 0U &&
+            service_snapshot.ble_generation != s_last_ble_result_generation)
+        {
+            s_last_ble_result_generation = service_snapshot.ble_generation;
+            if (service_snapshot.ble_last_error != ESP_OK)
+            {
+                main_dropdown_controller_show_toast(
+                    "BLE switch update failed");
+            }
+        }
     }
 
     if (!s_last_bluetooth_checked_valid || s_last_bluetooth_checked != checked)
@@ -402,51 +413,39 @@ void main_dropdown_controller_handle_wifi_click(void)
  */
 void main_dropdown_controller_handle_bluetooth_click(void)
 {
-    const bool ble_enabled = network_manager_is_ble_enabled();
-    const bool ble_active = network_manager_is_ble_active();
+    network_service_snapshot_t snapshot = {0};
+    bool ble_enabled = false;
+    bool ble_active = false;
+    bool target_enabled = false;
     esp_err_t ret = ESP_OK;
+
+    if (network_service_get_snapshot(&snapshot) == ESP_OK)
+    {
+        ble_enabled = snapshot.ble_desired_enabled;
+        ble_active = snapshot.ble_applied_enabled;
+        const bool retry_failed_transition =
+            !snapshot.ble_transition_pending &&
+            snapshot.ble_last_error != ESP_OK;
+        target_enabled = retry_failed_transition
+                             ? snapshot.ble_desired_enabled
+                             : !snapshot.ble_desired_enabled;
+    }
+    else
+    {
+        main_dropdown_controller_show_toast("BLE switch update failed");
+        ESP_LOGW(TAG, "BLE owner snapshot unavailable");
+        return;
+    }
 
     ESP_LOGI(TAG, "Bluetooth button clicked: ble_enabled=%d ble_active=%d",
              ble_enabled ? 1 : 0, ble_active ? 1 : 0);
 
-    if (ble_enabled)
-    {
-        ret = network_manager_set_ble_enabled(false);
-        if (ret != ESP_OK)
-        {
-            ESP_LOGW(TAG, "disable BLE provisioning failed: %s",
-                     esp_err_to_name(ret));
-        }
-        main_dropdown_controller_sync_bluetooth_button();
-        return;
-    }
-
-    ret = foreground_runtime_gate_acquire(
-        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING, 0U);
-    if (ret != ESP_OK)
-    {
-        main_dropdown_controller_show_toast("BLE switch update failed");
-        ESP_LOGW(TAG, "enable BLE gate acquire failed: %s",
-                 esp_err_to_name(ret));
-        main_dropdown_controller_sync_bluetooth_button();
-        return;
-    }
-    (void)background_service_manager_notify_foreground_runtime_changed();
-
-    ret = network_manager_set_ble_enabled(true);
-    if (ret == ESP_ERR_NO_MEM)
-    {
-        vTaskDelay(pdMS_TO_TICKS(kBleRetryDelayMs));
-        ret = network_manager_set_ble_enabled(true);
-    }
-    (void)foreground_runtime_gate_release(
-        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING);
-    (void)background_service_manager_notify_foreground_runtime_changed();
+    ret = network_service_set_ble_enabled(target_enabled);
 
     if (ret != ESP_OK)
     {
         main_dropdown_controller_show_toast("BLE switch update failed");
-        ESP_LOGW(TAG, "enable BLE switch failed: %s",
+        ESP_LOGW(TAG, "submit BLE switch target failed: %s",
                  esp_err_to_name(ret));
     }
 
