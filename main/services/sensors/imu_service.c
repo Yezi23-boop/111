@@ -22,11 +22,13 @@ static const TickType_t k_sample_period_ticks =
 static const uint32_t k_sample_log_interval = IMU_SERVICE_SAMPLE_RATE_HZ * 2U;
 static const float k_standard_gravity = 9.80665f;
 static const float k_degrees_to_radians = 0.017453292519943295f;
-/* 事件触发阈值：降低以捕获更多跌倒场景。 */
+/* 事件触发阈值：当前以降低小幅旋转和轻微抖动误触发为优先。 */
 static const float k_event_acc_norm_high_mps2 = 25.0f;
 static const float k_event_gyro_norm_high_radps = 5.0f;
 static const float k_event_jerk_high_mps2_per_frame = 10.0f;
 static const float k_event_gyro_jerk_min_mps2_per_frame = 5.0f;
+static const float k_event_jerk_acc_norm_min_mps2 = 16.0f;
+static const float k_event_jerk_gyro_norm_min_radps = 3.0f;
 static const uint32_t k_event_cooldown_frames =
     IMU_SERVICE_WINDOW_FRAME_COUNT;
 
@@ -231,7 +233,9 @@ static uint32_t imu_service_event_flags(float acc_norm_mps2,
     {
         flags |= IMU_SERVICE_EVENT_TRIGGER_ACC_HIGH;
     }
-    if (jerk_mps2_per_frame > k_event_jerk_high_mps2_per_frame)
+    if (jerk_mps2_per_frame > k_event_jerk_high_mps2_per_frame &&
+        (acc_norm_mps2 > k_event_jerk_acc_norm_min_mps2 ||
+         gyro_norm_radps > k_event_jerk_gyro_norm_min_radps))
     {
         flags |= IMU_SERVICE_EVENT_TRIGGER_JERK_HIGH;
     }

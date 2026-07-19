@@ -1,13 +1,13 @@
 ---
 id: plan-fall-detection-v1-111-deployment
-tags: plan, active, imu, fall-detection, esp-dl, qmi8658c, event-trigger, post-check, 6ch, 5s-window
-summary: Fall Detection V1 在 111 固件中的部署计划，固定 50Hz 六通道 5s 事件窗口、Event Trigger、ESP-DL 模型层、post-check 和本地报警边界。
+tags: plan, active, imu, fall-detection, esp-dl, qmi8658c, event-trigger, post-check, 6ch, 6s-window, candidate
+summary: Fall Detection V1 在 111 固件中的部署计划，当前 111 固件采用 50Hz 六通道 6s 事件窗口、2s CNN candidate、post-check 严格确认和本地报警边界。
 last_reviewed: 2026-07-08
 memory_type: task
 scope: imu
 status: active
 owners: main/services/sensors/imu_service.c, main/services/fall_detection_service.c, components/fall_detection_inference, components/imu_sensor, components/qmi8658c, docs/context/plans/active/FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN.md
-triggers: FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN, fall detection V1, IMU fall, event trigger, post-check, 5s window, 6ch, input 1500, validate_context light
+triggers: FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN, fall detection V1, IMU fall, event trigger, post-check, 6s window, 2s CNN candidate, 6ch, input 600, validate_context light
 evidence_level: design
 route_area: "IMU fall detection V1"
 ---
@@ -16,7 +16,7 @@ route_area: "IMU fall detection V1"
 
 ## 目标与边界
 
-- 任务目标：在 `D:\esp32S3\111` 主固件仓库中落地 Fall Detection V1 目标链路，包括实时 IMU 事件触发、5 秒事件窗口、ESP-DL 推理、post-check 和本地报警动作。
+- 任务目标：在 `D:\esp32S3\111` 主固件仓库中落地 Fall Detection V1 目标链路，包括实时 IMU 事件触发、6 秒长事件窗口、2 秒 CNN candidate、post-check 和本地报警动作。
 - 为什么现在做：当前固件已有 50Hz IMU 采样和旧 3ch/4s CNN 临时部署，但静止姿态会被任意滑窗直接送入模型，和训练侧 V1 事件窗口设计不一致。
 - 完成后用户会看到什么变化：普通静止、平放、翻腕和强动态 ADL 不会因为单个滑窗高分直接报警；只有事件触发、模型层和 post-check 都满足时才进入 ALARM。
 - 本文档是部署设计，不记录 WEDA 数据清洗、训练细节和模型选择实验。训练侧内容见：
@@ -36,10 +36,10 @@ D:\esp32S3\imu\FALL_DETECTION_V1_TRAINING_MODEL_DESIGN.md
 
 ## 当前实现差距
 
-- 当前固件已部署 recall90 调试 CNN `6ch / 2s / [1,600]` 模型，`imu_service` 只在 Event Trigger 后发布 100 帧事件窗口；旧 `3ch / 4s / [1,600]` 周期滑窗链路已退出当前推理入口。
+- 当前固件已部署 recall90 调试 CNN `6ch / 2s / [1,600]` 模型，`imu_service` 只在 Event Trigger 后发布 300 帧长事件窗口；`fall_detection_service` 只提取事件附近 100 帧送入模型。
 - 当前已修复背面朝上误告警的直接路径：`flags=0` 定期窗口不再发布，也不会参与推理、确认或清除；本地告警/红屏确认后最多保持 5 秒，之后由 `fall_detection_service` 自动 clear。
-- 当前仍缺少 V1 post-check：低运动 + 姿态变化尚未接入，因此模型高分事件仍可能直接确认告警。
-- 因此静止姿态或普通 ADL 出现较高 `fall_prob` 时，不应只调模型阈值当作最终修复；下一步应补 post-check，使模型回到训练侧设计的事件后确认流程。
+- 当前已经让模型退回 candidate 生成器：`fall_prob>=0.60` 只进入候选，只有 post-check 通过后才确认、本地红屏和上传 `danger alert`。
+- 当前仍缺少板端行为验收：静止佩戴、平放、小幅旋转、拍桌/撞表和模拟跌倒需要用日志确认 candidate 与 post-check 的过滤效果。
 
 ## 板端总体流水线
 
@@ -50,7 +50,7 @@ QMI8658C 50Hz acc+gyro
    acc=m/s^2, gyro=rad/s
    ↓
 实时 ring buffer
-   保存最近 5~8s
+   保存最近 6s
    ↓
 逐帧派生特征
    acc_norm, gyro_norm, jerk_norm
@@ -58,11 +58,12 @@ QMI8658C 50Hz acc+gyro
 事件触发层
    冲击峰值 / 快速旋转 / 突然加速度变化
    ↓
-冻结 5s 事件窗口
-   event 前 1.5s + 后 3.5s
+冻结 6s 事件窗口
+   event 前 1s + 后 5s
    ↓
 模型层
-   ESP-DL 输出 ADL, FALL
+   提取 event 前 0.7s + 后 1.3s 的 2s 子窗口
+   ESP-DL 输出 ADL, FALL candidate
    ↓
 post-check
    跌倒后低运动 + 姿态变化
@@ -80,14 +81,14 @@ NORMAL
 
 EVENT_TRIGGERED
   记录 event_index，等待 post frames 收满
-  ↓ 5s 窗口可用
+  ↓ 6s 长窗口可用
 
 MODEL_CHECK
-  对 5s 事件窗口执行 ESP-DL 推理
+  对事件附近 2s 子窗口执行 ESP-DL 推理
   ↓ fall_prob 达标
 
 POST_CHECK
-  继续观察事件后低运动，并比较事件前后姿态变化
+  基于同一 6s 长窗口计算事件后低运动，并比较事件前后姿态变化
   ↓ post-check 通过
 
 ALARM
@@ -96,7 +97,7 @@ ALARM
 
 ## 模型输入契约
 
-V1 主线部署 6 通道模型：
+当前 111 固件部署 6 通道 2s CNN recall90 调试模型：
 
 ```text
 accX, accY, accZ,
@@ -106,7 +107,7 @@ gyroX, gyroY, gyroZ
 输入大小：
 
 ```text
-50Hz * 5s * 6ch = 250 * 6 = 1500
+50Hz * 2s * 6ch = 100 * 6 = 600
 ```
 
 单位：
@@ -163,16 +164,18 @@ trigger =
 
 ## 事件窗口
 
-窗口固定：
+当前固件窗口固定：
 
 ```text
-5s = event 前 1.5s + event 后 3.5s
-pre_event_frames  = 75
-post_event_frames = 175
-total_frames      = 250
+6s = event 前 1s + event 后 5s
+pre_event_frames       = 50
+post_event_frames      = 250
+total_frames           = 300
+trigger_frame_index    = 50
+model_subwindow_frames = [trigger-35, trigger+64]
 ```
 
-板端 event 点来自实时触发峰值，不来自 WEDA official timestamp。训练侧已经用 `impact_peak` 对齐，目的就是让训练窗口贴近板端事件窗口。
+板端 event 点来自实时触发峰值，不来自 WEDA official timestamp。当前 6s 长窗口服务 post-check，模型仍只消费事件附近 100 帧 2s 子窗口。
 
 ## ESP-DL 模型层
 
@@ -180,7 +183,7 @@ total_frames      = 250
 
 ```text
 - .espdl 嵌入 flash rodata
-- input shape = [1, 1500]
+- input shape = [1, 600]
 - output shape = [1, 2]
 - label order = [ADL, FALL]
 - Model::test() 通过
@@ -230,7 +233,7 @@ angle = acos(dot(pre, post) / (|pre| * |post|))
 
 ```text
 普通确认：
-fall_prob >= recommended_threshold
+fall_prob >= FALL_MODEL_THRESHOLD_DEFAULT
 AND low_motion
 AND posture_change
 
@@ -239,7 +242,7 @@ fall_prob >= 0.90
 AND low_motion
 ```
 
-`low_motion` 是 V1 进入报警候选的强条件。
+`fall_prob >= 0.60` 只生成 candidate；`low_motion` 是 V1 进入确认报警的强条件。
 
 时间窗口口径：低运动统计覆盖事件后约 2~5s；姿态变化使用事件前 1s 与事件后 2~3s 的平均加速度向量估计重力方向变化。
 
@@ -266,14 +269,14 @@ V1 本地报警动作：
 
 1. 从 `D:\esp32S3\imu` 选择已通过样板验证的 `.espdl`。
 2. 复制 `.espdl` 到 `111` 的 fall detection inference 模型目录。
-3. 更新模型名、SHA256、输入元素数 `1500`、推荐阈值和 label 顺序。
+3. 更新模型名、SHA256、输入元素数、推荐阈值和 label 顺序。
 4. 确认模型 test values 已可用于 `Model::test()`。
 5. 编译 `D:\esp32S3\111`，不修改 `managed_components`。
 6. 板端运行，确认日志包含：
 
 ```text
 Model::test(): passed
-input shape [1,1500]
+input shape [1,600]
 output shape [1,2]
 ESP-DL internal RAM < 20KB
 adl_prob / fall_prob / threshold / infer_ms
@@ -342,7 +345,9 @@ smoke FALL / ADL 样本
 - `[x]` 2026-07-08：本地告警/红屏确认后最多保持 5 秒；`fall_detection_service` 通过 1 秒 queue timeout 和每次推理后的超时检查自动 clear，后续低风险事件窗口仍可提前 clear。
 - `[x]` 2026-07-08：新增 `fall_detection_service_destroy()` 对外一键销毁入口；销毁只断开 fall 模型窗口队列，不停止 `imu_service` 后台采样；运行中的 `fall_detect` task 进入 `STOPPING` 并在安全点释放 ESP-DL runner、static queue、queue storage、current window 和 model input PSRAM 缓冲。
 - `[x]` 2026-07-08：部署 recall90 调试 CNN `cnn_v1_recall90_6ch_2s_with_test.espdl`（SHA256=cbe18c7e089bac506ff5229f2ed8c4b728148df5902dce9527aad3a315504684），输入改为 `[1,600]`；`imu_service` 事件窗口同步为 event 前 35 帧 + event 后 65 帧，默认 FALL 阈值为 `0.30`。
-- `[ ]` 实现 post-check：低运动 + 姿态变化；普通确认和强置信兜底都必须满足 `low_motion`。
+- `[x]` 2026-07-19：调试期将当前 2s CNN 默认 FALL 阈值锁定为 `0.60`，并收紧 Event Trigger：`jerk` 不再单独触发，必须同时满足 `acc_norm>16.0m/s^2` 或 `gyro_norm>3.0rad/s`；source tests 已同步当前阈值契约。
+- `[x]` 2026-07-19：让模型从报警决策者退回 candidate 生成器。`imu_service` 事件窗口扩为 50Hz / 6s / 300 帧，`fall_detection_fill_model_input()` 只提取 `[trigger-35, trigger+64]` 的 100 帧 2s 子窗口；`fall_detection_service` 新增 post-check，普通确认要求 `fall_prob>=0.60 && low_motion && posture_change`，强置信兜底要求 `fall_prob>=0.90 && low_motion`，post-check 失败不红屏、不上传。
+- `[x]` 2026-07-19：进一步优化 candidate + post-check 可维护性：推理前显式校验基础窗口、模型子窗口和 post-check 区间契约；`post检查表` 增加触发帧 `acc/gyro/jerk` 强度，便于板端按误触发原因回看。
 - `[x]` 2026-07-08：默认策略确认：跌倒告警可以上传 `danger alert`，但 `APP_ALERT_SOURCE_FALL_DETECTION` 不播放危险提示音，也不抢占普通音频输出。
 - `[ ]` 板端验收静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒。
 
@@ -360,6 +365,8 @@ smoke FALL / ADL 样本
 - 2026-07-08：本地告警/红屏不再依赖后续窗口退出，确认后最多保持 5 秒；App danger alert 可上传一次，本机危险语音继续跳过。
 - 2026-07-08：Fall 模型运行时生命周期由 `fall_detection_service` 自己持有；外部只能调用 `fall_detection_service_destroy()` 表达销毁意图，禁止 UI 或其他 owner 直接删除 `fall_detect` task、释放 runner 或停止 `imu_service` 后台采样。
 - 2026-07-08：按调试召回优先路线部署 2s/6ch CNN recall90 模型，临时偏离原 5s RF5s 目标态。该模型阈值 `0.30` 来自训练 run 的 `validation_selected_threshold`：验证集 `fall_recall=1.0`、ADL false positives=1/245；测试集 `fall_recall=0.9333`、ADL false positives=26/712，误报风险高于 RF5s，需要板端 ADL/FALL 日志回调。
+- 2026-07-19：当前固件实际确认阈值以源码为准，`FALL_MODEL_THRESHOLD_DEFAULT=0.60`，不再采用 2s CNN 训练侧 recall90 阈值 `0.30` 作为固件默认。Event Trigger 实际阈值以 `main/services/sensors/imu_service.c` 为准：`A_high=25.0m/s^2`、`G_high=5.0rad/s`、`J_high=10.0m/s^2/frame`、`GJ_min=5.0m/s^2/frame`；`JERK_HIGH` 需要额外满足 `acc_norm>16.0m/s^2` 或 `gyro_norm>3.0rad/s`。
+- 2026-07-19：当前确认策略改为严格确认：模型输出只作为 `fall candidate`，不再直接触发本地红屏或 App 上传；post-check 使用事件前 1s 平均重力、事件后 2~3s 平均重力和事件后 2~5s 低运动统计。严格确认会引入约 5 秒事件后确认延迟，这是当前误报优先收敛的取舍。
 
 ## 验证与验收
 
@@ -371,6 +378,9 @@ smoke FALL / ADL 样本
 - 2026-07-08 调试阈值 `0.65` 验证：fall source tests 16 passed；`idf.py build` 通过；COM7 `board_logs/2026-07-08-17-39-30-fall-threshold-065.log` 显示 `threshold=0.65`、`Model: Test Pass!`、`panic_log_seen=0`；context standard 错误 0、警告 0。
 - 2026-07-08 一键销毁入口验证：`uv run python -m unittest tests.test_fall_detection_service_source tests.test_fall_detection_inference_source tests.test_imu_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin` `0xace0b0`，app free `0x331f50`/23%。板端实际点击销毁/重启模型的 RAM 日志仍需补采。
 - 2026-07-08 2s CNN recall90 部署验证：`uv run python -m unittest tests.test_fall_detection_inference_source tests.test_fall_detection_service_source tests.test_imu_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin` `0xac65e0`，app free `0x339a20`/23%。当前机器仅发现 `COM1`，未执行板端 `app-flash-monitor`；接板后需补 `Model::test()`、RAM、静止 ADL 和模拟 FALL 日志。
+- 2026-07-19 jerk 组合触发验证：`uv run python -m unittest tests.test_fall_detection_inference_source tests.test_imu_service_source tests.test_fall_detection_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xac6640`，app free `0x3399c0`/23%。板端仍需按 `flags=0x01/0x02/0x04` 分类采静止、小幅旋转、敲击、模拟跌倒日志。
+- 2026-07-19 candidate + post-check 实现验证：`uv run python -m unittest tests.test_fall_detection_inference_source tests.test_imu_service_source tests.test_fall_detection_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xac6e80`，app free `0x339180`/23%；context standard 错误 0、警告 0。板端仍需验证 candidate 出现但 post-check 失败时不红屏、不上传，以及模拟跌倒能通过 `low_motion` 与姿态变化确认。
+- 2026-07-19 candidate + post-check 进一步优化验证：source tests 17 passed；`git diff --check -- main/services/fall_detection_service.c tests/test_fall_detection_service_source.py` 无 whitespace error；`idf.py build` 通过，`111.bin=0xac6f40`，app free `0x3390c0`/23%；context standard 错误 0、警告 0。
 
 ## 幂等与恢复
 
@@ -379,4 +389,4 @@ smoke FALL / ADL 样本
 
 ## 下一步
 
-- 下一步最小动作：接板后先补 2s CNN recall90 的 `Model::test()`、RAM、静止 ADL 和模拟 FALL 行为日志；随后实现 post-check（低运动 + 姿态变化），再做静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒的完整板端验收。
+- 下一步最小动作：完成本轮 build/context 验证后，接板采集 2s CNN candidate + 6s post-check 的静止佩戴、平放、小幅旋转、快速翻腕、拍桌/撞表、快速坐下和模拟跌倒日志；重点确认普通 ADL 可出现 candidate 但 post-check 失败不告警，模拟跌倒能在 `low_motion` 与姿态变化成立后确认。

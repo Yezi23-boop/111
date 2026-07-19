@@ -66,9 +66,12 @@ class ImuServiceSourceTests(unittest.TestCase):
         self.assertTrue(IMU_SERVICE_HEADER.exists(), "main/services/sensors/imu_service.h should exist")
         header = IMU_SERVICE_HEADER.read_text(encoding="utf-8")
         self.assertIn("#define IMU_SERVICE_SAMPLE_RATE_HZ 50U", header)
-        self.assertIn("#define IMU_SERVICE_EVENT_PRE_FRAMES 35U", header)
-        self.assertIn("#define IMU_SERVICE_EVENT_POST_FRAMES 65U", header)
+        self.assertIn("#define IMU_SERVICE_EVENT_PRE_FRAMES 50U", header)
+        self.assertIn("#define IMU_SERVICE_EVENT_POST_FRAMES 250U", header)
         self.assertIn("#define IMU_SERVICE_WINDOW_FRAME_COUNT \\", header)
+        self.assertIn("6 秒 / 300 帧事件窗口", header)
+        self.assertIn("2 秒模型子窗口", header)
+        self.assertIn("事件后 post-check", header)
         self.assertIn("imu_service_snapshot_t", header)
         self.assertIn("imu_service_accel_window_t", header)
         self.assertIn("QueueHandle_t queue", header)
@@ -145,9 +148,25 @@ class ImuServiceSourceTests(unittest.TestCase):
         self.assertIn("IMU_SERVICE_WINDOW_FRAME_COUNT", source)
         self.assertIn("imu_service_ring_sample_t *sample_ring", source)
         self.assertIn("imu_service_event_trigger_t", source)
-        self.assertIn("k_event_acc_norm_high_mps2 = 15.0f", source)
-        self.assertIn("k_event_gyro_norm_high_radps = 2.5f", source)
-        self.assertIn("k_event_jerk_high_mps2_per_frame = 3.5f", source)
+        self.assertIn("k_event_acc_norm_high_mps2 = 25.0f", source)
+        self.assertIn("k_event_gyro_norm_high_radps = 5.0f", source)
+        self.assertIn("k_event_jerk_high_mps2_per_frame = 10.0f", source)
+        self.assertIn("k_event_gyro_jerk_min_mps2_per_frame = 5.0f", source)
+        self.assertIn("k_event_jerk_acc_norm_min_mps2 = 16.0f", source)
+        self.assertIn("k_event_jerk_gyro_norm_min_radps = 3.0f", source)
+        self.assertIn("k_event_cooldown_frames =\n    IMU_SERVICE_WINDOW_FRAME_COUNT", source)
+        self.assertIn(
+            "jerk_mps2_per_frame > k_event_jerk_high_mps2_per_frame &&",
+            source,
+        )
+        self.assertIn(
+            "(acc_norm_mps2 > k_event_jerk_acc_norm_min_mps2 ||",
+            source,
+        )
+        self.assertIn(
+            "gyro_norm_radps > k_event_jerk_gyro_norm_min_radps)",
+            source,
+        )
         self.assertIn("imu_service_accel_window_t *publish_window", source)
         self.assertIn("imu_service_prepare_buffers", source)
         self.assertIn("heap_caps_calloc(\n                IMU_SERVICE_WINDOW_FRAME_COUNT", source)

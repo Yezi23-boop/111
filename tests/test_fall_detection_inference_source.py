@@ -30,11 +30,13 @@ class FallDetectionInferenceSourceTests(unittest.TestCase):
     def test_runner_declares_fall_model_contract(self) -> None:
         header = FALL_MODEL_RUNNER_HEADER.read_text(encoding="utf-8")
 
+        self.assertIn("#define FALL_MODEL_FRAME_COUNT 100U", header)
+        self.assertIn("#define FALL_MODEL_CHANNEL_COUNT 6U", header)
         self.assertIn("#define FALL_MODEL_INPUT_ELEMENTS 600U", header)
         self.assertIn("#define FALL_MODEL_CLASS_COUNT 2U", header)
         self.assertIn("#define FALL_MODEL_LABEL_ADL 0", header)
         self.assertIn("#define FALL_MODEL_LABEL_FALL 1", header)
-        self.assertIn("#define FALL_MODEL_THRESHOLD_DEFAULT 0.30f", header)
+        self.assertIn("#define FALL_MODEL_THRESHOLD_DEFAULT 0.60f", header)
         self.assertIn("float adl_prob", header)
         self.assertIn("float fall_prob", header)
         self.assertIn("int64_t infer_us", header)
