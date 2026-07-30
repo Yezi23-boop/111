@@ -7,8 +7,8 @@ memory_type: task
 scope: task
 owners: docs/context/plans/active/2026-07-14-watch-foreground-session-lifecycle-plan.md, main/services/memory_watch/memory_watch_service.c, main/services/official_chat_service.c, main/services/network/network_service.c, main/services/runtime_gate/foreground_runtime_gate.c, main/services/safety/background_service_manager.c
 triggers: foreground session, resource create destroy, 前台资源, 创建销毁, Hermes切换, official chat切换, BLE provisioning生命周期
-evidence_level: design
-status: active
+evidence_level: implementation
+status: archived
 ---
 
 # Watch Foreground Session Lifecycle 初步执行计划
@@ -131,7 +131,7 @@ UI/controller
 | 基础常驻控制面 | UI/LVGL、Wi-Fi STA、IMU 基础采样、时间、电源及 service 控制 task | 开机初始化并常驻，不随页面退出销毁 | 否 |
 | 单次操作资源 | HTTP client、录音 task/buffer、Opus muxer、临时 JSON、推理窗口 | 操作内部创建，成功、失败或取消后立即清理 | 否 |
 | 可回收缓存 | 对话记录、Inbox、表盘帧及其他 PSRAM 缓存 | 独立提供 trim/clear 边界，不与 session stop 混为一体 | 否 |
-| 维护模式资源 | OTA | 后续建立独立 maintenance 生命周期，执行时排斥强前台 | 后续单独设计 |
+| 维护模式资源 | OTA | 独立 maintenance 生命周期，执行时排斥强前台 | 见 `2026-07-30-standalone-https-ota-maintenance-plan.md` |
 
 阶段 0 必须让每个相关 owner 回答：谁创建、谁停止、如何确认 worker/callback 已退出、谁释放、部分创建失败如何清理、重复停止是否安全，以及页面退出后哪些资源继续保留。
 
@@ -325,7 +325,7 @@ ACK 不能只依赖一个可能残留的 event bit。完成条件至少包括：
 | Fall 模型 | `fall_detection_service` | `destroy()` 断开 IMU queue 并通知 task；task 活跃时函数会在真实资源释放前返回 | 默认不加入 foreground handover；若组合实测要求让路，必须等待 snapshot 从 STOPPING 到已销毁，IMU 基础采样保持运行 |
 | Audio codec | `components/audio_codec` | input/output session 分别记录 active 与 owner，调用方负责成对 acquire/release | 现有 domain owner 继续保留；foreground gate 不重复接管 codec，只验证 session 在 teardown 后已释放 |
 | HTTP/SNTP/天气/Inbox | 各网络 owner | 单次 client/请求，按自身周期和错误语义清理 | 不恢复全局 HTTPS gate；只在可重复冲突证据出现时做具体 owner 错峰 |
-| OTA | 尚未形成完整 maintenance owner | gate 枚举已有预留，但无完整生命周期合同 | 不纳入本轮实现；后续单独建立 maintenance session |
+| OTA | 尚未形成完整 maintenance owner | gate 枚举已有预留，但无完整生命周期合同 | 独立计划建立 maintenance session，不复用 official_chat OTA |
 
 #### 5. 阶段 0 测试基线与后续断言
 
@@ -509,8 +509,10 @@ idf.py build
 
 ## 下一步
 
-本轮代码阶段闭环记录（2026-07-29）：阶段 3 的 BLE/SoftAP provisioning 异步 owner、阶段 4 的 fail-fast foreground gate、阶段 5 的 owner task 内 5 秒等待与阶段 6 的 generation-owned quiesced ACK 均已完成。复查后补充了 quiesce finish 的 generation 所有权、严格 ACK 条件，以及 BLE provisioning 自动完成/启动失败后的普通 presence 恢复。聚焦 source tests `57 passed`，全量 source tests `438 passed`；layering `warning_count=0`、`known_exception_count=2`；ESP-IDF build 通过，`111.bin=0xabe680`、app free `0x341980`（约 23%）。COM7 `app-flash-monitor` 冷启动回归已通过：`panic_log_seen=0`、`residual_count=0`，日志到达 `network_service_ready`，观测 `internal_free=76971`、largest=55296`、psram_free=6803516`；真实 Wi-Fi 页面 BLE/SoftAP 交互仍须单独由用户操作验证。
+本轮代码阶段闭环记录（2026-07-29）：阶段 3 的 BLE/SoftAP provisioning 异步 owner、阶段 4 的 fail-fast foreground gate、阶段 5 的 owner task 内 5 秒等待与阶段 6 的 generation-owned quiesced ACK 均已完成。复查后补充了 quiesce finish 的 generation 所有权、严格 ACK 条件，以及 BLE provisioning 自动完成/启动失败后的普通 presence 恢复。聚焦 source tests `57 passed`，全量 source tests `438 passed`；layering `warning_count=0`、`known_exception_count=2`；ESP-IDF build 通过，`111.bin=0xabe680`、app free `0x341980`（约 23%）。COM7 `app-flash-monitor` 冷启动回归已通过：`panic_log_seen=0`、`residual_count=0`，日志到达 `network_service_ready`，观测 `internal_free=76971`、largest=55296`、psram_free=6803516`。
 
 2026-07-29 复跑闭环：context standard 校验错误 0、警告 0；聚焦 foreground/Hermes/official_chat/BLE/board source tests `53 passed`；`git diff --check` 无 whitespace error，仅 CRLF/LF 提示；ESP-IDF build 通过，`111.bin=0xabe680`、app free `0x341980`（23%）；COM7 `app-flash-monitor` 45 秒复跑通过，日志 `board_logs/2026-07-29-19-46-16-foreground-session-lifecycle-final-rerun.log`，summary `board_logs/2026-07-29-19-46-16-foreground-session-lifecycle-final-rerun.summary.json`，`panic_log_seen=0`、`residual_count=0`，启动到 `startup_sequence_done`、`ui_first_frame_ready` 和 `SERVICE_READY`，冷启动快照 `internal_free=61423`、`largest=53248`、`psram_free=6777484`。
 
-下一步由用户手动覆盖真实 Wi-Fi 页面 BLE provisioning -> 配网完成 -> stop/deinit -> gate release -> 普通 BLE presence 恢复，以及 BLE -> SoftAP provisioning。当前 COM7 冷启动只证明启动与基础 owner/heap 观测，无 panic/Guru/WDT/NO_MEM，不等同于完成页面交互验收。
+## 归档结论
+
+本计划的代码、自动化测试、构建和冷启动观测闭环已完成，现归档为 `archived`。真实 Wi-Fi 页面 BLE/SoftAP 交互、Hermes/official_chat 快速切换和 ESP-DL 让路属于后续独立真机验收；本计划不把这些尚未执行的人工场景宣称为已验证。
