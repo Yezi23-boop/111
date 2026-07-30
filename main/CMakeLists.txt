@@ -229,8 +229,6 @@ idf_component_register(
 
         mp3_player
 
-        traffic_inference
-
         espdl_inference
         fall_detection_inference
 

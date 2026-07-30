@@ -6,7 +6,12 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class TrafficInferenceComponentSourceTests(unittest.TestCase):
-    def test_component_cmake_and_sources_are_present(self) -> None:
+    def test_experimental_component_is_not_linked_by_main_firmware(self) -> None:
+        root_cmake = (REPO_ROOT / "CMakeLists.txt").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("EXCLUDE_COMPONENTS traffic_inference", root_cmake)
+
         cmake_path = (
             REPO_ROOT / "components" / "traffic_inference" / "CMakeLists.txt"
         )
@@ -20,8 +25,6 @@ class TrafficInferenceComponentSourceTests(unittest.TestCase):
         self.assertIn("edge_impulse/manual_v5", cmake_source)
         self.assertIn("traffic_audio_runtime.cc", cmake_source)
         self.assertIn("traffic_inference_postprocess.cc", cmake_source)
-        self.assertIn("audio_codec", cmake_source)
-        self.assertIn("espressif__esp-dsp", cmake_source)
 
         model_metadata_path = (
             REPO_ROOT

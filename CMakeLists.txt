@@ -6,6 +6,9 @@ cmake_minimum_required(VERSION 3.16)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-attributes -Wno-unused-function")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes -Wno-unused-function")
 
+# Edge Impulse 交通声音推理仅保留为实验源码，不进入正式固件；危险检测主线使用 espdl_inference。
+set(EXCLUDE_COMPONENTS traffic_inference)
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(111)
 

@@ -14,9 +14,8 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("danger_detection_service_start", service_header)
         self.assertIn("danger_detection_service_stop", service_header)
         self.assertIn("DANGER_DETECTION_STATE_RUNNING", service_header)
-        self.assertIn(
-            "traffic_inference_postprocess_set_alert_callback", service_source
-        )
+        self.assertNotIn("traffic_inference", service_source)
+        self.assertIn("espdl_audio_runtime_start", service_source)
         self.assertIn("app_alert_manager_raise", service_source)
         self.assertIn("app_alert_manager_clear", service_source)
         self.assertIn("watch_endpoint_service_post_danger_alert", service_source)
@@ -27,11 +26,9 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
         service_header = DANGER_DETECTION_SERVICE_HEADER.read_text(encoding="utf-8")
         service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("DANGER_DETECTION_BACKEND_ESPDL", service_header)
-        self.assertIn(
-            "DANGER_DETECTION_BACKEND_ESPDL);",
-            service_source,
-        )
+        self.assertIn("固定使用 ESP-DL 单模型", service_header)
+        self.assertNotIn("danger_detection_service_start_with_backend", service_header)
+        self.assertNotIn("traffic_inference", service_source)
         self.assertIn("const espdl_model_result_t *result", service_source)
         self.assertIn("result->probabilities[1]", service_source)
         self.assertNotIn("DANGER_DETECTION_BACKEND_ESPDL_DUAL", service_header)
