@@ -77,6 +77,23 @@ function Receive-JsonFrame {
     return $text | ConvertFrom-Json
 }
 
+function Receive-RequestFrame {
+    param(
+        [System.Net.WebSockets.ClientWebSocket]$Socket,
+        [string]$Type,
+        [string]$RequestId,
+        [int]$MaxFrames = 32
+    )
+    for ($index = 0; $index -lt $MaxFrames; $index++) {
+        $frame = Receive-JsonFrame -Socket $Socket
+        if ($frame.type -eq $Type -and
+            (-not $RequestId -or $frame.request_id -eq $RequestId)) {
+            return $frame
+        }
+    }
+    throw "did not receive websocket frame type=$Type request_id=$RequestId"
+}
+
 $resolvedToken = Resolve-DeviceToken -Explicit $DeviceToken -Path $EnvFile -Id $DeviceId
 if (-not $resolvedToken) {
     throw "missing device token; pass -DeviceToken or configure WATCH_DEVICE_TOKENS in env file"
@@ -120,7 +137,7 @@ try {
         format = "ogg_opus"
         mock_asr_text = $MockAsrText
     } | ConvertTo-Json -Compress)
-    $started = Receive-JsonFrame -Socket $socket
+    $started = Receive-RequestFrame -Socket $socket -Type "audio_started" -RequestId $requestId
     if ($started.type -ne "audio_started") {
         throw "expected audio_started, got $($started.type)"
     }
@@ -132,13 +149,13 @@ try {
         request_id = $requestId
     } | ConvertTo-Json -Compress)
 
-    $accepted = Receive-JsonFrame -Socket $socket
+    $accepted = Receive-RequestFrame -Socket $socket -Type "request_accepted" -RequestId $requestId
     if ($accepted.type -ne "request_accepted") {
         throw "expected request_accepted, got $($accepted.type)"
     }
-    $asr = Receive-JsonFrame -Socket $socket
-    $task = Receive-JsonFrame -Socket $socket
-    $reply = Receive-JsonFrame -Socket $socket
+    $asr = Receive-RequestFrame -Socket $socket -Type "asr_result" -RequestId $requestId
+    $task = Receive-RequestFrame -Socket $socket -Type "task_started" -RequestId $requestId
+    $reply = Receive-RequestFrame -Socket $socket -Type "conversation_message" -RequestId $requestId
 
     $summary = [ordered]@{
         status = "passed"

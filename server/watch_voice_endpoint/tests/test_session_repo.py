@@ -40,6 +40,40 @@ def test_create_session_sets_accepted_state(tmp_path):
     assert session.created_at == session.updated_at
 
 
+def test_progress_phase_persists_and_replays_for_active_session(tmp_path):
+    db_path = tmp_path / "test.db"
+    repo = SessionRepo(db_path)
+    _create(repo, session_id="progress", request_id="progress")
+    _transition(repo, "watch-001", "progress", "asr_ready", user_text="测试")
+    _transition(repo, "watch-001", "progress", "running")
+
+    updated = repo.set_progress("watch-001", "progress", "searching")
+    assert updated.progress_phase == "searching"
+    assert updated.progress_updated_at.endswith("Z")
+
+    reopened = SessionRepo(db_path)
+    restored = reopened.get("watch-001", "progress")
+    assert restored.progress_phase == "searching"
+    assert restored.progress_updated_at == updated.progress_updated_at
+
+
+def test_progress_phase_cannot_be_updated_after_terminal_state(tmp_path):
+    repo = SessionRepo(tmp_path / "test.db")
+    _create(repo, session_id="terminal-progress", request_id="terminal-progress")
+    _transition(repo, "watch-001", "terminal-progress", "error")
+
+    with pytest.raises(SessionValidationError, match="not active"):
+        repo.set_progress("watch-001", "terminal-progress", "executing")
+
+
+def test_unknown_progress_phase_is_rejected(tmp_path):
+    repo = SessionRepo(tmp_path / "test.db")
+    _create(repo, session_id="bad-progress", request_id="bad-progress")
+
+    with pytest.raises(SessionValidationError, match="unknown progress phase"):
+        repo.set_progress("watch-001", "bad-progress", "tool-name")
+
+
 def test_create_duplicate_session_id_returns_existing(tmp_path):
     """INSERT OR IGNORE：重复 session_id 不抛异常，返回已有记录。"""
     repo = SessionRepo(tmp_path / "test.db")

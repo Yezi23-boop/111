@@ -1,0 +1,8 @@
+[Unit]
+Description=AI Memory Watch cloud container health check
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/watch-cloud-healthcheck

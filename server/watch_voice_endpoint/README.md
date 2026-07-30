@@ -45,6 +45,18 @@ auth -> conversation_snapshot -> audio_start -> binary audio chunks -> audio_end
      -> asr_result -> task_started -> conversation_message
 ```
 
+When `WATCH_RUN_EVENTS_ENABLED=true`, the Direct Hermes run also gets a best-effort
+SSE subscription at `/v1/runs/{run_id}/events`. The server maps upstream lifecycle
+events to the watch-safe `task_progress` frame with only `request_id` and one of
+`recognized`, `searching`, `executing`, or `composing`. Raw SSE payloads, tool names,
+and token deltas never cross the watch protocol. SSE failure is non-terminal: the
+existing run status polling remains authoritative. Keep the flag `false` until a
+private Direct canary has verified the Hermes API Server event stream.
+
+The Gateway Relay path does not infer search/tool phases from ordinary messages.
+Until the relay supplies a verified progress frame, it sends only the existing
+started/executing indication and the final conversation reply.
+
 The server stores conversation messages in `CONVERSATION_DB_PATH` or `/data/conversation.db` by default and keeps the most recent 20 messages per device for reconnect replay.
 
 After ASR, the server starts Hermes through native `POST /v1/runs`, persists the returned `run_id`, and polls `GET /v1/runs/{run_id}`. Runs for one device are serialized because they share one Hermes conversation history. A disconnected watch does not cancel a run; the final result is committed to SQLite first and then delivered best-effort through WS or recovered through `/v1/watch/sync`.

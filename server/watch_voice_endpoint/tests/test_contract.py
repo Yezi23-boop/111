@@ -202,6 +202,48 @@ def test_watch_endpoint_container_is_pinned_and_hardened():
         assert ":/data" in source
 
 
+def test_cloud_compose_limits_memory_and_keeps_aliyun_connector_opt_in():
+    root = Path(__file__).resolve().parents[1]
+    cloud_compose = (root / "compose.cloud.yml").read_text(encoding="utf-8")
+
+    assert "mem_limit: 768m" in cloud_compose
+    assert "memswap_limit: 1024m" in cloud_compose
+    assert "mem_limit: 256m" in cloud_compose
+    assert "memswap_limit: 384m" in cloud_compose
+    assert "pids_limit: 256" in cloud_compose
+    assert "pids_limit: 128" in cloud_compose
+    assert "condition: service_healthy" in cloud_compose
+    assert "- aliyun-connector" in cloud_compose
+
+
+def test_cloud_and_relay_watchdogs_are_bounded_and_do_not_contain_secrets():
+    deploy = Path(__file__).resolve().parents[1] / "deploy"
+    relay = (deploy / "hk-relay" / "watch-relay-healthcheck.sh").read_text(
+        encoding="utf-8"
+    )
+    cloud = (deploy / "cloud" / "watch-cloud-healthcheck.sh").read_text(
+        encoding="utf-8"
+    )
+    autossh = (deploy / "hk-relay" / "watch-relay-autossh.service").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--max-time 4" in relay
+    assert "listener_count" in relay
+    assert 'watch_ok" -eq 0' in relay
+    assert 'hermes_ok" -eq 0' in relay
+    assert "FAILURE_LIMIT=3" in cloud
+    assert "--max-time 5" in cloud
+    assert "docker restart" in cloud
+    assert "MemAvailable" in cloud
+    assert "ConnectTimeout=10" in autossh
+    assert "ServerAliveInterval=15" in autossh
+    assert "127.0.0.1:19119:127.0.0.1:9119" in autossh
+    for source in (relay, cloud, autossh):
+        assert "API_SERVER_KEY" not in source
+        assert "WATCH_DEVICE_TOKENS" not in source
+
+
 def test_runtime_status_reports_ws_main_path_metrics():
     root = Path(__file__).resolve().parents[1]
     runtime_source = (root / "runtime_status.ps1").read_text(encoding="utf-8")

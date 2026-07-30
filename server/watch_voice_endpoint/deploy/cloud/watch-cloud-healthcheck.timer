@@ -1,0 +1,11 @@
+[Unit]
+Description=Run AI Memory Watch cloud health check every 30 seconds
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=watch-cloud-healthcheck.service
+
+[Install]
+WantedBy=timers.target

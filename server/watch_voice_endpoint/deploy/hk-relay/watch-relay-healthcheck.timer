@@ -1,0 +1,11 @@
+[Unit]
+Description=Run AI Memory Watch relay health check every 30 seconds
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=watch-relay-healthcheck.service
+
+[Install]
+WantedBy=timers.target

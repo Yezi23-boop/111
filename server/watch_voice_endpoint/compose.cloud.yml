@@ -6,6 +6,9 @@ services:
       dockerfile: deploy/Dockerfile.hermes.cloud
     container_name: hermes
     restart: unless-stopped
+    mem_limit: 768m
+    memswap_limit: 1024m
+    pids_limit: 256
     env_file:
       - /opt/ai-memory-watch/secrets/hermes.env
       - /opt/ai-memory-watch/secrets/dashboard.env
@@ -14,11 +17,28 @@ services:
     ports:
       - "127.0.0.1:8642:8642"
       - "127.0.0.1:9119:9119"
+      - "127.0.0.1:19119:9119"
     command:
       - gateway
       - run
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - ai-memory-watch
+      - watch-relay-private
 
   watch-voice-endpoint:
     image: ai-memory-watch-voice-endpoint:cloud
@@ -26,12 +46,17 @@ services:
       context: .
     container_name: ai-memory-watch-voice-endpoint
     restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 384m
+    pids_limit: 128
     depends_on:
-      - hermes
+      hermes:
+        condition: service_healthy
     env_file:
       - /opt/ai-memory-watch/secrets/watch-endpoint.env
     environment:
       HERMES_API_URL: http://hermes:8642
+      WATCH_RELAY_CONNECTOR_URL: http://watch-relay-connector:9080
     volumes:
       - /opt/ai-memory-watch/watch-data:/data
     read_only: true
@@ -43,6 +68,7 @@ services:
       - no-new-privileges:true
     ports:
       - "127.0.0.1:8787:8787"
+      - "127.0.0.1:18787:8787"
     healthcheck:
       test:
         - CMD
@@ -53,13 +79,59 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - ai-memory-watch
+      - watch-relay-private
+
+  watch-relay-connector:
+    image: ai-memory-watch-relay-connector:cloud
+    build:
+      context: ../watch_relay_connector
+    container_name: ai-memory-watch-relay-connector
+    restart: unless-stopped
+    mem_limit: 64m
+    memswap_limit: 96m
+    pids_limit: 64
+    env_file:
+      - /opt/ai-memory-watch/secrets/relay-connector.env
+    volumes:
+      - /opt/ai-memory-watch/relay-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9080/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    networks:
+      - watch-relay-private
 
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: ai-memory-watch-cloudflared
     restart: unless-stopped
+    profiles:
+      - aliyun-connector
     depends_on:
       watch-voice-endpoint:
         condition: service_healthy
@@ -83,3 +155,6 @@ networks:
   ai-memory-watch:
     name: ai-memory-watch
     external: true
+  watch-relay-private:
+    name: watch-relay-private
+    internal: true

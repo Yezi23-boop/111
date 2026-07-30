@@ -24,6 +24,12 @@ from starlette.websockets import WebSocketDisconnect
 
 from conversation_repo import ConversationMessage, ConversationRepo, ConversationValidationError
 from inbox_repo import InboxRepo, InboxValidationError
+from relay_transport import (
+    RelaySessionBusyError,
+    RelayTransportClient,
+    RelayTransportError,
+)
+from run_events import SseLineParser
 from session_repo import TERMINAL_STATES, SessionRepo, SessionValidationError, WatchSession
 
 
@@ -56,11 +62,19 @@ REPLY_MAX_CHARS = int(os.getenv("WATCH_REPLY_MAX_CHARS", "80"))
 WATCH_REPLY_MAX_UTF8_BYTES = int(os.getenv("WATCH_REPLY_MAX_UTF8_BYTES", "120"))
 WATCH_ASR_MAX_UTF8_BYTES = int(os.getenv("WATCH_ASR_MAX_UTF8_BYTES", "255"))
 WATCH_INTERNAL_API_KEY = os.getenv("WATCH_INTERNAL_API_KEY", "")
+WATCH_RELAY_ENDPOINT_TOKEN = os.getenv("WATCH_RELAY_ENDPOINT_TOKEN", "")
 WATCH_HTTP_ASYNC_RUNS_ENABLED = os.getenv(
     "WATCH_HTTP_ASYNC_RUNS_ENABLED", "true"
 ).strip().lower() in ("1", "true", "yes", "on")
 WATCH_WS_ENABLED = os.getenv("WATCH_WS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+WATCH_RUN_EVENTS_ENABLED = os.getenv("WATCH_RUN_EVENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
 WATCH_WS_MAX_MESSAGE_BYTES = int(os.getenv("WATCH_WS_MAX_MESSAGE_BYTES", str(6 * 1024 * 1024)))
+WATCH_HERMES_TRANSPORT = os.getenv("WATCH_HERMES_TRANSPORT", "direct").strip().lower()
+WATCH_RELAY_CONNECTOR_URL = os.getenv("WATCH_RELAY_CONNECTOR_URL", "").strip()
+WATCH_RELAY_CONNECTOR_TOKEN = os.getenv("WATCH_RELAY_CONNECTOR_TOKEN", "").strip()
+WATCH_RELAY_SESSION_KEY = os.getenv(
+    "WATCH_RELAY_SESSION_KEY", "agent:main:relay:dm:watch-001"
+).strip()
 MIMO_ASR_DIRECT_MIME_TYPES = {"audio/wav", "audio/mp3", "audio/mpeg"}
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,96}$")
 INVALID_REQUEST_ID = "invalid-request"
@@ -112,7 +126,19 @@ class DangerAlertIn(BaseModel):
     message: str | None = None
 
 
+class RelayOutboundIn(BaseModel):
+    device_id: str
+    request_id: str
+    delivery_id: str
+    content: str
+    reply_to: str = ""
+
+
 _hermes_run_client: httpx.AsyncClient | None = None
+_relay_transport_client = RelayTransportClient(
+    WATCH_RELAY_CONNECTOR_URL,
+    WATCH_RELAY_CONNECTOR_TOKEN,
+)
 
 
 @asynccontextmanager
@@ -144,8 +170,10 @@ app = FastAPI(
 async def _runtime_readiness_middleware(request: Request, call_next):
     """仓库 migration/config 未就绪时统一阻断 watch 业务入口。"""
     path = request.url.path
-    requires_runtime = path.startswith("/v1/watch/") or path.startswith(
-        "/internal/watch/"
+    requires_runtime = (
+        path.startswith("/v1/watch/")
+        or path.startswith("/internal/watch/")
+        or path.startswith("/internal/relay/")
     )
     if requires_runtime and not _initialize_runtime():
         return JSONResponse(status_code=503, content={"detail": "service_not_ready"})
@@ -165,6 +193,7 @@ _ws_background_tasks: set[asyncio.Task[None]] = set()
 _watch_run_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
 _device_run_locks: dict[str, asyncio.Lock] = {}
 _watch_ws_connections: dict[str, WsConnectionState] = {}
+_run_event_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
 _alert_ws_clients: set[WebSocket] = set()
 _alert_ws_lock = asyncio.Lock()
 
@@ -358,6 +387,11 @@ def _get_hermes_run_client() -> httpx.AsyncClient:
 
 def _conversation_for_device(device_id: str) -> str:
     return f"{device_id}-{WATCH_CONVERSATION_SUFFIX}"
+
+
+def _new_session_transport() -> str:
+    """Resolve transport only for new sessions; existing sessions keep SQLite value."""
+    return "relay" if WATCH_HERMES_TRANSPORT == "relay" else "direct"
 
 
 def _extract_output_text(payload: dict) -> str:
@@ -743,6 +777,49 @@ async def _get_hermes_run(run_id: str) -> dict[str, object]:
     return payload
 
 
+async def _stream_hermes_run_events(
+    device_id: str,
+    request_id: str,
+    run_id: str,
+) -> None:
+    """Best-effort Direct run-event stream; status polling remains authoritative."""
+    if not WATCH_RUN_EVENTS_ENABLED:
+        return
+    parser = SseLineParser()
+    timeout = httpx.Timeout(connect=10.0, write=10.0, read=35.0, pool=10.0)
+    try:
+        async with _get_hermes_run_client().stream(
+            "GET",
+            f"{HERMES_API_URL}/v1/runs/{run_id}/events",
+            headers={**_hermes_headers(), "Accept": "text/event-stream"},
+            timeout=timeout,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                event = parser.feed_line(line)
+                if event is None:
+                    continue
+                if event.phase is not None:
+                    await _publish_task_progress(device_id, request_id, event.phase)
+                if event.terminal:
+                    return
+    except asyncio.CancelledError:
+        raise
+    except (httpx.HTTPError, RuntimeError) as exc:
+        logger.info(
+            "Hermes run event stream unavailable request_id=%s error=%s",
+            request_id,
+            type(exc).__name__,
+        )
+
+
+async def _stop_run_event_task(device_id: str, request_id: str) -> None:
+    task = _run_event_tasks.pop((device_id, request_id), None)
+    if task is not None and not task.done():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
 async def _stop_hermes_run(run_id: str) -> None:
     timeout = httpx.Timeout(connect=10.0, write=10.0, read=15.0, pool=10.0)
     response = await _get_hermes_run_client().post(
@@ -1029,6 +1106,41 @@ async def _ws_try_send_device_json(
     return await _ws_try_send_json(conn, payload)
 
 
+async def _publish_task_progress(
+    device_id: str,
+    request_id: str,
+    phase: str,
+    fallback_conn: WsConnectionState | None = None,
+) -> None:
+    """Persist and deliver one small, device-safe progress phase."""
+    if phase not in {"recognized", "searching", "executing", "composing"}:
+        return
+    try:
+        _get_session_repo().set_progress(device_id, request_id, phase)
+    except SessionValidationError:
+        return
+    await _ws_try_send_device_json(
+        device_id,
+        fallback_conn,
+        {"type": "task_progress", "request_id": request_id, "phase": phase},
+    )
+
+
+async def _replay_active_progress(
+    conn: WsConnectionState,
+    device_id: str,
+) -> None:
+    """Replay the latest phase when a foreground WSS reconnects."""
+    for session in _get_session_repo().list_active(device_id):
+        phase = session.progress_phase
+        if not phase:
+            phase = "recognized" if session.state == "asr_ready" else "executing"
+        await _ws_try_send_json(
+            conn,
+            {"type": "task_progress", "request_id": session.request_id, "phase": phase},
+        )
+
+
 async def _ws_try_send_error(
     conn: WsConnectionState | None,
     request_id: str | None,
@@ -1119,11 +1231,12 @@ async def _finish_ws_session_error(
 ) -> None:
     """只有抢到 running -> terminal 的 caller 才写错误消息。"""
     session_repo = _get_session_repo()
-    reply_text = (
-        "Hermes 处理超时"
-        if terminal_state == "timeout"
-        else "没有处理成功，请再说一次"
-    )
+    if terminal_state == "timeout":
+        reply_text = "Hermes 处理超时"
+    elif error_code == "relay_session_busy":
+        reply_text = "当前有任务正在处理，请稍后再试"
+    else:
+        reply_text = "没有处理成功，请再说一次"
     message_id = f"msg_{uuid.uuid4().hex}"
     persist_started_at = time.monotonic()
     try:
@@ -1200,6 +1313,29 @@ async def _ws_run_hermes_job_serialized(
     existing_run_id: str = "",
     metrics: WsRequestMetrics | None = None,
 ) -> None:
+    """Run one session and always close its optional SSE task."""
+    key = (device_id, request_id)
+    try:
+        await _ws_run_hermes_job_serialized_impl(
+            conn,
+            device_id,
+            request_id,
+            asr_text,
+            existing_run_id=existing_run_id,
+            metrics=metrics,
+        )
+    finally:
+        await _stop_run_event_task(*key)
+
+
+async def _ws_run_hermes_job_serialized_impl(
+    conn: WsConnectionState | None,
+    device_id: str,
+    request_id: str,
+    asr_text: str,
+    existing_run_id: str = "",
+    metrics: WsRequestMetrics | None = None,
+) -> None:
     """启动或重新挂接 Hermes run，结果先落 session 再写 conversation。"""
     session_repo = _get_session_repo()
     run_id = existing_run_id
@@ -1217,6 +1353,45 @@ async def _ws_run_hermes_job_serialized(
             conn,
             {"type": "task_started", "request_id": request_id},
         )
+        await _publish_task_progress(device_id, request_id, "executing", conn)
+        if session.transport == "relay":
+            try:
+                relay_result = await _relay_transport_client.submit_turn(
+                    device_id,
+                    request_id,
+                    _hermes_input_text(asr_text, session.clarification_id),
+                )
+                relay_state = str(relay_result.get("state") or "queued")
+                session_repo.attach_relay_inbound(
+                    device_id,
+                    request_id,
+                    str(relay_result.get("message_id") or f"watch:{device_id}:{request_id}"),
+                    relay_state=relay_state,
+                    session_key=WATCH_RELAY_SESSION_KEY,
+                )
+            except RelaySessionBusyError:
+                await _finish_ws_session_error(
+                    conn,
+                    device_id,
+                    request_id,
+                    "relay_session_busy",
+                    metrics,
+                    error_stage="admission",
+                )
+            except RelayTransportError as exc:
+                logger.warning(
+                    "Relay turn submit failed request_id=%s error=%s",
+                    request_id,
+                    str(exc),
+                )
+                await _finish_ws_session_error(
+                    conn,
+                    device_id,
+                    request_id,
+                    "relay_submit_failed",
+                    metrics,
+                )
+            return
         if not run_id:
             run_id = await _start_hermes_run(
                 device_id,
@@ -1230,6 +1405,12 @@ async def _ws_run_hermes_job_serialized(
             except SessionValidationError:
                 await _stop_hermes_run(run_id)
                 return
+
+        if WATCH_RUN_EVENTS_ENABLED:
+            event_task = asyncio.create_task(
+                _stream_hermes_run_events(device_id, request_id, run_id)
+            )
+            _run_event_tasks[(device_id, request_id)] = event_task
 
         while True:
             if _hermes_run_elapsed_seconds(
@@ -1456,6 +1637,7 @@ async def _ws_finish_audio(
         device_id=device_id,
         session_id=session_id,
         request_id=request_id,
+        transport=_new_session_transport(),
     )
     if not created:
         if existing.state in TERMINAL_STATES:
@@ -1515,6 +1697,7 @@ async def _ws_finish_audio(
                 "text": device_asr_text,
             },
         )
+        await _publish_task_progress(device_id, request_id, "recognized", conn)
         task = asyncio.create_task(
             _ws_run_hermes_job(
                 conn,
@@ -1583,6 +1766,7 @@ async def _ws_finish_text(
         device_id=device_id,
         session_id=request_id,
         request_id=request_id,
+        transport=_new_session_transport(),
     )
     if not created:
         if existing.state in TERMINAL_STATES:
@@ -1672,19 +1856,23 @@ async def _await_compat_session(
     request_id: str,
     fallback_user_text: str,
 ) -> WatchResponse:
-    """HTTP caller 最多等待 115 秒；超时不取消持久化 Hermes run。"""
+    """HTTP caller 等待 Direct task 或 Relay 持久化终态。"""
     try:
         session = _get_session_repo().get_by_request_id(device_id, request_id)
     except SessionValidationError:
         return _error_watch_response(request_id)
 
-    _ensure_watch_session_task(session)
+    # Relay task 只负责把入站提交给 Connector，提交成功后会自然结束；
+    # 最终回复由 Connector 回调落入 SQLite，不能把 task 完成当成 session 完成。
+    if session.transport != "relay" or not session.relay_inbound_id:
+        _ensure_watch_session_task(session)
     task = _watch_run_tasks.get((device_id, request_id))
+    deadline = time.monotonic() + WATCH_REQUEST_TIMEOUT_SECONDS
     if task is not None and not task.done():
         try:
             await asyncio.wait_for(
                 asyncio.shield(task),
-                timeout=WATCH_REQUEST_TIMEOUT_SECONDS,
+                timeout=max(0.0, deadline - time.monotonic()),
             )
         except asyncio.TimeoutError:
             return _timeout_watch_response(
@@ -1698,6 +1886,24 @@ async def _await_compat_session(
         session = _get_session_repo().get_by_request_id(device_id, request_id)
     except SessionValidationError:
         return _error_watch_response(request_id)
+    if session.transport == "relay" and session.state not in TERMINAL_STATES:
+        # Connector 的 outbound callback 可能晚于提交 task；短轮询只读 endpoint
+        # 自己的 SQLite，不重新提交入站，也不创建第二个 Hermes task。
+        while session.state not in TERMINAL_STATES:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return _timeout_watch_response(
+                    request_id,
+                    session.user_text or fallback_user_text,
+                )
+            await asyncio.sleep(
+                min(max(HERMES_RUN_POLL_INTERVAL_SECONDS, 0.05), remaining)
+            )
+            try:
+                session = _get_session_repo().get_by_request_id(device_id, request_id)
+            except SessionValidationError:
+                return _error_watch_response(request_id)
+
     return _watch_response_from_session(session, fallback_user_text)
 
 
@@ -1716,6 +1922,15 @@ def _ensure_watch_session_task(
     if existing is not None and not existing.done():
         return
     if session.state not in ("asr_ready", "running"):
+        return
+    if session.transport == "relay" and session.relay_state in {
+        "sent",
+        "awaiting_reply",
+        "completed",
+        "canceled",
+    }:
+        # Connector spool owns delivery retry for a submitted Relay turn.
+        # Recreating the endpoint worker here would submit a duplicate turn.
         return
     task = asyncio.create_task(
         _ws_run_hermes_job(
@@ -1847,6 +2062,7 @@ async def watch_websocket(websocket: WebSocket) -> None:
                 "unread_reply_count": sum(1 for message in messages if message.role == "assistant"),
             },
         )
+        await _replay_active_progress(conn, device_id)
 
         while True:
             message = await websocket.receive()
@@ -2340,6 +2556,36 @@ async def cancel_request(
                 error_code=session.error_code or f"session_{session.state}",
             )
 
+        if session.transport == "relay":
+            try:
+                relay_cancel = await _relay_transport_client.cancel_turn(
+                    device_id, request_id
+                )
+            except RelayTransportError:
+                return _error_watch_response(
+                    request_id,
+                    "取消请求未送达，请稍后重试",
+                    _watch_asr_text(session.user_text),
+                ).model_copy(update={"error_code": "relay_cancel_unavailable"})
+            if not relay_cancel.get("accepted"):
+                return _error_watch_response(
+                    request_id,
+                    "取消请求未确认，请稍后重试",
+                    _watch_asr_text(session.user_text),
+                ).model_copy(update={"error_code": "relay_cancel_unconfirmed"})
+            try:
+                session = _get_session_repo().transition(
+                    device_id,
+                    session.session_id,
+                    "canceled",
+                    error_code="request_canceled",
+                )
+                _get_session_repo().set_relay_state(device_id, request_id, "canceled")
+            except SessionValidationError:
+                session = _get_session_repo().get_by_request_id(device_id, request_id)
+            if session.state == "canceled":
+                return _canceled_watch_response(request_id, session.user_text)
+
         try:
             session = _get_session_repo().transition(
                 device_id,
@@ -2397,6 +2643,7 @@ async def service_health() -> dict[str, object]:
         "request_status_counts": dict(_request_status_counts),
         "auth_failures": dict(_auth_failure_counts),
         "websocket_enabled": WATCH_WS_ENABLED,
+        "run_events_enabled": WATCH_RUN_EVENTS_ENABLED,
         "runtime_ready": _runtime_ready,
         "ws_request_status_counts": dict(_ws_request_status_counts),
         "last_ws_request": (
@@ -2489,6 +2736,92 @@ async def internal_inbox_create(
     if device_id not in _device_tokens():
         raise HTTPException(status_code=403, detail="device_not_allowed")
     return await _create_inbox_response(request, device_id)
+
+
+def _require_relay_endpoint_token(authorization: str | None) -> None:
+    if not WATCH_RELAY_ENDPOINT_TOKEN:
+        raise HTTPException(status_code=503, detail="relay_endpoint_token_not_configured")
+    prefix = "Bearer "
+    if not authorization or not authorization.startswith(prefix):
+        raise HTTPException(status_code=401, detail="missing_relay_endpoint_token")
+    if not hmac.compare_digest(
+        authorization[len(prefix):], WATCH_RELAY_ENDPOINT_TOKEN
+    ):
+        raise HTTPException(status_code=403, detail="invalid_relay_endpoint_token")
+
+
+@app.post("/internal/relay/outbound")
+async def internal_relay_outbound(
+    payload: RelayOutboundIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Accept one Connector-correlated final reply and persist it idempotently."""
+    _require_relay_endpoint_token(authorization)
+    if payload.device_id not in _device_tokens():
+        raise HTTPException(status_code=403, detail="device_not_allowed")
+    session_repo = _get_session_repo()
+    try:
+        session = session_repo.get_by_request_id(payload.device_id, payload.request_id)
+    except SessionValidationError as exc:
+        raise HTTPException(status_code=404, detail="relay_session_not_found") from exc
+    if session.transport != "relay":
+        raise HTTPException(status_code=409, detail="session_transport_is_direct")
+
+    reply_text = _watch_reply_text(payload.content)
+    existing = _get_conversation_repo().get_for_request_role(
+        session.device_id, payload.request_id, "assistant"
+    )
+    if existing is not None:
+        if existing.text != reply_text:
+            raise HTTPException(status_code=409, detail="relay_delivery_conflict")
+        return {
+            "accepted": True,
+            "duplicate": True,
+            "request_id": payload.request_id,
+            "message_id": existing.message_id,
+        }
+    if session.state == "canceled":
+        raise HTTPException(status_code=409, detail="relay_session_canceled")
+    if session.state != "running":
+        raise HTTPException(status_code=409, detail="relay_session_not_running")
+
+    message_id = f"relay-{payload.delivery_id}"
+    try:
+        session_repo.transition(
+            session.device_id,
+            payload.request_id,
+            "done",
+            reply_text=reply_text,
+            last_delivered_message_id=message_id,
+        )
+        message = _get_conversation_repo().add_message_once(
+            device_id=session.device_id,
+            request_id=payload.request_id,
+            role="assistant",
+            text=reply_text,
+            status="done",
+            message_id=message_id,
+        )
+        session_repo.set_relay_state(
+            session.device_id,
+            payload.request_id,
+            "completed",
+            delivery_id=payload.delivery_id,
+        )
+    except (ConversationValidationError, SessionValidationError) as exc:
+        raise HTTPException(status_code=409, detail="relay_delivery_conflict") from exc
+
+    await _ws_try_send_device_json(
+        session.device_id,
+        None,
+        {"type": "conversation_message", **_conversation_message_payload(message)},
+    )
+    return {
+        "accepted": True,
+        "duplicate": False,
+        "request_id": payload.request_id,
+        "message_id": message.message_id,
+    }
 
 
 @app.get("/v1/watch/inbox", response_model=InboxListResponse)

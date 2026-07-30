@@ -56,6 +56,81 @@ def test_websocket_disabled_does_not_remove_http_routes(monkeypatch, tmp_path):
         assert payload == {"type": "error", "error_code": "websocket_disabled"}
 
 
+@pytest.mark.anyio
+async def test_direct_run_event_stream_publishes_narrow_progress_and_stops_on_terminal(
+    ws_app, monkeypatch
+):
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            for line in (
+                ': keepalive',
+                'data: {"event":"tool.start","tool_name":"web_search"}',
+                "",
+                'data: {"event":"message.delta","delta":"secret token"}',
+                "",
+                'data: {"event":"message.complete"}',
+                "",
+                'data: {"event":"tool.start","tool_name":"should_not_run"}',
+                "",
+            ):
+                yield line
+
+    class FakeStream:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeClient:
+        def stream(self, method, url, headers, timeout):
+            assert method == "GET"
+            assert url.endswith("/v1/runs/run-sse/events")
+            assert headers["Accept"] == "text/event-stream"
+            return FakeStream()
+
+    phases = []
+
+    async def capture_progress(device_id, request_id, phase, fallback_conn=None):
+        phases.append((device_id, request_id, phase, fallback_conn))
+
+    monkeypatch.setattr(ws_app, "WATCH_RUN_EVENTS_ENABLED", True)
+    monkeypatch.setattr(ws_app, "_get_hermes_run_client", lambda: FakeClient())
+    monkeypatch.setattr(ws_app, "_publish_task_progress", capture_progress)
+
+    await ws_app._stream_hermes_run_events(
+        "watch-001", "request-sse", "run-sse"
+    )
+
+    assert [(device, request, phase) for device, request, phase, _ in phases] == [
+        ("watch-001", "request-sse", "searching"),
+        ("watch-001", "request-sse", "composing"),
+    ]
+    assert all(fallback is None for *_, fallback in phases)
+
+
+@pytest.mark.anyio
+async def test_run_event_stream_failure_is_non_terminal_fallback(ws_app, monkeypatch):
+    class FakeClient:
+        def stream(self, *args, **kwargs):
+            raise httpx.ReadTimeout(
+                "SSE unavailable",
+                request=httpx.Request("GET", "http://hermes/v1/runs/run/events"),
+            )
+
+    monkeypatch.setattr(ws_app, "WATCH_RUN_EVENTS_ENABLED", True)
+    monkeypatch.setattr(ws_app, "_get_hermes_run_client", lambda: FakeClient())
+
+    await ws_app._stream_hermes_run_events(
+        "watch-001", "request-fallback", "run-fallback"
+    )
+
+
 def test_websocket_audio_flow_returns_asr_and_reply(ws_app, monkeypatch):
     async def fake_start(device_id: str, request_id: str, asr_text: str) -> str:
         assert device_id == "watch-001"
@@ -110,9 +185,22 @@ def test_websocket_audio_flow_returns_asr_and_reply(ws_app, monkeypatch):
         assert asr_result["text"] == "帮我分析电池日志"
         assert asr_result["message_id"].startswith("msg_")
 
+        recognized = websocket.receive_json()
+        assert recognized == {
+            "type": "task_progress",
+            "request_id": "watch-001-ws-0001",
+            "phase": "recognized",
+        }
+
         assert websocket.receive_json() == {
             "type": "task_started",
             "request_id": "watch-001-ws-0001",
+        }
+
+        assert websocket.receive_json() == {
+            "type": "task_progress",
+            "request_id": "watch-001-ws-0001",
+            "phase": "executing",
         }
 
         reply = websocket.receive_json()
@@ -711,3 +799,50 @@ async def test_http_caller_timeout_keeps_server_session_running(ws_app, monkeypa
     assert ws_app._get_session_repo().get(
         "watch-001", "watch-001-http-detached"
     ).state == "done"
+
+
+@pytest.mark.anyio
+async def test_http_compat_waits_for_relay_callback_terminal_state(ws_app, monkeypatch):
+    request_id = "watch-001-relay-http-compat"
+    repo = ws_app._get_session_repo()
+    repo.create_or_get(
+        device_id="watch-001",
+        session_id=request_id,
+        request_id=request_id,
+        transport="relay",
+    )
+    repo.transition(
+        "watch-001",
+        request_id,
+        "asr_ready",
+        user_text="Relay HTTP 兼容等待",
+    )
+    repo.transition("watch-001", request_id, "running")
+    repo.attach_relay_inbound(
+        "watch-001",
+        request_id,
+        f"watch:watch-001:{request_id}",
+        relay_state="awaiting_reply",
+        session_key="agent:main:relay:dm:watch-001",
+    )
+    monkeypatch.setattr(ws_app, "WATCH_REQUEST_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(ws_app, "HERMES_RUN_POLL_INTERVAL_SECONDS", 0.01)
+
+    async def delayed_relay_callback() -> None:
+        await asyncio.sleep(0.03)
+        repo.transition(
+            "watch-001",
+            request_id,
+            "done",
+            reply_text="Relay HTTP 最终回复",
+            last_delivered_message_id="relay-message-1",
+        )
+
+    callback_task = asyncio.create_task(delayed_relay_callback())
+    response = await ws_app._await_compat_session(
+        "watch-001", request_id, "Relay HTTP 兼容等待"
+    )
+    await callback_task
+
+    assert response.status == "done"
+    assert response.reply_text == "Relay HTTP 最终回复"

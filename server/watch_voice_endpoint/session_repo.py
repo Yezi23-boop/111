@@ -40,6 +40,7 @@ ALL_STATES = {
     "interrupted",
 }
 TERMINAL_STATES = {"done", "error", "timeout", "canceled", "interrupted"}
+TRANSPORTS = {"direct", "relay"}
 
 # 每个当前状态允许转移到的下一状态
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -75,6 +76,13 @@ class WatchSession:
     run_started_at: str     # Hermes 接受 run 的 UTC 时间；恢复后继续使用同一 deadline
     clarification_id: str   # 可选追问 ID；重启恢复时必须保留相同输入语义
     error_code: str         # server 侧终态错误码，不包含上游原始响应
+    transport: str = "direct"
+    relay_inbound_id: str = ""
+    relay_state: str = ""
+    relay_session_key: str = ""
+    relay_delivery_id: str = ""
+    progress_phase: str = ""
+    progress_updated_at: str = ""
 
 
 # ── Repository ────────────────────────────────────────────────────────────────
@@ -114,7 +122,14 @@ class SessionRepo:
                     hermes_run_id               TEXT NOT NULL DEFAULT '',
                     run_started_at               TEXT NOT NULL DEFAULT '',
                     clarification_id              TEXT NOT NULL DEFAULT '',
-                    error_code                  TEXT NOT NULL DEFAULT '',
+                    error_code                    TEXT NOT NULL DEFAULT '',
+                    transport                   TEXT NOT NULL DEFAULT 'direct',
+                    relay_inbound_id            TEXT NOT NULL DEFAULT '',
+                    relay_state                 TEXT NOT NULL DEFAULT '',
+                    relay_session_key           TEXT NOT NULL DEFAULT '',
+                    relay_delivery_id           TEXT NOT NULL DEFAULT '',
+                    progress_phase              TEXT NOT NULL DEFAULT '',
+                    progress_updated_at        TEXT NOT NULL DEFAULT '',
                     UNIQUE(device_id, session_id)
                 )
                 """
@@ -151,6 +166,20 @@ class SessionRepo:
                     "ALTER TABLE watch_session ADD COLUMN clarification_id "
                     "TEXT NOT NULL DEFAULT ''"
                 )
+            for column in (
+                "transport",
+                "relay_inbound_id",
+                "relay_state",
+                "relay_session_key",
+                "relay_delivery_id",
+                "progress_phase",
+                "progress_updated_at",
+            ):
+                if column not in columns:
+                    default = "'direct'" if column == "transport" else "''"
+                    self._conn.execute(
+                        f"ALTER TABLE watch_session ADD COLUMN {column} TEXT NOT NULL DEFAULT {default}"
+                    )
             self._conn.execute("PRAGMA user_version=2")
 
     def _recover_on_startup(self) -> None:
@@ -173,7 +202,7 @@ class SessionRepo:
                     UPDATE watch_session
                     SET state='interrupted', updated_at=?,
                         error_code='server_restarted_without_run_id'
-                    WHERE state='running' AND hermes_run_id=''
+                    WHERE state='running' AND transport='direct' AND hermes_run_id=''
                     """,
                     (now_utc,),
                 )
@@ -189,6 +218,7 @@ class SessionRepo:
         device_id: str,
         session_id: str,
         request_id: str,
+        transport: str = "direct",
     ) -> tuple[WatchSession, bool]:
         """原子创建或读取 session，返回 `(session, created)`。
 
@@ -202,6 +232,8 @@ class SessionRepo:
             raise SessionValidationError("request_id must not be blank")
         if session_id != request_id:
             raise SessionValidationError("session_id must equal request_id")
+        if transport not in TRANSPORTS:
+            raise SessionValidationError(f"unknown transport '{transport}'")
 
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         state = "accepted"
@@ -214,10 +246,10 @@ class SessionRepo:
                         (session_id, device_id, request_id, state,
                          user_text, reply_text, created_at, updated_at,
                          last_delivered_message_id, hermes_run_id,
-                         run_started_at, clarification_id, error_code)
-                    VALUES (?, ?, ?, ?, '', '', ?, ?, '', '', '', '', '')
+                         run_started_at, clarification_id, error_code, transport)
+                    VALUES (?, ?, ?, ?, '', '', ?, ?, '', '', '', '', '', ?)
                     """,
-                    (session_id, device_id, request_id, state, now_utc, now_utc),
+                    (session_id, device_id, request_id, state, now_utc, now_utc, transport),
                 )
                 created = cursor.rowcount == 1
                 row = self._conn.execute(
@@ -328,6 +360,24 @@ class SessionRepo:
         # 重新读取返回最新状态
         return self.get(device_id, session_id)
 
+    def set_progress(self, device_id: str, session_id: str, phase: str) -> WatchSession:
+        """Persist a bounded, non-secret progress phase for reconnect replay."""
+        if phase not in {"recognized", "searching", "executing", "composing"}:
+            raise SessionValidationError(f"unknown progress phase: {phase}")
+        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE watch_session SET progress_phase=?, progress_updated_at=?, updated_at=? "
+                "WHERE device_id=? AND session_id=? AND state NOT IN "
+                "('done','error','timeout','canceled','interrupted')",
+                (phase, now_utc, now_utc, device_id, session_id),
+            )
+        if cursor.rowcount != 1:
+            raise SessionValidationError(
+                f"session is not active: device={device_id} session={session_id}"
+            )
+        return self.get(device_id, session_id)
+
     def attach_hermes_run(
         self,
         device_id: str,
@@ -350,6 +400,63 @@ class SessionRepo:
         if cursor.rowcount != 1:
             raise SessionValidationError(
                 f"session is not running: device={device_id} session={session_id}"
+            )
+        return self.get(device_id, session_id)
+
+    def attach_relay_inbound(
+        self,
+        device_id: str,
+        session_id: str,
+        inbound_id: str,
+        relay_state: str = "sent",
+        session_key: str = "",
+    ) -> WatchSession:
+        """Persist the Connector inbound link for a Relay session."""
+        if not inbound_id.strip():
+            raise SessionValidationError("relay inbound id must not be blank")
+        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with self._lock:
+            cursor = self._conn.execute(
+                """
+                UPDATE watch_session
+                SET relay_inbound_id=?, relay_state=?, relay_session_key=?, updated_at=?
+                WHERE device_id=? AND session_id=? AND transport='relay'
+                """,
+                (inbound_id, relay_state, session_key, now_utc, device_id, session_id),
+            )
+        if cursor.rowcount != 1:
+            raise SessionValidationError(
+                f"session is not a relay session: device={device_id} session={session_id}"
+            )
+        return self.get(device_id, session_id)
+
+    def set_relay_state(
+        self,
+        device_id: str,
+        session_id: str,
+        relay_state: str,
+        delivery_id: str | None = None,
+    ) -> WatchSession:
+        """Persist Relay delivery/cancel state without changing task state."""
+        if not relay_state.strip():
+            raise SessionValidationError("relay state must not be blank")
+        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with self._lock:
+            if delivery_id is None:
+                cursor = self._conn.execute(
+                    "UPDATE watch_session SET relay_state=?, updated_at=? "
+                    "WHERE device_id=? AND session_id=? AND transport='relay'",
+                    (relay_state, now_utc, device_id, session_id),
+                )
+            else:
+                cursor = self._conn.execute(
+                    "UPDATE watch_session SET relay_state=?, relay_delivery_id=?, updated_at=? "
+                    "WHERE device_id=? AND session_id=? AND transport='relay'",
+                    (relay_state, delivery_id, now_utc, device_id, session_id),
+                )
+        if cursor.rowcount != 1:
+            raise SessionValidationError(
+                f"session is not a relay session: device={device_id} session={session_id}"
             )
         return self.get(device_id, session_id)
 
@@ -486,4 +593,11 @@ def _row_to_session(row: sqlite3.Row) -> WatchSession:
         run_started_at=row["run_started_at"] or "",
         clarification_id=row["clarification_id"] or "",
         error_code=row["error_code"] or "",
+        transport=row["transport"] or "direct",
+        relay_inbound_id=row["relay_inbound_id"] or "",
+        relay_state=row["relay_state"] or "",
+        relay_session_key=row["relay_session_key"] or "",
+        relay_delivery_id=row["relay_delivery_id"] or "",
+        progress_phase=row["progress_phase"] or "",
+        progress_updated_at=row["progress_updated_at"] or "",
     )

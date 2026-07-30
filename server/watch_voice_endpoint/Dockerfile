@@ -21,6 +21,8 @@ COPY --chown=10001:10001 app.py .
 COPY --chown=10001:10001 inbox_repo.py .
 COPY --chown=10001:10001 conversation_repo.py .
 COPY --chown=10001:10001 session_repo.py .
+COPY --chown=10001:10001 relay_transport.py .
+COPY --chown=10001:10001 run_events.py .
 
 EXPOSE 8787
 USER 10001:10001
