@@ -38,6 +38,8 @@ typedef struct {
     bool open_ai;
     bool open_calendar;
     bool open_danger;
+    bool open_games;
+    uint8_t open_game_index;
     const char *capture_path;
 } preview_args_t;
 
@@ -146,6 +148,22 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         else if (strcmp(argv[i], "--open-danger") == 0)
         {
             args.open_danger = true;
+        }
+        else if (strcmp(argv[i], "--open-games") == 0)
+        {
+            args.open_games = true;
+        }
+        else if (strcmp(argv[i], "--open-game-2048") == 0)
+        {
+            args.open_game_index = 1;
+        }
+        else if (strcmp(argv[i], "--open-game-flappy") == 0)
+        {
+            args.open_game_index = 2;
+        }
+        else if (strcmp(argv[i], "--open-game-dino") == 0)
+        {
+            args.open_game_index = 3;
         }
         else if (strcmp(argv[i], "--capture") == 0 && i + 1 < argc)
         {
@@ -288,6 +306,14 @@ int main(int argc, char **argv)
     else if (args.open_danger)
     {
         danger_detection_ui_open();
+    }
+    else if (args.open_games)
+    {
+        mini_games_controller_open();
+    }
+    else if (args.open_game_index != 0)
+    {
+        mini_games_controller_open_preview_game(args.open_game_index);
     }
 
     uint32_t last_tick = SDL_GetTicks();

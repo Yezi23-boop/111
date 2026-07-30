@@ -89,6 +89,8 @@ set(feature_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_dino.c
 
+    ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_games_progress.c
+
 )
 
 

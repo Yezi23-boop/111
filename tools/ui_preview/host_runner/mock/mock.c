@@ -64,6 +64,15 @@ esp_err_t network_service_get_snapshot(network_service_snapshot_t *snapshot) {
     snapshot->ble_runtime_ready = true;
     return ESP_OK;
 }
+esp_err_t network_service_get_wifi_status(network_service_wifi_status_t *status) {
+    if (status == NULL) return ESP_ERR_INVALID_ARG;
+    memset(status, 0, sizeof(*status));
+    status->service_state = NETWORK_SERVICE_STATE_SERVICE_READY;
+    status->wifi_connected = true;
+    status->has_credentials = true;
+    strcpy(status->ip, "192.168.1.88");
+    return ESP_OK;
+}
 
 #include "esp_partition.h"
 const esp_partition_t *esp_partition_find_first(int type, int subtype, const char *label) { return NULL; }
@@ -306,7 +315,9 @@ esp_err_t official_chat_service_stop_listening(void) {
     return ESP_OK;
 }
 
-void network_service_request_portal(void) {}
+esp_err_t network_service_request_portal(void) { return ESP_OK; }
+esp_err_t network_service_request_ble(void) { return ESP_OK; }
+esp_err_t network_service_request_stop_provisioning(void) { return ESP_OK; }
 network_service_state_t network_service_get_state(void) { return NETWORK_SERVICE_STATE_SERVICE_READY; }
 
 esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled) {
@@ -356,16 +367,13 @@ esp_err_t background_service_manager_init(void) { return ESP_OK; }
 esp_err_t background_service_manager_notify_foreground_runtime_changed(void) { return ESP_OK; }
 
 #include "services/runtime_gate/foreground_runtime_gate.h"
-esp_err_t foreground_runtime_gate_acquire(foreground_runtime_owner_t owner,
-                                          uint32_t timeout_ms) {
+esp_err_t foreground_runtime_gate_try_acquire(
+    foreground_runtime_owner_t owner) {
     return ESP_OK;
 }
 esp_err_t foreground_runtime_gate_release(foreground_runtime_owner_t owner) {
     return ESP_OK;
 }
-
-#include "services/runtime_gate/background_https_gate.h"
-void background_https_gate_quiet_for(uint32_t duration_ms, const char *reason) {}
 
 danger_detection_snapshot_t danger_detection_service_get_snapshot(void) {
     danger_detection_snapshot_t snapshot = {
@@ -441,6 +449,30 @@ const board_power_state_t *power_service_get_state(void) {
 
 #include "gui_guider.h"
 lv_ui guider_ui;
+
+#include "features/mini_games/mini_games_progress.h"
+static uint32_t s_preview_high_scores[MINI_GAMES_PROGRESS_COUNT];
+
+esp_err_t mini_games_progress_start(void)
+{
+    return ESP_OK;
+}
+
+uint32_t mini_games_progress_get_high_score(mini_games_progress_id_t game_id)
+{
+    return game_id >= 0 && game_id < MINI_GAMES_PROGRESS_COUNT
+               ? s_preview_high_scores[game_id]
+               : 0U;
+}
+
+void mini_games_progress_submit_high_score(mini_games_progress_id_t game_id,
+                                           uint32_t score)
+{
+    if (game_id >= 0 && game_id < MINI_GAMES_PROGRESS_COUNT &&
+        score > s_preview_high_scores[game_id]) {
+        s_preview_high_scores[game_id] = score;
+    }
+}
 
 esp_err_t memory_watch_service_get_inbox_meta(memory_watch_inbox_meta_t *out_meta)
 {

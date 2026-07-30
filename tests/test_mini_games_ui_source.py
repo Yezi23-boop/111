@@ -40,8 +40,33 @@ class MiniGamesUiSourceTests(unittest.TestCase):
         self.assertIn("mini_games_controller_set_paused(!s_paused)", source)
         self.assertIn("BOARD_BUTTON_EVENT_LONG_PRESS", source)
         self.assertIn("mini_games_controller_leave();", source)
+        self.assertNotIn("mini_games_controller_pulse(s_board)", source)
         self.assertIn("mini_games_controller_poll_ui", header)
         self.assertIn("board_button_clear_events();", source)
+
+    def test_game_layout_uses_full_stage_and_safe_overlay_controls(self) -> None:
+        source = UI_MINI_GAMES_CONTROLLER_SOURCE.read_text(encoding="utf-8")
+        flappy_header = (MINI_GAME_2048_SOURCE.parent / "mini_game_flappy.h").read_text(
+            encoding="utf-8"
+        )
+        dino_header = (MINI_GAME_2048_SOURCE.parent / "mini_game_dino.h").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("kBoardY = 96", source)
+        self.assertIn("kControlsY = 434", source)
+        self.assertIn("kControlsHeight = 44", source)
+        self.assertIn("mini_games_controller_set_controls_running", source)
+        self.assertIn("LV_OPA_50", source)
+        self.assertIn("lv_obj_set_size(stage, kScreenWidth, kScreenHeight)", source)
+        self.assertNotIn('lv_label_set_text(title_lbl, "飞翔的小鸟")', source)
+        self.assertNotIn('lv_label_set_text(title_lbl, "小恐龙跑酷")', source)
+        self.assertIn("#define FLAPPY_PLAY_AREA_H 420", flappy_header)
+        self.assertIn("#define FLAPPY_PLAY_AREA_W 410", flappy_header)
+        self.assertIn("kFlappyPlayfieldY = 0", source)
+        self.assertIn("s_game_score_panels", source)
+        self.assertIn("#define DINO_PLAY_AREA_H 420", dino_header)
+        self.assertIn("#define DINO_PLAY_AREA_W 410", dino_header)
 
     def test_board_button_bridge_keeps_callbacks_out_of_lvgl(self) -> None:
         source = BOARD_BUTTON_SOURCE.read_text(encoding="utf-8")

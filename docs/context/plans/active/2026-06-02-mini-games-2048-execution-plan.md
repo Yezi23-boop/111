@@ -270,6 +270,13 @@ status: active
 
 ## Progress
 
+- `[x]` 2026-07-29 已将当前小游戏范围明确为：保留 2048、Flappy Bird、Dino Runner 的原版核心玩法，并按手表触控适配；历史 M0-M5 中“只做 2048 / 不做其它游戏”的限制仅适用于最初 vertical slice，不再约束当前已编译的三款游戏。
+- `[x]` 已完成规则层第一阶段：2048 首次合成 2048 后暂停并支持“继续挑战 / 新游戏”；Flappy Bird 等待首次点击才开始；Dino Runner 按奔跑距离连续计分、连续加速，左半屏按住下蹲、松开恢复、空中首次按下快速下坠。
+- `[x]` 已完成手表体验第二阶段：三款最高分由 `mini_games_progress` 在独立 FreeRTOS worker 中异步读写 NVS；LVGL controller 只读快照，游戏结束或 2048 获胜时才提交刷新纪录。
+- `[x]` 已完成可见反馈与安全区：Flappy 得分、Dino 百分里程碑提供短促缩放；2048 合并只更新棋子和分数，不做缩放震动感。2048 棋盘保持 `x=40, width=330`；Flappy/Dino 背景铺满 `410x502`，Flappy 的管道恢复为全屏起点 `420px` 高的物理区，底部仍在悬浮控制栏上方结束；运行中的底部控制栏与得分面板整体半透明，所有文字与按钮几何位置仍落在 CO5300 安全区；通知气泡或 UI STANDBY 会自动暂停，恢复后需用户手动继续。
+- `[x]` 已完成 host preview：小游戏菜单截图 `tools/ui_preview/artifacts/mini-games-current.png`，并补齐 host mock 以覆盖近期 NVS/网络 API 演进。
+- `[x]` 已完成聚焦 source tests（12 passed）、中文字体扫描和 `idf.py build`；`111.bin=0xac0150`，最小 app 分区剩余约 23%。
+- `[x]` 已完成 COM7 `app-flash-monitor` 启动验收（45s）：`board_logs/2026-07-29-20-46-54-mini-games-playability.log` 与摘要显示 `flash_completed=true`、`startup_sequence_done`、`ui_first_frame_ready`；未命中 `Display flush failed`、`ESP_ERR_NO_MEM`、panic、Guru 或 WDT。摘要的 `exit_code=1` / `timed_out_phase=observe` 是限时采集主动结束，不表示烧录失败。
 - `[x]` 已确认入口：主屏已有 `Game` 图标位。
 - `[x]` 已确认第一阶段范围：只做 2048。
 - `[x]` 已确认不改显示/触摸底层和 `sdkconfig`。
@@ -278,8 +285,11 @@ status: active
 - `[x]` 已实现 UI 页面：2048 标题、分数、状态、返回、新局、暂停按钮、4x4 棋盘和触摸滑动。
 - `[x]` 已实现按键桥接：`main/app/board_button.[ch]` 使用 FreeRTOS queue 发布按键事件，UI 线程非阻塞消费短按/长按。
 - `[x]` 已跑 source tests、context light 和 `idf.py build`。
+- `[x]` 2026-07-29 已完成全屏布局收敛：移除三款游戏标题；2048 将得分浮层置于右上、棋盘置于 `y=96..426`，Flappy/Dino 使用全屏舞台；三款操作栏统一为 `x=40..370, y=434..478`。带圆角遮罩的 host 预览截图已确认无文字裁切或控件重叠：`mini-games-fullscreen-2048.png`、`mini-games-fullscreen-flappy.png`、`mini-games-fullscreen-dino.png`。
+- `[x]` 2026-07-29 运行中的三款游戏均将底部按钮背景、图标和文字降至 `LV_OPA_50`；未开局、暂停、自动暂停和结算时恢复不透明，以兼顾画面沉浸与操作可发现性。
 - `[x]` 已完成板端 COM3 app-flash 与 60s 启动日志验收。
 - `[ ]` 未完成触摸滑动、短按暂停/继续、长按退出的手动交互验收。
+- `[ ]` 未完成本轮三款游戏实机手动验收：2048 胜利弹层/继续挑战、Flappy 首击开局与结算、Dino 按住下蹲/松开恢复、通知或 STANDBY 自动暂停后手动继续。
 
 ## Decision Log
 
@@ -343,4 +353,4 @@ status: active
 
 ## Next Step
 
-- 下一步最小动作：在板子上手动验证触摸滑动、短按暂停/继续、长按退出；若需要证据，可保持 monitor 打开并观察是否出现 `2048 screen created` 或 fatal 日志。
+- 下一步最小动作：烧录当前 app 后，在板子上依次验证 2048 胜利弹层/继续挑战、Flappy 首击开局、Dino 左按住下蹲/松开恢复、短按暂停/继续、长按返回，以及通知气泡或 30s STANDBY 自动暂停；同时采集日志确认无 `Display flush failed`、`ESP_ERR_NO_MEM`、panic、Guru 或 WDT。

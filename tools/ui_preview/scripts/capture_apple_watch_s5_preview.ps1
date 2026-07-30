@@ -6,7 +6,11 @@ param(
     [switch]$OpenHermesDetail,
     [switch]$OpenAi,
     [switch]$OpenCalendar,
-    [switch]$OpenDanger
+    [switch]$OpenDanger,
+    [switch]$OpenGames,
+    [switch]$OpenGame2048,
+    [switch]$OpenGameFlappy,
+    [switch]$OpenGameDino
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +44,14 @@ if ($OpenHermes) {
     $captureArgs = @("--open-calendar") + $captureArgs
 } elseif ($OpenDanger) {
     $captureArgs = @("--open-danger") + $captureArgs
+} elseif ($OpenGames) {
+    $captureArgs = @("--open-games") + $captureArgs
+} elseif ($OpenGame2048) {
+    $captureArgs = @("--open-game-2048") + $captureArgs
+} elseif ($OpenGameFlappy) {
+    $captureArgs = @("--open-game-flappy") + $captureArgs
+} elseif ($OpenGameDino) {
+    $captureArgs = @("--open-game-dino") + $captureArgs
 }
 
 & $ExePath @captureArgs
@@ -65,6 +77,14 @@ if ($OpenHermes) {
     $runArgs += "--open-calendar"
 } elseif ($OpenDanger) {
     $runArgs += "--open-danger"
+} elseif ($OpenGames) {
+    $runArgs += "--open-games"
+} elseif ($OpenGame2048) {
+    $runArgs += "--open-game-2048"
+} elseif ($OpenGameFlappy) {
+    $runArgs += "--open-game-flappy"
+} elseif ($OpenGameDino) {
+    $runArgs += "--open-game-dino"
 }
 $commandLine = "`"$ExePath`""
 if ($runArgs.Count -gt 0) {

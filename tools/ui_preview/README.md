@@ -61,6 +61,20 @@ D:\esp32S3\111\tools\ui_preview\artifacts\wifi-management-image-to-code.png
 & "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenDanger
 ```
 
+打开小游戏菜单截图：
+
+```powershell
+& "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenGames
+```
+
+直接打开单款小游戏截图：
+
+```powershell
+& "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenGame2048
+& "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenGameFlappy
+& "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenGameDino
+```
+
 自定义输出路径：
 
 ```powershell
