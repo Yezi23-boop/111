@@ -28,6 +28,7 @@ extern "C"
         IMU_SERVICE_STATE_PROBING,     /**< 正在探测当前板上的 IMU。 */
         IMU_SERVICE_STATE_RUNNING,     /**< IMU 已完成统一配置，GPIO21 ISR 已安装。 */
         IMU_SERVICE_STATE_ERROR,       /**< 最近一次探测或配置失败。 */
+        IMU_SERVICE_STATE_STOPPING,    /**< 正在由 owner task 释放运行时资源。 */
     } imu_service_state_t;
 
     /**
@@ -110,6 +111,17 @@ extern "C"
      * @return `ESP_OK` 表示 task 已启动或之前已启动；其他错误表示初始化或创建 task 失败。
      */
     esp_err_t imu_service_start(void);
+
+    /**
+     * @brief 请求停止并销毁 IMU 运行时服务。
+     *
+     * 调用会立即停止向 fall service 投递窗口；任务、GPIO ISR 和 PSRAM
+     * 缓冲由 IMU owner task 在安全退出点释放。销毁进行中再次 start 会返回
+     * `ESP_ERR_INVALID_STATE`，待快照回到 `STOPPED` 后即可重新启动。
+     *
+     * @return `ESP_OK` 表示已停止或已发出停止请求。
+     */
+    esp_err_t imu_service_destroy(void);
 
     /**
      * @brief 复制 IMU 服务快照。

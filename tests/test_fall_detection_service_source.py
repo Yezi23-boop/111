@@ -9,7 +9,7 @@ from tests.main_paths import MAIN_CMAKE
 
 
 class FallDetectionServiceSourceTests(unittest.TestCase):
-    def test_main_build_and_startup_register_fall_detection_after_imu(self) -> None:
+    def test_main_build_registers_fall_detection_but_keeps_runtime_disabled_by_default(self) -> None:
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
         app_main = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
@@ -17,7 +17,14 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         self.assertIn("fall_detection_inference", cmake)
         self.assertIn('#include "services/fall_detection_service.h"', app_main)
         self.assertIn("fall_detection_service_start()", app_main)
-        self.assertIn("boot_stage: fall_detection_ready", app_main)
+        self.assertIn("imu_service_destroy()", app_main)
+        self.assertIn("boot_stage: fall_detection_disabled_by_default", app_main)
+        self.assertIn("默认关闭 IMU/Fall 后台链路", app_main)
+        disabled_block = app_main[
+            app_main.index("默认关闭 IMU/Fall 后台链路"):
+            app_main.index("boot_stage: fall_detection_disabled_by_default")
+        ]
+        self.assertNotIn("#if 0", disabled_block)
         self.assertGreater(
             app_main.index("fall_detection_service_start()"),
             app_main.index("imu_service_start()"),

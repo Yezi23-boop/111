@@ -464,6 +464,7 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         )
         self.assertIn("dry_run:", raw_source)
         self.assertIn("budget_version=%u", raw_source)
+        self.assertIn("ESP_LOGD(TAG,\n             \"dry_run:", raw_source)
         self.assertIn("s_sleep_coordinator.budget_version = budget.budget_version", raw_source)
         self.assertNotIn("SLEEP_COORDINATOR_LIGHT_TEST_ENABLED", raw_source)
         self.assertNotIn("SLEEP_COORDINATOR_LIGHT_TEST_OWNER_BLOCKERS_READY", raw_source)

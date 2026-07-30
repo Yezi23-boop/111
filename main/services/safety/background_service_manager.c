@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
+#include "freertos/event_groups.h"
 #include "services/runtime_gate/foreground_runtime_gate.h"
 #include "services/power/power_policy.h"
 #include "services/safety/safety_monitor_session.h"
@@ -13,6 +14,9 @@
 
 static const char *TAG = "background_mgr";
 static const TickType_t k_policy_poll_ticks = pdMS_TO_TICKS(1000);
+static const EventBits_t k_foreground_quiesced_bit = BIT0;
+static StaticEventGroup_t s_foreground_quiesced_event_buffer;
+static EventGroupHandle_t s_foreground_quiesced_event = NULL;
 
 typedef enum
 {
@@ -40,6 +44,10 @@ typedef struct
     power_policy_state_t policy_state; /**< 最近一次策略状态。 */
     uint32_t policy_flags;             /**< 最近一次预算 flag。 */
     esp_err_t last_error;              /**< 最近一次 session 启动、停止或恢复错误码。 */
+    uint32_t foreground_quiesce_generation;
+    uint32_t foreground_quiesced_generation;
+    bool danger_quiesced;
+    bool foreground_quiesce_requested;
     TaskHandle_t task_handle;          /**< 后台策略轮询任务。 */
     portMUX_TYPE lock;                 /**< 保护管理器快照。 */
 } background_service_manager_state_t;
@@ -59,6 +67,10 @@ static background_service_manager_state_t s_manager = {
     .policy_state = POWER_POLICY_STATE_ACTIVE,
     .policy_flags = POWER_POLICY_FLAG_NONE,
     .last_error = ESP_OK,
+    .foreground_quiesce_generation = 0U,
+    .foreground_quiesced_generation = 0U,
+    .danger_quiesced = true,
+    .foreground_quiesce_requested = false,
     .task_handle = NULL,
     .lock = portMUX_INITIALIZER_UNLOCKED,
 };
@@ -285,8 +297,13 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
             budget.danger_detection_allowed,
             foreground_audio_blocked,
             foreground_runtime_blocked);
+    bool foreground_quiesce_requested = false;
+    taskENTER_CRITICAL(&s_manager.lock);
+    foreground_quiesce_requested = s_manager.foreground_quiesce_requested;
+    taskEXIT_CRITICAL(&s_manager.lock);
     const bool should_run =
-        block_reason == BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE;
+        block_reason == BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE &&
+        !foreground_quiesce_requested;
 
     taskENTER_CRITICAL(&s_manager.lock);
     s_manager.danger_blocked_by_foreground_audio = foreground_audio_blocked;
@@ -340,7 +357,23 @@ static esp_err_t background_service_manager_apply_policy(const char *reason)
     taskENTER_CRITICAL(&s_manager.lock);
     s_manager.last_error = after_session.last_error;
     s_manager.danger_runtime_running = after_session.runtime_running;
+    if (!after_session.runtime_running &&
+        s_manager.foreground_quiesce_generation != 0U)
+    {
+        s_manager.foreground_quiesced_generation =
+            s_manager.foreground_quiesce_generation;
+        s_manager.danger_quiesced = true;
+    }
+    else if (after_session.runtime_running)
+    {
+        s_manager.danger_quiesced = false;
+    }
     taskEXIT_CRITICAL(&s_manager.lock);
+    if (!after_session.runtime_running && s_foreground_quiesced_event != NULL)
+    {
+        xEventGroupSetBits(s_foreground_quiesced_event,
+                           k_foreground_quiesced_bit);
+    }
 
     if (previous_running != after_session.runtime_running)
     {
@@ -412,6 +445,11 @@ esp_err_t background_service_manager_init(void)
         taskEXIT_CRITICAL(&s_manager.lock);
         return ret;
     }
+    if (s_foreground_quiesced_event == NULL)
+    {
+        s_foreground_quiesced_event = xEventGroupCreateStatic(
+            &s_foreground_quiesced_event_buffer);
+    }
 
     taskENTER_CRITICAL(&s_manager.lock);
     s_manager.initialized = true;
@@ -425,8 +463,8 @@ esp_err_t background_service_manager_start(void)
     esp_err_t ret = background_service_manager_init();
     if (ret != ESP_OK)
     {
-        return ret;
-    }
+    return ret;
+}
 
     taskENTER_CRITICAL(&s_manager.lock);
     const bool already_started = s_manager.started;
@@ -557,6 +595,119 @@ esp_err_t background_service_manager_notify_foreground_runtime_changed(void)
     return ret == ESP_ERR_INVALID_STATE ? ESP_OK : ret;
 }
 
+esp_err_t background_service_manager_request_foreground_quiesce(
+    uint32_t *out_generation)
+{
+    if (out_generation == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret = background_service_manager_init();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    EventGroupHandle_t event = s_foreground_quiesced_event;
+    taskENTER_CRITICAL(&s_manager.lock);
+    s_manager.foreground_quiesce_generation++;
+    if (s_manager.foreground_quiesce_generation == 0U)
+    {
+        s_manager.foreground_quiesce_generation = 1U;
+    }
+    *out_generation = s_manager.foreground_quiesce_generation;
+    s_manager.danger_quiesced = false;
+    s_manager.foreground_quiesce_requested = true;
+    taskEXIT_CRITICAL(&s_manager.lock);
+
+    if (event != NULL)
+    {
+        (void)xEventGroupClearBits(event, k_foreground_quiesced_bit);
+    }
+
+    ret = background_service_manager_notify_foreground_runtime_changed();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    /* 管理器未启动时没有异步策略任务，但 session 已是停止态，可立即确认。 */
+    taskENTER_CRITICAL(&s_manager.lock);
+    if (!s_manager.started && !s_manager.danger_runtime_running)
+    {
+        s_manager.foreground_quiesced_generation = *out_generation;
+        s_manager.danger_quiesced = true;
+    }
+    taskEXIT_CRITICAL(&s_manager.lock);
+    if (event != NULL && !s_manager.started)
+    {
+        xEventGroupSetBits(event, k_foreground_quiesced_bit);
+    }
+    return ESP_OK;
+}
+
+esp_err_t background_service_manager_wait_foreground_quiesced(
+    uint32_t generation, uint32_t timeout_ms)
+{
+    if (generation == 0U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    const TickType_t start = xTaskGetTickCount();
+    while (true)
+    {
+        background_service_manager_snapshot_t snapshot =
+            background_service_manager_get_snapshot();
+        if (snapshot.foreground_quiesced_generation >= generation &&
+            snapshot.danger_quiesced && !snapshot.danger_runtime_running &&
+            snapshot.last_error == ESP_OK)
+        {
+            return ESP_OK;
+        }
+
+        if (s_foreground_quiesced_event != NULL)
+        {
+            const TickType_t elapsed = xTaskGetTickCount() - start;
+            const TickType_t remaining = elapsed >= timeout_ticks
+                                              ? 0
+                                              : timeout_ticks - elapsed;
+            if (remaining == 0 ||
+                (xEventGroupWaitBits(s_foreground_quiesced_event,
+                                     k_foreground_quiesced_bit, pdTRUE,
+                                     pdFALSE, remaining) &
+                 k_foreground_quiesced_bit) == 0)
+            {
+                return ESP_ERR_TIMEOUT;
+            }
+        }
+        else
+        {
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+    }
+}
+
+esp_err_t background_service_manager_finish_foreground_quiesce(uint32_t generation)
+{
+    if (generation == 0U)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    taskENTER_CRITICAL(&s_manager.lock);
+    if (s_manager.foreground_quiesce_generation != generation)
+    {
+        taskEXIT_CRITICAL(&s_manager.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_manager.foreground_quiesce_requested = false;
+    taskEXIT_CRITICAL(&s_manager.lock);
+    return background_service_manager_notify_foreground_runtime_changed();
+}
+
 background_service_manager_snapshot_t
 background_service_manager_get_snapshot(void)
 {
@@ -576,6 +727,11 @@ background_service_manager_get_snapshot(void)
     snapshot.policy_state = s_manager.policy_state;
     snapshot.policy_flags = s_manager.policy_flags;
     snapshot.last_error = s_manager.last_error;
+    snapshot.foreground_quiesce_generation =
+        s_manager.foreground_quiesce_generation;
+    snapshot.foreground_quiesced_generation =
+        s_manager.foreground_quiesced_generation;
+    snapshot.danger_quiesced = s_manager.danger_quiesced;
     taskEXIT_CRITICAL(&s_manager.lock);
 
     return snapshot;

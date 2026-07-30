@@ -30,6 +30,20 @@ class BlePresenceSourceTests(unittest.TestCase):
         self.assertNotIn("active = s_runtime.initialized;", is_active_body)
         self.assertNotIn("network_prov", source)
 
+    def test_stop_fails_closed_when_host_task_does_not_exit(self) -> None:
+        source = BLE_PRESENCE_SOURCE.read_text(encoding="utf-8")
+        stop_body = source.split("esp_err_t ble_presence_stop(void)", 1)[1].split(
+            "/**\n * @brief 查询普通 BLE presence 是否正在广播。", 1
+        )[0]
+
+        timeout_index = stop_body.index("return ESP_ERR_TIMEOUT;")
+        deinit_index = stop_body.index("nimble_port_deinit();")
+        cleanup_index = stop_body.index("memset(&s_runtime, 0, sizeof(s_runtime));")
+
+        self.assertIn("等待 BLE presence host task 退出超时", stop_body)
+        self.assertLess(timeout_index, deinit_index)
+        self.assertLess(timeout_index, cleanup_index)
+
     def test_start_checks_internal_heap_before_nimble_init(self) -> None:
         source = BLE_PRESENCE_SOURCE.read_text(encoding="utf-8")
 

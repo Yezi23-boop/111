@@ -34,13 +34,21 @@ static void runtime_resource_gate_board_test_log_background_snapshot(
     const background_service_manager_snapshot_t snapshot =
         background_service_manager_get_snapshot();
     ESP_LOGI(TAG,
-             "%s: danger_should_run=%d running=%d block=%d fg_runtime=%d fg_audio=%d last_error=%s",
+             "%s: danger_should_run=%d running=%d quiesced=%d qgen=%lu ack=%lu block=%d fg_runtime=%d fg_audio=%d gate_owner=%s internal_free=%u largest=%u psram_free=%u last_error=%s",
              label,
              snapshot.danger_should_run,
              snapshot.danger_runtime_running,
+             snapshot.danger_quiesced,
+             (unsigned long)snapshot.foreground_quiesce_generation,
+             (unsigned long)snapshot.foreground_quiesced_generation,
              snapshot.danger_block_reason,
              snapshot.danger_blocked_by_foreground_runtime,
              snapshot.danger_blocked_by_foreground_audio,
+             foreground_runtime_gate_owner_text(
+                 foreground_runtime_gate_current_owner()),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
              esp_err_to_name(snapshot.last_error));
 }
 
@@ -108,8 +116,8 @@ static void runtime_resource_gate_board_test_exercise_hermes_foreground(void)
 static void runtime_resource_gate_board_test_exercise_ble_owner(void)
 {
     ESP_LOGI(TAG, "step ble foreground owner begin");
-    esp_err_t err = foreground_runtime_gate_acquire(
-        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING, 0);
+    esp_err_t err = foreground_runtime_gate_try_acquire(
+        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING);
     runtime_resource_gate_board_test_log_result("ble_owner_acquire", err);
     if (err == ESP_OK)
     {
@@ -145,6 +153,31 @@ static void runtime_resource_gate_board_test_exercise_ble_owner(void)
         "after ble owner release");
 }
 
+/**
+ * @brief 验证前台 owner 请求 Safety Monitor quiesced ACK 的最小闭环。
+ */
+static void runtime_resource_gate_board_test_exercise_quiesced_ack(void)
+{
+    uint32_t generation = 0U;
+    const esp_err_t request_ret =
+        background_service_manager_request_foreground_quiesce(&generation);
+    runtime_resource_gate_board_test_log_result(
+        "foreground_quiesce_request", request_ret);
+    if (request_ret == ESP_OK)
+    {
+        runtime_resource_gate_board_test_log_result(
+            "foreground_quiesce_wait",
+            background_service_manager_wait_foreground_quiesced(
+                generation, 2500U));
+        if (generation != 0U)
+        {
+            (void)background_service_manager_finish_foreground_quiesce(generation);
+        }
+    }
+    runtime_resource_gate_board_test_log_background_snapshot(
+        "after quiesce ack");
+}
+
 static void runtime_resource_gate_board_test_task(void *arg)
 {
     (void)arg;
@@ -157,6 +190,7 @@ static void runtime_resource_gate_board_test_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST_START_DELAY_MS));
     runtime_resource_gate_board_test_wait_network();
     runtime_resource_gate_board_test_log_background_snapshot("before stress");
+    runtime_resource_gate_board_test_exercise_quiesced_ack();
     runtime_resource_gate_board_test_exercise_hermes_foreground();
     runtime_resource_gate_board_test_exercise_ble_owner();
 

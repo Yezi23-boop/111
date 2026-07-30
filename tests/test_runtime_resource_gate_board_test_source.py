@@ -38,6 +38,12 @@ class RuntimeResourceGateBoardTestSourceTests(unittest.TestCase):
         )
         self.assertIn("memory_watch_service_check_health", source)
         self.assertIn("memory_watch_service_inbox_poll_now", source)
+        self.assertIn("foreground_quiesce_request", source)
+        self.assertIn("background_service_manager_request_foreground_quiesce", source)
+        self.assertIn("background_service_manager_wait_foreground_quiesced", source)
+        self.assertIn("foreground_quiesced_generation", source)
+        self.assertIn("foreground_runtime_gate_current_owner", source)
+        self.assertIn("heap_caps_get_largest_free_block", source)
 
     def test_board_test_uses_psram_stack_and_is_wired_to_boot(self) -> None:
         source = RUNTIME_RESOURCE_GATE_BOARD_TEST_SOURCE.read_text(encoding="utf-8")

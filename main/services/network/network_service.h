@@ -41,6 +41,7 @@ extern "C"
 
     typedef struct
     {
+        network_service_state_t service_state;
         bool wifi_connected;
         bool has_credentials;
         bool user_disconnect_latched;
@@ -65,6 +66,9 @@ extern "C"
         bool ble_transition_pending;         /* BLE owner 是否仍在处理目标态。 */
         uint32_t ble_generation;             /* BLE 目标态代次，用于丢弃过期结果。 */
         esp_err_t ble_last_error;             /* 最近一次 BLE 目标态应用结果。 */
+        bool provisioning_transition_pending; /* provisioning owner 是否仍在处理入口/停止请求。 */
+        uint32_t provisioning_generation;      /* provisioning 请求代次，用于 UI 识别新结果。 */
+        esp_err_t provisioning_last_error;     /* 最近一次 provisioning 请求执行结果。 */
         esp_err_t last_error;                /* 最近一次服务层错误。 */
         esp_err_t last_probe_result;         /* 最近一次云端 ready 探测结果。 */
     } network_service_snapshot_t;
@@ -185,10 +189,15 @@ extern "C"
     esp_err_t network_service_get_ip(char *ip_str, size_t ip_str_len);
 
     /**
-     * @brief 主动切换到 AP 门户配网。
-     * @return 无返回值。
+     * @brief 异步请求切换到 AP 门户配网。
+     *
+     * 该接口只提交意图并唤醒 network owner；真实启动由后台 worker 执行，
+     * 避免 LVGL 回调直接创建 SoftAP/provisioning 资源。
+     *
+     * @return `ESP_OK` 表示请求已接收；`ESP_ERR_INVALID_STATE` 表示 owner
+     *         尚未启动。
      */
-    void network_service_request_portal(void);
+    esp_err_t network_service_request_portal(void);
 
     /**
      * @brief 主动启动 BLE 配网。
@@ -196,9 +205,21 @@ extern "C"
      * 该兼容入口不会自动打开 BLE 总开关；如果蓝牙被用户关闭，会由底层返回
      * `ESP_ERR_INVALID_STATE` 并记录日志。
      *
-     * @return 无返回值。
+     * @return `ESP_OK` 表示请求已接收；`ESP_ERR_INVALID_STATE` 表示 owner
+     *         尚未启动。
      */
-    void network_service_request_ble(void);
+    esp_err_t network_service_request_ble(void);
+
+    /**
+     * @brief 异步停止当前 BLE 或 SoftAP provisioning 会话。
+     *
+     * 页面退出、配网完成或用户主动关闭入口时，上层只提交该意图；真实 stop/deinit
+     * 由 network owner worker 执行。
+     *
+     * @return `ESP_OK` 表示请求已接收；`ESP_ERR_INVALID_STATE` 表示 owner
+     *         尚未启动。
+     */
+    esp_err_t network_service_request_stop_provisioning(void);
 
 #ifdef __cplusplus
 }

@@ -81,7 +81,7 @@ static void sleep_coordinator_record_dry_run(void)
     char blocker_text[160];
     power_policy_format_sleep_blockers(budget.sleep_blockers, blocker_text,
                                        sizeof(blocker_text));
-    ESP_LOGI(TAG,
+    ESP_LOGD(TAG,
              "dry_run: count=%u budget_version=%u permission=%s blockers=%s interval_ms=%u",
              (unsigned)dry_run_count,
              (unsigned)budget.budget_version,

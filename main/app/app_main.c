@@ -34,6 +34,8 @@
 static const char *TAG = "MAIN";
 /* 栈缩为 6144B：高压实测 free=4996B（61% 空闲），缩 2KB PSRAM 仍有余量。 */
 static const uint32_t kTimeWeatherTaskStackBytes = 6144;
+/* 默认关闭只控制启动策略；运行时仍可直接调用两个 service 的 start/destroy API。 */
+static const bool kMotionServicesEnabledByDefault = false;
 
 /**
  * @brief AP 门户保存 AI Memory Watch endpoint 配置的桥接回调。
@@ -279,30 +281,34 @@ static void start_deferred_services(void)
         ESP_LOGW(TAG, "Runtime resource gate board test start failed");
     }
 
-    /*
-     * IMU service 当前做统一配置、GPIO21 ISR 事件计数和 50Hz 周期采样。
-     * 让它随 deferred services 启动，便于开机日志直接验证 IMU 链路与采样稳定性。
-     */
-    if (imu_service_start() != ESP_OK)
+    /* 默认关闭 IMU/Fall 后台链路；运行时仍可通过 service API 动态调整。 */
+    if (kMotionServicesEnabledByDefault)
     {
-        ESP_LOGW(TAG, "IMU service start failed");
-    }
-    else
-    {
-        ESP_LOGI(TAG, "boot_stage: imu_service_ready");
-    }
+        if (imu_service_start() != ESP_OK)
+        {
+            ESP_LOGW(TAG, "IMU service start failed");
+        }
+        else
+        {
+            ESP_LOGI(TAG, "boot_stage: imu_service_ready");
+        }
 
-    /*
-     * Fall detection v1 只消费 IMU service 的完整 4 秒窗口并输出日志。
-     * 它不直接读取 IMU 硬件，也不触发 UI 或告警策略。
-     */
-    if (fall_detection_service_start() != ESP_OK)
-    {
-        ESP_LOGW(TAG, "Fall detection service start failed");
+        if (fall_detection_service_start() != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Fall detection service start failed");
+        }
+        else
+        {
+            ESP_LOGI(TAG, "boot_stage: fall_detection_ready");
+        }
     }
     else
     {
-        ESP_LOGI(TAG, "boot_stage: fall_detection_ready");
+        /* 用正常生命周期 API 保证默认关闭与动态销毁走同一条路径。 */
+        (void)fall_detection_service_destroy();
+        (void)imu_service_destroy();
+        ESP_LOGI(TAG, "boot_stage: imu_service_disabled_by_default");
+        ESP_LOGI(TAG, "boot_stage: fall_detection_disabled_by_default");
     }
 }
 

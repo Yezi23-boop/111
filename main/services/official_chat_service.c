@@ -31,6 +31,7 @@ static const size_t kLastAssistantTextMaxBytes = 256;         /* 最近一条助
 static const size_t kMessageHistoryCapacity = 8;              /* 固定消息历史容量；满后丢弃最旧条目。 */
 static const uint32_t kShutdownTransportQuietPeriodMs = 1500; /* 关闭前等待传输层静默的窗口，单位为毫秒。 */
 static const uint32_t kShutdownWaitTimeoutMs = 4000;          /* 同步关闭接口的最大等待时间，单位为毫秒。 */
+static const uint32_t kForegroundAcquireTimeoutMs = 5000;     /* 自动切换最多等待旧 owner 收敛的时间。 */
 static const UBaseType_t kCommandQueueLength = 8;             /* 外部意图命令队列深度，避免 UI 直接写服务内部状态。 */
 
 typedef struct
@@ -202,8 +203,37 @@ static esp_err_t official_chat_service_set_foreground_runtime_active(bool active
             return ESP_OK;
         }
 
-        const esp_err_t ret = foreground_runtime_gate_acquire(
-            FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT, 0U);
+        /* 先保留进入意图，gate 被其他 owner 占用时才能在本 task 内重试。 */
+        s_foreground_requested = true;
+
+        esp_err_t ret = ESP_ERR_INVALID_STATE;
+        uint32_t quiesce_generation = 0U;
+        const TickType_t wait_start = xTaskGetTickCount();
+        do
+        {
+            ret = background_service_manager_request_foreground_quiesce(
+                &quiesce_generation);
+            if (ret == ESP_OK)
+            {
+                ret = background_service_manager_wait_foreground_quiesced(
+                    quiesce_generation, 2500U);
+            }
+            if (ret == ESP_OK)
+            {
+                ret = foreground_runtime_gate_try_acquire(
+                    FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT);
+            }
+            if (ret == ESP_ERR_INVALID_STATE && s_foreground_requested)
+            {
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
+        } while (ret == ESP_ERR_INVALID_STATE && s_foreground_requested &&
+                 (xTaskGetTickCount() - wait_start) <
+                     pdMS_TO_TICKS(kForegroundAcquireTimeoutMs));
+        if (quiesce_generation != 0U)
+        {
+            (void)background_service_manager_finish_foreground_quiesce(quiesce_generation);
+        }
         if (ret != ESP_OK)
         {
             ESP_LOGW(TAG, "official_chat foreground gate acquire failed: %s",

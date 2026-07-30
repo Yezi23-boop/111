@@ -168,7 +168,7 @@ static void wakeup_evidence_task(void *arg)
             if (ret == ESP_OK)
             {
                 int rtc_int_level = gpio_get_level(k_rtc_int_gpio);
-                ESP_LOGI(TAG, "rtc_int_sample: gpio=%d level=%d control2=0x%02x",
+                ESP_LOGD(TAG, "rtc_int_sample: gpio=%d level=%d control2=0x%02x",
                          k_rtc_int_gpio, rtc_int_level, control2);
                 if ((control2 & PCF85063ATL_CONTROL2_TF) != 0)
                 {

@@ -15,13 +15,11 @@ class ForegroundRuntimeGateSourceTests(unittest.TestCase):
         self.assertIn("FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT", header)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING", header)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_OTA", header)
-        self.assertIn("FOREGROUND_RUNTIME_OWNER_FUTURE_PAGE", header)
-        self.assertIn("foreground_runtime_gate_acquire", header)
+        self.assertNotIn("FOREGROUND_RUNTIME_OWNER_FUTURE_PAGE", header)
+        self.assertIn("foreground_runtime_gate_try_acquire", header)
         self.assertIn("foreground_runtime_gate_release", header)
         self.assertIn("foreground_runtime_gate_is_active", header)
         self.assertIn("foreground_runtime_gate_current_owner", header)
-        self.assertIn("foreground_runtime_gate_quiet_for", header)
-        self.assertIn("foreground_runtime_gate_is_quiet", header)
         self.assertIn("ESP-DL / 安全检测属于可抢占", header)
 
     def test_gate_is_state_only_not_a_resource_manager(self) -> None:
@@ -31,8 +29,8 @@ class ForegroundRuntimeGateSourceTests(unittest.TestCase):
 
         self.assertIn("portMUX_TYPE s_gate_lock", source)
         self.assertIn("s_current_owner", source)
-        self.assertIn("s_quiet_until_us", source)
-        self.assertIn("esp_timer_get_time()", source)
+        self.assertNotIn("s_quiet_until_us", source)
+        self.assertNotIn("esp_timer_get_time()", source)
         self.assertIn("ESP_ERR_INVALID_STATE", source)
         self.assertIn("foreground_runtime_gate_owner_text", source)
         self.assertIn('return "OFFICIAL_CHAT";', source)

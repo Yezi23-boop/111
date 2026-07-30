@@ -152,6 +152,7 @@ class Qmi8658cSourceTests(unittest.TestCase):
         self.assertIn("qmi8658c_decode_i16(&raw[6])", source)
         self.assertIn("s_read_count % 100U", source)
         self.assertIn("原始表 | 次数=%-5u 状态0=0x%02X 就绪=%d 时间戳=%-8u", source)
+        self.assertIn("ESP_LOGD(TAG,\n                 \"原始表 |", source)
 
     def test_driver_exposes_accel_mps2_conversion_owned_by_qmi(self) -> None:
         self.assertTrue(QMI8658C_SOURCE.exists(), "components/qmi8658c/qmi8658c.c should exist")

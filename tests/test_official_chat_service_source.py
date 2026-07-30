@@ -41,7 +41,7 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP",
                       source)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT", source)
-        self.assertIn("foreground_runtime_gate_acquire(", source)
+        self.assertIn("foreground_runtime_gate_try_acquire(", source)
         self.assertIn("foreground_runtime_gate_release(", source)
         self.assertIn("background_service_manager_notify_foreground_runtime_changed()",
                       source)

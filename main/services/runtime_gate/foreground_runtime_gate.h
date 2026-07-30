@@ -24,7 +24,6 @@ extern "C"
         FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT, /**< 小智 official_chat 页面 WebSocket 或前台语音交互。 */
         FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING, /**< BLE 配网或 BLE 启动敏感窗口。 */
         FOREGROUND_RUNTIME_OWNER_OTA, /**< OTA 或系统维护重任务。 */
-        FOREGROUND_RUNTIME_OWNER_FUTURE_PAGE, /**< 后续前台重交互页面的预留 owner。 */
     } foreground_runtime_owner_t;
 
     /**
@@ -40,12 +39,12 @@ extern "C"
      * @brief 申请强前台独占窗口。
      *
      * @param[in] owner 申请窗口的 owner，不能为 `FOREGROUND_RUNTIME_OWNER_NONE`。
-     * @param[in] timeout_ms 当前版本不阻塞等待，只保留参数用于后续兼容；传 0 即可。
+     * 该接口采用 fail-fast 语义，不阻塞等待，也不创建任务或队列。
      * @return `ESP_OK` 表示申请成功；`ESP_ERR_INVALID_ARG` 表示 owner 无效；
      *         `ESP_ERR_INVALID_STATE` 表示已有其他强前台 owner 或 quiet window 未结束。
      */
-    esp_err_t foreground_runtime_gate_acquire(foreground_runtime_owner_t owner,
-                                              uint32_t timeout_ms);
+    esp_err_t foreground_runtime_gate_try_acquire(
+        foreground_runtime_owner_t owner);
 
     /**
      * @brief 释放强前台独占窗口。
@@ -70,25 +69,6 @@ extern "C"
      * @return 当前 owner；无 owner 时返回 `FOREGROUND_RUNTIME_OWNER_NONE`。
      */
     foreground_runtime_owner_t foreground_runtime_gate_current_owner(void);
-
-    /**
-     * @brief 打开短暂 quiet window，阻止新的强前台 owner 进入。
-     *
-     * quiet window 用于 BLE 启动前、低内存重试前等短互斥窗口。它不停止已有 owner，
-     * 也不直接控制 Wi-Fi / ESP-DL / UI。
-     *
-     * @param[in] duration_ms quiet window 持续时间，0 表示立即清空。
-     * @param[in] reason 日志原因，可为 NULL，不能包含密钥或 token。
-     */
-    void foreground_runtime_gate_quiet_for(uint32_t duration_ms,
-                                           const char *reason);
-
-    /**
-     * @brief 查询当前是否处于 quiet window。
-     *
-     * @return true 表示 quiet window 尚未结束。
-     */
-    bool foreground_runtime_gate_is_quiet(void);
 
     /**
      * @brief 将 owner 枚举转为日志文本。

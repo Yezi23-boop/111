@@ -55,6 +55,21 @@ class NetworkServiceWifiManagementSourceTests(unittest.TestCase):
         self.assertIn("network_manager_get_recent_networks(NULL, 0, &count)", source)
         self.assertIn("network_service_map_transport_to_manager(", source)
         self.assertIn("network_service_map_transport_from_manager(", source)
+        self.assertIn(
+            "static network_service_wifi_status_t s_wifi_status_snapshot",
+            source,
+        )
+        self.assertIn("network_service_publish_wifi_status(&status)", source)
+
+        getter_body = source.split(
+            "esp_err_t network_service_get_wifi_status(network_service_wifi_status_t *status)",
+            1,
+        )[1].split(
+            "esp_err_t network_service_request_connect_with_saved_credentials(void)",
+            1,
+        )[0]
+        self.assertIn("*status = s_wifi_status_snapshot;", getter_body)
+        self.assertNotIn("network_manager_get_status(", getter_body)
 
     def test_source_publishes_snapshot_without_volatile_state_protocol(self) -> None:
         header = NETWORK_SERVICE_HEADER.read_text(encoding="utf-8")

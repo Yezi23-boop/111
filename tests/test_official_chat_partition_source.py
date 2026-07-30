@@ -4,6 +4,7 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PARTITIONS = REPO_ROOT / "partitions.csv"
+SDKCONFIG = REPO_ROOT / "sdkconfig"
 
 
 def _parse_size(size_text: str) -> int:
@@ -21,6 +22,7 @@ def _parse_size(size_text: str) -> int:
 class OfficialChatPartitionSourceTests(unittest.TestCase):
     def test_partitions_include_model_and_assets_for_official_chat_runtime(self) -> None:
         source = PARTITIONS.read_text(encoding="utf-8")
+        sdkconfig = SDKCONFIG.read_text(encoding="utf-8")
 
         entries = {}
         current_offset = 0
@@ -45,8 +47,9 @@ class OfficialChatPartitionSourceTests(unittest.TestCase):
         self.assertEqual("spiffs", entries["assets"]["fields"][2])
         self.assertGreaterEqual(_parse_size(entries["model"]["fields"][4]), 0x400000)
         self.assertGreaterEqual(_parse_size(entries["assets"]["fields"][4]), 0x200000)
-        self.assertLess(entries["assets"]["offset"], 0x1000000)
-        self.assertLess(entries["model"]["offset"], 0x1000000)
+        self.assertIn('CONFIG_ESPTOOLPY_FLASHSIZE="32MB"', sdkconfig)
+        self.assertLess(entries["assets"]["offset"], 0x2000000)
+        self.assertLess(entries["model"]["offset"], 0x2000000)
 
 
 if __name__ == "__main__":

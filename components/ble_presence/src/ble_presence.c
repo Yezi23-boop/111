@@ -438,7 +438,8 @@ esp_err_t ble_presence_stop(void)
     if (xSemaphoreTake(s_stop_done,
                        pdMS_TO_TICKS(kBlePresenceStopTimeoutMs)) != pdTRUE)
     {
-        ESP_LOGW(TAG, "等待 BLE presence host task 退出超时");
+        ESP_LOGE(TAG, "等待 BLE presence host task 退出超时，保留 runtime 以便重试停止");
+        return ESP_ERR_TIMEOUT;
     }
     vTaskDelay(pdMS_TO_TICKS(kBlePresenceTaskExitGraceMs));
     nimble_port_deinit();

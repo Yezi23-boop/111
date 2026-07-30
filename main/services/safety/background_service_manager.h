@@ -49,6 +49,9 @@ extern "C"
         power_policy_state_t policy_state; /**< 最近一次使用的整机策略状态。 */
         uint32_t policy_flags;          /**< 最近一次预算 flag，使用 power_policy_flag_t 位图。 */
         esp_err_t last_error;            /**< 最近一次 session 启动、停止或恢复错误码。 */
+        uint32_t foreground_quiesce_generation; /**< 最近一次强前台让路请求代次。 */
+        uint32_t foreground_quiesced_generation; /**< 已完成停止确认的代次。 */
+        bool danger_quiesced;             /**< 当前 Safety Monitor 已确认完全停止。 */
     } background_service_manager_snapshot_t;
 
     /**
@@ -98,6 +101,36 @@ extern "C"
      * @return ESP_OK 表示通知已发送或管理器尚未启动无需处理。
      */
     esp_err_t background_service_manager_notify_foreground_runtime_changed(void);
+
+    /**
+     * @brief 请求 Safety Monitor 为强前台资源让路，并返回本次确认代次。
+     *
+     * 调用方必须在自己的 owner task 中等待对应代次，不得只读取旧的
+     * `danger_runtime_running=false` 判断停止已经完成。
+     *
+     * @param[out] out_generation 输出本次请求代次。
+     * @return ESP_OK 表示请求已登记；管理器未启动时会立即发布已停止确认。
+     */
+    esp_err_t background_service_manager_request_foreground_quiesce(
+        uint32_t *out_generation);
+
+    /**
+     * @brief 等待指定代次的 Safety Monitor 停止确认。
+     * @param[in] generation `request_foreground_quiesce` 返回的代次。
+     * @param[in] timeout_ms 最大等待时间，单位毫秒。
+     * @return ESP_OK 表示对应代次已确认；超时或停止失败返回错误。
+     */
+    esp_err_t background_service_manager_wait_foreground_quiesced(
+        uint32_t generation, uint32_t timeout_ms);
+
+    /**
+     * @brief 结束本次前台 quiesce 请求的等待窗口。
+     *
+     * 成功取得 foreground gate 或确认本次前台启动失败后调用；如果 gate 已
+     * active，策略仍会因 foreground owner 继续阻止 Safety Monitor。
+     * @param[in] generation 本次 request 返回的 quiesce generation；只允许当前代次结束请求。
+     */
+    esp_err_t background_service_manager_finish_foreground_quiesce(uint32_t generation);
 
     /**
      * @brief 通知后台管理器 power_policy 预算可能已经变化。

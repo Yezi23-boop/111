@@ -20,6 +20,7 @@ class NetworkManagerSourceTests(unittest.TestCase):
         self.assertIn("network_manager_get_state_cached", header)
         self.assertIn("network_manager_start_ble_provisioning", header)
         self.assertIn("network_manager_start_softap_provisioning", header)
+        self.assertIn("network_manager_stop_provisioning", header)
         self.assertIn("network_manager_set_ble_enabled", header)
         self.assertIn("network_manager_get_recent_networks", header)
         self.assertIn("network_manager_connect_recent_by_index", header)
@@ -45,6 +46,7 @@ class NetworkManagerSourceTests(unittest.TestCase):
         self.assertIn("xTaskCreateWithCaps(network_manager_task", source)
         self.assertIn("MALLOC_CAP_SPIRAM", source)
         self.assertIn("network_manager_stop_active_transport", source)
+        self.assertIn("network_manager_stop_provisioning", source)
         self.assertIn("network_manager_start_selected_transport_auto()", source)
         self.assertIn("network_manager_connect_entry(&latest, true)", source)
         self.assertIn("等待用户明确选择 BLE 配网或 AP 网页兜底", source)
@@ -155,6 +157,11 @@ class NetworkManagerSourceTests(unittest.TestCase):
         )[1].split("case NETWORK_MANAGER_PROVISIONING_TRANSPORT_SOFTAP:", 1)[0]
         self.assertIn("ble_presence_stop()", ble_start_body)
         self.assertIn("network_provisioning_adapter_start_ble()", ble_start_body)
+        stop_body = source.split(
+            "esp_err_t network_manager_stop_provisioning(void)", 1
+        )[1].split("/**\n * @brief 设置 BLE 总开关偏好。", 1)[0]
+        self.assertIn("network_manager_stop_active_transport()", stop_body)
+        self.assertIn("network_manager_refresh_runtime_state(false)", stop_body)
 
     def test_source_keeps_auto_path_idle_until_user_selects_provisioning(self) -> None:
         source = NETWORK_MANAGER_SOURCE.read_text(encoding="utf-8")

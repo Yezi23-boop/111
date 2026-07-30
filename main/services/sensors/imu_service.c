@@ -73,6 +73,7 @@ typedef struct
 {
     bool initialized;
     bool started;
+    bool destroy_requested;
     TaskHandle_t task_handle;
     portMUX_TYPE lock;
     imu_service_snapshot_t snapshot;
@@ -98,6 +99,7 @@ static const imu_service_profile_t k_imu_service_profile = {
 static imu_service_context_t s_imu_service = {
     .initialized = false,
     .started = false,
+    .destroy_requested = false,
     .task_handle = NULL,
     .lock = portMUX_INITIALIZER_UNLOCKED,
     .snapshot = {
@@ -147,6 +149,51 @@ static void imu_service_store_state(imu_service_state_t state,
     s_imu_service.snapshot.state = state;
     s_imu_service.snapshot.last_error = error;
     taskEXIT_CRITICAL(&s_imu_service.lock);
+}
+
+static bool imu_service_destroy_requested(void)
+{
+    taskENTER_CRITICAL(&s_imu_service.lock);
+    const bool requested = s_imu_service.destroy_requested;
+    taskEXIT_CRITICAL(&s_imu_service.lock);
+    return requested;
+}
+
+static void imu_service_release_runtime_resources(void)
+{
+    const board_imu_config_t *board_config = board_imu_get_config();
+    if (board_config != NULL && GPIO_IS_VALID_GPIO(board_config->qmi_int1_gpio))
+    {
+        (void)gpio_intr_disable(board_config->qmi_int1_gpio);
+        (void)gpio_isr_handler_remove(board_config->qmi_int1_gpio);
+    }
+
+    heap_caps_free(s_imu_service.sample_ring);
+    heap_caps_free(s_imu_service.publish_window);
+    s_imu_service.sample_ring = NULL;
+    s_imu_service.publish_window = NULL;
+
+    taskENTER_CRITICAL(&s_imu_service.lock);
+    s_imu_service.task_handle = NULL;
+    s_imu_service.started = false;
+    s_imu_service.initialized = false;
+    s_imu_service.destroy_requested = false;
+    s_imu_service.sample_write_index = 0U;
+    s_imu_service.sample_ring_count = 0U;
+    s_imu_service.last_sample_time_us = 0;
+    s_imu_service.window_sequence = 0U;
+    s_imu_service.window_queue = NULL;
+    s_imu_service.event_trigger = (imu_service_event_trigger_t){0};
+    s_imu_service.snapshot = (imu_service_snapshot_t){
+        .state = IMU_SERVICE_STATE_STOPPED,
+        .int1_gpio = -1,
+        .int1_level = -1,
+        .sample_rate_hz = IMU_SERVICE_SAMPLE_RATE_HZ,
+        .window_frame_count = IMU_SERVICE_WINDOW_FRAME_COUNT,
+        .last_error = ESP_OK,
+    };
+    taskEXIT_CRITICAL(&s_imu_service.lock);
+    ESP_LOGI(TAG, "已销毁: IMU任务、GPIO ISR和PSRAM采样缓冲已释放");
 }
 
 static void imu_service_store_identity(const imu_sensor_info_t *identity)
@@ -641,6 +688,10 @@ static void imu_service_run_sampling_loop(void)
              (unsigned)IMU_SERVICE_WINDOW_FRAME_COUNT);
     while (1)
     {
+        if (imu_service_destroy_requested())
+        {
+            return;
+        }
         const uint32_t notified = ulTaskNotifyTake(pdTRUE, 0);
         if (notified > 0)
         {
@@ -666,7 +717,7 @@ static void imu_service_run_sampling_loop(void)
             if (sample_count == 1U ||
                 (sample_count % k_sample_log_interval) == 0U)
             {
-                ESP_LOGI(TAG,
+                ESP_LOGD(TAG,
                          "采样表 | 次数=%-5u 间隔_us=%-6d 窗口=%d | 加速度mg[x y z]=%6d %6d %6d | 陀螺仪mdps[x y z]=%7d %7d %7d",
                          (unsigned)sample_count,
                          (int)interval_us,
@@ -696,16 +747,23 @@ static void imu_service_task(void *arg)
 
     while (1)
     {
+        if (imu_service_destroy_requested())
+        {
+            break;
+        }
         esp_err_t ret = imu_service_probe_and_configure();
         if (ret == ESP_OK)
         {
             imu_service_run_sampling_loop();
-            return;
+            break;
         }
 
         ESP_LOGW(TAG, "configure_failed: %s", esp_err_to_name(ret));
-        vTaskDelay(k_retry_delay_ticks);
+        (void)ulTaskNotifyTake(pdTRUE, k_retry_delay_ticks);
     }
+
+    imu_service_release_runtime_resources();
+    vTaskDelete(NULL);
 }
 
 esp_err_t imu_service_init(void)
@@ -736,11 +794,20 @@ esp_err_t imu_service_start(void)
 
     taskENTER_CRITICAL(&s_imu_service.lock);
     const bool already_started = s_imu_service.started;
+    const bool destroy_requested = s_imu_service.destroy_requested;
     taskEXIT_CRITICAL(&s_imu_service.lock);
     if (already_started)
     {
         return ESP_OK;
     }
+    if (destroy_requested)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    taskENTER_CRITICAL(&s_imu_service.lock);
+    s_imu_service.destroy_requested = false;
+    taskEXIT_CRITICAL(&s_imu_service.lock);
 
     const BaseType_t ok = xTaskCreate(imu_service_task, "imu_service", 4096,
                                       NULL, 3, &s_imu_service.task_handle);
@@ -755,6 +822,40 @@ esp_err_t imu_service_start(void)
     taskEXIT_CRITICAL(&s_imu_service.lock);
 
     ESP_LOGI(TAG, "已启动: 50Hz采样");
+    return ESP_OK;
+}
+
+esp_err_t imu_service_destroy(void)
+{
+    TaskHandle_t task = NULL;
+    bool has_runtime_resources = false;
+
+    taskENTER_CRITICAL(&s_imu_service.lock);
+    task = s_imu_service.task_handle;
+    has_runtime_resources = s_imu_service.initialized ||
+                            s_imu_service.started ||
+                            s_imu_service.sample_ring != NULL ||
+                            s_imu_service.publish_window != NULL;
+    if (task != NULL)
+    {
+        s_imu_service.destroy_requested = true;
+        s_imu_service.snapshot.state = IMU_SERVICE_STATE_STOPPING;
+        s_imu_service.snapshot.last_error = ESP_OK;
+    }
+    taskEXIT_CRITICAL(&s_imu_service.lock);
+
+    if (task != NULL)
+    {
+        xTaskNotifyGive(task);
+        (void)imu_service_set_window_queue(NULL);
+        ESP_LOGI(TAG, "正在销毁: 已断开窗口队列，等待IMU任务释放资源");
+        return ESP_OK;
+    }
+
+    if (has_runtime_resources)
+    {
+        imu_service_release_runtime_resources();
+    }
     return ESP_OK;
 }
 
@@ -793,6 +894,8 @@ const char *imu_service_state_text(imu_service_state_t state)
         return "RUNNING";
     case IMU_SERVICE_STATE_ERROR:
         return "ERROR";
+    case IMU_SERVICE_STATE_STOPPING:
+        return "STOPPING";
     default:
         return "UNKNOWN";
     }

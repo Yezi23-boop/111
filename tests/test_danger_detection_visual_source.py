@@ -22,7 +22,7 @@ class DangerDetectionVisualSourceTests(unittest.TestCase):
         self.assertIn("content_layer", view_source)
         self.assertIn("alert_layer", view_source)
         self.assertIn("kDangerBackButtonX = 28", view_source)
-        self.assertIn("kDangerBackButtonY = 18", view_source)
+        self.assertIn("kDangerBackButtonY = 22", view_source)
         self.assertIn("kDangerBackButtonWidth = 96", view_source)
         self.assertIn("kDangerBackButtonHeight = 56", view_source)
         self.assertIn("lv_obj_clear_flag(view->content_layer, LV_OBJ_FLAG_CLICKABLE)", view_source)
