@@ -46,7 +46,7 @@ status: active
 
 ## 小闭环收尾写入规则
 
-完成一个可提交的小闭环后，默认先更新对应 `plans/active/` 里的进度、验证状态和下一步。只有涉及关键验证、协议、owner、安全边界、门禁，或后续 agent 必须知道的结论，才同步更新 `CHANGELOG.md`；不要把 `CHANGELOG.md` 当作普通命令流水账。
+完成一个可提交的小闭环后，默认先更新对应 `plans/active/` 里的进度、验证状态和下一步。`CHANGELOG.md` 只记录后续有检索价值的摘要，例如关键验证、协议、owner、安全边界、门禁或后续 agent 必须知道的结论；不要把 `CHANGELOG.md` 当作普通命令流水账。
 
 `handoffs/current-task.md` 已退场，不再维护。跨会话接手状态优先写到对应 `plans/active/` 的 `Progress / Decision Log / Validation / Next Step`；失败路线、特殊证据、可复用排查结论写入 `runs/`；稳定事实、长期 owner 或架构边界再进入 `knowledge/`。不得写真实 key/token，也不要把 `CHANGELOG.md` 复述成任务状态。
 
@@ -120,6 +120,6 @@ garden_reviewed: YYYY-MM-DD
 
 ## 收尾要求
 
-- 每次 context 结构或策略变更都更新 `docs/context/CHANGELOG.md`。
+- context 结构或策略变更只有在会影响后续检索、路由、写入门槛或 agent 行为时，才更新 `docs/context/CHANGELOG.md`，并只写摘要。
 - 验证按影响范围分级运行 `scripts/context/validate_context.py`：只改文档用 `--level standard`，改入口或检索基准用 `--level routing`，改脚本或记忆/晋升/归档机制才用 `--level full`。
 - 如果 `garden.py` 给出候选，只把它当审查队列，不自动判定为可删。

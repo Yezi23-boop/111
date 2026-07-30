@@ -66,6 +66,14 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## Agent 操作节流原则
+
+- 默认按“最小实现 -> 聚焦验证 -> 批量收尾”的节奏工作，不要每个小修改都立即跑全量测试、build、板测、写 run 或更新 CHANGELOG。
+- 同一任务内的多个小修复应合并到一个验证批次：先用最便宜的检查确认方向，例如编译局部、聚焦 source test 或静态检查；等代码形态稳定后，再统一执行 `idf.py build`、必要的全量测试和板端验证。
+- `uv run python -m pytest tests`、`idf.py build`、`app-flash-monitor` 属于高成本验证。只有当改动已经收敛、准备结案，或前一层验证无法覆盖风险时才运行；不要因为每次补一行测试或改一个分支就重复执行。
+- active plan、CHANGELOG 和 `runs/` 默认在一个可说明的小闭环结束后统一更新一次。同一阶段内的连续小修可以追加到同一条记录，不要每个微修复都新开记录或反复改文档。
+- 板端验证要验证本轮真正改变的行为。若只是证明冷启动无 panic，通常一次最终 `app-flash-monitor` 足够；除非修改涉及启动路径、硬件初始化、真实交互流程或前一次板测暴露异常。
+
 **活跃计划同步规则：不要在未更新活跃计划的情况下结束计划内任务。**
 如果你正在执行的任务属于 `docs/context/plans/active/` 中的某个活跃项目计划，在宣布任务或代码修改完成之前，你**必须**使用工具更新该计划的“进度 (Progress)”部分（例如，将 `[ ]` 勾选为 `[x]`）。严禁在不更新活文档的情况下为计划内任务修改代码。
 *（注意：对于不属于活跃计划的琐碎任务、简单 Bug 修复或日常沟通，此规则不适用，你也不需要做任何明确声明。）*
@@ -104,13 +112,14 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 将 `docs/context` 作为项目长期上下文库，但默认低 token 使用：
 
 - 首读只看 `docs/context/INDEX.agent.md` 与 `docs/context/knowledge/project/project-profile.md`；不要默认全量打开 `README.md`、`knowledge-map.md`、`repo-overview.md` 或 `knowledge/**`。
+- 遇到项目内不明确的问题，若可能由既有规划、稳定约束、owner 边界、历史决策或板端证据回答，先用上下文库索引按关键词检索，并只打开命中的相关文档；索引未提供充分证据时，再核对代码或官方资料。若仍存在会影响实现范围或行为的歧义，明确说明后向用户澄清，不得臆测。
 - 非简单任务默认用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`，避免重复尝试并只生成低 token brief。（**降级策略**：如果 Python 脚本执行失败，必须立即改用 `grep_search` 工具直接搜索 `docs/context/` 目录，严禁因此放弃查阅上下文）。
 - 新增功能、跨模块改动、后台能力、低功耗、OTA、音频/网络/危险识别协作类任务，默认先按 `docs/context/knowledge/project/runtime-owner-contract.md` 判断启动阶段、资源 owner、调用方向和禁止加层边界。
-- 出现可复用知识、流程、决策、attempt 或跨会话接手状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层，并更新 `docs/context/CHANGELOG.md`。
+- 出现可复用知识、流程、决策、attempt 或跨会话接手状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层；`CHANGELOG.md` 只记录后续有检索价值的摘要，不记录普通执行流水。
 - `docs/context/handoffs/` 已退场，不再作为当前任务接力层。跨会话接手状态优先写到对应 `plans/active/` 的 Progress/Next Step；失败路线、特殊证据和可复用排查结论写入 `runs/`；稳定事实进入 `knowledge/`。
-- 遇到大问题错误或路线选择时，若本轮形成了可复用判断、证伪路径、取舍原因或下一步边界，可考虑写入 `docs/context/runs/`；大问题错误使用 `error-signature`，路线选择/放弃使用 `route-choice`，必要时补 `evidence`。
+- `docs/context/runs/` 是反重复踩坑证据库，不是每次任务记录本。只有出现大问题错误、路线取舍、被证伪尝试、板端特殊证据、跨 owner 决策或高成本验证结论，并且这些信息未来可能防止重复误判/重复排查时，才写入 `docs/context/runs/`；大问题错误使用 `error-signature`，路线选择/放弃使用 `route-choice`，必要时补 `evidence`。普通成功改动、常规 build 通过、小修小补和没有复用价值的过程不写 `runs/`。
 - 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
-- **核心并发与底层驱动红线改动强制收尾规则**：只要当次任务修改涉及 `FreeRTOS`（任务/锁/队列/Timer）、RAM/PSRAM 内存分配、硬件驱动初始化、分区表或 `sdkconfig`，无论任务大小是否属于 active plan，在宣布任务完成前**强制**必须按固定顺序执行四步闭环：1) 新建 `docs/context/runs/YYYY-MM-DD-attempt-<特征词>.md`（沉淀错误签名与证伪路径）；2) 在 `CHANGELOG.md` 顶部记录摘要；3) 如存在对应 active plan，更新其 Progress/Validation/Next Step；4) 必须执行 `validate_context.py --level standard` 确保索引校验通过。**未附带校验通过结果前，严禁宣称任务或修改结案。**
+- 涉及 `FreeRTOS`、RAM/PSRAM、硬件驱动初始化、分区表或 `sdkconfig` 的改动，不因为触碰底层就默认新建 run；按上面的反重复踩坑标准判断。若任务属于 active plan，优先更新对应计划的 Progress/Validation/Next Step；只有 context 文档实际变更时，才按影响范围运行对应级别的 `validate_context.py`。
 
 ## 规划/框架类任务强制路由
 
@@ -137,7 +146,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 板级事实由 `main/app/board_*` 或现有 board owner 持有；GPIO、总线地址、片选、传感器轴向、硬件阈值不得长期散落在 service 或 driver 中。
 - 资源受限路径优先静态分配或受控分配；区分 task stack、internal RAM、PSRAM、DMA-capable memory 和长期缓存，不把大对象默认放到任务栈。
 - 必要的输入、返回值和超时要检查；不要为假设场景堆叠复杂兜底、重试、状态机或包装层。
-- Build 用来证明代码能编译；测试用来证明重要约定没被破坏
+- 防护代码只覆盖真实可能发生、代价明确且当前层负责处理的失败；不要为假设中的极端场景堆叠保护、重试、状态机、兼容分支或包装层。能通过调用前置条件、owner 边界、build 失败或简单返回值检查解决的问题，不升级成复杂保护机制。
+- Build 是代码改动的默认验证；测试只用于保护 build 看不出的重要约定，不能因为改了代码就默认新增或扩展测试。
 - 算法或 AI 相关实现默认拆分为预处理、推理、后处理和模型配置，避免把阈值、量化参数、模型 I/O 和业务逻辑混写。
 - 代码风格向 Google Code Style 靠拢，但不为新规则大面积重排无关旧代码。
 - 新增模块、跨 owner 改动或明显重构前，先给出简短文件划分和模块职责；窄 bugfix 或局部补测试不需要额外扩写方案。

@@ -8,7 +8,7 @@ last_reviewed: 2026-06-26
 status: archived
 memory_type: project_plan
 scope: repo
-owners: docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md, main/services/memory_watch_service.c, main/services/memory_watch_voice_client.c, main/ui/custom/memory_watch_controller.c, main/ui/custom/memory_watch_view.c, server/watch_voice_endpoint/app.py
+owners: docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md, main/services/memory_watch/memory_watch_service.c, main/services/memory_watch/memory_watch_voice_client.c, main/ui/custom/memory_watch_controller.c, main/ui/custom/memory_watch_view.c, server/watch_voice_endpoint/app.py
 triggers: Hermes 收件箱, inbox, notification, 全局气泡, 后台回复, memory_watch_service, MQTT, HTTP polling
 evidence_level: observed
 route_area: "AI Memory Watch / Hermes inbox and notification"

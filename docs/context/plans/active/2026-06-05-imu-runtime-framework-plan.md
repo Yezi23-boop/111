@@ -1,8 +1,8 @@
 ---
 id: plan-2026-06-05-imu-runtime-framework
 tags: imu, qmi8658c, imu_sensor, framework, board-facts, service, physical-6axis, unified-config, fall-detection, esp-dl
-summary: 只定 IMU 运行框架：driver/board/adapter/service/algorithm 边界、统一配置入口、物理六轴输出、50Hz 窗口和跌倒模型部署扩展点。
-last_reviewed: 2026-07-07
+summary: 只定 IMU 运行框架：driver/board/adapter/service/algorithm 边界、统一配置入口、物理六轴输出、50Hz 窗口和跌倒模型部署扩展点；当前固件默认不启动 IMU/Fall 后台链路。
+last_reviewed: 2026-07-29
 memory_type: task
 scope: imu
 status: active
@@ -30,7 +30,7 @@ route_area: "IMU / motion framework"
 - `components/qmi8658c`：只做芯片协议 owner，包括 I2C register 读写、WHO_AM_I/revision probe、寄存器 raw 解码、物理量换算、量程/ODR/sensor enable 统一配置和最小错误码；对 board/service 层只输出 `m/s^2` / `deg/s` 等物理量，不暴露 raw sample；不得持有板级 GPIO、安装方向、产品阈值或 FreeRTOS 任务生命周期。
 - `components/imu_sensor`：只做通用 IMU 窄接口和当前 QMI8658C 适配，包括 `init/probe/config/read` 的类型转换；不得持有当前板 GPIO、安装方向、FreeRTOS task、ISR 或采样窗口。
 - `main/app/board_imu.c`：只做板级事实 owner，包括 I2C 地址、INT1/INT2/GPIO 事实和安装方向/轴映射；当前保留 `QMI_INT1 -> GPIO21` 作为真实连线事实，但不代表当前固件启用该 GPIO 中断；不得实现抬腕识别规则，也不得直接推进长期运行状态。
-- `main/services/sensors/imu_service.c`：做运行 owner。当前第一版随 deferred services 默认启动，用 FreeRTOS task 完成 `board_imu facts -> imu_sensor init/probe/config`，安装 ESP32 GPIO21 ISR 并通过 task notification 处理 INT1 GPIO 事件；同时用 `vTaskDelayUntil` 做稳定 50Hz 周期采样，并维护 200 帧 / 4 秒环形缓冲。不消费 WoM、不启用芯片侧 INT 事件源。后续若启用 fall service queue/window 投递或 data-ready 中断，应继续落在 service 层。
+- `main/services/sensors/imu_service.c`：做运行 owner。当前代码仍保留 FreeRTOS task 完成 `board_imu facts -> imu_sensor init/probe/config`、安装 ESP32 GPIO21 ISR、通过 task notification 处理 INT1 GPIO 事件，并用 `vTaskDelayUntil` 做 50Hz 周期采样和事件窗口维护；但 2026-07-29 起 deferred services 默认不启动 IMU/Fall 后台链路，板端调试时才打开 `app_main.c` 中的受控启动块。不消费 WoM、不启用芯片侧 INT 事件源。后续若启用 fall service queue/window 投递或 data-ready 中断，应继续落在 service 层。
 - `components/imu_motion`：做纯算法接口 owner，输入标准化 motion window，输出 `raise_detected / reject_reason / debug metrics`；不得访问 I2C、GPIO、FreeRTOS 或 board 配置。
 
 ## Runtime Data Flow
@@ -47,8 +47,8 @@ board_imu board facts
 ```
 
 - 当前硬件事实：2026-06-04 COM3 样板曾按板测归为 `QMI_INT1 -> GPIO21` 浮空/开路风险；2026-07-07 当前 COM7 板已闭环捕获 `wom_event source=irq gpio=21 statusint=0x02 status1=0x04`，证明当前板 GPIO IRQ 链路可用。当前固件不启用 WoM、不配置芯片 INT 事件源；GPIO21 ISR 只验证 ESP32 侧中断路径与 service owner 分层。
-- 当前配置语义：`imu_service` 启动后只做探测和统一配置，使用最大动态范围：加速度 `accel_fs=3`（±16g），陀螺仪 `gyro_fs=7`（±2048 dps），`int1_source/int2_source=QMI8658C_INT_SOURCE_DISABLED`。
-- 当前结果语义：`imu_service` 的 `RUNNING/configured=true` 表示芯片完成统一配置、GPIO21 ISR 已安装，且 service 会进入 50Hz 采样循环；`fall_detection_service` 的 `RUNNING/model_ready=true` 表示模型已加载并通过内嵌 test vector。跌倒告警第一版已接入轻量状态机：单窗口 `fall_prob>=0.80` 确认，复用 `app_alert_manager` 做红屏/震动/提示音，并通过 watch endpoint 上传一次；连续 3 个窗口 `fall_prob<0.50` 后清除。
+- 当前配置语义：默认启动时 IMU/Fall 后台链路关闭，不会配置 QMI8658C、安装 GPIO ISR、启动 50Hz 采样或加载 Fall 模型。打开受控启动块后，`imu_service` 启动仍使用最大动态范围：加速度 `accel_fs=3`（±16g），陀螺仪 `gyro_fs=7`（±2048 dps），`int1_source/int2_source=QMI8658C_INT_SOURCE_DISABLED`。
+- 当前结果语义：默认开机日志应出现 `boot_stage: imu_service_disabled_by_default` 和 `boot_stage: fall_detection_disabled_by_default`。调试打开后，`imu_service` 的 `RUNNING/configured=true` 表示芯片完成统一配置、GPIO21 ISR 已安装，且 service 会进入 50Hz 采样循环；`fall_detection_service` 的 `RUNNING/model_ready=true` 表示模型已加载并通过内嵌 test vector。
 
 ## Framework Contract
 
@@ -83,6 +83,8 @@ board_imu board facts
 - `[x]` 2026-07-07：将 IMU/Fall 大窗口缓冲迁到 PSRAM：`imu_service` 的 200 帧 ring 与 publish window、`fall_detection_service` 的 queue storage/current window/model input 均改为 `heap_caps_*` + `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`；`fall_detect` task 栈改为 `xTaskCreateWithCaps(..., MALLOC_CAP_SPIRAM)`。
 - `[x]` 2026-07-07：按用户要求将当前 QMI8658C/IMU/Fall 关键运行日志中文化，并统一为表格化单行输出；QMI 原始采样调试、`imu_service` 50Hz 采样日志、窗口发布和 fall 推理结果按约 2s 输出（50Hz 下每 100 个样本）。低风险清除窗口数同步改为 2，约 4s 恢复证据。
 - `[x]` 2026-07-08：部署 V1 6ch TCN 模型 `tcn_v1_rf4s_6ch_5s`，输入从旧 3ch/200帧/600元素升级为 6ch/250帧/1500元素；gyro 转 rad/s，阈值 0.80→0.50；COM7 板端 `Model::test()` 通过，internal RAM=32KB。
+- `[x]` 2026-07-29：按用户要求将 IMU/Fall 后台链路改为开机默认关闭，避免未调试时持续采样、加载 Fall 模型和刷 INFO 日志；`原始表`、`采样表`、`rtc_int_sample`、`dry_run` 周期日志均降为 `ESP_LOGD`。
+- `[x]` 2026-07-29：将默认关闭改为正常生命周期调用；新增 `imu_service_destroy()`，由 IMU owner task 异步释放任务、GPIO21 ISR、窗口队列注册和 PSRAM 缓冲。Fall 使用已有 `fall_detection_service_destroy()`，动态关闭顺序固定为 Fall 后 IMU，重新启动需等待 IMU 状态回到 `STOPPED`。
 - `[ ]` 后续补离线 replay/evaluator，把真实样本与规则阈值调参从固件循环中拆出来。
 - `[ ]` 后续讨论并实现真实抬腕识别策略。
 
@@ -96,6 +98,8 @@ board_imu board facts
 - 2026-07-07：用户明确“不需要 WoM，统一配置就行”。当前固件删除 WoM public API、STATUSINT public read、service GPIO ISR/task notification/poll fallback，芯片侧 INT 字段只作为后续 data-ready/FIFO 中断扩展预留。
 - 2026-07-07：用户确认采用 `imu_service -> imu_sensor -> qmi8658c`，并要求安装 GPIO21 ISR。当前决策为：ESP32 GPIO ISR 属于 `imu_service` 运行时资源；`imu_sensor` 只做传感器适配；`qmi8658c` driver 不知道 GPIO21，也不安装 ISR。
 - 2026-07-07：用户要求“不需要 `#if 0`”，确认 IMU service 默认启动；该启动只验证统一配置和 GPIO21 ISR 事件计数，不表示已经开启连续采样或跌倒/抬腕算法。
+- 2026-07-29：用户重新要求关闭周期 IMU/电源日志并让 IMU 默认关闭；当前决策覆盖 2026-07-07 的默认启动口径，IMU/Fall 后台链路默认不启动，调试时再打开 `app_main.c` 里的受控启动块。
+- 2026-07-29：默认启动策略不再依赖 `#if 0`；`app_main` 通过 `kMotionServicesEnabledByDefault` 选择调用 `start()` 或 `destroy()`，运行时调用方可复用同一组 service 生命周期 API。
 - 2026-07-07：用户确认第一版先走稳定 50Hz 采样，而不是 FIFO Watermark；当前只在 `imu_service` 内缓存 200 帧窗口，不投递 fall service，不做模型推理。
 - 2026-07-07：当前 QMI8658C 读取方法按 Waveshare 对齐口径收口：`CTRL1=0x60`、`CTRL5=0x03`，读取时分段取 `STATUS0`、24-bit timestamp、temperature 和从 `AX_L` 开始的 12 字节六轴原始数据。
 - 2026-07-07：当前板六面映射只作为 board fact 记录在 `board_imu`，暂不新增通用坐标转换 API；后续 fall/raise 的模型输入坐标系需要基于该事实单独定义。
@@ -105,12 +109,14 @@ board_imu board facts
 ## Validation and Acceptance
 
 - source test：锁定 service 不硬编码 I2C 地址，driver 不消费 board facts，`imu_motion` 不访问硬件/FreeRTOS；锁定 public header 不再出现 WoM API/type；锁定 `imu_service` 不直接 include/call `qmi8658c_*`，GPIO ISR/task notification 只出现在 service 层。
-- board evidence：当前第一版要求正常固件可 build/app-flash；开机日志应出现 `started: sampling_50hz`、`probe:`、`configured:`、`int1_gpio_ready`、`sampling_started: rate_hz=50 window_frames=200`、周期性 `sample_50hz:`、`boot_stage: imu_service_ready`、`Model::test()` 通过、`window_published` 和 `fall_window_result`。
+- board evidence：当前默认固件可 build/app-flash；开机日志应出现 `boot_stage: imu_service_disabled_by_default` 和 `boot_stage: fall_detection_disabled_by_default`，默认不应出现 `原始表`、`采样表`、`window_published`、Fall 模型加载或 `fall_window_result`。需要 IMU/Fall 板端验证时，先打开 `app_main.c` 受控启动块，再观察 `probe:`、`configured:`、`int1_gpio_ready`、`sampling_started`、窗口和模型日志。
 - 2026-07-07 COM7 evidence：`board_logs/2026-07-07-06-11-28-serial.log` 显示 `configured registers: ctrl1=0x60 ctrl2=0x33 ctrl3=0x73 ctrl5=0x03 ctrl7=0x03`，`sample_50hz count=200 window_ready=1`，采集至 `count=1350`，`panic_log_seen=0`。
 - 2026-07-07 COM7 fall evidence：`board_logs/2026-07-07-06-39-36-fall-detection-espdl.log` 显示 `model loaded: input=float exp=0 shape=[1, 600], output=float exp=0 shape=[1, 2]`、`dl::Model: Test Pass!`、`window_published: sequence=1 source_sample_count=200`、`fall_window_result: sequence=1 ... label=ADL(0) ... adl_prob=0.8520 fall_prob=0.1480 threshold=0.80 infer_ms=14.31`，summary `panic_log_seen=false`。
 - 2026-07-07 COM7 fall alert evidence：`board_logs/2026-07-07-07-26-15-fall-alert-state-machine-psram-alert-tasks.log` 显示 `fall_window_result: sequence=12 ... fall_prob=0.8520` 后立刻 `fall_alert_confirmed`；随后 `haptic_alert_player: initial danger haptic started/finished`、`audio_alert_player: warning playback started/finished`、`display_alert: danger overlay shown`、`fall_app_upload_queued` 和 `watch_endpoint: danger alert dispatched: type=fall prob=0.8520 seq=1`；连续 3 个低风险窗口后 `fall_alert_cleared: ... clear_windows=3`，summary `panic_log_seen=false`。
 - 2026-07-07 COM7 PSRAM buffer evidence：`board_logs/2026-07-07-07-46-41-fall-psram-window-buffers.log` 显示 `heap_init` 主 RAM 池恢复到 `142 KiB`，资源快照 `RAM: 304 KB / 332 KB (91.8%)`，`STACK: internal_free=26482 largest=24576 psram_free=6651280`；同轮仍有 `window_published`、连续 `fall_window_result`、`fall_alert_confirmed`、本地震动/提示音、`danger alert dispatched: type=fall` 和 `fall_alert_cleared`，summary `panic_log_seen=false`。
 - 2026-07-07 中文日志验证：`qmi8658c` 周期日志为 `原始表`，`imu_service` 周期日志为 `采样表`、窗口日志为 `窗口表`，`fall_detection` 推理/告警日志为 `跌倒表`、`跌倒告警已确认/已清除`；普通采样、窗口发布和 fall 推理结果均按约 2s 输出；source tests 和 `idf.py build` 已覆盖 UTF-8 字符串编译。
+- 2026-07-29 默认关闭与日志降噪验证：相关 source tests 44 passed；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xabd730`，app free `0x3428d0`/23%。板端仍需复验默认启动日志只出现 disabled by default，且不加载 Fall 模型、不输出 IMU/RTC/sleep 周期 INFO 日志。
+- 2026-07-29 生命周期改造验证：相关 source tests 44 passed；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xabf3e0`，app free `0x340c20`/23%。COM7 已完成刷写并采集到默认 disabled 日志、`startup_sequence_done`，截取窗口未见 panic、Fall 模型加载或 IMU 采样；完整 start -> destroy -> start 仍需专门运行时入口覆盖。
 - context validation：本文档变更至少运行 `uv run python scripts/context/validate_context.py --level standard --q "IMU runtime framework QMI8658C board_imu imu_service imu_motion" --brief`。
 - build rule：若只改本文档，不要求 `idf.py build`；若后续改 `components` 或 `main` 代码，必须跑相关 source tests 和 `idf.py build`，普通 app 改动用 `idf.py -p COM3 app-flash` 验证。
 
@@ -121,4 +127,4 @@ board_imu board facts
 
 ## Next Step
 
-- 下一步最小动作：把真实 ADL/FALL 动作样本做离线 replay/evaluator，对比板端 `fall_prob` 与训练仓库评估结果；重点观察 `0.50~0.80` 灰区动作、误报动作和连续窗口推理耗时峰值，再决定是否需要调阈值或加入更细的产品策略。
+- 下一步最小动作：先在板端验证默认冷启动无 panic；调试时调用 `imu_service_start()` 后再调用 `fall_detection_service_start()`，关闭时按 `fall_detection_service_destroy()` -> `imu_service_destroy()`，确认快照 `STOPPED` 后再重新启动。

@@ -7,7 +7,7 @@ summary: 视觉复核原理图并完成 COM3 确定性板测，确认当前样�
 last_reviewed: 2026-06-04
 memory_type: episodic
 scope: repo
-owners: components/qmi8658c, main/app/board_imu.c, main/services/imu_service.c
+owners: components/qmi8658c, main/app/board_imu.c, main/services/sensors/imu_service.c
 triggers: QMI8658C, INT1, GPIO21, STATUSINT, WoM, polling fallback, board evidence
 evidence_level: observed
 garden_status: keep-evidence

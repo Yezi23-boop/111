@@ -2,7 +2,7 @@
 id: watch-foreground-session-lifecycle-plan
 tags: context, plans, foreground-session, lifecycle, resource-arbitration, freertos, hermes, official-chat, ble, espdl
 summary: 先盘点全系统动态资源的 owner 与生命周期，再为 Hermes、official_chat 和 BLE provisioning 建立完整的前台资源创建/销毁机制，并通过强前台 gate 和后台 quiesced ACK 完成可验证切换。
-last_reviewed: 2026-07-14
+last_reviewed: 2026-07-29
 memory_type: task
 scope: task
 owners: docs/context/plans/active/2026-07-14-watch-foreground-session-lifecycle-plan.md, main/services/memory_watch/memory_watch_service.c, main/services/official_chat_service.c, main/services/network/network_service.c, main/services/runtime_gate/foreground_runtime_gate.c, main/services/safety/background_service_manager.c
@@ -440,12 +440,32 @@ idf.py build
 
 ## 进度
 
+### 本轮闭环状态（2026-07-29）
+
+- `[x]` 阶段 3 代码实现：BLE/SoftAP provisioning 已由 network owner task 异步管理，包含创建、停止、销毁、generation、gate ownership 与 UI snapshot；真实 Wi-Fi 页面交互仍未验证。
+- `[x]` 阶段 4：foreground gate 已收敛为 fail-fast `try_acquire(owner)`。
+- `[x]` 阶段 5：Hermes/official_chat owner task 内最多等待 5 秒，支持离页取消并 fail-closed。
+- `[x]` 阶段 6：background quiesce generation/ACK 已完成，前台 owner 在确认后才创建重资源。
+- `[x]` 阶段 7：代码与观测入口完成，COM7 app-flash-monitor 冷启动回归已复跑通过；真实 Wi-Fi 页面 BLE/SoftAP 交互仍需单独人工覆盖。
+
+以上状态以本节为准；下方历史阶段流水中的旧未勾选项仅保留为历史记录。
+
 - `[x]` 初步计划落地。
 - `[x]` 阶段 0：资源清单与基线锁定。已完成全系统覆盖矩阵、三类强前台详细审计以及后续 source-test 断言清单。
 - `[x]` 阶段 1：Memory Watch owner 内部生命周期。desired state 已收回 owner task，foreground snapshot/generation、gate acquire fail-closed、离页 operation stop ACK 和初始化部分失败统一 cleanup 已落地。
 - `[x]` 阶段 2：official_chat owner 内部生命周期。gate acquire 已 fail closed，start 失败进入统一 shutdown，gate/audio blocker 延后到 callback/transport/audio/instance destroy 完成后释放。
-- `[ ]` 阶段 3：BLE provisioning 异步生命周期。
-- `[ ]` 阶段 4：精简 foreground gate。
+- `[x]` 2026-07-29：修复 BLE transition worker 极早完成时通知空 `s_network_task_handle` 的冷启动 panic；network owner task 入口发布真实 handle，finish 路径通知前判空。
+- `[x]` 2026-07-29：阶段 3 局部推进。Wi-Fi 管理页 BLE/SoftAP provisioning 入口已从 LVGL 回调同步启动迁到 `network_service` 异步 owner worker；UI 只提交 `network_service_request_ble()` / `network_service_request_portal()`，source tests 锁住不再直连 `network_manager_start_*_provisioning()`。
+- `[x]` 2026-07-29：阶段 3 局部推进。`ble_presence_stop()` 在 host task 未确认退出时返回 `ESP_ERR_TIMEOUT`，不继续 `nimble_port_deinit()` 或清空 runtime，避免把未停止的 BLE owner 伪装成已销毁。
+- `[x]` 2026-07-29：阶段 3 局部推进。新增 provisioning 异步 stop 路径：`network_manager_stop_provisioning()` 只收口 active provisioning transport，`network_service_request_stop_provisioning()` 由 worker 执行 stop，Wi-Fi 管理页返回/删除只提交 stop 请求。
+- `[x]` 2026-07-29：阶段 3 局部推进。BLE provisioning gate 改为独立 `s_ble_provisioning_gate_held` 标记，自动结束后的周期对账不再依赖最后一次 operation 类型；SoftAP start 前会先释放已结束的 BLE provisioning gate，避免 operation 覆盖导致 gate 泄漏。
+- `[x]` 2026-07-29：阶段 3 局部推进。Wi-Fi 已连接且 BLE provisioning transport 仍 active 时，`network_service` 自动投递 stop provisioning；真实 stop/deinit 仍走 internal-stack worker，避免 PSRAM 栈 monitor task 直接收尾 NimBLE/provisioning manager。
+- `[x]` 2026-07-29：阶段 3 局部推进。`network_service_snapshot_t` 增加 provisioning pending/error/generation，Wi-Fi 管理页 300ms 刷新可显示“启动中/配网失败”，不再把请求入队成功误当作 transport 启动成功。
+- `[x]` 2026-07-29：阶段 3 局部推进。修复旧 provisioning worker 结果覆盖新请求 snapshot 的竞态；finish 路径只有当前 generation 才写 UI pending/error，保持“最新请求 wins”。
+- `[x]` 2026-07-29：阶段 3 局部推进。Wi-Fi 管理页不再直接调用有副作用的 `network_manager_get_status()`；`network_service_task` 轮询 manager 后发布纯 `network_service_wifi_status_t` 快照，UI timer 只复制快照并渲染。
+- `[x]` 2026-07-29：阶段 3 支撑项。Memory Watch / notification center 的 command queue backing storage、conversation cache、Hermes UI conversation/inbox/detail 缓存和通知中心 scratch 已迁到 PSRAM，释放 internal 静态占用，给 BLE provisioning/TLS 留出更大的 internal heap 连续块。
+- `[ ]` 阶段 3：BLE provisioning 异步生命周期。代码缺口已修复，仍待 COM7 真实 Wi-Fi 页面 BLE/SoftAP provisioning 进入、退出、配网完成和普通 BLE 恢复验证。
+- `[x]` 阶段 4：精简 foreground gate。`acquire(owner, timeout_ms)` 已收敛为 `try_acquire(owner)` fail-fast；quiet window API 与泛化 `FUTURE_PAGE` owner 已删除。
 - `[ ]` 阶段 5：自动切换与 5 秒超时。
 - `[ ]` 阶段 6：Safety Monitor quiesced ACK。
 - `[ ]` 阶段 7：组合真机回归。
@@ -469,6 +489,17 @@ idf.py build
 - ESP-IDF build：通过；`111.bin=0xac6040`，最小 app 分区余量 `0x339fc0`（23%）。
 - 未执行 app-flash/COM3；连接中离页、start 失败与 gate 冲突的真机顺序留待阶段 7。
 
+### 阶段 3 局部验证
+
+- 2026-07-29 BLE transition 空句柄 panic 修复：网络/BLE 相关 source tests 26 passed；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xabd7a0`，app free `0x342860`/23%；COM7 `app-flash-monitor` 30 秒 `panic_log_seen=false`，日志显示 `BLE transition complete: enabled=0 generation=1 result=ESP_OK gate_held=0` 后继续到 IMU/Fall disabled by default。
+- 2026-07-29 BLE provisioning start/stop 异步化与 presence stop fail-closed：复查 subagent 确认 P1 缺口为 Wi-Fi 页面 provisioning 入口同步和 gate 未覆盖 active 全期，P2 缺口为 `ble_presence_stop()` 超时后仍继续 deinit。本轮完成入口迁移、页面退出异步 stop 路径，并让 presence stop 超时返回 `ESP_ERR_TIMEOUT`。聚焦 BLE/network source tests 26 passed；layering warning 0；全量 tests 427 passed / 5 个既有基线失败；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xabdb50`，app free `0x3424b0`/23%；COM7 三次 `app-flash-monitor` 30 秒均 `panic_log_seen=false`，日志显示 BLE transition 完成后 Wi-Fi 到 `SERVICE_READY`。
+- 2026-07-29 BLE provisioning gate 来源标记：复查 subagent 发现 P1 竞态，BLE provisioning 自动结束但 gate 未被 poll 释放时，若用户切 SoftAP 会覆盖 operation 并可能泄漏旧 gate。本轮新增 `s_ble_provisioning_gate_held`，自动对账和 SoftAP 切换前释放均基于 gate 来源标记。聚焦 BLE/network/UI source tests 28 passed；layering warning 0；全量 tests 429 passed / 5 个既有基线失败；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xabdc20`，app free `0x3423e0`/23%；COM7 `ble-provisioning-gate-owner-flag` 30 秒 `panic_log_seen=false`，Wi-Fi 到 `SERVICE_READY`。
+- 2026-07-29 BLE provisioning 配网完成自动收口：当 `network_service` 观察到 Wi-Fi connected、BLE active 且 BLE provisioning gate 仍由本轮持有时，自动投递 `STOP_PROVISIONING`，由 internal-stack worker 调 `network_manager_stop_provisioning()` 完成 stop/deinit。聚焦 BLE/network/UI source tests 29 passed；全量 tests 430 passed / 5 个既有基线失败；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xabdd10`，app free `0x3422f0`/23%；COM7 `ble-provisioning-auto-stop-on-wifi-connected` 30 秒 `panic_log_seen=false`，Wi-Fi 到 `SERVICE_READY`。本次未触发真实 provisioning 完成事件，真实路径仍需 Wi-Fi 页面验证。
+- 2026-07-29 BLE provisioning UI 可见结果：`network_service_snapshot_t` 发布 provisioning pending/error/generation，Wi-Fi 管理页额外读取该 snapshot 并显示启动中/配网失败，同时锁住重复点击。聚焦 BLE/network/UI source tests 30 passed；全量 tests 431 passed / 5 个既有基线失败；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xabde30`，app free `0x3421d0`/23%；COM7 `ble-provisioning-snapshot-ui-status` 30 秒 `panic_log_seen=false`，Wi-Fi 到 `SERVICE_READY`。本次未人工打开 Wi-Fi 管理页，真实 UI 文案仍待页面验证。
+- 2026-07-29 BLE provisioning snapshot generation guard：复查 subagent 发现旧 worker 完成时会无条件清新请求 pending；本轮改为只有 `s_ble_provision_request_generation == generation` 时才写 UI snapshot，旧 worker 仍更新 applied generation 和完成通知。聚焦 BLE/network/UI source tests 30 passed；全量 tests 431 passed / 5 个既有基线失败；`idf.py build` 通过，`111.bin=0xabde30`。
+- 2026-07-29 Wi-Fi 管理页纯快照读取：`network_service_task` 发布 `network_service_wifi_status_t`，`network_service_get_wifi_status()` 和 `network_service_is_wifi_connected()` 只复制服务层缓存，不再在 UI getter 路径触发 `network_manager_get_status()`。复查 subagent 发现旧 provisioning error 可能压过后续已连接文案，已让错误分支额外要求 `!status.wifi_connected`。聚焦 BLE/network/UI source tests 34 passed；layering warning 0；全量 tests 431 passed / 5 个既有基线失败；`git diff --check` 无 whitespace error，仅 line ending warning；`idf.py build` 通过，`111.bin=0xabdf90`，app free `0x342070`/23%；COM7 `ble-provisioning-pure-wifi-snapshot` 30 秒 `panic_log_seen=false`，Wi-Fi 到 `SERVICE_READY`。本次仍未人工打开 Wi-Fi 管理页。
+- 2026-07-29 Memory Watch / notification center PSRAM 缓存迁移：`memory_watch_service` 的 queue item storage 与 conversation cache 改为运行期 PSRAM 分配；Hermes UI controller 的 conversation/inbox/detail 缓存和通知中心 inbox scratch 同步迁移，避免大块业务缓存继续占用 internal `.bss`。Memory Watch source tests 38 passed；layering warning 0；`git diff --check` 无 whitespace error，仅 line ending warning；`idf.py build` 通过，`111.bin=0xabe230`，app free `0x341dd0`/23%；`idf.py size` 显示 DIRAM used `225147`、`.bss=44888`，相比本轮前约 `252355/.bss=72096` 释放约 27 KiB internal 静态占用；`nm` 仅剩相关缓存指针/小符号。
+
 ## 十四、待继续讨论
 
 - 是否确认 Safety Monitor quiesced 等待上限为 2500ms。
@@ -478,4 +509,8 @@ idf.py build
 
 ## 下一步
 
-进入阶段 3，先把 BLE presence/provisioning 的启动和停止移出 LVGL 回调，再让 gate 覆盖真实 BLE 活跃期。保留现有 presence 与 provisioning 两套语义，不在本阶段静默删除产品入口；是否最终只保留页面级 provisioning 仍需产品确认。
+本轮代码阶段闭环记录（2026-07-29）：阶段 3 的 BLE/SoftAP provisioning 异步 owner、阶段 4 的 fail-fast foreground gate、阶段 5 的 owner task 内 5 秒等待与阶段 6 的 generation-owned quiesced ACK 均已完成。复查后补充了 quiesce finish 的 generation 所有权、严格 ACK 条件，以及 BLE provisioning 自动完成/启动失败后的普通 presence 恢复。聚焦 source tests `57 passed`，全量 source tests `438 passed`；layering `warning_count=0`、`known_exception_count=2`；ESP-IDF build 通过，`111.bin=0xabe680`、app free `0x341980`（约 23%）。COM7 `app-flash-monitor` 冷启动回归已通过：`panic_log_seen=0`、`residual_count=0`，日志到达 `network_service_ready`，观测 `internal_free=76971`、largest=55296`、psram_free=6803516`；真实 Wi-Fi 页面 BLE/SoftAP 交互仍须单独由用户操作验证。
+
+2026-07-29 复跑闭环：context standard 校验错误 0、警告 0；聚焦 foreground/Hermes/official_chat/BLE/board source tests `53 passed`；`git diff --check` 无 whitespace error，仅 CRLF/LF 提示；ESP-IDF build 通过，`111.bin=0xabe680`、app free `0x341980`（23%）；COM7 `app-flash-monitor` 45 秒复跑通过，日志 `board_logs/2026-07-29-19-46-16-foreground-session-lifecycle-final-rerun.log`，summary `board_logs/2026-07-29-19-46-16-foreground-session-lifecycle-final-rerun.summary.json`，`panic_log_seen=0`、`residual_count=0`，启动到 `startup_sequence_done`、`ui_first_frame_ready` 和 `SERVICE_READY`，冷启动快照 `internal_free=61423`、`largest=53248`、`psram_free=6777484`。
+
+下一步由用户手动覆盖真实 Wi-Fi 页面 BLE provisioning -> 配网完成 -> stop/deinit -> gate release -> 普通 BLE presence 恢复，以及 BLE -> SoftAP provisioning。当前 COM7 冷启动只证明启动与基础 owner/heap 观测，无 panic/Guru/WDT/NO_MEM，不等同于完成页面交互验收。

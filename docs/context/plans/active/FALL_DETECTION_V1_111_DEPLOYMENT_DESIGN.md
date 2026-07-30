@@ -2,7 +2,7 @@
 id: plan-fall-detection-v1-111-deployment
 tags: plan, active, imu, fall-detection, esp-dl, qmi8658c, event-trigger, post-check, 6ch, 6s-window, candidate
 summary: Fall Detection V1 在 111 固件中的部署计划，当前 111 固件采用 50Hz 六通道 6s 事件窗口、2s CNN candidate、post-check 严格确认和本地报警边界。
-last_reviewed: 2026-07-08
+last_reviewed: 2026-07-29
 memory_type: task
 scope: imu
 status: active
@@ -349,6 +349,8 @@ smoke FALL / ADL 样本
 - `[x]` 2026-07-19：让模型从报警决策者退回 candidate 生成器。`imu_service` 事件窗口扩为 50Hz / 6s / 300 帧，`fall_detection_fill_model_input()` 只提取 `[trigger-35, trigger+64]` 的 100 帧 2s 子窗口；`fall_detection_service` 新增 post-check，普通确认要求 `fall_prob>=0.60 && low_motion && posture_change`，强置信兜底要求 `fall_prob>=0.90 && low_motion`，post-check 失败不红屏、不上传。
 - `[x]` 2026-07-19：进一步优化 candidate + post-check 可维护性：推理前显式校验基础窗口、模型子窗口和 post-check 区间契约；`post检查表` 增加触发帧 `acc/gyro/jerk` 强度，便于板端按误触发原因回看。
 - `[x]` 2026-07-08：默认策略确认：跌倒告警可以上传 `danger alert`，但 `APP_ALERT_SOURCE_FALL_DETECTION` 不播放危险提示音，也不抢占普通音频输出。
+- `[x]` 2026-07-29：按用户要求随 IMU 将 Fall runtime 改为开机默认关闭，避免 IMU 不采样时仍加载 ESP-DL runner 和 PSRAM 窗口缓冲；默认启动时不应出现模型加载、candidate、post-check、红屏或 danger alert 上传。
+- `[x]` 2026-07-29：Fall runtime 的动态关闭沿用 `fall_detection_service_destroy()`；关闭 IMU/Fall 时先断开并销毁 Fall 模型运行时，再调用 `imu_service_destroy()` 释放采样任务、GPIO ISR 和 PSRAM 缓冲，避免消费者仍访问 IMU 窗口。
 - `[ ]` 板端验收静止佩戴、平放、抬腕、翻腕、快速甩手、拍桌/撞表、快速坐下和模拟跌倒。
 
 ## 决策记录
@@ -367,6 +369,8 @@ smoke FALL / ADL 样本
 - 2026-07-08：按调试召回优先路线部署 2s/6ch CNN recall90 模型，临时偏离原 5s RF5s 目标态。该模型阈值 `0.30` 来自训练 run 的 `validation_selected_threshold`：验证集 `fall_recall=1.0`、ADL false positives=1/245；测试集 `fall_recall=0.9333`、ADL false positives=26/712，误报风险高于 RF5s，需要板端 ADL/FALL 日志回调。
 - 2026-07-19：当前固件实际确认阈值以源码为准，`FALL_MODEL_THRESHOLD_DEFAULT=0.60`，不再采用 2s CNN 训练侧 recall90 阈值 `0.30` 作为固件默认。Event Trigger 实际阈值以 `main/services/sensors/imu_service.c` 为准：`A_high=25.0m/s^2`、`G_high=5.0rad/s`、`J_high=10.0m/s^2/frame`、`GJ_min=5.0m/s^2/frame`；`JERK_HIGH` 需要额外满足 `acc_norm>16.0m/s^2` 或 `gyro_norm>3.0rad/s`。
 - 2026-07-19：当前确认策略改为严格确认：模型输出只作为 `fall candidate`，不再直接触发本地红屏或 App 上传；post-check 使用事件前 1s 平均重力、事件后 2~3s 平均重力和事件后 2~5s 低运动统计。严格确认会引入约 5 秒事件后确认延迟，这是当前误报优先收敛的取舍。
+- 2026-07-29：当前 Fall V1 逻辑仍保留在源码中，但默认不随 deferred services 启动；这是启动/资源策略变化，不改变模型输入、Event Trigger、candidate + post-check 或 danger alert 静音上传策略。
+- 2026-07-29：默认关闭不是编译期屏蔽；`app_main` 通过生命周期函数选择启动/销毁。运行时关闭必须先 `fall_detection_service_destroy()` 后 `imu_service_destroy()`，重新启动需等待 IMU owner task 完成销毁并回到 `STOPPED`。
 
 ## 验证与验收
 
@@ -381,6 +385,7 @@ smoke FALL / ADL 样本
 - 2026-07-19 jerk 组合触发验证：`uv run python -m unittest tests.test_fall_detection_inference_source tests.test_imu_service_source tests.test_fall_detection_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xac6640`，app free `0x3399c0`/23%。板端仍需按 `flags=0x01/0x02/0x04` 分类采静止、小幅旋转、敲击、模拟跌倒日志。
 - 2026-07-19 candidate + post-check 实现验证：`uv run python -m unittest tests.test_fall_detection_inference_source tests.test_imu_service_source tests.test_fall_detection_service_source` 通过 17 tests；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xac6e80`，app free `0x339180`/23%；context standard 错误 0、警告 0。板端仍需验证 candidate 出现但 post-check 失败时不红屏、不上传，以及模拟跌倒能通过 `low_motion` 与姿态变化确认。
 - 2026-07-19 candidate + post-check 进一步优化验证：source tests 17 passed；`git diff --check -- main/services/fall_detection_service.c tests/test_fall_detection_service_source.py` 无 whitespace error；`idf.py build` 通过，`111.bin=0xac6f40`，app free `0x3390c0`/23%；context standard 错误 0、警告 0。
+- 2026-07-29 默认关闭验证：IMU/Fall 启动契约与日志降噪 source tests 44 passed；`git diff --check` 无 whitespace error；`idf.py build` 通过，`111.bin=0xabd730`，app free `0x3428d0`/23%。板端仍需复验默认不加载 Fall 模型，且没有 candidate/post-check/红屏/上传。
 
 ## 幂等与恢复
 
@@ -389,4 +394,4 @@ smoke FALL / ADL 样本
 
 ## 下一步
 
-- 下一步最小动作：完成本轮 build/context 验证后，接板采集 2s CNN candidate + 6s post-check 的静止佩戴、平放、小幅旋转、快速翻腕、拍桌/撞表、快速坐下和模拟跌倒日志；重点确认普通 ADL 可出现 candidate 但 post-check 失败不告警，模拟跌倒能在 `low_motion` 与姿态变化成立后确认。
+- 下一步最小动作：先板端确认默认启动不加载 Fall runtime；需要继续调试跌倒识别时，临时打开 `app_main.c` 中 IMU/Fall 受控启动块，再采集 2s CNN candidate + 6s post-check 的静止佩戴、平放、小幅旋转、快速翻腕、拍桌/撞表、快速坐下和模拟跌倒日志。

@@ -596,6 +596,9 @@ git diff --check -- . ':!managed_components'
 - `[x]` 阶段 5：迁移 internal Inbox 写入鉴权并关闭公网 create。
 - `[x]` 阶段 6：补 WS 分段观测、同设备串行、Hermes HTTP 连接复用和 `bytearray` 音频累计。
 - `[x]` 审查修复：补 terminal replay、Hermes run 瞬时重试/未知态、重连动态投递、`request_accepted` pending 门槛、readiness、真实 POST 私有 gate 与容器最小权限。
+- `[x]` 云端运行加固：为 Hermes/watch 设置 memory、swap、PID 和日志上限，部署阿里云容器 health timer 与香港 relay health timer，并将阿里云旧 cloudflared 收敛为显式 profile。
+- `[x]` Cloudflare 主路切换：`watch.934000.xyz` 已从香港 relay connector 切到阿里云本机 cloudflared connector；云端 Compose 增加 `18787/19119` 本机兼容端口，删除香港 `ct-23` connector 后公网不再返回 `502`。
+- `[x]` MiMo 按量付费 API 修复：新的 `sk-` key 与 `https://api.xiaomimimo.com/v1` 已同步到阿里云 Hermes secret、Hermes 数据目录 `.env` 和 watch endpoint ASR secret；Hermes `/v1/responses`、公网 HTTP mock/WSS smoke，以及 HTTP/WSS 真实 Ogg Opus ASR smoke 均通过。
 - `[ ]` 阶段 7（部分完成）：阿里云部署、公网 gate、HTTP/WSS smoke 已完成；Windows Docker 未启动且 ESP32 COM3 不在线，待补本地容器与真机闭环。
 
 ## 决策记录
@@ -624,6 +627,9 @@ git diff --check -- . ':!managed_components'
 - Windows 当前只枚举到 `COM1`，ESP32 `COM3` 不在线，因此真机阶段不能在本轮自动执行。
 - 审查发现 readiness 失败后其他业务入口仍可能继续 lazy 初始化；现已统一 gate，并允许短暂 repository 初始化失败后重试。
 - 审查发现 GET 无法证明内部 POST 路由未暴露；private gate 已改为无凭据 POST，405 不再视为安全。
+- 阿里云 2 GiB 主机曾在没有明确 OOM kill 的情况下持续进入 memory pressure，导致 Hermes/watch/sshd 一起失去响应；容器无资源边界会把单服务峰值扩大成整机故障。
+- autossh 在阿里云重启后会指数退避，即使 connector 和 systemd unit 都显示 active，也可能因 listener 尚未恢复而持续返回 502；必须用业务健康检查驱动重连。
+- 2026-07-29 复测确认：公网 `502` 与手表端 TLS/DNS 无关，删除香港 `ct-23` 后 `watch.934000.xyz` 能稳定到达阿里云 watch endpoint。随后发现 MiMo `sk-` key 被错误搭配旧 `token-plan-cn.xiaomimimo.com/v1`；Hermes 持久数据目录 `.env` 与 watch endpoint 的独立 ASR secret 都必须同步改为 `https://api.xiaomimimo.com/v1`，否则文本链路可恢复但真实语音会在 ASR 阶段返回非 2xx。完成三处同步并重建 endpoint 后，真实 Ogg Opus ASR 恢复。
 
 ## 验证与验收
 
@@ -639,6 +645,9 @@ git diff --check -- . ':!managed_components'
 - 云端一次 WSS 指标：upload `351 ms`、Hermes `16031 ms`、persist `2 ms`、delivery `ws`。
 - 审查修复后公网 WSS mock Ogg 再次通过，顺序为 `request_accepted -> asr_result -> task_started -> conversation_message`；云端容器以 UID 10001、read-only rootfs、cap-drop ALL 运行。
 - context 证据：`docs/context/runs/2026-07-14-attempt-hermes-v25-conversation-reliability.md`、`docs/context/runs/2026-07-14-attempt-hermes-v25-review-fixes.md`。
+- 2026-07-20 云端加固：Hermes/watch 资源限制已由 Docker inspect 确认；阿里云与香港 30 秒 timer active；受控停止 relay 后自动恢复；公网 runtime gate 与 WSS smoke 通过。证据：`docs/context/runs/2026-07-20-attempt-hermes-cloud-memory-relay-hardening.md`。
+- 2026-07-29 主路切换与 MiMo API 修复：阿里云 `ai-memory-watch-cloudflared` 已注册；`runtime_status.ps1 -BaseUrl "https://watch.934000.xyz" -SkipDocker -SkipHermesApi -SkipServiceHealth -AssertPrivateNotExposed` 通过，watch health `online`，私有路径均未暴露。MiMo `sk-` key 与 `api.xiaomimimo.com` 配置同步到 Hermes secret 和持久 `.env` 后，Hermes `/v1/responses` 返回 completed 中文回复；公网 `smoke_test.ps1 -BaseUrl "https://watch.934000.xyz" -SkipServiceHealth` 通过，`voice_status=done/action=reminder_created/field_count=7`；公网 `websocket_smoke_test.ps1 -BaseUrl "wss://watch.934000.xyz/v1/watch/ws"` 通过，顺序为 `request_accepted -> asr_result -> task_started -> conversation_message`，`reply_status=done`。
+- 2026-07-29 真实语音复验：手表端曾出现 `asr_or_agent_error`，云端日志将请求定位为 `stage=asr` 的 `HTTPStatusError`。根因是 watch endpoint 仍保留旧 Token Plan ASR URL；同步其独立 ASR secret 并重建容器后，公网 `make_tts_sample.ps1 -> smoke_test.ps1 -UseRealAsr` 以及 `websocket_smoke_test.ps1 -AudioPath <real-ogg> -MockAsrText ''` 通过，均返回非空 ASR 文本与 Hermes 回复；WS 顺序为 `request_accepted -> asr_result -> task_started -> conversation_message`。
 
 最终验收必须同时满足：
 
@@ -665,3 +674,4 @@ git diff --check -- . ':!managed_components'
 2. 真机验证前台短任务、离页长任务、取消、重进对账、回复气泡与 Inbox；重点确认长任务不会回退为本地 timeout。
 3. 仅在确认不会启动第二个同名 cloudflared connector 后，再启动 Windows Docker Desktop 并执行本地 `release_gate.ps1 -RebuildContainer`。
 4. 真机与本地容器闭环后，将阶段 7 勾选并归档本计划；否则保持 active。
+5. 连续观察 24 小时云端 memory snapshot 与容器重启计数；Hermes 若反复触及 768 MiB，优先升级 4 GiB，不放宽到可再次拖死整机。

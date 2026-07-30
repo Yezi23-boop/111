@@ -133,6 +133,7 @@ Recommended reasons when recording:
 | Area | Owners | Start with |
 | --- | --- | --- |
 | AI Memory Watch / Hermes | `docs/context/plans/completed/2026-06-05-ai-memory-watch-hermes-page-plan.md`, `docs/context/knowledge/project/ai-memory-watch-product-positioning.md` | `docs/context/plans/completed/2026-06-05-ai-memory-watch-hermes-page-plan.md` |
+| Hermes 云端 Docker 部署与更新 | `server/watch_voice_endpoint/compose.cloud.yml`, `server/watch_voice_endpoint/deploy/Dockerfile.hermes.cloud` | `docs/context/procedures/hermes-cloud-docker-update.md` |
 | AI Memory Watch / Hermes inbox and notification | `docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md`, `main/services/memory_watch/memory_watch_service.c`, `main/services/memory_watch/memory_watch_voice_client.c`, `main/ui/custom/memory_watch_controller.c`, `main/ui/custom/memory_watch_view.c`, `server/watch_voice_endpoint/app.py` | `docs/context/plans/completed/2026-06-25-hermes-inbox-global-notification-plan.md` |
 | AI Memory Watch positioning | `docs/context/knowledge/project/ai-memory-watch-product-positioning.md` | `docs/context/knowledge/project/ai-memory-watch-product-positioning.md` |
 | Audio sessions | `components/audio_codec/audio_codec.c`, `components/audio_codec/include/audio_codec.h`, `components/espdl_inference/espdl_audio_runtime.cpp`, `components/traffic_inference/traffic_inference_realtime.cc`, `tests/test_audio_codec_port_source.py` | `docs/context/runs/2026-05-04-attempt-audio-codec-owner-session.md` |
