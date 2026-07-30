@@ -15,6 +15,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include "services/memory_watch/memory_watch_service.h"
@@ -423,12 +424,37 @@ static bool nc_is_blocked(void)
 }
 
 #define NC_SUMMARY_SCRATCH_MAX 20U
-static memory_watch_inbox_summary_t s_nc_scratch[NC_SUMMARY_SCRATCH_MAX]
-    __attribute__((section(".ext_ram.bss")));
+static memory_watch_inbox_summary_t *s_nc_scratch = NULL;
+
+/**
+ * @brief 为 notification center 的 inbox summary scratch 分配 PSRAM。
+ *
+ * 该 scratch 只在 LVGL timer poll 中短时使用，不参与 DMA/ISR；运行期分配比
+ * `.ext_ram.bss` 更明确，避免在未开启 external BSS sdkconfig 时仍落到 internal RAM。
+ */
+static bool nc_ensure_scratch(void)
+{
+    if (s_nc_scratch == NULL)
+    {
+        s_nc_scratch = (memory_watch_inbox_summary_t *)heap_caps_calloc(
+            NC_SUMMARY_SCRATCH_MAX, sizeof(memory_watch_inbox_summary_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_nc_scratch == NULL)
+    {
+        ESP_LOGW(TAG, "notification center PSRAM scratch unavailable");
+        return false;
+    }
+    return true;
+}
 
 void watch_nc_poll(bool is_recording, bool safety_alert_active)
 {
     if (s_bubble_cont == NULL)
+    {
+        return;
+    }
+    if (!nc_ensure_scratch())
     {
         return;
     }
@@ -656,4 +682,10 @@ void watch_nc_notify_hermes_reply(const char *request_id)
 void watch_nc_set_inbox_list_active(bool active)
 {
     s_inbox_list_active = active;
+}
+
+bool watch_nc_is_visible(void)
+{
+    return s_bubble_state == NC_BUBBLE_VISIBLE ||
+           s_bubble_state == NC_BUBBLE_VISIBLE_UPDATED;
 }

@@ -89,6 +89,9 @@ memory_watch_ws_event_kind_t MapEventKind(const std::string &type,
   if (type == "asr_result") {
     return MEMORY_WATCH_WS_EVENT_TURN_ASR_READY;
   }
+  if (type == "task_progress") {
+    return MEMORY_WATCH_WS_EVENT_TASK_PROGRESS;
+  }
   if (type == "conversation_message" && role == "assistant") {
     return MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE;
   }
@@ -118,6 +121,8 @@ void DispatchJson(const char *data, size_t len) {
   CopyText(event.message_id, sizeof(event.message_id),
            JsonStringField(root, "message_id").c_str());
   CopyText(event.role, sizeof(event.role), role.c_str());
+  CopyText(event.phase, sizeof(event.phase),
+           JsonStringField(root, "phase").c_str());
   CopyText(event.status, sizeof(event.status),
            JsonStringField(root, "status").c_str());
   CopyText(event.text, sizeof(event.text),

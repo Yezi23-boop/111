@@ -10,6 +10,7 @@ from tests.main_paths import UI_MEMORY_WATCH_CONTROLLER_HEADER
 from tests.main_paths import UI_MEMORY_WATCH_CONTROLLER_SOURCE
 from tests.main_paths import UI_MEMORY_WATCH_VIEW_HEADER
 from tests.main_paths import UI_MEMORY_WATCH_VIEW_SOURCE
+from tests.main_paths import WATCH_NOTIFICATION_CENTER_SOURCE
 
 
 class MemoryWatchUiSourceTests(unittest.TestCase):
@@ -52,6 +53,11 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_service_cancel_clarification()", source)
         self.assertIn("MEMORY_WATCH_SERVICE_STATE_UPLOADING", source)
         self.assertIn("MEMORY_WATCH_SERVICE_STATE_THINKING", source)
+        self.assertIn('strcmp(snapshot->progress_phase, "recognized")', source)
+        self.assertIn('return "已识别你的问题";', source)
+        self.assertIn('return "正在搜索";', source)
+        self.assertIn('return "正在执行任务";', source)
+        self.assertIn('return "正在整理结果";', source)
         self.assertIn("Hermes 在线", source)
         self.assertIn("void memory_watch_controller_init(lv_ui *ui);", header)
         self.assertIn("void memory_watch_controller_open(void);", header)
@@ -161,6 +167,11 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
 
         self.assertIn("MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS", source)
         self.assertIn("s_conversation_items", source)
+        self.assertIn('#include "esp_heap_caps.h"', source)
+        self.assertIn("memory_watch_controller_alloc_psram_caches", source)
+        self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
+        self.assertIn("s_inbox_summaries = (memory_watch_inbox_summary_t *)heap_caps_calloc", source)
+        self.assertIn("s_inbox_detail = (memory_watch_inbox_item_t *)heap_caps_calloc", source)
         self.assertIn("s_conversation_revision", source)
         self.assertIn("memory_watch_controller_sync_conversation", source)
         self.assertIn("snapshot->conversation_generation", source)
@@ -172,6 +183,16 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         self.assertNotIn("s_last_user_request_id", source)
         self.assertNotIn("s_last_reply_request_id", source)
         self.assertNotIn("memory_watch_service_history", source)
+
+    def test_notification_center_uses_psram_scratch_not_external_bss_hint(self) -> None:
+        source = WATCH_NOTIFICATION_CENTER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include "esp_heap_caps.h"', source)
+        self.assertIn("static memory_watch_inbox_summary_t *s_nc_scratch = NULL", source)
+        self.assertIn("nc_ensure_scratch", source)
+        self.assertIn("heap_caps_calloc(", source)
+        self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
+        self.assertNotIn("section(\".ext_ram.bss\")", source)
 
     def test_controller_reports_memory_watch_foreground_without_owning_transport(self) -> None:
         source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")

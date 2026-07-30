@@ -36,6 +36,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES]", header)
         self.assertIn("asr_text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES]", header)
         self.assertIn("reply_text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES]", header)
+        self.assertIn("progress_phase[MEMORY_WATCH_SERVICE_PHASE_MAX_BYTES]", header)
         self.assertIn("memory_watch_service_endpoint_config_t", header)
         self.assertIn("const char *base_url", header)
         self.assertIn("const char *device_id", header)
@@ -241,6 +242,11 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("MEMORY_WATCH_VOICE_CLIENT_MAX_AUDIO_BYTES", source)
         self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
         self.assertIn("memory_watch_service_alloc_audio_psram", source)
+        self.assertIn("memory_watch_service_alloc_psram_caches", source)
+        self.assertIn("s_command_queue_storage = (uint8_t *)heap_caps_calloc", source)
+        self.assertIn("s_conversation_items =", source)
+        self.assertIn("memory_watch_service_free(s_command_queue_storage)", source)
+        self.assertIn("memory_watch_service_free(s_conversation_items)", source)
 
         audio_alloc_section = source.split(
             "static void *memory_watch_service_alloc_audio_psram"
@@ -439,15 +445,20 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("strcmp(s_conversation_items[i].text, text) == 0", append_section)
 
         ws_event_section = source.split(
+            "static void memory_watch_service_apply_ws_event"
+        )[1].split("static void memory_watch_service_ws_event_cb")[0]
+        callback_section = source.split(
             "static void memory_watch_service_ws_event_cb"
         )[1].split("static void memory_watch_service_ws_disconnect_cb")[0]
         self.assertNotIn('strcmp(event->type, "asr_result")', ws_event_section)
         self.assertNotIn('strcmp(event->type, "conversation_message")', ws_event_section)
         self.assertNotIn('strcmp(event->type, "error")', ws_event_section)
+        self.assertIn("MEMORY_WATCH_WS_EVENT_TASK_PROGRESS", ws_event_section)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ASR_READY", ws_event_section)
         self.assertIn("MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED", ws_event_section)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE", ws_event_section)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ERROR", ws_event_section)
+        self.assertIn("xQueueSend(s_ws_event_queue, event", callback_section)
         self.assertIn("kWsWaitAsrReadyBit", source)
         self.assertIn("kWsWaitRequestAcceptedBit", source)
         asr_section = ws_event_section.split(
@@ -488,7 +499,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_service_reconcile_foreground", source)
         self.assertIn('#include "services/runtime_gate/foreground_runtime_gate.h"', source)
         self.assertIn("FOREGROUND_RUNTIME_OWNER_HERMES", source)
-        self.assertIn("foreground_runtime_gate_acquire", source)
+        self.assertIn("foreground_runtime_gate_try_acquire", source)
         self.assertIn("foreground_runtime_gate_release", source)
         self.assertIn("background_service_manager_notify_foreground_runtime_changed", source)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE", source)

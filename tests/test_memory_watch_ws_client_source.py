@@ -19,6 +19,7 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_ws_event_kind_t", header)
         self.assertIn("MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED", header)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ASR_READY", header)
+        self.assertIn("MEMORY_WATCH_WS_EVENT_TASK_PROGRESS", header)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE", header)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ERROR", header)
         self.assertIn("memory_watch_ws_event_t", header)
@@ -57,6 +58,7 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         self.assertIn('type == "request_accepted"', source)
         self.assertIn("MEMORY_WATCH_WS_EVENT_REQUEST_ACCEPTED", source)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ASR_READY", source)
+        self.assertIn('type == "task_progress"', source)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_REPLY_MESSAGE", source)
         self.assertIn("MEMORY_WATCH_WS_EVENT_TURN_ERROR", source)
         self.assertIn("memory_watch_ws_client_send_audio_turn", source)
@@ -116,13 +118,15 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         self.assertIn("#if CONFIG_MEMORY_WATCH_WEBSOCKET_ENABLED", source)
         self.assertIn("memory_watch_voice_client_post_voice_command", source)
         self.assertIn("voice-ws-done", source)
+        self.assertIn("voice-http-fallback-done", source)
+        self.assertIn("result->error == ESP_ERR_INVALID_STATE", source)
         self.assertIn("voice-http-done", source)
 
         upload_worker = source.split(
             "static void memory_watch_service_upload_worker_task"
         )[1].split("static void memory_watch_service_health_worker_task")[0]
         self.assertIn("memory_watch_service_send_voice_over_ws", upload_worker)
-        self.assertIn("memory_watch_voice_client_post_voice_command", upload_worker)
+        self.assertIn("memory_watch_service_post_voice_http", source)
 
         handle_send = source.split(
             "static void memory_watch_service_handle_send_recording"
@@ -130,7 +134,7 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         self.assertNotIn("memory_watch_service_send_voice_over_ws", handle_send)
         self.assertNotIn("memory_watch_voice_client_post_voice_command", handle_send)
 
-    def test_service_closes_ws_after_pending_request_settles(self) -> None:
+    def test_service_preconnects_ws_and_reuses_it_for_pending_request(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         ws_section = source.split(
@@ -143,17 +147,35 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         self.assertIn("kWsWaitDisconnectedBit", ws_section)
         self.assertIn("kWsWaitRequestAcceptedBit", ws_section)
         self.assertIn("server_accepted_seen", ws_section)
+        self.assertIn("memory_watch_ws_client_is_connected()", ws_section)
+        self.assertIn("xQueueReceive(s_ws_event_queue", ws_section)
+        self.assertIn("memory_watch_ws_client_send_audio_turn", ws_section)
+        self.assertNotIn("memory_watch_ws_client_connect", ws_section)
+        self.assertIn("memory_watch_ws_client_close();", ws_section)
+
+        self.assertIn("memory_watch_service_start_foreground_ws", source)
+        foreground_ws = source.split(
+            "static void memory_watch_service_start_foreground_ws(void)\n{"
+        )[1].split("static esp_err_t memory_watch_service_post_command", 1)[0]
+        self.assertIn("memory_watch_ws_client_connect(&ws_config)", foreground_ws)
+        self.assertIn(".user_ctx = NULL", foreground_ws)
+        self.assertIn("memory_watch_ws_client_close();", source)
+
+        callback = source.split(
+            "static void memory_watch_service_ws_event_cb"
+        )[1].split("static void memory_watch_service_drain_ws_events", 1)[0]
+        self.assertIn("(void)user_ctx", callback)
+        self.assertIn("uxQueueSpacesAvailable(s_ws_event_queue)", callback)
+        self.assertIn("kWsCriticalEventReserve", callback)
+        self.assertIn("xQueueSend(s_ws_event_queue, event, 0)", callback)
+        self.assertNotIn("pdMS_TO_TICKS(50U)", callback)
+        self.assertIn("s_ws_event_queue_storage", source)
+        self.assertIn("MALLOC_CAP_SPIRAM", source)
+
         disconnected_branch = ws_section.split(
             "if ((bits & kWsWaitDisconnectedBit) != 0)", 1
         )[1].split("if (asr_ready_seen)", 1)[0]
         self.assertIn("server_accepted_seen || asr_ready_seen", disconnected_branch)
-        self.assertIn("memory_watch_ws_client_close();", ws_section)
-        wait_tail = ws_section.split("xEventGroupWaitBits", 1)[1]
-        self.assertIn("memory_watch_ws_client_close();", wait_tail)
-        self.assertLess(
-            wait_tail.index("memory_watch_ws_client_close();"),
-            wait_tail.index("if ((bits & kWsWaitConversationBit) != 0)"),
-        )
 
 
 if __name__ == "__main__":

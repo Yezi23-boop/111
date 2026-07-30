@@ -15,6 +15,7 @@ extern "C"
 
 #define MEMORY_WATCH_SERVICE_ID_MAX_BYTES 64
 #define MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES 128
+#define MEMORY_WATCH_SERVICE_PHASE_MAX_BYTES 16
 #define MEMORY_WATCH_SERVICE_URL_MAX_BYTES 128
 #define MEMORY_WATCH_SERVICE_DEVICE_ID_MAX_BYTES 32
 #define MEMORY_WATCH_SERVICE_DEVICE_TOKEN_MAX_BYTES 128
@@ -80,6 +81,7 @@ extern "C"
         char clarification_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES]; /**< 当前追问 ID。 */
         char asr_text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];       /**< 最近 ASR 文本。 */
         char reply_text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];     /**< 最近 Hermes 回复。 */
+        char progress_phase[MEMORY_WATCH_SERVICE_PHASE_MAX_BYTES]; /**< 最近服务器进度阶段。 */
         uint32_t conversation_generation; /**< 最近 5 轮本地显示缓存的版本号。 */
     } memory_watch_service_snapshot_t;
 

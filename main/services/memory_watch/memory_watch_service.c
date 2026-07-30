@@ -54,6 +54,8 @@ static const UBaseType_t kCommandQueueLength = 8;
 static const UBaseType_t kWorkerQueueLength = 1;
 static const UBaseType_t kCancelQueueLength = 1;
 static const UBaseType_t kHealthQueueLength = 1;
+static const UBaseType_t kWsEventQueueLength = 12;
+static const UBaseType_t kWsCriticalEventReserve = 4U;
 /* 栈大小按 bytes 计（xTaskCreateWithCaps 单位为 bytes，见 idf_additions.h）。
  * 下列常量名保留 *Words 后缀属历史命名，实际单位为 bytes。
  * kHealthWorkerStackWords/kConversationWorkerStackWords 经高压实测扩栈
@@ -66,6 +68,7 @@ static const uint32_t kConversationWorkerStackWords = 10240;
 static const size_t kAudioBufferInitialBytes = 8192U;
 static const size_t kWsAudioChunkBytes = 16U * 1024U;
 static const int64_t kConversationPollIntervalMs = 5000;
+static const int64_t kForegroundAcquireTimeoutMs = 5000;
 static const int64_t kBackgroundHttpsRetryIntervalMs = 5000;
 static const int64_t kForegroundStopTimeoutMs = 5000;
 static const uint32_t kConversationPollTimeoutMs = 4000U;
@@ -196,26 +199,23 @@ static StaticQueue_t s_upload_worker_queue_buffer;
 static StaticQueue_t s_cancel_worker_queue_buffer;
 static StaticQueue_t s_health_worker_queue_buffer;
 static StaticQueue_t s_conversation_worker_queue_buffer;
-static uint8_t s_command_queue_storage[
-    8 * sizeof(memory_watch_service_cmd_t)];
-static uint8_t s_upload_worker_queue_storage[
-    1 * sizeof(memory_watch_service_upload_job_t)];
-static uint8_t s_cancel_worker_queue_storage[
-    1 * sizeof(memory_watch_service_cancel_job_t)];
-static uint8_t s_health_worker_queue_storage[
-    1 * sizeof(memory_watch_service_health_job_t)];
-static uint8_t s_conversation_worker_queue_storage[
-    1 * sizeof(memory_watch_service_conversation_job_t)];
+static StaticQueue_t s_ws_event_queue_buffer;
+static uint8_t *s_command_queue_storage = NULL;
+static uint8_t *s_upload_worker_queue_storage = NULL;
+static uint8_t *s_cancel_worker_queue_storage = NULL;
+static uint8_t *s_health_worker_queue_storage = NULL;
+static uint8_t *s_conversation_worker_queue_storage = NULL;
+static uint8_t *s_ws_event_queue_storage = NULL;
 static memory_watch_service_cmd_t s_service_task_command;
 static memory_watch_service_upload_job_t s_upload_worker_job;
 static memory_watch_service_worker_result_t s_upload_worker_result;
 static memory_watch_service_conversation_job_t s_conversation_worker_job;
-static memory_watch_service_conversation_item_t
-    s_conversation_items[MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS];
+static memory_watch_service_conversation_item_t *s_conversation_items = NULL;
 static size_t s_conversation_item_count = 0;
 static uint32_t s_conversation_generation = 0;
 static StaticEventGroup_t s_ws_wait_event_buffer;
 static EventGroupHandle_t s_ws_wait_event_group = NULL;
+static QueueHandle_t s_ws_event_queue = NULL;
 // Optimized: Legacy static buffers (s_service_task_stack, s_cancel_worker_task_stack,
 // s_health_worker_task_stack) and StaticTask_t buffers have been removed.
 // All tasks now dynamically allocate stack on external PSRAM via xTaskCreateWithCaps.
@@ -251,6 +251,7 @@ static uint32_t s_foreground_request_generation = 0;
 static uint32_t s_foreground_reconciled_generation = 0;
 static int64_t s_foreground_stop_started_ms = 0;
 static bool s_foreground_stop_timeout_logged = false;
+static int64_t s_foreground_ws_retry_next_ms = 0;
 static bool s_health_worker_busy = false;
 static bool s_health_check_pending = false;
 static int64_t s_health_retry_next_due_ms = 0;
@@ -282,6 +283,7 @@ static void memory_watch_service_conversation_try_poll(void);
 static void memory_watch_service_conversation_handle_worker_done(void);
 static void memory_watch_service_request_record_stop(bool discard);
 static bool memory_watch_service_is_upload_worker_busy(void);
+static void memory_watch_service_start_foreground_ws(void);
 static
 void memory_watch_service_handle_worker_done(
     const memory_watch_service_worker_result_t *result);
@@ -405,7 +407,7 @@ static void memory_watch_service_append_conversation_item(
     const char *request_id,
     const char *text)
 {
-    if (text == NULL || text[0] == '\0')
+    if (s_conversation_items == NULL || text == NULL || text[0] == '\0')
     {
         return;
     }
@@ -577,9 +579,35 @@ static bool memory_watch_service_reconcile_foreground(void)
         portEXIT_CRITICAL(&s_foreground_lock);
         memory_watch_service_publish_foreground(
             true, false, MEMORY_WATCH_FOREGROUND_STARTING, generation,
-            ESP_OK);
-        const esp_err_t err = foreground_runtime_gate_acquire(
-            FOREGROUND_RUNTIME_OWNER_HERMES, 0U);
+        ESP_OK);
+        esp_err_t err = ESP_ERR_INVALID_STATE;
+        uint32_t quiesce_generation = 0U;
+        const int64_t acquire_started_ms = memory_watch_service_now_ms();
+        do
+        {
+            err = background_service_manager_request_foreground_quiesce(
+                &quiesce_generation);
+            if (err == ESP_OK)
+            {
+                err = background_service_manager_wait_foreground_quiesced(
+                    quiesce_generation, 2500U);
+            }
+            if (err == ESP_OK)
+            {
+                err = foreground_runtime_gate_try_acquire(
+                    FOREGROUND_RUNTIME_OWNER_HERMES);
+            }
+            if (err == ESP_ERR_INVALID_STATE && s_foreground_desired)
+            {
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
+        } while (err == ESP_ERR_INVALID_STATE && s_foreground_desired &&
+                 memory_watch_service_now_ms() - acquire_started_ms <
+                     kForegroundAcquireTimeoutMs);
+        if (quiesce_generation != 0U)
+        {
+            (void)background_service_manager_finish_foreground_quiesce(quiesce_generation);
+        }
         if (err == ESP_OK)
         {
             bool intent_still_current = false;
@@ -625,6 +653,9 @@ static bool memory_watch_service_reconcile_foreground(void)
 
     memory_watch_service_publish_foreground(
         false, false, MEMORY_WATCH_FOREGROUND_STOPPING, generation, ESP_OK);
+    /* WSS 属于 Hermes 页面前台资源；离页只关闭传输，不取消已提交的 server session。 */
+    memory_watch_ws_client_close();
+    s_foreground_ws_retry_next_ms = 0;
     if (gate_held)
     {
         memory_watch_service_request_record_stop(true);
@@ -1133,6 +1164,7 @@ static void memory_watch_service_set_request_id(const char *request_id)
     memory_watch_service_copy_text(s_snapshot.request_id,
                                    sizeof(s_snapshot.request_id),
                                    request_id);
+    s_snapshot.progress_phase[0] = '\0';
     s_snapshot.asr_text[0] = '\0';
     s_snapshot.reply_text[0] = '\0';
     portEXIT_CRITICAL(&s_snapshot_lock);
@@ -1398,14 +1430,29 @@ static esp_err_t memory_watch_service_audio_write_cb(const uint8_t *data,
     return ESP_OK;
 }
 
-static void memory_watch_service_ws_event_cb(
+static void memory_watch_service_apply_ws_event(
     const memory_watch_ws_event_t *event,
-    void *user_ctx)
+    memory_watch_service_ws_wait_ctx_t *ctx)
 {
-    memory_watch_service_ws_wait_ctx_t *ctx =
-        (memory_watch_service_ws_wait_ctx_t *)user_ctx;
-    if (event == NULL || ctx == NULL || ctx->result == NULL ||
-        s_ws_wait_event_group == NULL)
+    if (event == NULL)
+    {
+        return;
+    }
+
+    if (event->kind == MEMORY_WATCH_WS_EVENT_TASK_PROGRESS)
+    {
+        portENTER_CRITICAL(&s_snapshot_lock);
+        memory_watch_service_copy_text(
+            s_snapshot.progress_phase, sizeof(s_snapshot.progress_phase),
+            event->phase);
+        portEXIT_CRITICAL(&s_snapshot_lock);
+        if (ctx == NULL)
+        {
+            return;
+        }
+    }
+
+    if (ctx == NULL || ctx->result == NULL || s_ws_wait_event_group == NULL)
     {
         return;
     }
@@ -1486,6 +1533,40 @@ static void memory_watch_service_ws_event_cb(
     }
 }
 
+static void memory_watch_service_ws_event_cb(
+    const memory_watch_ws_event_t *event,
+    void *user_ctx)
+{
+    (void)user_ctx;
+    if (event == NULL || s_ws_event_queue == NULL)
+    {
+        return;
+    }
+    if (event->kind == MEMORY_WATCH_WS_EVENT_TASK_PROGRESS &&
+        uxQueueSpacesAvailable(s_ws_event_queue) <= kWsCriticalEventReserve)
+    {
+        ESP_LOGD(TAG, "drop progress event: critical queue reserve reached");
+        return;
+    }
+    if (xQueueSend(s_ws_event_queue, event, 0) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "websocket event queue full kind=%d", (int)event->kind);
+    }
+}
+
+static void memory_watch_service_drain_ws_events(void)
+{
+    if (s_ws_event_queue == NULL || memory_watch_service_is_upload_worker_busy())
+    {
+        return;
+    }
+    memory_watch_ws_event_t event = {0};
+    while (xQueueReceive(s_ws_event_queue, &event, 0) == pdTRUE)
+    {
+        memory_watch_service_apply_ws_event(&event, NULL);
+    }
+}
+
 static void memory_watch_service_ws_disconnect_cb(void *user_ctx)
 {
     (void)user_ctx;
@@ -1522,45 +1603,33 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
 {
     if (job == NULL || audio_buffer == NULL || audio_buffer->data == NULL ||
         audio_buffer->len == 0U || result == NULL ||
-        s_ws_wait_event_group == NULL)
+        s_ws_wait_event_group == NULL || s_ws_event_queue == NULL)
     {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!memory_watch_ws_client_is_connected())
+    {
+        return ESP_ERR_INVALID_STATE;
     }
 
     memory_watch_service_ws_wait_ctx_t wait_ctx = {
         .result = result,
         .request_id = job->request_id,
     };
+    (void)xQueueReset(s_ws_event_queue);
     xEventGroupClearBits(s_ws_wait_event_group,
                          kWsWaitConversationBit |
                              kWsWaitErrorBit |
                              kWsWaitDisconnectedBit |
                              kWsWaitAsrReadyBit |
                              kWsWaitRequestAcceptedBit);
-    char last_seen_conversation_id[64];
-    memory_watch_service_copy_last_seen_conversation_id(
-        last_seen_conversation_id, sizeof(last_seen_conversation_id));
-
-    const memory_watch_ws_client_config_t ws_config = {
-        .endpoint = job->client_config.client_config,
-        .last_seen_conversation_id = last_seen_conversation_id,
-        .event_cb = memory_watch_service_ws_event_cb,
-        .disconnect_cb = memory_watch_service_ws_disconnect_cb,
-        .user_ctx = &wait_ctx,
-    };
-    esp_err_t err = memory_watch_ws_client_connect(&ws_config);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-
-    err = memory_watch_ws_client_send_audio_turn(
+    esp_err_t err = memory_watch_ws_client_send_audio_turn(
         job->request_id, job->clarification_id,
         audio_buffer->data, audio_buffer->len,
         kWsAudioChunkBytes);
     if (err != ESP_OK)
     {
-        memory_watch_ws_client_close();
         return err;
     }
 
@@ -1585,6 +1654,11 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
             }
         }
 
+        memory_watch_ws_event_t event = {0};
+        if (xQueueReceive(s_ws_event_queue, &event, pdMS_TO_TICKS(250U)) == pdTRUE)
+        {
+            memory_watch_service_apply_ws_event(&event, &wait_ctx);
+        }
         bits = xEventGroupWaitBits(
             s_ws_wait_event_group,
             kWsWaitConversationBit | kWsWaitErrorBit | kWsWaitDisconnectedBit |
@@ -1605,12 +1679,12 @@ static esp_err_t memory_watch_service_send_voice_over_ws(
         {
             break;
         }
-        if ((esp_timer_get_time() / 1000LL) >= wait_deadline_ms)
+        if ((esp_timer_get_time() / 1000LL) >= wait_deadline_ms &&
+            !server_accepted_seen && !asr_ready_seen)
         {
             break;
         }
     }
-    memory_watch_ws_client_close();
     const EventBits_t final_bits = xEventGroupGetBits(s_ws_wait_event_group);
     bits |= final_bits;
     server_accepted_seen = server_accepted_seen ||
@@ -1760,6 +1834,32 @@ static void memory_watch_service_fill_text_power_fields(
     }
     request->has_charging = true;
     request->charging = (budget.flags & POWER_POLICY_FLAG_CHARGING) != 0U;
+}
+
+static esp_err_t memory_watch_service_post_voice_http(
+    const memory_watch_service_upload_job_t *job,
+    const memory_watch_service_audio_buffer_t *audio_buffer,
+    memory_watch_service_worker_result_t *result)
+{
+    if (job == NULL || audio_buffer == NULL || result == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memory_watch_voice_client_request_t request = {
+        .request_id = job->request_id,
+        .audio = audio_buffer->data,
+        .audio_len = audio_buffer->len,
+        .clarification_id = job->clarification_id,
+        .firmware_version = memory_watch_service_firmware_version(),
+        .ui_state = memory_watch_service_state_to_string(
+            MEMORY_WATCH_SERVICE_STATE_THINKING),
+    };
+    memory_watch_service_fill_power_fields(&request);
+    result->error = memory_watch_voice_client_post_voice_command(
+        &job->client_config.client_config, &request, &result->response);
+    result->has_response = result->error == ESP_OK;
+    return result->error;
 }
 
 static void memory_watch_service_clear_clarification(void)
@@ -2717,26 +2817,21 @@ static void memory_watch_service_upload_worker_task(void *arg)
 #if CONFIG_MEMORY_WATCH_WEBSOCKET_ENABLED
                 result->error = memory_watch_service_send_voice_over_ws(
                     job, &audio_buffer, result);
+                if (result->error == ESP_ERR_INVALID_STATE)
+                {
+                    /* 预连接未建立时尚未发送音频，复用 request_id 走 HTTP。 */
+                    result->error = memory_watch_service_post_voice_http(
+                        job, &audio_buffer, result);
+                    memory_watch_service_log_upload_stack(
+                        "voice-http-fallback-done");
+                }
                 result->has_response =
                     result->error == ESP_OK ||
                     result->response.status[0] != '\0';
                 memory_watch_service_log_upload_stack("voice-ws-done");
 #else
-                memory_watch_voice_client_request_t request = {
-                    .request_id = job->request_id,
-                    .audio = audio_buffer.data,
-                    .audio_len = audio_buffer.len,
-                    .clarification_id = job->clarification_id,
-                    .firmware_version =
-                        memory_watch_service_firmware_version(),
-                    .ui_state = memory_watch_service_state_to_string(
-                        MEMORY_WATCH_SERVICE_STATE_THINKING),
-                };
-                memory_watch_service_fill_power_fields(&request);
-                result->error = memory_watch_voice_client_post_voice_command(
-                    &job->client_config.client_config, &request,
-                    &result->response);
-                result->has_response = result->error == ESP_OK;
+                (void)memory_watch_service_post_voice_http(
+                    job, &audio_buffer, result);
                 memory_watch_service_log_upload_stack("voice-http-done");
 #endif
                 result->cancel_requested =
@@ -2894,8 +2989,13 @@ static void memory_watch_service_task(void *arg)
 
         if (memory_watch_service_reconcile_foreground())
         {
+            memory_watch_service_start_foreground_ws();
             memory_watch_service_start_foreground_reconcile();
             memory_watch_service_inbox_try_poll();
+        }
+        else if (memory_watch_service_is_foreground_ready())
+        {
+            memory_watch_service_start_foreground_ws();
         }
 
         /* 处理 inbox worker 完成通知（来自 xTaskNotify）*/
@@ -2916,6 +3016,7 @@ static void memory_watch_service_task(void *arg)
         {
             memory_watch_service_handle_check_health();
         }
+        memory_watch_service_drain_ws_events();
         memory_watch_service_conversation_try_poll();
 
 #if CONFIG_MEMORY_WATCH_BOOT_HEALTH_CHECK
@@ -2967,6 +3068,50 @@ static esp_err_t memory_watch_service_post_command(
     return ESP_OK;
 }
 
+static void memory_watch_service_start_foreground_ws(void)
+{
+#if CONFIG_MEMORY_WATCH_WEBSOCKET_ENABLED
+    if (!memory_watch_service_is_foreground_ready() ||
+        memory_watch_ws_client_is_connected() ||
+        memory_watch_service_is_upload_worker_busy())
+    {
+        return;
+    }
+
+    const int64_t now_ms = memory_watch_service_now_ms();
+    if (now_ms < s_foreground_ws_retry_next_ms)
+    {
+        return;
+    }
+
+    memory_watch_service_client_config_snapshot_t client_config;
+    if (memory_watch_service_copy_client_config(&client_config) != ESP_OK)
+    {
+        return;
+    }
+
+    char last_seen_conversation_id[64];
+    memory_watch_service_copy_last_seen_conversation_id(
+        last_seen_conversation_id, sizeof(last_seen_conversation_id));
+    const memory_watch_ws_client_config_t ws_config = {
+        .endpoint = client_config.client_config,
+        .last_seen_conversation_id = last_seen_conversation_id,
+        .event_cb = memory_watch_service_ws_event_cb,
+        .disconnect_cb = memory_watch_service_ws_disconnect_cb,
+        .user_ctx = NULL,
+    };
+    const esp_err_t err = memory_watch_ws_client_connect(&ws_config);
+    s_foreground_ws_retry_next_ms = now_ms + 5000;
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "foreground websocket preconnect failed: %s",
+                 esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "foreground websocket preconnected");
+#endif
+}
+
 /**
  * @brief 删除本轮初始化中新建但尚未对外发布的 task。
  *
@@ -2984,6 +3129,74 @@ static void memory_watch_service_delete_partial_task(TaskHandle_t *task_handle)
 }
 
 /**
+ * @brief 为业务队列和会话缓存分配 PSRAM backing storage。
+ *
+ * FreeRTOS queue 控制块仍留在 internal RAM 的 StaticQueue_t 中；真正占空间的
+ * item storage 与 Hermes 会话缓存只在 task 上下文访问，适合放到 PSRAM，避免
+ * 挤压 BLE/NimBLE 启动所需的 internal heap 连续块。
+ */
+static esp_err_t memory_watch_service_alloc_psram_caches(void)
+{
+    if (s_command_queue_storage == NULL)
+    {
+        s_command_queue_storage = (uint8_t *)heap_caps_calloc(
+            kCommandQueueLength, sizeof(memory_watch_service_cmd_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_upload_worker_queue_storage == NULL)
+    {
+        s_upload_worker_queue_storage = (uint8_t *)heap_caps_calloc(
+            kWorkerQueueLength, sizeof(memory_watch_service_upload_job_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_cancel_worker_queue_storage == NULL)
+    {
+        s_cancel_worker_queue_storage = (uint8_t *)heap_caps_calloc(
+            kCancelQueueLength, sizeof(memory_watch_service_cancel_job_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_health_worker_queue_storage == NULL)
+    {
+        s_health_worker_queue_storage = (uint8_t *)heap_caps_calloc(
+            kHealthQueueLength, sizeof(memory_watch_service_health_job_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_conversation_worker_queue_storage == NULL)
+    {
+        s_conversation_worker_queue_storage = (uint8_t *)heap_caps_calloc(
+            kWorkerQueueLength,
+            sizeof(memory_watch_service_conversation_job_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_ws_event_queue_storage == NULL)
+    {
+        s_ws_event_queue_storage = (uint8_t *)heap_caps_calloc(
+            kWsEventQueueLength, sizeof(memory_watch_ws_event_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_conversation_items == NULL)
+    {
+        s_conversation_items =
+            (memory_watch_service_conversation_item_t *)heap_caps_calloc(
+                MEMORY_WATCH_SERVICE_CONVERSATION_MAX_ITEMS,
+                sizeof(memory_watch_service_conversation_item_t),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+
+    if (s_command_queue_storage == NULL ||
+        s_upload_worker_queue_storage == NULL ||
+        s_cancel_worker_queue_storage == NULL ||
+        s_health_worker_queue_storage == NULL ||
+        s_conversation_worker_queue_storage == NULL ||
+        s_ws_event_queue_storage == NULL ||
+        s_conversation_items == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+/**
  * @brief 回滚尚未成功发布的 Memory Watch 初始化资源，使 init 可以重试。
  */
 static void memory_watch_service_cleanup_partial_init(void)
@@ -2997,22 +3210,32 @@ static void memory_watch_service_cleanup_partial_init(void)
     if (s_command_queue != NULL)
     {
         (void)xQueueReset(s_command_queue);
+        s_command_queue = NULL;
     }
     if (s_upload_worker_queue != NULL)
     {
         (void)xQueueReset(s_upload_worker_queue);
+        s_upload_worker_queue = NULL;
     }
     if (s_cancel_worker_queue != NULL)
     {
         (void)xQueueReset(s_cancel_worker_queue);
+        s_cancel_worker_queue = NULL;
     }
     if (s_health_worker_queue != NULL)
     {
         (void)xQueueReset(s_health_worker_queue);
+        s_health_worker_queue = NULL;
     }
     if (s_conversation_worker_queue != NULL)
     {
         (void)xQueueReset(s_conversation_worker_queue);
+        s_conversation_worker_queue = NULL;
+    }
+    if (s_ws_event_queue != NULL)
+    {
+        (void)xQueueReset(s_ws_event_queue);
+        s_ws_event_queue = NULL;
     }
     if (s_ws_wait_event_group != NULL)
     {
@@ -3027,6 +3250,22 @@ static void memory_watch_service_cleanup_partial_init(void)
     s_conversation_staging = NULL;
     s_conversation_staging_count = 0;
     s_conversation_staging_error = ESP_OK;
+    memory_watch_service_free(s_command_queue_storage);
+    s_command_queue_storage = NULL;
+    memory_watch_service_free(s_upload_worker_queue_storage);
+    s_upload_worker_queue_storage = NULL;
+    memory_watch_service_free(s_cancel_worker_queue_storage);
+    s_cancel_worker_queue_storage = NULL;
+    memory_watch_service_free(s_health_worker_queue_storage);
+    s_health_worker_queue_storage = NULL;
+    memory_watch_service_free(s_conversation_worker_queue_storage);
+    s_conversation_worker_queue_storage = NULL;
+    memory_watch_service_free(s_ws_event_queue_storage);
+    s_ws_event_queue_storage = NULL;
+    memory_watch_service_free(s_conversation_items);
+    s_conversation_items = NULL;
+    s_conversation_item_count = 0;
+    s_conversation_generation = 0;
 
     portENTER_CRITICAL(&s_worker_lock);
     s_upload_worker_busy = false;
@@ -3062,6 +3301,13 @@ esp_err_t memory_watch_service_init(void)
     }
 
     memory_watch_service_init_boot_id();
+
+    const esp_err_t psram_cache_err =
+        memory_watch_service_alloc_psram_caches();
+    if (psram_cache_err != ESP_OK)
+    {
+        return memory_watch_service_fail_init(psram_cache_err);
+    }
 
     if (s_command_queue == NULL)
     {
@@ -3141,6 +3387,18 @@ esp_err_t memory_watch_service_init(void)
             xEventGroupCreateStatic(&s_ws_wait_event_buffer);
     }
     if (s_ws_wait_event_group == NULL)
+    {
+        return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
+    }
+    if (s_ws_event_queue == NULL)
+    {
+        s_ws_event_queue = xQueueCreateStatic(
+            kWsEventQueueLength,
+            sizeof(memory_watch_ws_event_t),
+            s_ws_event_queue_storage,
+            &s_ws_event_queue_buffer);
+    }
+    if (s_ws_event_queue == NULL)
     {
         return memory_watch_service_fail_init(ESP_ERR_NO_MEM);
     }
@@ -3445,6 +3703,12 @@ esp_err_t memory_watch_service_copy_conversation_items(
     }
 
     portENTER_CRITICAL(&s_snapshot_lock);
+    if (s_conversation_items == NULL)
+    {
+        *out_count = 0;
+        portEXIT_CRITICAL(&s_snapshot_lock);
+        return ESP_OK;
+    }
     const size_t count =
         s_conversation_item_count < capacity ? s_conversation_item_count : capacity;
     for (size_t i = 0; i < count; ++i)
