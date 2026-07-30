@@ -19,7 +19,7 @@ class ResourceFsSourceTests(unittest.TestCase):
     def test_partitions_define_resources_littlefs_after_audio(self) -> None:
         source = PARTITIONS.read_text(encoding="utf-8")
 
-        self.assertIn("factory,  app,  factory, 0x10000, 10M", source)
+        self.assertIn("factory,  app,  factory, 0x10000, 14M", source)
         self.assertIn("assets,   data,   spiffs,  ,      2M", source)
         self.assertIn("audio,    data,   spiffs,  ,      6M", source)
         self.assertIn("resources,data,   littlefs,,      4M", source)

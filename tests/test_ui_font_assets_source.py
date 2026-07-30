@@ -32,23 +32,17 @@ class UiFontAssetsSourceTests(unittest.TestCase):
         source = AI_CHAT_VIEW_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "ui_font_assets.h"', source)
-        self.assertIn("ui_font_assets_title()", source)
         self.assertIn("ui_font_assets_body()", source)
-        self.assertIn("ui_font_assets_meta()", source)
         self.assertIn(
-            "lv_obj_set_style_text_font(title_label, ui_font_assets_title()",
+            "lv_obj_set_style_text_font(text_label, ui_font_assets_body()",
             source,
         )
         self.assertIn(
-            "lv_obj_set_style_text_font(view->status_label, ui_font_assets_title()",
+            "lv_obj_set_style_text_font(view->voice_label, ui_font_assets_body()",
             source,
         )
         self.assertIn(
-            "lv_obj_set_style_text_font(view->hint_label, ui_font_assets_body()",
-            source,
-        )
-        self.assertIn(
-            "lv_obj_set_style_text_font(view->badge_label, ui_font_assets_meta()",
+            "lv_obj_set_style_text_font(view->secondary_label, ui_font_assets_body()",
             source,
         )
         self.assertNotIn("&lv_font_SourceHanSerifSC_Regular_22", source)

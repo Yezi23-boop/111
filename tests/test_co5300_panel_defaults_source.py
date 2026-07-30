@@ -13,7 +13,7 @@ class Co5300PanelDefaultsSourceTests(unittest.TestCase):
         self.assertIn("#define CO5300_PANEL_MAX_TRANSFER_LINES 10", source)
         self.assertIn("#define CO5300_PANEL_USE_TE_SIGNAL 0", source)
         self.assertIn("#define CO5300_PANEL_OPTIMIZED_PCLK_HZ (50 * 1000 * 1000)", source)
-        self.assertIn("#define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 8", source)
+        self.assertIn("#define CO5300_PANEL_OPTIMIZED_TRANS_QUEUE_DEPTH 2", source)
 
 
 if __name__ == "__main__":

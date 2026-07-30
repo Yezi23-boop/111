@@ -50,6 +50,7 @@ class WakeupEvidenceSourceTests(unittest.TestCase):
         self.assertIn("GPIO_PULLUP_ENABLE", source)
         self.assertIn("pcf85063atl_arm_countdown_timer", source)
         self.assertIn("rtc_int_sample", source)
+        self.assertIn('ESP_LOGD(TAG, "rtc_int_sample:', source)
         self.assertIn("rtc_timer_flag_observed", source)
         self.assertIn("rtc_timer_flag_cleared", source)
         self.assertIn("rtc_timer_stopped_after_evidence", source)
