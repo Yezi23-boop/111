@@ -57,6 +57,3 @@ if(esp_codec_dev_lib AND driver_lib)
   target_link_libraries(${esp_codec_dev_lib} PRIVATE ${driver_lib})
   target_include_directories(${esp_codec_dev_lib} PRIVATE $ENV{IDF_PATH}/components/driver/i2c/include)
 endif()
-
-# 将WAV文件打包到SPIFFS分区(需要传入目录,不是单个文件)
-#spiffs_create_partition_image(audio ${CMAKE_SOURCE_DIR}/audio_data FLASH_IN_PROJECT)

@@ -16,14 +16,16 @@ RESOURCES_DIR = REPO_ROOT / "resources"
 
 
 class ResourceFsSourceTests(unittest.TestCase):
-    def test_partitions_define_resources_littlefs_after_audio(self) -> None:
+    def test_partitions_define_resources_littlefs_for_dual_ota_layout(self) -> None:
         source = PARTITIONS.read_text(encoding="utf-8")
 
-        self.assertIn("factory,  app,  factory, 0x10000, 14M", source)
-        self.assertIn("assets,   data,   spiffs,  ,      2M", source)
-        self.assertIn("audio,    data,   spiffs,  ,      6M", source)
-        self.assertIn("resources,data,   littlefs,,      4M", source)
-        self.assertLess(source.index("audio,"), source.index("resources,"))
+        self.assertIn("ota_0,    app,  ota_0,    0x20000, 12M", source)
+        self.assertIn("ota_1,    app,  ota_1,    ,       12M", source)
+        self.assertIn("assets,   data, spiffs,   ,       2M", source)
+        self.assertIn("resources,data, littlefs, ,       4M", source)
+        self.assertNotIn("factory,", source)
+        self.assertNotIn("audio,", source)
+        self.assertLess(source.index("assets,"), source.index("resources,"))
 
     def test_manifest_adds_littlefs_component(self) -> None:
         source = MAIN_MANIFEST.read_text(encoding="utf-8")

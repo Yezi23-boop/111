@@ -45,7 +45,7 @@ class OfficialChatPartitionSourceTests(unittest.TestCase):
         self.assertIn("assets", entries)
         self.assertEqual("spiffs", entries["model"]["fields"][2])
         self.assertEqual("spiffs", entries["assets"]["fields"][2])
-        self.assertGreaterEqual(_parse_size(entries["model"]["fields"][4]), 0x400000)
+        self.assertEqual(0x1E0000, _parse_size(entries["model"]["fields"][4]))
         self.assertGreaterEqual(_parse_size(entries["assets"]["fields"][4]), 0x200000)
         self.assertIn('CONFIG_ESPTOOLPY_FLASHSIZE="32MB"', sdkconfig)
         self.assertLess(entries["assets"]["offset"], 0x2000000)
