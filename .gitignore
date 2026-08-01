@@ -1,5 +1,6 @@
 # ESP-IDF 构建输出
 build/
+build_onenet_*/
 sdkconfig.old
 .agents
 board_logs/
@@ -46,6 +47,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+
+# 本地 HTTPS OTA 测试 CA 私钥与发布工件
+tools/ota_host/.local/
+.ota-release/
 
 # 上下文索引生成产物
 context/index/

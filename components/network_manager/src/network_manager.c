@@ -119,12 +119,12 @@ static esp_err_t network_manager_ensure_mutex(void)
         return ESP_OK;
     }
 
-    portENTER_CRITICAL(&s_manager_bootstrap_lock);
+    taskENTER_CRITICAL(&s_manager_bootstrap_lock);
     if (s_manager_mutex == NULL)
     {
         s_manager_mutex = xSemaphoreCreateMutexStatic(&s_manager_mutex_buffer);
     }
-    portEXIT_CRITICAL(&s_manager_bootstrap_lock);
+    taskEXIT_CRITICAL(&s_manager_bootstrap_lock);
 
     return s_manager_mutex != NULL ? ESP_OK : ESP_FAIL;
 }

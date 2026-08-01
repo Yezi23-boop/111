@@ -33,7 +33,7 @@ route_area: "Display and touch"
   - 然后启动 `network_service` 和 `official_chat_service`
 - `main/app/hardware_init.c`
   - 先初始化 `NVS`
-  - 再初始化 `audio_app` / `SD` / `audio_codec`
+  - 再初始化 `SD` / `audio_codec`
   - 最后初始化 `Wi-Fi`
 - `main/ui/lvgl_task.c`
   - 在独立任务中调用 `lv_port_init_small()`

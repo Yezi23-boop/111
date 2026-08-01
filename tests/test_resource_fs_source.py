@@ -1,6 +1,8 @@
 import pathlib
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PARTITIONS = REPO_ROOT / "partitions.csv"
@@ -42,7 +44,7 @@ class ResourceFsSourceTests(unittest.TestCase):
     def test_main_component_registers_resource_fs(self) -> None:
         source = MAIN_CMAKELISTS.read_text(encoding="utf-8")
 
-        self.assertIn("app/resource_fs.c", source)
+        assert_main_source_globbed(self, "app/resource_fs.c")
         self.assertIn("joltwallet__littlefs", source)
 
     def test_lvgl_posix_driver_maps_a_drive_to_resources(self) -> None:

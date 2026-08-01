@@ -1,6 +1,8 @@
 import pathlib
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 AI_UI_SOURCE = REPO_ROOT / "main" / "ui" / "custom" / "ai_ui_controller.c"
@@ -111,8 +113,8 @@ class UiFontAssetsSourceTests(unittest.TestCase):
     def test_main_cmakelists_mentions_font_assets_source(self) -> None:
         source = MAIN_CMAKELISTS.read_text(encoding="utf-8")
 
-        self.assertIn("ui_font_assets.c", source)
-        self.assertIn("cbin_font_bridge.c", source)
+        assert_main_source_globbed(self, "ui/custom/ui_font_assets.c")
+        assert_main_source_globbed(self, "ui/custom/cbin_font_bridge.c")
         self.assertIn("78__xiaozhi-fonts", source)
         self.assertIn("BUILTIN_TEXT_FONT font_puhui_common_20_4", source)
         self.assertIn("EMBED_FILES ${BUILTIN_TEXT_FONT_FILE}", source)

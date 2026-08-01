@@ -140,16 +140,18 @@ class DangerDetectionServiceSourceTests(unittest.TestCase):
             espdl_callback.index("danger_sample_recorder_capture("),
         )
 
-    def test_recorder_stop_path_resets_session_instead_of_deinit(self) -> None:
+    def test_recorder_stop_path_deinits_recorder_for_full_release(self) -> None:
         service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
         stop_body = service_source[
             service_source.index("esp_err_t danger_detection_service_stop") :
             service_source.index("/**\n * @brief 获取当前危险检测快照。")
         ]
 
-        self.assertIn("danger_sample_recorder_reset_session();", stop_body)
-        self.assertNotIn("danger_sample_recorder_deinit();", stop_body)
-        self.assertIn("普通后台开关 stop 只重置会话", stop_body)
+        # 用户决策(2026-07-31)：关闭/让路时 recorder 统一彻底释放（deinit），
+        # 二次 start 由 start_espdl_backend 的 is_initialized 检查重建。
+        self.assertIn("danger_sample_recorder_deinit();", stop_body)
+        self.assertNotIn("danger_sample_recorder_reset_session();", stop_body)
+        self.assertIn("停止即彻底释放", stop_body)
 
     def test_espdl_pcm_tap_uses_type_safe_adapter(self) -> None:
         service_source = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")

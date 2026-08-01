@@ -1,52 +1,28 @@
-# 本地 OTA 上位机
+# 云端 OTA 发布 CLI
 
-该工具仅服务当前独立 HTTPS OTA 协议：发布一个 manifest 和一个应用镜像。它不操作串口，不写入设备 Flash，也不依赖 `official_chat`。
+设备端只接受云端 HTTPS manifest 和 artifact；本工具只负责把固件发布到
+`watch.934000.xyz` 的云端 OTA 管理 API，不操作串口、不写设备 Flash。
 
-## 准备发布物
+## 发布到云端
 
-将 `192.168.1.20` 换成运行上位机的电脑在设备可访问 Wi-Fi 中的地址：
+如果云端已部署 `watch_voice_endpoint`，可以使用同一个本机工具上传到云端：
 
 ```powershell
-python tools/ota_host/ota_host.py prepare `
+$env:WATCH_OTA_ADMIN_TOKEN = "<ota-admin-token>"
+python tools/ota_host/ota_host.py publish-remote `
   --bin build/111.bin `
-  --version 0.1.0 `
-  --base-url https://192.168.1.20:8443 `
-  --output-dir .ota-release
+  --version 0.2.0 `
+  --channel stable
 ```
 
-命令会复制镜像，并生成：
+默认地址为
+`https://watch.934000.xyz/v1/watch/ota/admin/releases`；也可以通过
+`--endpoint` 指定其他 HTTPS 云端。网页入口是
+`https://watch.934000.xyz/v1/watch/ota/admin`。管理员令牌只用于发布，设备端不保存它。
 
-```text
-.ota-release/
-  manifest.json
-  111.bin
-```
+设备端的弱网断线续传和 SHA-256 校验仍由正式 OTA service 负责。
 
-manifest 含 `version`、HTTPS `url`、`size` 和 `sha256`。设备端必须将上位机证书的签发 CA 配置为可信；不要跳过证书校验。
-
-## 启动 HTTPS 服务
-
-证书和私钥由开发 CA、企业 CA 或受控测试证书提供，工具不会自动生成或信任临时证书：
-
-```powershell
-python tools/ota_host/ota_host.py serve `
-  --directory .ota-release `
-  --bind 0.0.0.0 `
-  --port 8443 `
-  --cert .\certs\ota-server.pem `
-  --key .\certs\ota-server-key.pem
-```
-
-按 `Ctrl+C` 停止。服务会在标准错误输出每个请求的方法、路径和状态码。
-
-## 故障注入
-
-开发测试时追加 `--fault`：
-
-```text
-bad-sha     manifest 返回错误 SHA-256，镜像本身不变
-truncated   镜像只发送一半，Content-Length 也是一半
-disconnect  镜像声明完整长度，发送一半后断开 TLS 连接
-```
-
-只对专用测试设备和测试镜像使用故障模式。
+每次故障后必须用 `otatool.py read_otadata` 和启动日志确认仍从旧槽启动；
+看到 `fault_window: finish_succeeded_before_restart` 时可在保持窗口内复位，
+验证 `finish()` 已切换选择但尚未调用 `esp_restart()` 的边界。新镜像首次启动
+会先经过早期本地 boot-check，再标记 valid；在该标记前复位应走 IDF rollback。

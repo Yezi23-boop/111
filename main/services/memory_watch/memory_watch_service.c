@@ -18,8 +18,7 @@
 #include "services/network/network_service.h"
 #include "nvs.h"
 #include "esp_timer.h"
-#include "services/safety/background_service_manager.h"
-#include "services/runtime_gate/foreground_runtime_gate.h"
+#include "services/runtime/runtime_coordinator.h"
 #include "services/power/power_policy.h"
 #include "services/memory_watch/memory_watch_recorder.h"
 #include "services/memory_watch/memory_watch_voice_client.h"
@@ -68,7 +67,6 @@ static const uint32_t kConversationWorkerStackWords = 10240;
 static const size_t kAudioBufferInitialBytes = 8192U;
 static const size_t kWsAudioChunkBytes = 16U * 1024U;
 static const int64_t kConversationPollIntervalMs = 5000;
-static const int64_t kForegroundAcquireTimeoutMs = 5000;
 static const int64_t kBackgroundHttpsRetryIntervalMs = 5000;
 static const int64_t kForegroundStopTimeoutMs = 5000;
 static const uint32_t kConversationPollTimeoutMs = 4000U;
@@ -97,6 +95,9 @@ typedef enum
     MEMORY_WATCH_SERVICE_CMD_WORKER_UPLOAD_STARTED,
     MEMORY_WATCH_SERVICE_CMD_WORKER_DONE,
     MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE,
+    MEMORY_WATCH_SERVICE_CMD_COORDINATOR_GRANTED,
+    MEMORY_WATCH_SERVICE_CMD_COORDINATOR_QUIESCE,
+    MEMORY_WATCH_SERVICE_CMD_COORDINATOR_CANCELLED,
 } memory_watch_service_cmd_type_t;
 
 typedef struct
@@ -180,6 +181,8 @@ typedef struct
     memory_watch_service_cmd_type_t type;
     memory_watch_service_health_result_t health_result;
     memory_watch_service_worker_result_t worker_result;
+    uint32_t generation;
+    esp_err_t result;
     char request_id[MEMORY_WATCH_SERVICE_ID_MAX_BYTES];
     char text[MEMORY_WATCH_SERVICE_TEXT_MAX_BYTES];
 } memory_watch_service_cmd_t;
@@ -246,9 +249,11 @@ static bool s_wait_cancel_requested = false;
 static bool s_upload_worker_busy = false;
 static bool s_foreground_desired = false;
 static bool s_foreground_active = false;
-static bool s_foreground_runtime_gate_held = false;
+static bool s_foreground_coordinator_granted = false;
 static uint32_t s_foreground_request_generation = 0;
 static uint32_t s_foreground_reconciled_generation = 0;
+static uint32_t s_coordinator_request_generation = 0;
+static uint32_t s_coordinator_quiesce_generation = 0;
 static int64_t s_foreground_stop_started_ms = 0;
 static bool s_foreground_stop_timeout_logged = false;
 static int64_t s_foreground_ws_retry_next_ms = 0;
@@ -311,9 +316,9 @@ static memory_watch_service_snapshot_t memory_watch_service_copy_snapshot(void)
 {
     memory_watch_service_snapshot_t snapshot;
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     snapshot = s_snapshot;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     return snapshot;
 }
@@ -321,33 +326,33 @@ static memory_watch_service_snapshot_t memory_watch_service_copy_snapshot(void)
 static void memory_watch_service_set_state(
     memory_watch_service_state_t state, esp_err_t last_error)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.state = state;
     s_snapshot.last_error = last_error;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_set_request_active(bool active)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.request_active = active;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_set_network_ready(bool ready)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.network_ready = ready;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_set_endpoint_snapshot(bool configured,
                                                        bool hermes_online)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.endpoint_configured = configured;
     s_snapshot.hermes_online = hermes_online;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_copy_text(char *dst, size_t dst_len,
@@ -412,7 +417,7 @@ static void memory_watch_service_append_conversation_item(
         return;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     for (size_t i = 0; i < s_conversation_item_count; ++i)
     {
         if (s_conversation_items[i].role == role &&
@@ -420,7 +425,7 @@ static void memory_watch_service_append_conversation_item(
                    request_id != NULL ? request_id : "") == 0 &&
             strcmp(s_conversation_items[i].text, text) == 0)
         {
-            portEXIT_CRITICAL(&s_snapshot_lock);
+            taskEXIT_CRITICAL(&s_snapshot_lock);
             return;
         }
     }
@@ -442,7 +447,7 @@ static void memory_watch_service_append_conversation_item(
     memory_watch_service_copy_text(item->text, sizeof(item->text), text);
     ++s_conversation_generation;
     s_snapshot.conversation_generation = s_conversation_generation;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_append_response_conversation(
@@ -476,11 +481,11 @@ static void memory_watch_service_set_last_seen_conversation_id(
     {
         return;
     }
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     memory_watch_service_copy_text(s_last_seen_conversation_id,
                                    sizeof(s_last_seen_conversation_id),
                                    message_id);
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_copy_last_seen_conversation_id(
@@ -490,9 +495,9 @@ static void memory_watch_service_copy_last_seen_conversation_id(
     {
         return;
     }
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     memory_watch_service_copy_text(out, out_len, s_last_seen_conversation_id);
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_append_server_conversation_message(
@@ -524,7 +529,7 @@ static void memory_watch_service_publish_foreground(
     memory_watch_foreground_session_state_t session_state,
     uint32_t generation, esp_err_t last_error)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     if (s_snapshot.foreground_generation == generation)
     {
         s_snapshot.foreground_desired = desired;
@@ -532,7 +537,7 @@ static void memory_watch_service_publish_foreground(
         s_snapshot.foreground_session_state = session_state;
         s_snapshot.foreground_last_error = last_error;
     }
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 /**
@@ -542,30 +547,30 @@ static void memory_watch_service_publish_foreground(
 static bool memory_watch_service_reconcile_foreground(void)
 {
     bool desired = false;
-    bool gate_held = false;
+    bool coordinator_granted = false;
     uint32_t generation = 0;
     uint32_t reconciled_generation = 0;
 
-    portENTER_CRITICAL(&s_foreground_lock);
+    taskENTER_CRITICAL(&s_foreground_lock);
     desired = s_foreground_desired;
-    gate_held = s_foreground_runtime_gate_held;
+    coordinator_granted = s_foreground_coordinator_granted;
     generation = s_foreground_request_generation;
     reconciled_generation = s_foreground_reconciled_generation;
-    portEXIT_CRITICAL(&s_foreground_lock);
+    taskEXIT_CRITICAL(&s_foreground_lock);
 
     if (generation == reconciled_generation)
     {
         return false;
     }
 
-    if (desired && gate_held)
+    if (desired && coordinator_granted)
     {
-        portENTER_CRITICAL(&s_foreground_lock);
+        taskENTER_CRITICAL(&s_foreground_lock);
         s_foreground_active = true;
         s_foreground_reconciled_generation = generation;
         s_foreground_stop_started_ms = 0;
         s_foreground_stop_timeout_logged = false;
-        portEXIT_CRITICAL(&s_foreground_lock);
+        taskEXIT_CRITICAL(&s_foreground_lock);
         memory_watch_service_publish_foreground(
             true, true, MEMORY_WATCH_FOREGROUND_READY, generation, ESP_OK);
         return false;
@@ -573,81 +578,13 @@ static bool memory_watch_service_reconcile_foreground(void)
 
     if (desired)
     {
-        portENTER_CRITICAL(&s_foreground_lock);
+        taskENTER_CRITICAL(&s_foreground_lock);
         s_foreground_stop_started_ms = 0;
         s_foreground_stop_timeout_logged = false;
-        portEXIT_CRITICAL(&s_foreground_lock);
+        taskEXIT_CRITICAL(&s_foreground_lock);
         memory_watch_service_publish_foreground(
             true, false, MEMORY_WATCH_FOREGROUND_STARTING, generation,
         ESP_OK);
-        esp_err_t err = ESP_ERR_INVALID_STATE;
-        uint32_t quiesce_generation = 0U;
-        const int64_t acquire_started_ms = memory_watch_service_now_ms();
-        do
-        {
-            err = background_service_manager_request_foreground_quiesce(
-                &quiesce_generation);
-            if (err == ESP_OK)
-            {
-                err = background_service_manager_wait_foreground_quiesced(
-                    quiesce_generation, 2500U);
-            }
-            if (err == ESP_OK)
-            {
-                err = foreground_runtime_gate_try_acquire(
-                    FOREGROUND_RUNTIME_OWNER_HERMES);
-            }
-            if (err == ESP_ERR_INVALID_STATE && s_foreground_desired)
-            {
-                vTaskDelay(pdMS_TO_TICKS(200));
-            }
-        } while (err == ESP_ERR_INVALID_STATE && s_foreground_desired &&
-                 memory_watch_service_now_ms() - acquire_started_ms <
-                     kForegroundAcquireTimeoutMs);
-        if (quiesce_generation != 0U)
-        {
-            (void)background_service_manager_finish_foreground_quiesce(quiesce_generation);
-        }
-        if (err == ESP_OK)
-        {
-            bool intent_still_current = false;
-            portENTER_CRITICAL(&s_foreground_lock);
-            intent_still_current = s_foreground_desired &&
-                                   s_foreground_request_generation == generation;
-            if (intent_still_current)
-            {
-                s_foreground_runtime_gate_held = true;
-                s_foreground_active = true;
-                s_foreground_reconciled_generation = generation;
-            }
-            portEXIT_CRITICAL(&s_foreground_lock);
-
-            if (!intent_still_current)
-            {
-                (void)foreground_runtime_gate_release(
-                    FOREGROUND_RUNTIME_OWNER_HERMES);
-                (void)background_service_manager_notify_foreground_runtime_changed();
-                return false;
-            }
-
-            memory_watch_service_publish_foreground(
-                true, true, MEMORY_WATCH_FOREGROUND_READY, generation,
-                ESP_OK);
-            (void)background_service_manager_notify_foreground_runtime_changed();
-            return true;
-        }
-
-        portENTER_CRITICAL(&s_foreground_lock);
-        if (s_foreground_request_generation == generation)
-        {
-            s_foreground_active = false;
-            s_foreground_reconciled_generation = generation;
-        }
-        portEXIT_CRITICAL(&s_foreground_lock);
-        memory_watch_service_publish_foreground(
-            true, false, MEMORY_WATCH_FOREGROUND_ERROR, generation, err);
-        ESP_LOGW(TAG, "Hermes foreground gate acquire failed closed: %s",
-                 esp_err_to_name(err));
         return false;
     }
 
@@ -656,7 +593,7 @@ static bool memory_watch_service_reconcile_foreground(void)
     /* WSS 属于 Hermes 页面前台资源；离页只关闭传输，不取消已提交的 server session。 */
     memory_watch_ws_client_close();
     s_foreground_ws_retry_next_ms = 0;
-    if (gate_held)
+    if (coordinator_granted)
     {
         memory_watch_service_request_record_stop(true);
         if (memory_watch_service_is_upload_worker_busy())
@@ -665,7 +602,7 @@ static bool memory_watch_service_reconcile_foreground(void)
             int64_t stop_started_ms = 0;
             bool should_log_timeout = false;
 
-            portENTER_CRITICAL(&s_foreground_lock);
+            taskENTER_CRITICAL(&s_foreground_lock);
             if (s_foreground_stop_started_ms == 0)
             {
                 s_foreground_stop_started_ms = now_ms;
@@ -677,7 +614,7 @@ static bool memory_watch_service_reconcile_foreground(void)
                 s_foreground_stop_timeout_logged = true;
                 should_log_timeout = true;
             }
-            portEXIT_CRITICAL(&s_foreground_lock);
+            taskEXIT_CRITICAL(&s_foreground_lock);
 
             if (now_ms - stop_started_ms >= kForegroundStopTimeoutMs)
             {
@@ -694,39 +631,30 @@ static bool memory_watch_service_reconcile_foreground(void)
         }
     }
 
-    portENTER_CRITICAL(&s_foreground_lock);
+    taskENTER_CRITICAL(&s_foreground_lock);
     s_foreground_stop_started_ms = 0;
     s_foreground_stop_timeout_logged = false;
-    portEXIT_CRITICAL(&s_foreground_lock);
-    esp_err_t err = ESP_OK;
-    if (gate_held)
-    {
-        err = foreground_runtime_gate_release(FOREGROUND_RUNTIME_OWNER_HERMES);
-    }
-    if (err == ESP_OK)
-    {
-        portENTER_CRITICAL(&s_foreground_lock);
-        s_foreground_active = false;
-        s_foreground_runtime_gate_held = false;
-        if (s_foreground_request_generation == generation)
-        {
-            s_foreground_reconciled_generation = generation;
-        }
-        portEXIT_CRITICAL(&s_foreground_lock);
-        memory_watch_service_publish_foreground(
-            false, false, MEMORY_WATCH_FOREGROUND_STOPPED, generation,
-            ESP_OK);
-        (void)background_service_manager_notify_foreground_runtime_changed();
-        return false;
-    }
-
-    portENTER_CRITICAL(&s_foreground_lock);
+    taskEXIT_CRITICAL(&s_foreground_lock);
+    taskENTER_CRITICAL(&s_foreground_lock);
     s_foreground_active = false;
-    portEXIT_CRITICAL(&s_foreground_lock);
+    s_foreground_coordinator_granted = false;
+    s_coordinator_request_generation = 0U;
+    const uint32_t quiesce_generation =
+        s_coordinator_quiesce_generation;
+    s_coordinator_quiesce_generation = 0U;
+    if (s_foreground_request_generation == generation)
+    {
+        s_foreground_reconciled_generation = generation;
+    }
+    taskEXIT_CRITICAL(&s_foreground_lock);
     memory_watch_service_publish_foreground(
-        false, false, MEMORY_WATCH_FOREGROUND_ERROR, generation, err);
-    ESP_LOGW(TAG, "Hermes foreground gate release failed closed: %s",
-             esp_err_to_name(err));
+        false, false, MEMORY_WATCH_FOREGROUND_STOPPED, generation, ESP_OK);
+    if (quiesce_generation != 0U)
+    {
+        (void)runtime_coordinator_report_quiesce_result(
+            RUNTIME_COORDINATOR_PARTICIPANT_HERMES,
+            quiesce_generation, ESP_OK);
+    }
     return false;
 }
 
@@ -734,10 +662,10 @@ static bool memory_watch_service_is_foreground_ready(void)
 {
     bool ready = false;
 
-    portENTER_CRITICAL(&s_foreground_lock);
+    taskENTER_CRITICAL(&s_foreground_lock);
     ready = s_foreground_desired && s_foreground_active &&
-            s_foreground_runtime_gate_held;
-    portEXIT_CRITICAL(&s_foreground_lock);
+            s_foreground_coordinator_granted;
+    taskEXIT_CRITICAL(&s_foreground_lock);
     return ready;
 }
 
@@ -1083,9 +1011,9 @@ static esp_err_t memory_watch_service_copy_client_config(
     }
 
     memory_watch_service_endpoint_state_t endpoint_config;
-    portENTER_CRITICAL(&s_endpoint_lock);
+    taskENTER_CRITICAL(&s_endpoint_lock);
     endpoint_config = s_endpoint_config;
-    portEXIT_CRITICAL(&s_endpoint_lock);
+    taskEXIT_CRITICAL(&s_endpoint_lock);
 
     if (!endpoint_config.configured)
     {
@@ -1121,9 +1049,9 @@ esp_err_t memory_watch_service_copy_endpoint_config(
     }
 
     memory_watch_service_endpoint_state_t endpoint_config;
-    portENTER_CRITICAL(&s_endpoint_lock);
+    taskENTER_CRITICAL(&s_endpoint_lock);
     endpoint_config = s_endpoint_config;
-    portEXIT_CRITICAL(&s_endpoint_lock);
+    taskEXIT_CRITICAL(&s_endpoint_lock);
 
     if (!endpoint_config.configured)
     {
@@ -1160,14 +1088,14 @@ static void memory_watch_service_rebind_client_config(
 
 static void memory_watch_service_set_request_id(const char *request_id)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     memory_watch_service_copy_text(s_snapshot.request_id,
                                    sizeof(s_snapshot.request_id),
                                    request_id);
     s_snapshot.progress_phase[0] = '\0';
     s_snapshot.asr_text[0] = '\0';
     s_snapshot.reply_text[0] = '\0';
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_copy_current_clarification(
@@ -1178,12 +1106,12 @@ static void memory_watch_service_copy_current_clarification(
         return;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     memory_watch_service_copy_text(out_clarification_id, out_len,
                                    s_snapshot.clarification_active
                                        ? s_snapshot.clarification_id
                                        : "");
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static bool memory_watch_service_request_id_matches_current(
@@ -1195,9 +1123,9 @@ static bool memory_watch_service_request_id_matches_current(
     }
 
     bool matches = false;
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     matches = strcmp(s_snapshot.request_id, request_id) == 0;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     return matches;
 }
 
@@ -1209,7 +1137,7 @@ static void memory_watch_service_set_response_texts(
         return;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     memory_watch_service_copy_text(s_snapshot.asr_text,
                                    sizeof(s_snapshot.asr_text),
                                    response->asr_text);
@@ -1220,38 +1148,38 @@ static void memory_watch_service_set_response_texts(
                                    sizeof(s_snapshot.clarification_id),
                                    response->clarification_id);
     s_snapshot.clarification_active = response->clarification_id[0] != '\0';
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static void memory_watch_service_reset_worker_flags(void)
 {
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     s_record_stop_requested = false;
     s_record_discard_requested = false;
     s_wait_cancel_requested = false;
     s_wait_canceled_request_id[0] = '\0';
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
 }
 
 static void memory_watch_service_request_record_stop(bool discard)
 {
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     s_record_stop_requested = true;
     if (discard)
     {
         s_record_discard_requested = true;
     }
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
 }
 
 static void memory_watch_service_request_wait_cancel(const char *request_id)
 {
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     s_wait_cancel_requested = true;
     memory_watch_service_copy_text(s_wait_canceled_request_id,
                                    sizeof(s_wait_canceled_request_id),
                                    request_id);
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
 }
 
 static bool memory_watch_service_should_stop_recording(void *user_ctx)
@@ -1259,18 +1187,18 @@ static bool memory_watch_service_should_stop_recording(void *user_ctx)
     (void)user_ctx;
 
     bool should_stop = false;
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     should_stop = s_record_stop_requested || s_record_discard_requested;
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
     return should_stop;
 }
 
 static bool memory_watch_service_is_record_discard_requested(void)
 {
     bool discard = false;
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     discard = s_record_discard_requested;
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
     return discard;
 }
 
@@ -1283,9 +1211,9 @@ static bool memory_watch_service_should_abort_recording(void *user_ctx)
 static bool memory_watch_service_is_wait_cancel_requested(void)
 {
     bool cancel_requested = false;
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     cancel_requested = s_wait_cancel_requested;
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
     return cancel_requested;
 }
 
@@ -1298,26 +1226,26 @@ static bool memory_watch_service_is_wait_canceled_request(
     }
 
     bool canceled = false;
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     canceled = s_wait_canceled_request_id[0] != '\0' &&
                strcmp(s_wait_canceled_request_id, request_id) == 0;
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
     return canceled;
 }
 
 static void memory_watch_service_set_upload_worker_busy(bool busy)
 {
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     s_upload_worker_busy = busy;
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
 }
 
 static bool memory_watch_service_is_upload_worker_busy(void)
 {
     bool busy = false;
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     busy = s_upload_worker_busy;
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
     return busy;
 }
 
@@ -1441,11 +1369,11 @@ static void memory_watch_service_apply_ws_event(
 
     if (event->kind == MEMORY_WATCH_WS_EVENT_TASK_PROGRESS)
     {
-        portENTER_CRITICAL(&s_snapshot_lock);
+        taskENTER_CRITICAL(&s_snapshot_lock);
         memory_watch_service_copy_text(
             s_snapshot.progress_phase, sizeof(s_snapshot.progress_phase),
             event->phase);
-        portEXIT_CRITICAL(&s_snapshot_lock);
+        taskEXIT_CRITICAL(&s_snapshot_lock);
         if (ctx == NULL)
         {
             return;
@@ -1864,10 +1792,10 @@ static esp_err_t memory_watch_service_post_voice_http(
 
 static void memory_watch_service_clear_clarification(void)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.clarification_active = false;
     s_snapshot.clarification_id[0] = '\0';
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 static bool memory_watch_service_can_begin_from_state(
@@ -2226,10 +2154,10 @@ static void memory_watch_service_handle_send_text(const char *text)
     }
 
     memory_watch_service_set_request_id(request_id);
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     memory_watch_service_copy_text(s_snapshot.asr_text,
                                    sizeof(s_snapshot.asr_text), text);
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     memory_watch_service_set_request_active(true);
     memory_watch_service_reset_worker_flags();
     err = memory_watch_service_start_upload_job(&client_config, request_id,
@@ -2729,6 +2657,44 @@ static void memory_watch_service_handle_command(
     case MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE:
         memory_watch_service_conversation_handle_worker_done();
         break;
+    case MEMORY_WATCH_SERVICE_CMD_COORDINATOR_GRANTED:
+        taskENTER_CRITICAL(&s_foreground_lock);
+        if (s_foreground_desired &&
+            (s_coordinator_request_generation == 0U ||
+             command->generation == s_coordinator_request_generation))
+        {
+            s_coordinator_request_generation = command->generation;
+            s_foreground_coordinator_granted = true;
+        }
+        const bool grant_current = s_foreground_coordinator_granted;
+        taskEXIT_CRITICAL(&s_foreground_lock);
+        (void)runtime_coordinator_report_start_result(
+            RUNTIME_COORDINATOR_PARTICIPANT_HERMES,
+            command->generation,
+            grant_current ? ESP_OK : ESP_ERR_INVALID_STATE);
+        break;
+    case MEMORY_WATCH_SERVICE_CMD_COORDINATOR_QUIESCE:
+        taskENTER_CRITICAL(&s_foreground_lock);
+        s_coordinator_quiesce_generation = command->generation;
+        s_foreground_desired = false;
+        ++s_foreground_request_generation;
+        if (s_foreground_request_generation == 0U)
+        {
+            ++s_foreground_request_generation;
+        }
+        taskEXIT_CRITICAL(&s_foreground_lock);
+        break;
+    case MEMORY_WATCH_SERVICE_CMD_COORDINATOR_CANCELLED:
+        taskENTER_CRITICAL(&s_foreground_lock);
+        if (command->generation == s_coordinator_request_generation)
+        {
+            s_coordinator_request_generation = 0U;
+            s_foreground_desired = false;
+            s_foreground_coordinator_granted = false;
+            ++s_foreground_request_generation;
+        }
+        taskEXIT_CRITICAL(&s_foreground_lock);
+        break;
     default:
         break;
     }
@@ -3068,6 +3034,48 @@ static esp_err_t memory_watch_service_post_command(
     return ESP_OK;
 }
 
+static esp_err_t memory_watch_service_post_coordinator_command(
+    memory_watch_service_cmd_type_t type, uint32_t generation,
+    esp_err_t result)
+{
+    if (s_command_queue == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const memory_watch_service_cmd_t command = {
+        .type = type,
+        .generation = generation,
+        .result = result,
+    };
+    return xQueueSend(s_command_queue, &command, 0) == pdTRUE
+               ? ESP_OK
+               : ESP_ERR_TIMEOUT;
+}
+
+static esp_err_t memory_watch_service_coordinator_quiesce(
+    uint32_t generation, void *user_ctx)
+{
+    (void)user_ctx;
+    return memory_watch_service_post_coordinator_command(
+        MEMORY_WATCH_SERVICE_CMD_COORDINATOR_QUIESCE, generation, ESP_OK);
+}
+
+static esp_err_t memory_watch_service_coordinator_grant(
+    uint32_t generation, void *user_ctx)
+{
+    (void)user_ctx;
+    return memory_watch_service_post_coordinator_command(
+        MEMORY_WATCH_SERVICE_CMD_COORDINATOR_GRANTED, generation, ESP_OK);
+}
+
+static esp_err_t memory_watch_service_coordinator_cancel(
+    uint32_t generation, esp_err_t reason, void *user_ctx)
+{
+    (void)user_ctx;
+    return memory_watch_service_post_coordinator_command(
+        MEMORY_WATCH_SERVICE_CMD_COORDINATOR_CANCELLED, generation, reason);
+}
+
 static void memory_watch_service_start_foreground_ws(void)
 {
 #if CONFIG_MEMORY_WATCH_WEBSOCKET_ENABLED
@@ -3075,6 +3083,12 @@ static void memory_watch_service_start_foreground_ws(void)
         memory_watch_ws_client_is_connected() ||
         memory_watch_service_is_upload_worker_busy())
     {
+        return;
+    }
+    if (!network_service_is_service_ready())
+    {
+        /* STANDBY 预算暂停非关键同步时跳过预连接，回 ACTIVE 后主循环下一轮自动补连 */
+        ESP_LOGD(TAG, "foreground ws preconnect skipped: network not ready");
         return;
     }
 
@@ -3267,11 +3281,11 @@ static void memory_watch_service_cleanup_partial_init(void)
     s_conversation_item_count = 0;
     s_conversation_generation = 0;
 
-    portENTER_CRITICAL(&s_worker_lock);
+    taskENTER_CRITICAL(&s_worker_lock);
     s_upload_worker_busy = false;
     s_health_worker_busy = false;
     s_conversation_worker_busy = false;
-    portEXIT_CRITICAL(&s_worker_lock);
+    taskEXIT_CRITICAL(&s_worker_lock);
 }
 
 static esp_err_t memory_watch_service_fail_init(esp_err_t err)
@@ -3385,6 +3399,20 @@ esp_err_t memory_watch_service_init(void)
     {
         s_ws_wait_event_group =
             xEventGroupCreateStatic(&s_ws_wait_event_buffer);
+    }
+
+    const runtime_coordinator_participant_config_t participant = {
+        .id = RUNTIME_COORDINATOR_PARTICIPANT_HERMES,
+        .name = "hermes",
+        .capabilities = RUNTIME_COORDINATOR_CAPABILITY_FOREGROUND_EXCLUSIVE,
+        .request_quiesce = memory_watch_service_coordinator_quiesce,
+        .grant_foreground = memory_watch_service_coordinator_grant,
+        .cancel_pending_request = memory_watch_service_coordinator_cancel,
+    };
+    const esp_err_t register_ret = runtime_coordinator_register(&participant);
+    if (register_ret != ESP_OK)
+    {
+        return memory_watch_service_fail_init(register_ret);
     }
     if (s_ws_wait_event_group == NULL)
     {
@@ -3512,9 +3540,9 @@ esp_err_t memory_watch_service_configure_endpoint(
         return err;
     }
 
-    portENTER_CRITICAL(&s_endpoint_lock);
+    taskENTER_CRITICAL(&s_endpoint_lock);
     s_endpoint_config = next_config;
-    portEXIT_CRITICAL(&s_endpoint_lock);
+    taskEXIT_CRITICAL(&s_endpoint_lock);
 
     memory_watch_service_set_endpoint_snapshot(true, false);
     memory_watch_service_set_state(snapshot.state, ESP_OK);
@@ -3577,9 +3605,9 @@ esp_err_t memory_watch_service_save_endpoint_to_nvs(
         return err;
     }
 
-    portENTER_CRITICAL(&s_endpoint_lock);
+    taskENTER_CRITICAL(&s_endpoint_lock);
     s_endpoint_config = next_config;
-    portEXIT_CRITICAL(&s_endpoint_lock);
+    taskEXIT_CRITICAL(&s_endpoint_lock);
 
     memory_watch_service_set_endpoint_snapshot(true, false);
     memory_watch_service_set_state(snapshot.state, ESP_OK);
@@ -3604,21 +3632,59 @@ esp_err_t memory_watch_service_set_foreground(bool foreground)
         return ESP_ERR_INVALID_STATE;
     }
 
-    uint32_t generation = 0;
-    portENTER_CRITICAL(&s_foreground_lock);
-    s_foreground_desired = foreground;
-    ++s_foreground_request_generation;
-    if (s_foreground_request_generation == 0U)
+    taskENTER_CRITICAL(&s_foreground_lock);
+    const bool already_requested =
+        foreground && s_foreground_desired &&
+        s_coordinator_request_generation != 0U;
+    const uint32_t active_request_generation =
+        s_coordinator_request_generation;
+    if (!already_requested)
     {
+        s_foreground_desired = foreground;
         ++s_foreground_request_generation;
+        if (s_foreground_request_generation == 0U)
+        {
+            ++s_foreground_request_generation;
+        }
     }
-    generation = s_foreground_request_generation;
-    portEXIT_CRITICAL(&s_foreground_lock);
+    const uint32_t generation = s_foreground_request_generation;
+    taskEXIT_CRITICAL(&s_foreground_lock);
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    if (already_requested)
+    {
+        return ESP_OK;
+    }
+
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.foreground_desired = foreground;
     s_snapshot.foreground_generation = generation;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+
+    if (foreground)
+    {
+        uint32_t request_generation = 0U;
+        const esp_err_t request_ret = runtime_coordinator_request_foreground(
+            RUNTIME_COORDINATOR_PARTICIPANT_HERMES, &request_generation);
+        if (request_ret != ESP_OK)
+        {
+            taskENTER_CRITICAL(&s_foreground_lock);
+            s_foreground_desired = false;
+            taskEXIT_CRITICAL(&s_foreground_lock);
+            taskENTER_CRITICAL(&s_snapshot_lock);
+            s_snapshot.foreground_desired = false;
+            taskEXIT_CRITICAL(&s_snapshot_lock);
+            return request_ret;
+        }
+        taskENTER_CRITICAL(&s_foreground_lock);
+        s_coordinator_request_generation = request_generation;
+        taskEXIT_CRITICAL(&s_foreground_lock);
+    }
+    else if (active_request_generation != 0U)
+    {
+        (void)runtime_coordinator_cancel_request(
+            RUNTIME_COORDINATOR_PARTICIPANT_HERMES,
+            active_request_generation);
+    }
 
     (void)xTaskAbortDelay(s_service_task_handle);
     return ESP_OK;
@@ -3702,11 +3768,11 @@ esp_err_t memory_watch_service_copy_conversation_items(
         return ESP_ERR_INVALID_ARG;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     if (s_conversation_items == NULL)
     {
         *out_count = 0;
-        portEXIT_CRITICAL(&s_snapshot_lock);
+        taskEXIT_CRITICAL(&s_snapshot_lock);
         return ESP_OK;
     }
     const size_t count =
@@ -3716,7 +3782,7 @@ esp_err_t memory_watch_service_copy_conversation_items(
         out_items[i] = s_conversation_items[i];
     }
     *out_count = count;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     return ESP_OK;
 }
 
@@ -3833,7 +3899,7 @@ static bool    s_staging_mark_read_result = false;
 static bool memory_watch_service_inbox_get_client_config(
     memory_watch_service_client_config_snapshot_t *out)
 {
-    portENTER_CRITICAL(&s_endpoint_lock);
+    taskENTER_CRITICAL(&s_endpoint_lock);
     const bool configured = s_endpoint_config.configured;
     if (configured)
     {
@@ -3849,7 +3915,7 @@ static bool memory_watch_service_inbox_get_client_config(
         out->client_config.allow_insecure_http =
             s_endpoint_config.allow_insecure_http;
     }
-    portEXIT_CRITICAL(&s_endpoint_lock);
+    taskEXIT_CRITICAL(&s_endpoint_lock);
     return configured;
 }
 
@@ -3858,7 +3924,7 @@ static void memory_watch_service_inbox_set_meta(
     size_t item_count, uint8_t unread_count,
     memory_watch_inbox_sync_state_t sync_state, bool update_success_ts)
 {
-    portENTER_CRITICAL(&s_inbox_meta_lock);
+    taskENTER_CRITICAL(&s_inbox_meta_lock);
     s_inbox_meta.generation++;
     s_inbox_meta.item_count   = item_count;
     s_inbox_meta.unread_count = unread_count;
@@ -3868,31 +3934,31 @@ static void memory_watch_service_inbox_set_meta(
         s_inbox_meta.last_success_ms =
             (int64_t)(esp_timer_get_time() / 1000LL);
     }
-    portEXIT_CRITICAL(&s_inbox_meta_lock);
+    taskEXIT_CRITICAL(&s_inbox_meta_lock);
 }
 
 static void memory_watch_service_inbox_set_sync_state(
     memory_watch_inbox_sync_state_t sync_state)
 {
-    portENTER_CRITICAL(&s_inbox_meta_lock);
+    taskENTER_CRITICAL(&s_inbox_meta_lock);
     s_inbox_meta.generation++;
     s_inbox_meta.sync_state = sync_state;
-    portEXIT_CRITICAL(&s_inbox_meta_lock);
+    taskEXIT_CRITICAL(&s_inbox_meta_lock);
 }
 
 static void memory_watch_service_inbox_set_poll_pending(bool pending)
 {
-    portENTER_CRITICAL(&s_inbox_poll_lock);
+    taskENTER_CRITICAL(&s_inbox_poll_lock);
     s_inbox_poll_pending = pending;
-    portEXIT_CRITICAL(&s_inbox_poll_lock);
+    taskEXIT_CRITICAL(&s_inbox_poll_lock);
 }
 
 static bool memory_watch_service_inbox_is_poll_pending(void)
 {
     bool pending = false;
-    portENTER_CRITICAL(&s_inbox_poll_lock);
+    taskENTER_CRITICAL(&s_inbox_poll_lock);
     pending = s_inbox_poll_pending;
-    portEXIT_CRITICAL(&s_inbox_poll_lock);
+    taskEXIT_CRITICAL(&s_inbox_poll_lock);
     return pending;
 }
 
@@ -4116,9 +4182,9 @@ esp_err_t memory_watch_service_get_inbox_meta(
     {
         return ESP_ERR_INVALID_ARG;
     }
-    portENTER_CRITICAL(&s_inbox_meta_lock);
+    taskENTER_CRITICAL(&s_inbox_meta_lock);
     *out_meta = s_inbox_meta;
-    portEXIT_CRITICAL(&s_inbox_meta_lock);
+    taskEXIT_CRITICAL(&s_inbox_meta_lock);
     return ESP_OK;
 }
 
@@ -4308,10 +4374,10 @@ esp_err_t memory_watch_service_inbox_mark_read(
     }
 
     /* 3. 更新 unread_count 并通知 controller */
-    portENTER_CRITICAL(&s_inbox_meta_lock);
+    taskENTER_CRITICAL(&s_inbox_meta_lock);
     s_inbox_meta.generation++;
     s_inbox_meta.unread_count = new_unread;
-    portEXIT_CRITICAL(&s_inbox_meta_lock);
+    taskEXIT_CRITICAL(&s_inbox_meta_lock);
 
     /* 4. 异步投递 MARK_READ HTTP 给 inbox worker */
     if (!s_inbox_worker_busy)

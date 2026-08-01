@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import MAIN_KCONFIG
 from tests.main_paths import MEMORY_WATCH_SERVICE_SOURCE
@@ -95,10 +96,7 @@ class MemoryWatchWsClientSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
         kconfig = MAIN_KCONFIG.read_text(encoding="utf-8")
 
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_ws_client.cc",
-            cmake,
-        )
+        assert_main_source_globbed(self, "services/memory_watch/memory_watch_ws_client.cc")
         self.assertIn("official_chat", cmake)
         self.assertIn("config MEMORY_WATCH_WEBSOCKET_ENABLED", kconfig)
         self.assertIn("default y", kconfig)

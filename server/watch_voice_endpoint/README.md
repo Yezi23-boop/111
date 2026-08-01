@@ -22,7 +22,29 @@ POST /v1/watch/voice-command
 POST /v1/watch/request/{request_id}/cancel
 GET  /v1/watch/sync
 WS   /v1/watch/ws
+GET  /v1/watch/ota/manifest?channel=stable
+GET  /v1/watch/ota/artifacts/{channel}/{version}/firmware.bin
+GET  /v1/watch/ota/admin
+POST /v1/watch/ota/admin/releases
 ```
+
+### Remote OTA release
+
+打开 `https://watch.934000.xyz/v1/watch/ota/admin`，输入独立的
+`WATCH_OTA_ADMIN_TOKEN`，上传 `build/111.bin` 并填写 `MAJOR.MINOR.PATCH`
+版本。服务会将固件流式保存到 `/data/ota`、计算 SHA-256，并原子替换该通道的
+manifest。设备端只读取 manifest 和公开的不可变 artifact；上传令牌不下发到 ESP32。
+
+本机也可以直接调用同一个 API：
+
+```powershell
+curl.exe -X POST "https://watch.934000.xyz/v1/watch/ota/admin/releases" `
+  -H "X-OTA-Admin-Token: <ota-admin-token>" `
+  -F "version=0.2.0" -F "channel=stable" -F "file=@build/111.bin"
+```
+
+云端环境必须设置 `WATCH_OTA_PUBLIC_BASE_URL`，并把 `/data/ota` 作为可写持久卷；
+不要把 `WATCH_OTA_ADMIN_TOKEN` 写入固件或提交到仓库。
 
 All watch endpoints require:
 

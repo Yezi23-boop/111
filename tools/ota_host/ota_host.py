@@ -5,11 +5,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import http.server
 import json
+import os
 import shutil
 import ssl
 import sys
+import uuid
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -18,6 +21,7 @@ from urllib.parse import urlparse
 FaultMode = Literal["none", "bad-sha", "truncated", "disconnect"]
 MANIFEST_NAME = "manifest.json"
 CHUNK_SIZE = 64 * 1024
+REMOTE_ENDPOINT_DEFAULT = "https://watch.934000.xyz/v1/watch/ota/admin/releases"
 
 
 def sha256_file(path: Path) -> str:
@@ -84,6 +88,58 @@ def prepare_release(bin_path: Path, version: str, base_url: str,
         encoding="utf-8",
     )
     return manifest
+
+
+def publish_remote(bin_path: Path, version: str, channel: str,
+                   endpoint: str, admin_token: str) -> dict[str, object]:
+    """流式 multipart 上传到云端 OTA 管理 API，不把固件整体读入内存。"""
+    if not bin_path.is_file():
+        raise ValueError(f"firmware image not found: {bin_path}")
+    if not admin_token:
+        raise ValueError("OTA admin token is empty")
+    parsed = urlparse(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("--endpoint must be an HTTPS URL")
+    boundary = f"ota-{uuid.uuid4().hex}"
+    prefix = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"version\"\r\n\r\n"
+        f"{version}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"channel\"\r\n\r\n"
+        f"{channel}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+        "filename=\"firmware.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+    ).encode("utf-8")
+    suffix = f"\r\n--{boundary}--\r\n".encode("ascii")
+    content_length = len(prefix) + bin_path.stat().st_size + len(suffix)
+    connection = http.client.HTTPSConnection(
+        parsed.hostname, parsed.port or 443, timeout=120
+    )
+    request_path = parsed.path or "/"
+    if parsed.query:
+        request_path += f"?{parsed.query}"
+    try:
+        connection.putrequest("POST", request_path)
+        connection.putheader("Content-Type", f"multipart/form-data; boundary={boundary}")
+        connection.putheader("Content-Length", str(content_length))
+        connection.putheader("X-OTA-Admin-Token", admin_token)
+        connection.endheaders()
+        connection.send(prefix)
+        with bin_path.open("rb") as firmware:
+            while chunk := firmware.read(CHUNK_SIZE):
+                connection.send(chunk)
+        connection.send(suffix)
+        response = connection.getresponse()
+        payload_bytes = response.read()
+    finally:
+        connection.close()
+    try:
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"remote OTA API returned invalid JSON (HTTP {response.status})") from error
+    if response.status >= 400:
+        detail = payload.get("detail", "remote OTA publish failed") if isinstance(payload, dict) else payload
+        raise ValueError(f"remote OTA publish failed (HTTP {response.status}): {detail}")
+    if not isinstance(payload, dict):
+        raise ValueError("remote OTA API returned a non-object response")
+    return payload
 
 
 def faulted_manifest_bytes(release_dir: Path, fault: FaultMode) -> bytes:
@@ -198,6 +254,22 @@ def parse_args() -> argparse.Namespace:
     serve.add_argument("--key", type=Path, required=True, help="PEM private key")
     serve.add_argument("--fault", choices=("none", "bad-sha", "truncated", "disconnect"),
                        default="none", help="development fault injection mode")
+
+    publish_remote_parser = commands.add_parser(
+        "publish-remote", help="upload a full app bin to the remote OTA admin API"
+    )
+    publish_remote_parser.add_argument("--bin", type=Path, required=True,
+                                       help="input ESP-IDF app .bin")
+    publish_remote_parser.add_argument("--version", required=True,
+                                       help="release version, for example 0.2.0")
+    publish_remote_parser.add_argument("--channel", default="stable",
+                                       help="release channel")
+    publish_remote_parser.add_argument("--endpoint", default=REMOTE_ENDPOINT_DEFAULT,
+                                       help="remote OTA admin release endpoint")
+    publish_remote_parser.add_argument(
+        "--admin-token", default=os.getenv("WATCH_OTA_ADMIN_TOKEN", ""),
+        help="OTA admin token; prefer WATCH_OTA_ADMIN_TOKEN environment variable",
+    )
     return parser.parse_args()
 
 
@@ -207,6 +279,12 @@ def main() -> int:
         if args.command == "prepare":
             manifest = prepare_release(args.bin, args.version, args.base_url,
                                        args.output_dir, args.image_name)
+            print(json.dumps(manifest, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "publish-remote":
+            manifest = publish_remote(
+                args.bin, args.version, args.channel, args.endpoint, args.admin_token
+            )
             print(json.dumps(manifest, ensure_ascii=False, indent=2))
             return 0
         serve_release(args.directory, args.bind, args.port, args.cert, args.key, args.fault)

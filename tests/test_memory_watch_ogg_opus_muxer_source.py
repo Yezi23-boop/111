@@ -1,6 +1,6 @@
 import unittest
 
-from tests.main_paths import MAIN_CMAKE
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import MEMORY_WATCH_OGG_OPUS_MUXER_HEADER
 from tests.main_paths import MEMORY_WATCH_OGG_OPUS_MUXER_SOURCE
 
@@ -67,12 +67,7 @@ class MemoryWatchOggOpusMuxerSourceTests(unittest.TestCase):
         self.assertNotIn("audio_codec_read", combined)
 
     def test_main_cmake_registers_muxer(self) -> None:
-        cmake = MAIN_CMAKE.read_text(encoding="utf-8")
-
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_ogg_opus_muxer.c",
-            cmake,
-        )
+        assert_main_source_globbed(self, "services/memory_watch/memory_watch_ogg_opus_muxer.c")
 
 
 if __name__ == "__main__":

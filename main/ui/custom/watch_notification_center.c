@@ -21,7 +21,7 @@
 #include "services/memory_watch/memory_watch_service.h"
 #include "ui_chinese_fonts.h"
 #include "features/danger_detection/danger_detection_service.h"
-#include "services/safety/background_service_manager.h"
+#include "services/runtime/safety_monitor_policy.h"
 
 static const char *TAG = "watch_nc";
 
@@ -412,8 +412,8 @@ static bool nc_is_blocked(void)
 
     bool safety_alert_active = false;
     const danger_detection_snapshot_t dd_snap = danger_detection_service_get_snapshot();
-    const background_service_manager_snapshot_t bsm_snap = background_service_manager_get_snapshot();
-    if (bsm_snap.danger_enabled_by_user &&
+    const safety_monitor_policy_snapshot_t bsm_snap = safety_monitor_policy_get_snapshot();
+    if (bsm_snap.enabled_by_user &&
         dd_snap.state == DANGER_DETECTION_STATE_RUNNING &&
         dd_snap.risk_state == DANGER_DETECTION_RISK_ALERTING)
     {

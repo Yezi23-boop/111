@@ -46,7 +46,7 @@ evidence_level: observed
 
 - `main/app`：应用入口与板级初始化。
 - `main/services`：后台联网状态机、`official_chat` 生命周期服务与电源状态发布服务。
-- `main/features/alerts`、`main/features/danger_detection`、`main/features/audio`、`main/features/weather`：业务特性与提醒链路。
+- `main/features/alerts`、`main/features/danger_detection`：业务特性与提醒链路。（`features/audio`、`features/weather` 已于 07-07 目录整理中收敛到 `services/`，目录已删除）
 - `main/ui/generated`、`main/ui/custom`：GUI Guider 生成页面和自定义 UI 逻辑。
 - `main/ui/lvgl_task.c`：LVGL 运行时任务和 UI 轮询接缝。
 - `main/ui/ui_refresh_policy.c`：UI 活跃/空闲降频、idle dim 与强制高刷策略。
@@ -69,7 +69,7 @@ evidence_level: observed
 - `main/app/board_power.c`：把 AXP2101 快照转换成板级统一电源语义，并缓存最近一次成功状态。
 - `main/app/board_imu.c`：持有 QMI8658C 地址、INT1 GPIO、安装方向和抬腕阈值等板级事实。
 - `main/services/sensors/imu_service.c`：长期管理 WoM、原始六轴动作窗口、最终姿态与抬腕结果。
-- `main/services/weather/weather_service.c`、`main/features/audio/audio_app.c`：时间天气和音频初始化相关应用逻辑；当前配网与联网主链路已经收敛到 `network_manager + network_provisioning_adapter + ap_portal_adapter`。
+- `main/services/weather/weather_service.c`：时间天气相关应用逻辑；当前配网与联网主链路已经收敛到 `network_manager + network_provisioning_adapter + ap_portal_adapter`。
 - `components/ap_portal_adapter/web/` 当前承载自定义 AP 门户网页资源；`components/sd_card/sd_manager.c` 把 SD 卡挂载到 `/sdcard` 并显式放到 `SPI3_HOST` 以避开屏幕的 `SPI2_HOST`。
 
 ## 板级与总线要点
@@ -87,7 +87,7 @@ evidence_level: observed
 ## 排查优先级建议
 
 - 显示/触摸问题先看 `components/lvgl_port`、`components/co5300_panel`、`components/touch_ft5x06` 和 `main/ui`。
-- 音频播放问题先看 `main/features/audio/audio_app.c`、`components/audio_codec`、`components/mp3_player` 和存储路径。
+- 音频播放问题先看 `components/audio_codec`、`components/mp3_player` 和存储路径；麦克风录音链路看 `main/services/audio_diag/audio_mic_test_service.c`。
 - 配网/联网问题先看 `main/app/hardware_init.c`、`main/services/network/network_service.c`、`components/network_manager`、`components/network_provisioning_adapter`、`components/ap_portal_adapter` 和 `components/wifi_control`。
 - 电源/低功耗问题先看 `components/axp2101`、`main/app/board_power.c`、`main/services/power/power_service.c` 和 `main/ui/ui_refresh_policy.c`。
 

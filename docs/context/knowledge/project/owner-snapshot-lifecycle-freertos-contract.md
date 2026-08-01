@@ -39,7 +39,7 @@ owner snapshot
 | --- | --- | --- | --- |
 | 器件驱动 / Driver Adapter | `components/axp2101`、`components/pcf85063atl`、`components/co5300_panel`、`components/touch_ft5x06`、`components/wifi_control`、`components/lvgl_port` | SDK/寄存器/总线时序/错误码翻译/器件初始化细节 | 产品状态、页面文案、跨模块策略、后台生命周期 |
 | 板级语义 / Board BSP | `main/app/board_power.c`、`main/app/hardware_init.c`、`main/app/board_button.c` | 把板上器件组合成“本板能力”，处理启动基础设施 | 长期后台循环、产品策略、UI 状态机 |
-| 长期系统能力 / Service | `main/services/power/power_service.c`、`power_policy.c`、`network_service.c`、`official_chat_service.c`、`background_service_manager.c`、`sleep_coordinator.c` | FreeRTOS task、后台生命周期、ready gate、预算聚合、状态推进 | 直接写寄存器、直接改 LVGL 对象、替 domain owner 释放资源 |
+| 长期系统能力 / Service | `main/services/power/power_service.c`、`power_policy.c`、`network_service.c`、`official_chat_service.c`、`runtime_coordinator.c`、`safety_monitor_policy.c`、`sleep_coordinator.c` | FreeRTOS task、后台生命周期、ready gate、预算聚合、状态推进 | 直接写寄存器、直接改 LVGL 对象、替 domain owner 释放资源 |
 | 资源语义 / Domain owner | `components/audio_codec`、网络语义门面、`components/system_time`、`main/services/safety/safety_monitor_session.c`、`main/features/danger_detection/danger_detection_service.c`、`app_alert_manager.c` | session、领域状态机、资源占用事实、可读快照 | 页面对象、启动阶段总编排、跨领域总调度 |
 
 判断口诀：
@@ -80,7 +80,7 @@ xxx_snapshot_t xxx_get_snapshot(void);
 | `ui_refresh_policy` | `ui_refresh_policy_get_activity_snapshot(out)` | 符合，只读 UI 活跃事实。 |
 | `power_policy` | `power_policy_get_budget()` | 符合，返回预算值副本。 |
 | `power_service` | `power_service_get_snapshot(out)` / `power_service_get_state()` | 符合，新增 out-copy snapshot；旧指针接口仅兼容旧调用方。 |
-| `background_service_manager` | `background_service_manager_get_snapshot()` | 符合，返回值副本。 |
+| `safety_monitor_policy` | `safety_monitor_policy_get_snapshot()` | 符合，返回值副本。 |
 | `safety_monitor_session` | `safety_monitor_session_get_snapshot()` | 符合，返回值副本。 |
 | `audio_codec` | `audio_codec_get_session_snapshot(out)` | 符合，表达 input/output session owner。 |
 | `system_time_service` | `system_time_service_get_snapshot(out)` | 符合，桥接 system_time 快照。 |
@@ -134,8 +134,8 @@ init
 
 | 场景 | 推荐原语 | 当前项目例子 / 说明 |
 | --- | --- | --- |
-| 长期执行单元 | task | `power_policy`、`power_service`、`network_service`、`official_chat_service`、`background_service_manager`、`sleep_coordinator`。 |
-| 轻量事件唤醒 | task notification | `power_policy_notify(reason)`、`background_service_manager` 的用户开关/前台音频/power budget 变化唤醒。 |
+| 长期执行单元 | task | `power_policy`、`power_service`、`network_service`、`official_chat_service`、`runtime_coordinator`、`safety_monitor_policy`、`sleep_coordinator`。 |
+| 轻量事件唤醒 | task notification | `power_policy_notify(reason)`、`safety_monitor_policy` 的用户开关/前台音频/power budget/coordinator block 变化唤醒。 |
 | 带参数命令 | queue | `board_button` 事件队列；后续 `official_chat_service` 前台/退出/shutdown 适合迁移。 |
 | 多条件 readiness | event group | `startup_readiness` 的 UI first frame gate。 |
 | 独占共享资源 | mutex / semaphore | I2C、音频 session、共享快照复制。 |
@@ -163,7 +163,7 @@ init
    - 已补 `power_service_get_snapshot(out)`，getter 只复制双缓冲活动快照，不访问 PMIC/I2C。
    - 有效电源状态变化后 notify `power_policy`，周期采样仍作为兜底；AXP2101 V1 仍保持只读事实源。
 
-4. `background_service_manager`
+4. `safety_monitor_policy`
    - 已保持 Safety Monitor 目标态合成器定位，不升级成通用调度器。
    - 用户开关、前台音频、power budget 变化通过 task notification 唤醒 manager task；1 秒周期等待作为兜底。
    - `power_policy` 只通知预算可能变化，不携带预算、不启动或停止 Safety Monitor。

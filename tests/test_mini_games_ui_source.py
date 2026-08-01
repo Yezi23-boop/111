@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import BOARD_BUTTON_HEADER
 from tests.main_paths import BOARD_BUTTON_SOURCE
 from tests.main_paths import HARDWARE_INIT_SOURCE
@@ -97,11 +98,9 @@ class MiniGamesUiSourceTests(unittest.TestCase):
         self.assertNotIn("iot_button_register_cb", source)
 
     def test_cmake_registers_mini_game_sources(self) -> None:
-        source = MAIN_CMAKE.read_text(encoding="utf-8")
-
-        self.assertIn(str(MINI_GAME_2048_SOURCE.relative_to(MAIN_CMAKE.parent)).replace("\\", "/"), source.replace("\\", "/"))
-        self.assertIn("app/board_button.c", source.replace("\\", "/"))
-        self.assertIn("ui/custom/mini_games_controller.c", source.replace("\\", "/"))
+        assert_main_source_globbed(self, "features/mini_games/mini_game_2048.c")
+        assert_main_source_globbed(self, "app/board_button.c")
+        assert_main_source_globbed(self, "ui/custom/mini_games_controller.c")
 
 
 if __name__ == "__main__":

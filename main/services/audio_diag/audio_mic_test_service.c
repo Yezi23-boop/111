@@ -14,7 +14,7 @@
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "sd_manager.h"
-#include "services/safety/background_service_manager.h"
+#include "services/runtime/safety_monitor_policy.h"
 
 static const char *TAG = "mic_test";
 
@@ -394,7 +394,7 @@ static void audio_mic_test_task(void *arg)
     ESP_LOGI(TAG, "MIC_TEST: START");
     publish_state(AUDIO_MIC_TEST_STATE_RUNNING, ESP_OK, "测试中");
 
-    esp_err_t err = background_service_manager_set_foreground_audio_active(
+    esp_err_t err = safety_monitor_policy_set_foreground_audio_active(
         true, "mic_test");
     if (err != ESP_OK) {
         snapshot.last_error = err;
@@ -561,7 +561,7 @@ finish:
         (void)audio_codec_release_input(AUDIO_CODEC_OWNER_AUDIO_RECORDER);
     }
     if (foreground_audio_active) {
-        (void)background_service_manager_set_foreground_audio_active(
+        (void)safety_monitor_policy_set_foreground_audio_active(
             false, "mic_test_done");
     }
 

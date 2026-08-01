@@ -28,7 +28,7 @@ status: active
 - `watch_endpoint_service.c` 是中性 endpoint owner，当前负责异步 POST 危险告警到 `/v1/watch/alerts`。
 - 当前没有可直接导出最近事件上下文 PCM 的通用音频环形缓存；推理滑窗只服务模型窗口步进，不适合作为样本文件来源。
 - 服务器 `server/watch_voice_endpoint/app.py` 已有 `UploadFile` 处理语音命令的基础，但还没有独立的危险样本上传接口。
-- 危险识别后台能力已经由 `background_service_manager -> safety_monitor_session -> danger_detection_service -> espdl_audio_runtime` 管理；样本保存必须跟随这条运行链路，不新增独立常驻监听能力。
+- 危险识别后台能力已经由 `safety_monitor_policy -> safety_monitor_session -> danger_detection_service -> espdl_audio_runtime` 管理；样本保存必须跟随这条运行链路，不新增独立常驻监听能力。
 - `components/espdl_inference` 属于底层模型 runtime，不能直接依赖 `main/services/danger_sample_recorder`；PCM 暴露必须走 runtime callback/tap API，保持依赖方向为上层注册、底层回调。
 
 ## 范围与非目标

@@ -1,8 +1,8 @@
 import unittest
 
-from tests.main_paths import AUDIO_APP_SOURCE
 from tests.main_paths import APP_ALERT_MANAGER_SOURCE
 from tests.main_paths import AUDIO_ALERT_PLAYER_SOURCE
+from tests.main_paths import AUDIO_MIC_TEST_SERVICE_SOURCE
 from tests.main_paths import REPO_ROOT
 
 AUDIO_CODEC_HEADER = REPO_ROOT / "components" / "audio_codec" / "include" / "audio_codec.h"
@@ -37,18 +37,19 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         cmake = AUDIO_CODEC_CMAKE.read_text(encoding="utf-8")
         self.assertIn('"audio_codec_bus.c"', cmake)
 
-    def test_audio_app_uses_audio_codec_wrapper_and_24khz_header(self) -> None:
-        source = AUDIO_APP_SOURCE.read_text(encoding="utf-8")
+    def test_audio_mic_test_uses_audio_codec_wrapper_and_24khz_header(self) -> None:
+        source = AUDIO_MIC_TEST_SERVICE_SOURCE.read_text(encoding="utf-8")
         self.assertIn('#include "audio_platform_config.h"', source)
         self.assertIn("audio_codec_read(", source)
-        self.assertIn('#include "services/safety/background_service_manager.h"', source)
+        self.assertIn('#include "services/runtime/safety_monitor_policy.h"', source)
         self.assertIn(
-            "background_service_manager_set_foreground_audio_active(\n"
-            "        true, \"recording\")",
+            "safety_monitor_policy_set_foreground_audio_active(\n"
+            "        true, \"mic_test\")",
             source,
         )
         self.assertIn(
-            "audio_codec_acquire_input(AUDIO_CODEC_OWNER_AUDIO_RECORDER, 500U)",
+            "audio_codec_acquire_input(AUDIO_CODEC_OWNER_AUDIO_RECORDER,\n"
+            "                                    kInputAcquireTimeoutMs)",
             source,
         )
         self.assertIn(
@@ -56,8 +57,8 @@ class AudioCodecPortSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "background_service_manager_set_foreground_audio_active(\n"
-            "        false",
+            "safety_monitor_policy_set_foreground_audio_active(\n"
+            "            false, \"mic_test_done\")",
             source,
         )
         self.assertNotIn("audio_codec_get_record_dev()", source)

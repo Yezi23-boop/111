@@ -1,7 +1,6 @@
 #include "hardware_init.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "features/audio/audio_app.h"
 #include "sd_manager.h"
 #include "audio_codec.h"
 #include "board_button.h"
@@ -100,14 +99,6 @@ esp_err_t hardware_init(void)
     if (ret != ESP_OK)
     {
         ESP_LOGW(TAG, "DS2413 motor init failed: %s", esp_err_to_name(ret));
-    }
-
-    /* 音频应用层先准备目录和控制入口；即使失败，也不阻断整机启动。 */
-    ESP_LOGI(TAG, "Initializing Audio SPIFFS...");
-    ret = audio_app_init();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Audio SPIFFS init failed: %s", esp_err_to_name(ret));
     }
 
     /*

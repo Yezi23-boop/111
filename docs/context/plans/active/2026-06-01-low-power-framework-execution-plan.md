@@ -6,7 +6,7 @@ status: active
 last_reviewed: 2026-06-01
 memory_type: project_plan
 scope: repo
-owners: main/services/power/power_policy.c, main/services/safety/background_service_manager.c, main/services/network/network_service.c, main/ui/ui_refresh_policy.c, main/services/power/wakeup_evidence_service.c, components/pcf85063atl, components/axp2101
+owners: main/services/power/power_policy.c, main/services/runtime/safety_monitor_policy.c, main/services/network/network_service.c, main/ui/ui_refresh_policy.c, main/services/power/wakeup_evidence_service.c, components/pcf85063atl, components/axp2101
 triggers: low-power-framework-architecture, power_budget, sleep_coordinator, STANDBY, Light Sleep, Deep Sleep, low power execution plan, 低功耗框架执行计划
 evidence_level: design
 supersedes: docs/context/plans/completed/2026-06-01-light-sleep-readiness-framework-plan.md
@@ -81,7 +81,7 @@ STANDBY
 - 已将 `LOW_BATTERY_WARN / CHARGING / EXTERNAL_POWER / MAINTENANCE` 收敛为预算 flag 或 bool 字段，不再作为产品态。
 - 已补 `standby_reason / display_budget / ui_budget / network_budget / background_budget / cpu_budget / power_poll_budget / sleep_permission / sleep_blockers / flags / sleep_interval_hint_ms`。
 - 已在 STANDBY 且无 blocker、interval hint 有效时发布 `sleep_permission=LIGHT_ALLOWED`；当前仅用于 dry-run 观测，不触发真实 sleep。
-- 已将低电量从后台 manager 自动 UI 提示链路撤回为 `POWER_POLICY_FLAG_LOW_BATTERY_WARN` 和日志字段；原 `app_alert_manager` 低电量接口暂留，但不再由 `background_service_manager` 调用。
+- 已将低电量从后台 policy 自动 UI 提示链路撤回为 `POWER_POLICY_FLAG_LOW_BATTERY_WARN` 和日志字段；原 `app_alert_manager` 低电量接口暂留，但不再由 `safety_monitor_policy` 调用。
 
 建议 `power_budget` 至少表达这些语义：
 
@@ -158,7 +158,7 @@ V1 最小判定规则：
 - Safety Monitor 这类 P0 相关后台能力默认不因普通 `STANDBY` 被关死。
 - 如果某任务不能暂停，应该发布 blocker，而不是让 `power_policy` 猜。
 - Safety Monitor 运行中应发布 `BACKGROUND_CRITICAL` 或等价 blocker；手动 sleep 测试不得静默暂停它。
-- 如果显式测试确实需要暂停 Safety Monitor，必须通过 `background_service_manager / safety_monitor_session` 的正式路径进入可记录的测试暂停态，不能由 `sleep_coordinator` 直接停模型 runtime。
+- 如果显式测试确实需要暂停 Safety Monitor，必须通过 `safety_monitor_policy / safety_monitor_session` 的正式路径进入可记录的测试暂停态，不能由 `sleep_coordinator` 直接停模型 runtime。
 
 ### audio owner
 

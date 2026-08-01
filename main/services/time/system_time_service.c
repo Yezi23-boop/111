@@ -108,9 +108,12 @@ esp_err_t system_time_service_note_network_ready(void)
         return ESP_OK;
     }
 
+    /* SNTP 成功后会在同一任务回写 RTC。I2C ISR 的事务描述符位于调用栈，
+       因而该短生命周期任务也必须使用 internal RAM，才能与 OTA Flash 写入
+       并发而不访问 cache-disabled 的 PSRAM。 */
     const BaseType_t result = xTaskCreateWithCaps(
         system_time_service_sync_task, "system_time_sync", 4096, NULL, 4,
-        &s_sync_task_handle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        &s_sync_task_handle, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (result != pdPASS)
     {
         s_sync_task_handle = NULL;

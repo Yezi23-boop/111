@@ -5,7 +5,7 @@ summary: ES8311 与 ES7210 在当前项目中的地址编码、时钟能力和�
 last_reviewed: 2026-03-11
 memory_type: semantic
 scope: board
-owners: components/audio_codec, main/features/audio/audio_app.c
+owners: components/audio_codec, main/services/audio_diag/audio_mic_test_service.c
 triggers: audio, codec, address, clock, baseline
 evidence_level: observed
 ---

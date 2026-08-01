@@ -78,6 +78,14 @@ class PowerServiceSourceTests(unittest.TestCase):
         self.assertIn("POWER_POLICY_NOTIFY_POWER_STATE", source)
         self.assertIn("(void)power_policy_notify(POWER_POLICY_NOTIFY_POWER_STATE);", source)
 
+    def test_i2c_polling_task_keeps_its_stack_in_internal_ram(self) -> None:
+        source = POWER_SERVICE_SOURCE.read_text(encoding="utf-8")
+        start_body = source.split("esp_err_t power_service_start(void)", 1)[1]
+
+        self.assertIn("board_power_refresh", source)
+        self.assertIn("MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT", start_body)
+        self.assertNotIn("&s_task_handle, MALLOC_CAP_SPIRAM", start_body)
+
 
 if __name__ == "__main__":
     unittest.main()

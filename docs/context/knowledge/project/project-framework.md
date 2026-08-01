@@ -118,14 +118,15 @@ Owner：
 
 Owner：
 
-- `main/services/safety/background_service_manager.c`
+- `main/services/runtime/runtime_coordinator.c`
+- `main/services/runtime/safety_monitor_policy.c`
 - `main/services/safety/safety_monitor_session.c`
 
 职责：
 
-- 等待 UI first frame 后，再推进长期后台能力。
-- 保存用户意图，读取资源快照和 power budget，合成 `should_run`。
-- 不变成模型 owner、音频仲裁器、提醒策略 owner 或通用任务调度器。
+- coordinator 串行处理 participant 注册、强前台交接、generation、deadline 与 ACK。
+- Safety policy 等待 UI first frame 后，保存用户意图并合成 `should_run`。
+- 两者都不拥有模型、网络、OTA、音频或 BLE 等真实资源。
 
 ### Deferred Services
 
@@ -152,6 +153,8 @@ main/ui        LVGL UI runtime、generated 页面、custom 控制器
 
 `components` 目录承载可复用组件、domain owner、driver adapter 和 vendor 适配。
 
+`main/services/runtime/` 只收纳跨 owner 的运行时编排：启动 readiness、注册式 `runtime_coordinator` 与 Safety Monitor policy；它们不拥有 Safety Monitor runtime、OTA、网络、Hermes 或电源等具体资源。
+
 逻辑分层：
 
 | 层 | 典型目录/模块 | 负责 | 不负责 |
@@ -175,9 +178,10 @@ main/ui        LVGL UI runtime、generated 页面、custom 控制器
 | Wi-Fi STA runtime | `wifi_control` | `network_manager`、网络预算消费者 | 只处理 STA runtime control 和 power save |
 | 网络 ready 探测 | `network_service` | official_chat、后台服务 | 兼容 shim + service-ready，不继续承载新产品网络语义 |
 | 音频 input/output session | `components/audio_codec` | official_chat、ESP-DL、alerts | 所有读麦/放音路径走 session |
-| AI 对话服务 | `official_chat_service` | UI、background manager | 前台 AI 生命周期，不拥有网络底层 |
-| Safety Monitor 目标态 | `background_service_manager` | `safety_monitor_session`、UI | 保存用户开关，合成 should_run，不拥有模型 runtime |
-| Safety Monitor 生命周期 | `safety_monitor_session` | background manager | 把 should_run 翻译成 start/stop/retry |
+| 跨 owner 协调 | `runtime_coordinator` | participant owners、诊断 | 只拥有协议、generation、deadline、ACK 和当前强前台事实 |
+| AI 对话服务 | `official_chat_service` | UI、coordinator | 前台 AI 生命周期，不拥有网络底层 |
+| Safety Monitor 目标态 | `safety_monitor_policy` | `safety_monitor_session`、UI、coordinator | 保存用户开关，合成 should_run，不拥有模型 runtime |
+| Safety Monitor 生命周期 | `safety_monitor_session` | Safety policy | 把 should_run 翻译成 start/stop/retry |
 | 危险识别风险状态 | `danger_detection_service` | UI、`app_alert_manager` | 负责风险状态机和连续证据融合 |
 | 危险提醒编排 | `app_alert_manager` | UI、audio alert | 负责提醒动作，不解释模型阈值 |
 | 模型推理 runtime | `components/espdl_inference` | `danger_detection_service` | 模型加载、预处理、推理、后处理 |
@@ -216,9 +220,9 @@ Safety Monitor 当前正式链路：
 
 ```text
 危险识别页 UI 开关
-  -> background_service_manager_set_danger_detection_enabled()
-  -> background_service_manager task notification
-  -> background_service_manager 读取 power budget + audio session snapshot
+  -> safety_monitor_policy_set_enabled()
+  -> safety_monitor_policy task notification
+  -> safety_monitor_policy 读取 power budget + audio session snapshot + coordinator block
   -> safety_monitor_session should_run
   -> danger_detection_service
   -> espdl_inference
@@ -230,7 +234,7 @@ Safety Monitor 当前正式链路：
 - UI 不能直接 start/stop 长期后台 runtime。
 - 页面退出不等于停止后台能力。
 - AI 前台音频、低电量、维护窗口、麦克风占用等必须表现为可解释 blocker。
-- 用户开关、前台音频和 power budget 变化只唤醒 `background_service_manager` 重算目标态；真实 start/stop 仍只由 `safety_monitor_session` 执行。
+- 用户开关、前台音频、power budget 和 coordinator block 变化只唤醒 `safety_monitor_policy` 重算目标态；真实 start/stop 仍只由 `safety_monitor_session` 执行。
 - 新后台能力接入前必须先明确用户授权、资源 owner、snapshot、budget 字段和 session/lifecycle owner。
 
 ## 网络框架
@@ -306,10 +310,10 @@ V1 sleep 路线：
 ## 禁止路径
 
 - 不新增大而全 `ResourceManager`、`resource_policy`、`system_power_manager`、`session_router` 或默认 `ui_manager`。
-- 不在 V1 新增 `runtime lease` 仲裁中心、通用资源账本或中心化硬件管家。
+- 不新增 runtime lease、通用资源账本或中心化硬件管家；`runtime_coordinator` 只做已证明重复的跨 owner 协议。
 - 不让 UI 直接操作 Wi-Fi、I2S、PMIC、LCD panel、touch driver、ESP-DL runtime。
 - 不让 `power_policy` 直接操作硬件、LVGL、Wi-Fi、音频、模型或 ESP sleep API。
-- 不让 `background_service_manager` 变成通用任务调度器、模型 owner、提醒策略 owner 或音频仲裁器。
+- 不让 `runtime_coordinator` 直接操作业务资源，也不让 `safety_monitor_policy` 变成通用任务调度器、模型 owner、提醒策略 owner 或音频仲裁器。
 - 不让 `wakeup_evidence_service` 变成低功耗策略 owner。
 - 不从历史 superseded 文档反推当前框架。
 

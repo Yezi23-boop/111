@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import (
     APP_ALERT_MANAGER_SOURCE,
     DANGER_DETECTION_SERVICE_SOURCE,
@@ -78,10 +79,9 @@ class HapticAlertPlayerSourceTests(unittest.TestCase):
         )
 
     def test_build_wires_haptic_player_and_danger_service_stays_decoupled(self) -> None:
-        cmake = MAIN_CMAKE.read_text(encoding="utf-8")
         service = DANGER_DETECTION_SERVICE_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("features/alerts/haptic_alert_player.c", cmake)
+        assert_main_source_globbed(self, "features/alerts/haptic_alert_player.c")
         self.assertNotIn("haptic_alert_player", service)
         self.assertNotIn("board_ds2413_motor", service)
 

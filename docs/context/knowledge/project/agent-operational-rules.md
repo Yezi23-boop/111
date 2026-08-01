@@ -116,7 +116,7 @@ evidence_level: design
 
 ### 音频 / 存储任务默认实践
 
-- 优先关注模块：`components/audio_codec`、`components/mp3_player`、`main/features/audio/audio_app.c`、`components/sd_card`。
+- 优先关注模块：`components/audio_codec`、`components/mp3_player`、`components/sd_card`、`main/services/audio_diag/audio_mic_test_service.c`。
 - 音频问题优先检查初始化顺序、`I2S/codec` 采样率、音量控制、`SPIFFS/SD` 路径和缓冲状态。
 - 任何优化前先补可观测性：关键日志、计时点、播放状态和失败返回码。
 - 未验证前，不随意修改公共采样率、存储分区或播放器接口。

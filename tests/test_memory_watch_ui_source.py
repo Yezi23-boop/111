@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import LVGL_TASK_SOURCE
 from tests.main_paths import MAIN_CMAKE
@@ -241,11 +242,10 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         self.assertNotIn("memory_watch_voice_client", combined)
 
     def test_cmake_and_custom_header_register_memory_watch_ui(self) -> None:
-        cmake = MAIN_CMAKE.read_text(encoding="utf-8").replace("\\", "/")
         custom_header = UI_CUSTOM_HEADER.read_text(encoding="utf-8")
 
-        self.assertIn("ui/custom/memory_watch_controller.c", cmake)
-        self.assertIn("ui/custom/memory_watch_view.c", cmake)
+        assert_main_source_globbed(self, "ui/custom/memory_watch_controller.c")
+        assert_main_source_globbed(self, "ui/custom/memory_watch_view.c")
         self.assertIn('#include "memory_watch_controller.h"', custom_header)
 
 

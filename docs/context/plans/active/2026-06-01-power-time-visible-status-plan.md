@@ -94,7 +94,7 @@ Phase 1: 可视化与摘要日志
 
 - UI/input owner 发布只读 activity snapshot，例如最近触摸、按键、强制活跃时间。
 - `power_policy` 读取 activity snapshot 和电源事实，合成 `STANDBY` 预算。
-- `ui_refresh_policy`、`background_service_manager`、`network_service` 等各自消费预算并执行本 owner 的降级/恢复动作。
+- `ui_refresh_policy`、`safety_monitor_policy`、`network_service` 等各自消费预算并执行本 owner 的降级/恢复动作。
 - `power_policy` 不直接管理触摸、按键、LVGL 刷新循环、面板亮度、Wi-Fi 或后台任务。
 
 ### `system_time` / `system_time_service`
@@ -298,7 +298,7 @@ sleep_permission=unchanged
 - `[x]` `power_policy` 只发布 `STANDBY` 预算，不直接操作屏幕、Wi-Fi 或后台任务。
 - `[x]` `ui_refresh_policy` 或 UI owner 消费 `STANDBY` 预算，执行渐进变暗到最低/0 亮度和更低刷新。
 - `[x]` 第一版不调用 CO5300 sleep-in、不反初始化 panel、不关闭显示供电轨，降低恢复风险。
-- `[x]` `background_service_manager` 消费 `STANDBY` 预算；当前没有除 Safety Monitor 外的可暂停后台任务，Safety Monitor 按安全约束保持运行，非关键网络同步由 `network_service` 降级。
+- `[x]` `safety_monitor_policy` 消费 `STANDBY` 预算；当前没有除 Safety Monitor 外的可暂停后台任务，Safety Monitor 按安全约束保持运行，非关键网络同步由 `network_service` 降级。
 - `[x]` 普通 `STANDBY` 不暂停 Safety Monitor，确保 P0 危险提醒仍可触发强制退出。
 - `[x]` `network_service` 或 Wi-Fi owner 消费预算，进入省电或暂停非关键同步；第一版不主动断开 AP。
 - `[ ]` 触摸/按键能退出 `STANDBY`。（无人验证未覆盖，需后续手动触摸或调试触发补证据）

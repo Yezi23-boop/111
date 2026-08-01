@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import MAIN_DIR
 from tests.main_paths import PCF85063ATL_CMAKE
@@ -79,7 +80,7 @@ class WakeupEvidenceSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
         app_main = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/power/wakeup_evidence_service.c", cmake)
+        assert_main_source_globbed(self, "services/power/wakeup_evidence_service.c")
         self.assertRegex(cmake, r"\bREQUIRES\b[\s\S]*?\bpcf85063atl\b")
         self.assertIn('#include "services/power/wakeup_evidence_service.h"', app_main)
         self.assertIn("wakeup_evidence_service_start()", app_main)
@@ -87,6 +88,14 @@ class WakeupEvidenceSourceTests(unittest.TestCase):
             app_main.index("power_policy_start()"),
             app_main.index("wakeup_evidence_service_start()"),
         )
+
+    def test_i2c_polling_task_keeps_its_stack_in_internal_ram(self) -> None:
+        source = WAKEUP_EVIDENCE_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("pcf85063atl_read_control2", source)
+        self.assertIn("axp2101_read_irq_status", source)
+        self.assertIn("MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT", source)
+        self.assertNotIn("&s_task_handle,\n                                        MALLOC_CAP_SPIRAM", source)
 
 
 if __name__ == "__main__":

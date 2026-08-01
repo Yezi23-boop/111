@@ -2,7 +2,7 @@
 id: main-directory-map
 tags: project, architecture, main, layout, esp32-s3
 summary: 记录 main 组件当前按 app、services、features、ui 分层后的目录职责，便于后续整理与定位改动。
-last_reviewed: 2026-07-14
+last_reviewed: 2026-07-31
 memory_type: semantic
 scope: repo
 owners: main/app/app_main.c, main/app/hardware_init.c, main/services, main/features, main/ui
@@ -28,11 +28,10 @@ evidence_level: observed
   - `power/`：电源快照、整机预算、sleep dry-run 与唤醒证据。
   - `network/`：`network_service` ready probe 与兼容 shim。
   - `sensors/`：IMU 长期采样和 snapshot。
-  - `runtime_gate/`：前台资源 gate 和板级诊断测试；后台 HTTPS token 已撤除。
-  - `startup/`：启动 readiness 聚合。
+  - `runtime/`：启动 readiness、注册式 runtime coordinator、Safety Monitor policy 与默认关闭的协调板测；不拥有业务资源。
   - `time/`：系统时间 service owner。
   - `weather/`：天气周期任务、snapshot 和内部 HTTP client。
-  - `safety/`：后台安全能力目标态与 session 生命周期。
+  - `safety/`：Safety Monitor session 生命周期。
   - `audio_diag/`：一次性麦克风诊断服务。
   - `official_chat_service.[ch]`：`official_chat` 生命周期与消息缓存服务，暂保留在 services 根目录。
   - `fall_detection_service.[ch]`：跌倒推理 service，暂保留在 services 根目录。
@@ -42,8 +41,7 @@ evidence_level: observed
   - `display_alert_adapter.[ch]`：危险覆盖层 UI 适配。
 - `main/features/danger_detection`
   - `danger_detection_service.[ch]`：危险声音识别 service 层。
-- `main/features/audio`
-  - `audio_app.[ch]`：录音相关应用层逻辑。
+  - `danger_sample_recorder.[ch]`：危险触发样本录制（WAV+JSON，挂 ESP-DL PCM tap）。
 - `main/features/memory_watch`
   - 记录 Memory Watch 的产品语义边界；当前不新增只转发一层的 feature facade。
 - `main/ui`

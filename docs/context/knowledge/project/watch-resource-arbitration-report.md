@@ -6,7 +6,7 @@ last_reviewed: 2026-07-14
 memory_type: semantic
 scope: project
 status: active
-owners: docs/context/knowledge/project/watch-resource-arbitration-report.md, main/services/runtime_gate/foreground_runtime_gate.c, main/services/safety/background_service_manager.c, main/services/power/power_policy.c, components/espdl_inference
+owners: docs/context/knowledge/project/watch-resource-arbitration-report.md, main/services/runtime/runtime_coordinator.c, main/services/runtime/safety_monitor_policy.c, main/services/power/power_policy.c, components/espdl_inference
 triggers: resource arbitration, internal RAM, largest block, psram, foreground runtime gate, espdl, ble, hermes, official chat, websocket, tls
 evidence_level: observed
 ---
@@ -32,7 +32,7 @@ evidence_level: observed
 5. 大 buffer 和确认安全的 task stack 定向迁入 PSRAM。
 6. BLE、ESP-DL、TLS 或 task 创建失败时由对应 owner fail closed 或退避，不能带病继续运行。
 
-本项目不需要中央 `ResourceManager`、后台 HTTPS job queue、全局 malloc 替换层或统一 memory pressure 广播。新增机制必须由可重复真机证据驱动。
+本项目不需要中央 `ResourceManager`、后台 HTTPS job queue、全局 malloc 替换层或统一 memory pressure 广播。四个强前台 owner 重复实现同一生命周期后，允许新增只拥有协议、generation、deadline 与 ACK 的 `runtime_coordinator`；它不拥有真实资源。
 
 ## 二、历史证据与适用范围
 
@@ -78,8 +78,8 @@ UI / App 只表达进入页面、点击开关、开始或结束交互
     v
 Service / Domain owner 持有真实生命周期、网络重试和状态
     |
-    +-- foreground_runtime_gate：强前台单 owner 事实
-    +-- background_service_manager：合成 Safety Monitor 是否应运行
+    +-- runtime_coordinator：注册、强前台交接、generation、deadline 与 ACK
+    +-- safety_monitor_policy：合成 Safety Monitor 是否应运行
     +-- power_policy：发布整机功耗预算，不直接操纵业务 task
     +-- network owners：各自发起 HTTPS/WSS 并处理错误与退避
     |
@@ -87,7 +87,7 @@ Service / Domain owner 持有真实生命周期、网络重试和状态
 Driver adapter / ESP-IDF / vendor SDK 执行 owner 决策
 ```
 
-`foreground_runtime_gate` 只发布“当前强前台是谁”，不直接 suspend/delete 别的 owner task，也不接管麦克风、网络、BLE 或 ESP-DL 的释放。
+`runtime_coordinator` 通过 participant 回调请求 owner 让路并等待 ACK；回调只向 owner task 投递命令。协调器不直接 suspend/delete task，也不接管麦克风、网络、BLE、OTA 或 ESP-DL 的释放。
 
 ### 2. 资源档位
 
@@ -119,8 +119,8 @@ Driver adapter / ESP-IDF / vendor SDK 执行 owner 决策
 | Memory Watch 等 task stack 迁 PSRAM | 已完成 | 仅迁移确认不经过 cache-disabled/ISR 关键路径的任务 |
 | Fall/IMU 大窗口与告警 task stack 迁 PSRAM | 已完成 | 后续实测显著恢复 internal free/largest block |
 | ESP-DL Fbank 分配前预检 | 已完成 | 不足时返回 `ESP_ERR_NO_MEM` 并跳过窗口，避免 NULL 解引用 |
-| `foreground_runtime_gate` | 已完成 | 支持 Hermes、official_chat、BLE、OTA、future page owner |
-| Safety Monitor / ESP-DL 主动让路 | 已完成 | `background_service_manager` 消费 gate snapshot，不反向依赖 UI |
+| `runtime_coordinator` | 已完成 | 替代四个 owner 重复 gate/quiesce 流程，保留真实资源 owner |
+| Safety Monitor / ESP-DL 主动让路 | 已完成 | `safety_monitor_policy` 作为可抢占 participant，停止后向 coordinator ACK |
 | BLE 单次重试与 fail closed | 已完成 | `ESP_ERR_NO_MEM` 后只短等待重试一次，仍失败则关闭并提示 |
 | Memory Watch 瞬时错误重试 | 已完成 | health/inbox 保留 pending/due，瞬时错误不误判永久离线 |
 | `background_https_gate` | 已撤除 | 不再统一串行 HTTPS，也不再使用 quiet window |
@@ -163,13 +163,13 @@ official_chat/Hermes WebSocket 握手期间，后台 health/weather 仍可能开
 
 foreground acquire 成功不代表 BLE/TLS 有足够连续 internal block。BLE、ESP-DL、HTTP client 和 task 创建仍必须检查自身返回值并 fail closed。
 
-### 4. foreground API 的 `timeout_ms` 当前没有语义
+### 4. coordinator deadline 不等于业务资源强制回收
 
-`foreground_runtime_gate_acquire(owner, timeout_ms)` 当前忽略 `timeout_ms`，行为实际是 fail-fast。后续应删除该参数或改名为 `try_acquire`；没有真实等待用例前不要引入阻塞队列。
+旧 `foreground_runtime_gate_acquire(owner, timeout_ms)` 已删除。当前 5 秒前台和 2.5 秒后台 deadline 只约束协调事务；超时后进入明确失败或 degraded 状态，不得由 coordinator 强杀 task、释放业务资源或伪造 stopped。
 
-### 5. foreground gate 没有引用计数或 lease
+### 5. generation 只保护协议事务
 
-同一 owner 重复 acquire 会成功，但一次 release 就清空 owner。当前各 service 使用单一 lifecycle 入口和本地 `held` 状态避免嵌套；未来出现第二个真实调用方时再考虑 generation/token。
+`request_generation` 选择最新目标，`transition_generation` 识别当前排空事务；它们不替代各 owner 自己的 worker/session generation。迟到 worker 仍必须在 owner adapter 内收口，不能修改新 session 快照。
 
 ### 6. 历史内存压力阈值已经过时
 
@@ -189,11 +189,11 @@ foreground acquire 成功不代表 BLE/TLS 有足够连续 internal block。BLE�
 4. 前台 WSS/语音与后台 HTTPS 同时发生，观察 `esp-aes`、TLS、socket 和 task 创建错误。
 5. BLE 显式启动应成功或可解释 fail closed，不允许 Guru/WDT。
 
-### P1：只增加诊断，不增加调度 owner
+### P1：统一协议观测，不增加资源 owner
 
 1. 在现有板测日志统一打印 foreground owner、internal free、largest block、PSRAM free。
-2. 通过 owner 自己的 snapshot 统计 HTTP in-flight、retry 和失败原因，不建立中央 holder。
-3. 明确 foreground acquire 的 fail-fast API 语义。
+2. 通过 owner 自己的 snapshot 统计 HTTP in-flight、retry 和失败原因，不把业务状态搬进 coordinator。
+3. 记录 coordinator current/target owner、request/transition generation、deadline 和 ACK 结果。
 
 ### P2：只有证据出现时才局部错峰
 
@@ -209,7 +209,7 @@ foreground acquire 成功不代表 BLE/TLS 有足够连续 internal block。BLE�
 ### 暂不做
 
 - 不恢复 `background_https_gate` 或通用后台 job queue。
-- 不新增中央 `ResourceManager`、`session_router`。
+- 不新增中央 `ResourceManager`、`session_router`；`runtime_coordinator` 只允许持有协议事实。
 - 不全局替换 `malloc/free`。
 - 不把所有 task stack 或 LVGL heap 一次性迁 PSRAM。
 - 不使用旧的 26KB/35KB 阈值控制所有 owner。
@@ -228,7 +228,8 @@ foreground acquire 成功不代表 BLE/TLS 有足够连续 internal block。BLE�
 
 ## 十、关联资料
 
-- `docs/context/plans/active/2026-06-29-watch-runtime-resource-gate-plan.md`
+- `docs/context/plans/completed/2026-06-29-watch-runtime-resource-gate-plan.md`
+- `docs/context/plans/completed/2026-07-31-runtime-coordinator-plan.md`
 - `docs/context/knowledge/project/runtime-owner-contract.md`
 - `docs/context/knowledge/project/task-stack-measurement-full-summary.md`
 - `docs/context/runs/2026-06-29-attempt-foreground-runtime-gate.md`

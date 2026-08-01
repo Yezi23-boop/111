@@ -599,7 +599,18 @@ static esp_err_t start_espdl_backend(void)
     s_service_state.callback_registered = true;
     taskEXIT_CRITICAL(&s_service_state.lock);
 
-    /* 注册 PCM tap 回调到 ESP-DL runtime（由 service 层桥接 recorder）。 */
+    /* 注册 PCM tap 回调到 ESP-DL runtime（由 service 层桥接 recorder）。
+     * stop 时 recorder 已被 deinit，若未初始化则先重建，避免二次启动失效。 */
+    if (!danger_sample_recorder_is_initialized())
+    {
+        esp_err_t init_ret = danger_sample_recorder_init(NULL);
+        if (init_ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "危险样本录制器重建失败，样本录制功能不可用: %s",
+                     esp_err_to_name(init_ret));
+            /* 不阻止服务启动，录制功能可选。 */
+        }
+    }
     danger_sample_recorder_reset_session();
     ret = espdl_audio_runtime_set_pcm_tap_callback(
         danger_detection_on_espdl_pcm_tap, NULL);
@@ -684,7 +695,8 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
 
     if (!runtime_started && !callback_registered)
     {
-        danger_sample_recorder_reset_session();
+        /* 从未运行过：无 PCM 数据，直接释放 recorder（若已初始化）。 */
+        danger_sample_recorder_deinit();
         danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);
         return ESP_OK;
     }
@@ -739,12 +751,13 @@ esp_err_t danger_detection_service_stop(uint32_t timeout_ms)
     danger_detection_reset_espdl_postprocess();
     taskEXIT_CRITICAL(&s_service_state.lock);
 
-    /* 普通后台开关 stop 只重置会话，不销毁 recorder worker/queue。 */
-    danger_sample_recorder_reset_session();
+    /* 停止即彻底释放：销毁 recorder worker/queue/ring buffer（约 164KB，
+     * 含 156KB PSRAM ring）。下次 start 时由 start_espdl_backend 重建。 */
+    danger_sample_recorder_deinit();
 
     danger_detection_set_state(DANGER_DETECTION_STATE_IDLE, ESP_OK);
     (void)app_alert_manager_clear(APP_ALERT_SOURCE_TRAFFIC_AUDIO);
-    ESP_LOGI(TAG, "ESP-DL 危险检测运行时已停止");
+    ESP_LOGI(TAG, "ESP-DL 危险检测运行时已停止（recorder 已释放）");
     return ESP_OK;
 }
 

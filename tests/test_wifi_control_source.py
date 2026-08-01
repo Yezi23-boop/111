@@ -54,8 +54,8 @@ class WifiControlSourceTests(unittest.TestCase):
         source = WIFI_CONTROL_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("portMUX_TYPE", source)
-        self.assertIn("portENTER_CRITICAL", source)
-        self.assertIn("portEXIT_CRITICAL", source)
+        self.assertIn("taskENTER_CRITICAL", source)
+        self.assertIn("taskEXIT_CRITICAL", source)
         self.assertIn("wifi_control_runtime_is_initialized", source)
         self.assertIn("wifi_control_runtime_begin_init", source)
         self.assertIn("wifi_control_runtime_end_init", source)

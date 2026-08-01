@@ -3,7 +3,7 @@
 #include "esp_err.h"
 #include "network_manager.h"
 #include "features/danger_detection/danger_detection_service.h"
-#include "services/safety/background_service_manager.h"
+#include "services/runtime/background_service_manager.h"
 #include "services/audio_diag/audio_mic_test_service.h"
 #include "services/power/power_policy.h"
 #include "system_time.h"
@@ -366,7 +366,7 @@ background_service_manager_snapshot_t background_service_manager_get_snapshot(vo
 esp_err_t background_service_manager_init(void) { return ESP_OK; }
 esp_err_t background_service_manager_notify_foreground_runtime_changed(void) { return ESP_OK; }
 
-#include "services/runtime_gate/foreground_runtime_gate.h"
+#include "services/runtime/foreground_runtime_gate.h"
 esp_err_t foreground_runtime_gate_try_acquire(
     foreground_runtime_owner_t owner) {
     return ESP_OK;

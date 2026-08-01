@@ -2,10 +2,10 @@
 id: watch-foreground-session-lifecycle-plan
 tags: context, plans, foreground-session, lifecycle, resource-arbitration, freertos, hermes, official-chat, ble, espdl
 summary: 先盘点全系统动态资源的 owner 与生命周期，再为 Hermes、official_chat 和 BLE provisioning 建立完整的前台资源创建/销毁机制，并通过强前台 gate 和后台 quiesced ACK 完成可验证切换。
-last_reviewed: 2026-07-29
+last_reviewed: 2026-07-31
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-07-14-watch-foreground-session-lifecycle-plan.md, main/services/memory_watch/memory_watch_service.c, main/services/official_chat_service.c, main/services/network/network_service.c, main/services/runtime_gate/foreground_runtime_gate.c, main/services/safety/background_service_manager.c
+owners: docs/context/plans/completed/2026-07-14-watch-foreground-session-lifecycle-plan.md, main/services/memory_watch/memory_watch_service.c, main/services/official_chat_service.c, main/services/network/network_service.c, main/services/runtime/runtime_coordinator.c, main/services/runtime/safety_monitor_policy.c
 triggers: foreground session, resource create destroy, 前台资源, 创建销毁, Hermes切换, official chat切换, BLE provisioning生命周期
 evidence_level: implementation
 status: archived
@@ -439,6 +439,13 @@ idf.py build
 如修改 `sdkconfig`，先 `idf.py fullclean`。真机使用 `scripts/board/agent_serial_monitor.ps1`，默认 `app-flash` 后限时 monitor。
 
 ## 进度
+
+### 2026-07-31 coordinator 接续闭环
+
+阶段 5/6/7 的分散 gate/quiesce 实现已由 `runtime_coordinator` 接续：旧 owner 的 5 秒等待、Safety Monitor generation-owned ACK 和跨 owner 事实现在由 coordinator task 统一串行处理。COM7 测试镜像完成模拟状态机、Hermes/OTA 真实交接；恢复默认配置后的冷启动完成 `startup_sequence_done`、`SERVICE_READY` 和资源快照检查。旧计划继续作为生命周期审计与阶段验收历史，不再作为当前代码落点。
+
+- 证据：`docs/context/plans/completed/2026-07-31-runtime-coordinator-plan.md`。
+- 板端 run：`docs/context/runs/2026-07-31-attempt-runtime-coordinator-board-handoffs.md`。
 
 ### 本轮闭环状态（2026-07-29）
 

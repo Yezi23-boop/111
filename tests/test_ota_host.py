@@ -4,6 +4,7 @@ import json
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -62,6 +63,65 @@ class OtaHostTests(unittest.TestCase):
             self.assertEqual(5, len(disconnected))
             self.assertEqual(10, disconnected_length)
             self.assertTrue(disconnected_close)
+
+    def test_publish_remote_streams_bin_to_admin_api(self) -> None:
+        class FakeResponse:
+            status = 200
+
+            @staticmethod
+            def read() -> bytes:
+                return b'{"version":"0.2.0","size":8}'
+
+        class FakeConnection:
+            instance = None
+
+            def __init__(self, host, port, timeout) -> None:
+                self.host = host
+                self.port = port
+                self.timeout = timeout
+                self.headers = {}
+                self.sent = bytearray()
+                FakeConnection.instance = self
+
+            def putrequest(self, method, path) -> None:
+                self.method = method
+                self.path = path
+
+            def putheader(self, name, value) -> None:
+                self.headers[name] = value
+
+            def endheaders(self) -> None:
+                pass
+
+            def send(self, data) -> None:
+                self.sent.extend(data)
+
+            @staticmethod
+            def getresponse() -> FakeResponse:
+                return FakeResponse()
+
+            def close(self) -> None:
+                pass
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image = pathlib.Path(temp_dir) / "111.bin"
+            image.write_bytes(b"firmware")
+            with mock.patch.object(ota_host.http.client, "HTTPSConnection", FakeConnection):
+                manifest = ota_host.publish_remote(
+                    image,
+                    "0.2.0",
+                    "stable",
+                    "https://watch.example/v1/watch/ota/admin/releases",
+                    "admin-token",
+                )
+
+        connection = FakeConnection.instance
+        self.assertEqual({"version": "0.2.0", "size": 8}, manifest)
+        self.assertEqual("watch.example", connection.host)
+        self.assertEqual(443, connection.port)
+        self.assertEqual("POST", connection.method)
+        self.assertEqual("admin-token", connection.headers["X-OTA-Admin-Token"])
+        self.assertIn(b"firmware", connection.sent)
 
 
 if __name__ == "__main__":

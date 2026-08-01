@@ -84,7 +84,7 @@ static esp_err_t ble_presence_ensure_primitives(void)
         return ESP_OK;
     }
 
-    portENTER_CRITICAL(&s_presence_bootstrap_lock);
+    taskENTER_CRITICAL(&s_presence_bootstrap_lock);
     if (s_presence_mutex == NULL)
     {
         s_presence_mutex =
@@ -94,7 +94,7 @@ static esp_err_t ble_presence_ensure_primitives(void)
     {
         s_stop_done = xSemaphoreCreateBinaryStatic(&s_stop_done_buffer);
     }
-    portEXIT_CRITICAL(&s_presence_bootstrap_lock);
+    taskEXIT_CRITICAL(&s_presence_bootstrap_lock);
 
     return (s_presence_mutex != NULL && s_stop_done != NULL) ? ESP_OK
                                                              : ESP_FAIL;

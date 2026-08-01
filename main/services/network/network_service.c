@@ -10,8 +10,7 @@
 #include "freertos/task.h"
 #include "network_manager.h"
 #include "services/power/power_policy.h"
-#include "services/runtime_gate/foreground_runtime_gate.h"
-#include "services/safety/background_service_manager.h"
+#include "services/runtime/runtime_coordinator.h"
 #include "services/time/system_time_service.h"
 #include "wifi_control.h"
 
@@ -45,11 +44,16 @@ static char s_network_ip[16] = {0}; // 当前缓存的 IPv4 字符串，仅由�
 static bool s_runtime_power_save_applied = false; // 最近一次按预算下发的 Wi-Fi 省电状态。
 static bool s_runtime_power_save_known = false;   // false 表示尚未下发过 Wi-Fi 省电配置。
 static bool s_ble_desired_enabled = false; // 仅在 snapshot lock 下更新的 BLE 目标态。
+static bool s_ble_runtime_target_enabled = false; // coordinator 未阻塞时才跟随用户偏好。
+static bool s_ble_presence_blocked = false; // 强前台占用期间暂停普通 BLE presence。
 static bool s_ble_applied_enabled = false; // 最近一次 manager 成功应用的 BLE 状态。
 static bool s_ble_transition_enabled = false; // 当前 worker 捕获的目标态。
 static bool s_ble_transition_completed = false; // worker 已发布结果，等待 owner 回收 task。
-static bool s_ble_foreground_gate_held = false; // 仅由 BLE transition worker 改写。
-static bool s_ble_provisioning_gate_held = false; // true 表示 gate 由 BLE 配网临时持有。
+static uint32_t s_ble_presence_quiesce_generation = 0U;
+static uint32_t s_provision_request_generation = 0U;
+static uint32_t s_provision_quiesce_generation = 0U;
+static network_service_ble_operation_t s_provision_pending_operation =
+    NETWORK_SERVICE_BLE_OPERATION_NONE;
 static network_service_ble_operation_t s_ble_operation_request =
     NETWORK_SERVICE_BLE_OPERATION_NONE; // 最新待执行 BLE/provisioning 操作。
 static network_service_ble_operation_t s_ble_operation_active =
@@ -60,6 +64,8 @@ static uint32_t s_ble_transition_generation = 0U; // 当前 worker 捕获的代�
 static uint32_t s_ble_provision_request_generation = 0U; // 每次配网入口请求递增。
 static uint32_t s_ble_provision_applied_generation = 0U; // 最近一次已处理配网请求代次。
 static uint32_t s_ble_provision_transition_generation = 0U; // worker 捕获的配网请求代次。
+static uint32_t s_ble_provision_intent_generation = 0U; // UI 可见的配网意图代次。
+static bool s_provision_stop_requested = false;
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static network_service_wifi_status_t s_wifi_status_snapshot = {
     .service_state = NETWORK_SERVICE_STATE_OFFLINE,
@@ -115,7 +121,7 @@ static void network_service_apply_power_budget(void);
 static void network_service_reconcile_ble(void);
 static void network_service_stop_completed_ble_provisioning_if_connected(
     const network_manager_status_t *status);
-static void network_service_release_completed_ble_provisioning_gate(
+static void network_service_cancel_completed_ble_provisioning_request(
     const network_manager_status_t *status);
 static void network_service_ble_transition_task(void *pv_parameter);
 static void network_service_task(void *pv_parameter);
@@ -132,83 +138,11 @@ static bool network_service_ble_request_is_current(uint32_t generation,
 {
     bool current = false;
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     current = s_ble_request_generation == generation &&
-              s_ble_desired_enabled == enabled;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+              s_ble_runtime_target_enabled == enabled;
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     return current;
-}
-
-/**
- * @brief 为 BLE 真实启停申请强前台 gate。
- *
- * 同 owner acquire 没有引用计数，因此只允许本 worker 维护的一份 held 状态；
- * 发现外部 BLE owner 时按冲突处理，避免后续误释放别人的 gate。
- */
-static esp_err_t network_service_ble_acquire_gate(void)
-{
-    if (s_ble_foreground_gate_held)
-    {
-        return ESP_OK;
-    }
-    if (foreground_runtime_gate_current_owner() !=
-        FOREGROUND_RUNTIME_OWNER_NONE)
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    uint32_t quiesce_generation = 0U;
-    esp_err_t ret = background_service_manager_request_foreground_quiesce(
-        &quiesce_generation);
-    if (ret == ESP_OK)
-    {
-        ret = background_service_manager_wait_foreground_quiesced(
-            quiesce_generation, 2500U);
-    }
-    if (ret != ESP_OK)
-    {
-        if (quiesce_generation != 0U)
-        {
-            (void)background_service_manager_finish_foreground_quiesce(quiesce_generation);
-        }
-        ESP_LOGW(TAG, "BLE foreground quiesce failed: %s",
-                 esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = foreground_runtime_gate_try_acquire(
-        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING);
-    if (quiesce_generation != 0U)
-    {
-        (void)background_service_manager_finish_foreground_quiesce(quiesce_generation);
-    }
-    if (ret == ESP_OK)
-    {
-        s_ble_foreground_gate_held = true;
-        (void)background_service_manager_notify_foreground_runtime_changed();
-    }
-    return ret;
-}
-
-/**
- * @brief 在 BLE 资源确认停止后释放强前台 gate。
- */
-static esp_err_t network_service_ble_release_gate(void)
-{
-    if (!s_ble_foreground_gate_held)
-    {
-        return ESP_OK;
-    }
-
-    const esp_err_t ret = foreground_runtime_gate_release(
-        FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING);
-    if (ret == ESP_OK)
-    {
-        s_ble_foreground_gate_held = false;
-        s_ble_provisioning_gate_held = false;
-        (void)background_service_manager_notify_foreground_runtime_changed();
-    }
-    return ret;
 }
 
 /**
@@ -219,7 +153,8 @@ static esp_err_t network_service_ble_release_gate(void)
  */
 static esp_err_t network_service_restore_ble_presence_if_desired(void)
 {
-    if (!s_ble_desired_enabled || network_manager_is_ble_enabled())
+    if (!s_ble_desired_enabled || s_ble_presence_blocked ||
+        network_manager_is_ble_enabled())
     {
         return ESP_OK;
     }
@@ -237,9 +172,9 @@ static void network_service_finish_ble_transition(uint32_t generation,
     bool current = false;
     TaskHandle_t notify_handle = NULL;
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     current = s_ble_request_generation == generation &&
-              s_ble_desired_enabled == enabled;
+              s_ble_runtime_target_enabled == enabled;
     s_ble_applied_generation = generation;
     s_ble_applied_enabled = applied_enabled;
     s_snapshot.ble_applied_enabled = applied_enabled;
@@ -249,9 +184,7 @@ static void network_service_finish_ble_transition(uint32_t generation,
         s_snapshot.ble_runtime_ready = (result == ESP_OK);
         s_snapshot.ble_last_error = result;
     }
-    s_ble_transition_completed = true;
-    notify_handle = s_network_task_handle;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     if (notify_handle != NULL)
     {
@@ -272,22 +205,42 @@ static void network_service_finish_ble_provisioning(uint32_t generation,
     bool current = false;
     TaskHandle_t notify_handle = NULL;
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     current = s_ble_provision_request_generation == generation;
     s_ble_provision_applied_generation = generation;
     if (current)
     {
-        s_snapshot.provisioning_generation = generation;
+        s_snapshot.provisioning_generation = s_ble_provision_intent_generation;
         s_snapshot.provisioning_transition_pending = false;
         s_snapshot.provisioning_last_error = result;
     }
     s_ble_transition_completed = true;
     notify_handle = s_network_task_handle;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
-    ESP_LOGI(TAG, "BLE provisioning request complete: generation=%u result=%s gate_held=%d",
-             (unsigned)generation, esp_err_to_name(result),
-             s_ble_foreground_gate_held ? 1 : 0);
+    ESP_LOGI(TAG, "BLE provisioning request complete: generation=%u result=%s",
+             (unsigned)generation, esp_err_to_name(result));
+
+    if ((s_ble_operation_active ==
+             NETWORK_SERVICE_BLE_OPERATION_START_BLE_PROVISIONING ||
+         s_ble_operation_active ==
+             NETWORK_SERVICE_BLE_OPERATION_START_SOFTAP_PROVISIONING) &&
+        generation == s_ble_provision_request_generation &&
+        s_provision_request_generation != 0U)
+    {
+        (void)runtime_coordinator_report_start_result(
+            RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING,
+            s_provision_request_generation, result);
+        if (result != ESP_OK)
+        {
+            s_provision_request_generation = 0U;
+        }
+    }
+
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_ble_transition_completed = true;
+    notify_handle = s_network_task_handle;
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     if (notify_handle != NULL)
     {
@@ -309,39 +262,23 @@ static void network_service_finish_ble_provisioning(uint32_t generation,
 static void network_service_ble_transition_task(void *pv_parameter)
 {
     (void)pv_parameter;
+    /* creator 先发布 task handle，避免极速完成的 worker 留下不可回收旧句柄。 */
+    (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     const network_service_ble_operation_t operation = s_ble_operation_active;
     const bool enabled = s_ble_transition_enabled;
     const uint32_t generation = s_ble_transition_generation;
     const uint32_t provision_generation = s_ble_provision_transition_generation;
     bool applied_enabled = false;
-    bool gate_acquired_here = false;
     bool manager_called = false;
     esp_err_t ret = ESP_OK;
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     applied_enabled = s_ble_applied_enabled;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     if (operation == NETWORK_SERVICE_BLE_OPERATION_START_BLE_PROVISIONING)
     {
-        ret = network_service_ble_acquire_gate();
-        if (ret == ESP_OK)
-        {
-            /* provisioning session 接管 gate 责任，即使普通 BLE presence 先前已持有它。 */
-            s_ble_provisioning_gate_held = true;
-        }
-        if (ret == ESP_OK)
-        {
-            ret = network_manager_start_ble_provisioning();
-        }
-        if (ret != ESP_OK && s_ble_provisioning_gate_held)
-        {
-            (void)network_service_restore_ble_presence_if_desired();
-        }
-        if (ret != ESP_OK && s_ble_provisioning_gate_held)
-        {
-            (void)network_service_ble_release_gate();
-        }
+        ret = network_manager_start_ble_provisioning();
         network_service_finish_ble_provisioning(provision_generation, ret);
         vTaskSuspend(NULL);
         return;
@@ -349,19 +286,10 @@ static void network_service_ble_transition_task(void *pv_parameter)
 
     if (operation == NETWORK_SERVICE_BLE_OPERATION_START_SOFTAP_PROVISIONING)
     {
-        ret = network_service_ble_acquire_gate();
-        if (ret != ESP_OK)
-        {
-            network_service_finish_ble_provisioning(provision_generation, ret);
-            vTaskSuspend(NULL);
-            return;
-        }
-        s_ble_provisioning_gate_held = true;
         ret = network_manager_start_softap_provisioning();
         if (ret != ESP_OK)
         {
             (void)network_service_restore_ble_presence_if_desired();
-            (void)network_service_ble_release_gate();
         }
         network_service_finish_ble_provisioning(provision_generation, ret);
         vTaskSuspend(NULL);
@@ -371,25 +299,36 @@ static void network_service_ble_transition_task(void *pv_parameter)
     if (operation == NETWORK_SERVICE_BLE_OPERATION_STOP_PROVISIONING)
     {
         ret = network_manager_stop_provisioning();
-        if (ret == ESP_OK && s_ble_foreground_gate_held &&
-            !network_manager_is_ble_active())
+        uint32_t quiesce_generation = 0U;
+        taskENTER_CRITICAL(&s_snapshot_lock);
+        quiesce_generation = s_provision_quiesce_generation;
+        taskEXIT_CRITICAL(&s_snapshot_lock);
+        if (quiesce_generation != 0U)
         {
-            ret = network_service_ble_release_gate();
-        }
-        if (ret == ESP_OK && s_ble_desired_enabled)
-        {
-            /* provisioning 只是临时让普通 BLE presence 让路，结束后恢复用户原偏好。 */
-            ret = network_service_ble_acquire_gate();
-            if (ret == ESP_OK)
+            const esp_err_t report_ret =
+                runtime_coordinator_report_quiesce_result(
+                RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING,
+                quiesce_generation, ret);
+            if (report_ret == ESP_OK)
             {
-                ret = network_manager_set_ble_enabled(true);
-                if (ret != ESP_OK)
+                taskENTER_CRITICAL(&s_snapshot_lock);
+                if (s_provision_quiesce_generation == quiesce_generation)
                 {
-                    (void)network_service_ble_release_gate();
+                    s_provision_quiesce_generation = 0U;
                 }
+                taskEXIT_CRITICAL(&s_snapshot_lock);
+            }
+            else
+            {
+                ESP_LOGW(TAG, "provisioning quiesce ACK failed: %s",
+                         esp_err_to_name(report_ret));
             }
         }
         network_service_finish_ble_provisioning(provision_generation, ret);
+        if (ret == ESP_OK)
+        {
+            s_provision_request_generation = 0U;
+        }
         vTaskSuspend(NULL);
         return;
     }
@@ -402,17 +341,7 @@ static void network_service_ble_transition_task(void *pv_parameter)
         return;
     }
 
-    const bool runtime_may_be_active = network_manager_is_ble_enabled() ||
-                                       network_manager_is_ble_active();
-    if (enabled || runtime_may_be_active || s_ble_foreground_gate_held)
-    {
-        const bool gate_was_held = s_ble_foreground_gate_held;
-        ret = network_service_ble_acquire_gate();
-        gate_acquired_here = !gate_was_held && s_ble_foreground_gate_held;
-    }
-
-    if (ret == ESP_OK &&
-        network_service_ble_request_is_current(generation, enabled))
+    if (network_service_ble_request_is_current(generation, enabled))
     {
         manager_called = true;
         ret = network_manager_set_ble_enabled(enabled);
@@ -435,40 +364,48 @@ static void network_service_ble_transition_task(void *pv_parameter)
         }
     }
 
-    if (!enabled && manager_called && ret == ESP_OK)
-    {
-        ret = network_service_ble_release_gate();
-    }
-    else if (enabled && manager_called && ret != ESP_OK)
+    if (enabled && manager_called && ret != ESP_OK)
     {
         const esp_err_t cleanup_ret = network_manager_set_ble_enabled(false);
         if (cleanup_ret == ESP_OK)
         {
             applied_enabled = false;
-            const esp_err_t release_ret = network_service_ble_release_gate();
-            if (release_ret != ESP_OK)
-            {
-                ret = release_ret;
-            }
         }
         else
         {
             ret = cleanup_ret;
         }
     }
-    else if (!manager_called && gate_acquired_here && !applied_enabled)
+    ESP_LOGI(TAG,
+             "BLE transition complete: enabled=%d generation=%u result=%s",
+             enabled ? 1 : 0, (unsigned)generation, esp_err_to_name(ret));
+    uint32_t quiesce_generation = 0U;
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    if (!enabled)
     {
-        const esp_err_t release_ret = network_service_ble_release_gate();
-        if (release_ret != ESP_OK)
+        quiesce_generation = s_ble_presence_quiesce_generation;
+    }
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+    if (quiesce_generation != 0U)
+    {
+        const esp_err_t report_ret = runtime_coordinator_report_quiesce_result(
+            RUNTIME_COORDINATOR_PARTICIPANT_BLE_PRESENCE,
+            quiesce_generation, ret);
+        if (report_ret == ESP_OK)
         {
-            ret = release_ret;
+            taskENTER_CRITICAL(&s_snapshot_lock);
+            if (s_ble_presence_quiesce_generation == quiesce_generation)
+            {
+                s_ble_presence_quiesce_generation = 0U;
+            }
+            taskEXIT_CRITICAL(&s_snapshot_lock);
+        }
+        else
+        {
+            ESP_LOGW(TAG, "BLE presence quiesce ACK failed: %s",
+                     esp_err_to_name(report_ret));
         }
     }
-
-    ESP_LOGI(TAG,
-             "BLE transition complete: enabled=%d generation=%u result=%s gate_held=%d",
-             enabled ? 1 : 0, (unsigned)generation, esp_err_to_name(ret),
-             s_ble_foreground_gate_held ? 1 : 0);
     network_service_finish_ble_transition(generation, enabled,
                                           applied_enabled, ret);
     vTaskSuspend(NULL);
@@ -482,21 +419,21 @@ static void network_service_reconcile_ble(void)
     bool should_start = false;
     TaskHandle_t completed_worker = NULL;
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     if (s_ble_transition_completed)
     {
         completed_worker = s_ble_transition_task_handle;
         s_ble_transition_task_handle = NULL;
         s_ble_transition_completed = false;
     }
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     if (completed_worker != NULL)
     {
         vTaskDeleteWithCaps(completed_worker);
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     should_start = s_ble_transition_task_handle == NULL &&
                    s_ble_request_generation != s_ble_applied_generation;
     if (!should_start &&
@@ -514,14 +451,14 @@ static void network_service_reconcile_ble(void)
         if (s_ble_request_generation != s_ble_applied_generation)
         {
             s_ble_operation_active = NETWORK_SERVICE_BLE_OPERATION_TOGGLE;
-            s_ble_transition_enabled = s_ble_desired_enabled;
+            s_ble_transition_enabled = s_ble_runtime_target_enabled;
             s_ble_transition_generation = s_ble_request_generation;
             s_snapshot.ble_transition_pending = true;
             s_snapshot.ble_runtime_ready = false;
             s_snapshot.ble_last_error = ESP_OK;
         }
     }
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     if (!should_start)
     {
@@ -534,7 +471,7 @@ static void network_service_reconcile_ble(void)
         kBleTransitionStackBytes, NULL, kBleTransitionTaskPriority,
         &worker_handle, 0, MALLOC_CAP_INTERNAL);
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     if (created == pdPASS)
     {
         s_ble_transition_task_handle = worker_handle;
@@ -545,7 +482,7 @@ static void network_service_reconcile_ble(void)
         {
             s_ble_applied_generation = s_ble_transition_generation;
             if (s_ble_request_generation == s_ble_transition_generation &&
-                s_ble_desired_enabled == s_ble_transition_enabled)
+                s_ble_runtime_target_enabled == s_ble_transition_enabled)
             {
                 s_snapshot.ble_transition_pending = false;
                 s_snapshot.ble_runtime_ready = false;
@@ -562,7 +499,12 @@ static void network_service_reconcile_ble(void)
             s_snapshot.provisioning_last_error = ESP_ERR_NO_MEM;
         }
     }
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+
+    if (created == pdPASS)
+    {
+        xTaskNotifyGive(worker_handle);
+    }
 
     if (created != pdPASS)
     {
@@ -576,8 +518,6 @@ static void network_service_reconcile_ble(void)
 static esp_err_t network_service_request_provisioning(
     network_service_ble_operation_t operation)
 {
-    uint32_t generation = 0U;
-
     if (s_network_task_handle == NULL)
     {
         return ESP_ERR_INVALID_STATE;
@@ -589,21 +529,181 @@ static esp_err_t network_service_request_provisioning(
         return ESP_ERR_INVALID_ARG;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
-    s_ble_operation_request = operation;
-    s_ble_provision_request_generation++;
+    if (operation == NETWORK_SERVICE_BLE_OPERATION_STOP_PROVISIONING)
+    {
+        const uint32_t request_generation = s_provision_request_generation;
+        if (request_generation != 0U)
+        {
+            s_provision_stop_requested = true;
+            return runtime_coordinator_cancel_request(
+                RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING,
+                request_generation);
+        }
+
+        taskENTER_CRITICAL(&s_snapshot_lock);
+        s_ble_operation_request = operation;
+        ++s_ble_provision_request_generation;
+        if (s_ble_provision_request_generation == 0U)
+        {
+            s_ble_provision_request_generation = 1U;
+        }
+        ++s_ble_provision_intent_generation;
+        s_snapshot.provisioning_generation =
+            s_ble_provision_intent_generation;
+        s_snapshot.provisioning_transition_pending = true;
+        s_snapshot.provisioning_last_error = ESP_OK;
+        taskEXIT_CRITICAL(&s_snapshot_lock);
+        xTaskNotifyGive(s_network_task_handle);
+        return ESP_OK;
+    }
+
+    if (s_provision_request_generation != 0U)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_provision_pending_operation = operation;
+    ++s_ble_provision_intent_generation;
+    if (s_ble_provision_intent_generation == 0U)
+    {
+        s_ble_provision_intent_generation = 1U;
+    }
+    s_snapshot.provisioning_generation = s_ble_provision_intent_generation;
+    s_snapshot.provisioning_transition_pending = true;
+    s_snapshot.provisioning_last_error = ESP_OK;
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+
+    s_provision_request_generation = 0U;
+    const esp_err_t ret = runtime_coordinator_request_foreground(
+        RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING,
+        &s_provision_request_generation);
+    if (ret != ESP_OK)
+    {
+        s_provision_request_generation = 0U;
+        taskENTER_CRITICAL(&s_snapshot_lock);
+        s_snapshot.provisioning_transition_pending = false;
+        s_snapshot.provisioning_last_error = ret;
+        taskEXIT_CRITICAL(&s_snapshot_lock);
+    }
+    return ret;
+}
+
+static esp_err_t network_service_coordinator_grant_provisioning(
+    uint32_t generation, void *user_ctx)
+{
+    (void)user_ctx;
+    if (generation != s_provision_request_generation ||
+        s_provision_pending_operation == NETWORK_SERVICE_BLE_OPERATION_NONE)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_ble_operation_request = s_provision_pending_operation;
+    ++s_ble_provision_request_generation;
     if (s_ble_provision_request_generation == 0U)
     {
         s_ble_provision_request_generation = 1U;
     }
-    generation = s_ble_provision_request_generation;
-    s_snapshot.provisioning_generation = generation;
-    s_snapshot.provisioning_transition_pending = true;
-    s_snapshot.provisioning_last_error = ESP_OK;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+    xTaskNotifyGive(s_network_task_handle);
+    return ESP_OK;
+}
 
-    ESP_LOGI(TAG, "queue provisioning request: operation=%d generation=%u",
-             (int)operation, (unsigned)generation);
+static esp_err_t network_service_coordinator_cancel_provisioning(
+    uint32_t generation, esp_err_t reason, void *user_ctx)
+{
+    (void)user_ctx;
+    if (generation != s_provision_request_generation)
+    {
+        return ESP_OK;
+    }
+    s_provision_request_generation = 0U;
+    s_provision_pending_operation = NETWORK_SERVICE_BLE_OPERATION_NONE;
+    s_provision_stop_requested = false;
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.provisioning_transition_pending = false;
+    s_snapshot.provisioning_last_error = reason;
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+    xTaskNotifyGive(s_network_task_handle);
+    return ESP_OK;
+}
+
+static esp_err_t network_service_coordinator_quiesce_provisioning(
+    uint32_t generation, void *user_ctx)
+{
+    (void)user_ctx;
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_provision_quiesce_generation = generation;
+    s_provision_stop_requested = false;
+    s_ble_operation_request = NETWORK_SERVICE_BLE_OPERATION_STOP_PROVISIONING;
+    ++s_ble_provision_request_generation;
+    if (s_ble_provision_request_generation == 0U)
+    {
+        s_ble_provision_request_generation = 1U;
+    }
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+    xTaskNotifyGive(s_network_task_handle);
+    return ESP_OK;
+}
+
+static esp_err_t network_service_coordinator_quiesce_ble_presence(
+    uint32_t generation, void *user_ctx)
+{
+    (void)user_ctx;
+    bool already_quiesced = false;
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_ble_presence_blocked = true;
+    s_ble_runtime_target_enabled = false;
+    s_ble_presence_quiesce_generation = generation;
+    already_quiesced = !s_ble_applied_enabled;
+    if (!already_quiesced)
+    {
+        ++s_ble_request_generation;
+        if (s_ble_request_generation == 0U)
+        {
+            s_ble_request_generation = 1U;
+        }
+        s_snapshot.ble_transition_pending = true;
+    }
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+
+    if (already_quiesced)
+    {
+        const esp_err_t ret = runtime_coordinator_report_quiesce_result(
+            RUNTIME_COORDINATOR_PARTICIPANT_BLE_PRESENCE,
+            generation, ESP_OK);
+        if (ret == ESP_OK)
+        {
+            taskENTER_CRITICAL(&s_snapshot_lock);
+            if (s_ble_presence_quiesce_generation == generation)
+            {
+                s_ble_presence_quiesce_generation = 0U;
+            }
+            taskEXIT_CRITICAL(&s_snapshot_lock);
+        }
+        return ret;
+    }
+    xTaskNotifyGive(s_network_task_handle);
+    return ESP_OK;
+}
+
+static esp_err_t network_service_coordinator_reevaluate_ble_presence(
+    uint32_t generation, void *user_ctx)
+{
+    (void)generation;
+    (void)user_ctx;
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_ble_presence_blocked = false;
+    s_ble_runtime_target_enabled = s_ble_desired_enabled;
+    ++s_ble_request_generation;
+    if (s_ble_request_generation == 0U)
+    {
+        s_ble_request_generation = 1U;
+    }
+    s_snapshot.ble_transition_pending = true;
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     xTaskNotifyGive(s_network_task_handle);
     return ESP_OK;
 }
@@ -619,99 +719,46 @@ static esp_err_t network_service_request_provisioning(
 static void network_service_stop_completed_ble_provisioning_if_connected(
     const network_manager_status_t *status)
 {
-    bool should_request = false;
-    uint32_t generation = 0U;
-    TaskHandle_t notify_handle = NULL;
-
     if (status == NULL || !status->wifi_connected || !status->ble_active)
     {
         return;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
-    should_request =
-        s_ble_provisioning_gate_held &&
-        s_ble_transition_task_handle == NULL &&
-        s_ble_provision_request_generation ==
-            s_ble_provision_applied_generation;
-    if (should_request)
+    if (s_provision_request_generation != 0U &&
+        !s_provision_stop_requested)
     {
-        s_ble_operation_request =
-            NETWORK_SERVICE_BLE_OPERATION_STOP_PROVISIONING;
-        s_ble_provision_request_generation++;
-        if (s_ble_provision_request_generation == 0U)
-        {
-            s_ble_provision_request_generation = 1U;
-        }
-        generation = s_ble_provision_request_generation;
-        notify_handle = s_network_task_handle;
-        s_snapshot.provisioning_generation = generation;
-        s_snapshot.provisioning_transition_pending = true;
-        s_snapshot.provisioning_last_error = ESP_OK;
-    }
-    portEXIT_CRITICAL(&s_snapshot_lock);
-
-    if (!should_request)
-    {
-        return;
-    }
-
-    ESP_LOGI(TAG,
-             "auto queue BLE provisioning stop after Wi-Fi connected: generation=%u",
-             (unsigned)generation);
-    if (notify_handle != NULL)
-    {
-        xTaskNotifyGive(notify_handle);
+        s_provision_stop_requested = true;
+        (void)runtime_coordinator_cancel_request(
+            RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING,
+            s_provision_request_generation);
     }
 }
 
 /**
- * @brief 在官方 provisioning 自动结束后释放 BLE foreground gate。
+ * @brief 在官方 provisioning 自动结束后取消 coordinator 前台请求。
  *
  * ESP-IDF provisioning manager 会在凭据成功后自动停止服务；该停止不是
  * `network_service` 发起的 worker 操作，因此 owner 需要在周期快照中补一次
- * gate 对账。这里只处理由 BLE provisioning start 持有的 gate，不影响普通
- * BLE presence 总开关的 gate 生命周期。
+ * coordinator 对账。这里只处理 provisioning 的前台请求，不影响普通 BLE
+ * presence 的用户偏好。
  */
-static void network_service_release_completed_ble_provisioning_gate(
+static void network_service_cancel_completed_ble_provisioning_request(
     const network_manager_status_t *status)
 {
-    bool should_release = false;
-
     if (status == NULL)
     {
         return;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
-    should_release =
-        s_ble_foreground_gate_held &&
-        s_ble_provisioning_gate_held &&
-        !status->ble_active &&
-        status->state != NETWORK_MANAGER_STATE_PROVISIONING_BLE;
-    portEXIT_CRITICAL(&s_snapshot_lock);
-
-    if (should_release)
+    if (s_provision_request_generation != 0U &&
+        !s_provision_stop_requested && !status->ble_active &&
+        status->state != NETWORK_MANAGER_STATE_PROVISIONING_BLE &&
+        status->state != NETWORK_MANAGER_STATE_PROVISIONING_SOFTAP)
     {
-        if (s_ble_desired_enabled)
-        {
-            const esp_err_t restore_ret =
-                network_service_restore_ble_presence_if_desired();
-            if (restore_ret != ESP_OK)
-            {
-                ESP_LOGW(TAG, "restore BLE presence after provisioning failed: %s",
-                         esp_err_to_name(restore_ret));
-            }
-        }
-    }
-    if (should_release)
-    {
-        const esp_err_t ret = network_service_ble_release_gate();
-        if (ret != ESP_OK)
-        {
-            ESP_LOGW(TAG, "release completed BLE provisioning gate failed: %s",
-                     esp_err_to_name(ret));
-        }
+        s_provision_stop_requested = true;
+        (void)runtime_coordinator_cancel_request(
+            RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING,
+            s_provision_request_generation);
     }
 }
 
@@ -724,9 +771,9 @@ static network_service_snapshot_t network_service_copy_snapshot(void)
 {
     network_service_snapshot_t snapshot;
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     snapshot = s_snapshot;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     return snapshot;
 }
@@ -737,9 +784,9 @@ static network_service_snapshot_t network_service_copy_snapshot(void)
  */
 static void network_service_set_last_error(esp_err_t error)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.last_error = error;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 /**
@@ -748,9 +795,9 @@ static void network_service_set_last_error(esp_err_t error)
  */
 static void network_service_set_wifi_connected(bool connected)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.wifi_connected = connected;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 /**
@@ -763,11 +810,11 @@ static void network_service_set_probe_snapshot(bool active,
                                                bool paused_by_budget,
                                                esp_err_t result)
 {
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.probe_active = active;
     s_snapshot.probe_paused_by_budget = paused_by_budget;
     s_snapshot.last_probe_result = result;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 /**
@@ -829,11 +876,11 @@ static void network_service_set_state(network_service_state_t state,
                  reason != NULL ? reason : "no-reason");
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.state = state;
     s_snapshot.service_ready =
         (state == NETWORK_SERVICE_STATE_SERVICE_READY);
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 /**
@@ -931,9 +978,9 @@ static void network_service_publish_wifi_status(
         }
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_wifi_status_snapshot = next;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
 /**
@@ -1124,8 +1171,13 @@ static esp_err_t probe_network_services_ready(void)
 static void network_service_apply_power_budget(void)
 {
     const power_policy_budget_t budget = power_policy_get_budget();
-    const bool power_save = !budget.network_sync_allowed ||
-                            budget.state == POWER_POLICY_STATE_STANDBY;
+    /* maintenance 仍会暂停后台同步，但 OTA 等前台 HTTPS 传输必须保持 STA
+     * 唤醒；否则 DTIM 省电会把长镜像下载误当成可延后的后台请求。 */
+    const bool maintenance_keeps_wifi_awake =
+        (budget.flags & POWER_POLICY_FLAG_MAINTENANCE) != 0U;
+    const bool power_save = !maintenance_keeps_wifi_awake &&
+                            (!budget.network_sync_allowed ||
+                             budget.state == POWER_POLICY_STATE_STANDBY);
 
     if (s_runtime_power_save_known &&
         s_runtime_power_save_applied == power_save)
@@ -1144,9 +1196,9 @@ static void network_service_apply_power_budget(void)
 
     s_runtime_power_save_applied = power_save;
     s_runtime_power_save_known = true;
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.power_save_applied = power_save;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
     ESP_LOGI(TAG, "Wi-Fi power save %s by power budget",
              power_save ? "enabled" : "disabled");
 }
@@ -1188,7 +1240,7 @@ static void network_service_task(void *pv_parameter)
         }
 
         network_service_stop_completed_ble_provisioning_if_connected(&status);
-        network_service_release_completed_ble_provisioning_gate(&status);
+        network_service_cancel_completed_ble_provisioning_request(&status);
         network_service_sync_cached_ip(&status);
         network_service_publish_wifi_status(&status);
         const power_policy_budget_t budget = power_policy_get_budget();
@@ -1267,9 +1319,42 @@ esp_err_t network_service_start(void)
         return ret;
     }
 
+    const runtime_coordinator_participant_config_t provisioning = {
+        .id = RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING,
+        .name = "network_provisioning",
+        .capabilities = RUNTIME_COORDINATOR_CAPABILITY_FOREGROUND_EXCLUSIVE,
+        .request_quiesce =
+            network_service_coordinator_quiesce_provisioning,
+        .grant_foreground =
+            network_service_coordinator_grant_provisioning,
+        .cancel_pending_request =
+            network_service_coordinator_cancel_provisioning,
+    };
+    ret = runtime_coordinator_register(&provisioning);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+    const runtime_coordinator_participant_config_t presence = {
+        .id = RUNTIME_COORDINATOR_PARTICIPANT_BLE_PRESENCE,
+        .name = "ble_presence",
+        .capabilities =
+            RUNTIME_COORDINATOR_CAPABILITY_BACKGROUND_PREEMPTIBLE,
+        .request_quiesce =
+            network_service_coordinator_quiesce_ble_presence,
+        .request_reevaluate =
+            network_service_coordinator_reevaluate_ble_presence,
+    };
+    ret = runtime_coordinator_register(&presence);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
     const bool initial_ble_enabled = network_manager_is_ble_enabled();
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_ble_desired_enabled = initial_ble_enabled;
+    s_ble_runtime_target_enabled = initial_ble_enabled;
     s_ble_applied_enabled = initial_ble_enabled;
     s_ble_request_generation = 1U;
     s_ble_applied_generation = 0U;
@@ -1279,7 +1364,7 @@ esp_err_t network_service_start(void)
     s_snapshot.ble_transition_pending = true;
     s_snapshot.ble_generation = s_ble_request_generation;
     s_snapshot.ble_last_error = ESP_OK;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     /* 栈缩为 4096B：高压实测 free=3804B（62% 空闲），缩 2KB 仍有余量。
      * 栈迁 PSRAM：省 internal RAM，该任务不直接做 NVS/flash 写操作。 */
@@ -1290,12 +1375,12 @@ esp_err_t network_service_start(void)
     if (result != pdPASS)
     {
         s_network_task_handle = NULL;
-        portENTER_CRITICAL(&s_snapshot_lock);
+        taskENTER_CRITICAL(&s_snapshot_lock);
         s_ble_applied_generation = s_ble_request_generation;
         s_snapshot.ble_transition_pending = false;
         s_snapshot.ble_runtime_ready = false;
         s_snapshot.ble_last_error = ESP_FAIL;
-        portEXIT_CRITICAL(&s_snapshot_lock);
+        taskEXIT_CRITICAL(&s_snapshot_lock);
         network_service_set_last_error(ESP_FAIL);
         network_service_set_state(NETWORK_SERVICE_STATE_ERROR,
                                   "network service task create failed");
@@ -1345,8 +1430,12 @@ esp_err_t network_service_set_ble_enabled(bool enabled)
         return ESP_ERR_INVALID_STATE;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     s_ble_desired_enabled = enabled;
+    if (!s_ble_presence_blocked)
+    {
+        s_ble_runtime_target_enabled = enabled;
+    }
     s_ble_request_generation++;
     if (s_ble_request_generation == 0U)
     {
@@ -1358,7 +1447,7 @@ esp_err_t network_service_set_ble_enabled(bool enabled)
     s_snapshot.ble_generation = s_ble_request_generation;
     s_snapshot.ble_last_error = ESP_OK;
     generation = s_ble_request_generation;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     ESP_LOGI(TAG, "queue BLE enable request: enabled=%d generation=%u",
              enabled ? 1 : 0, (unsigned)generation);
@@ -1415,9 +1504,9 @@ esp_err_t network_service_get_wifi_status(network_service_wifi_status_t *status)
         return ESP_ERR_INVALID_ARG;
     }
 
-    portENTER_CRITICAL(&s_snapshot_lock);
+    taskENTER_CRITICAL(&s_snapshot_lock);
     *status = s_wifi_status_snapshot;
-    portEXIT_CRITICAL(&s_snapshot_lock);
+    taskEXIT_CRITICAL(&s_snapshot_lock);
 
     return ESP_OK;
 }

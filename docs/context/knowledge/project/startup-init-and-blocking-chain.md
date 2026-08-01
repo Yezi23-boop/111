@@ -18,7 +18,6 @@ evidence_level: observed
 2. 调用 `main/app/hardware_init.c` 中的 `hardware_init()`
 3. 在 `hardware_init()` 中依次执行：
    - `hardware_nvs_init()`
-   - `audio_app_init()`
    - `sd_manager_init()`
    - `audio_codec_init()`
    - `board_power_init()`

@@ -1,8 +1,9 @@
 import unittest
 
-from tests.main_paths import BACKGROUND_SERVICE_MANAGER_SOURCE
-from tests.main_paths import BACKGROUND_SERVICE_MANAGER_HEADER
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import REPO_ROOT
+from tests.main_paths import SAFETY_MONITOR_POLICY_HEADER
+from tests.main_paths import SAFETY_MONITOR_POLICY_SOURCE
 from tests.main_paths import SAFETY_MONITOR_SESSION_HEADER
 from tests.main_paths import SAFETY_MONITOR_SESSION_SOURCE
 
@@ -27,46 +28,33 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("previous_runtime_running", source)
         self.assertIn("k_start_retry_ticks", source)
 
-    def test_background_manager_delegates_runtime_lifecycle_to_session(self) -> None:
-        header = BACKGROUND_SERVICE_MANAGER_HEADER.read_text(encoding="utf-8")
-        source = BACKGROUND_SERVICE_MANAGER_SOURCE.read_text(encoding="utf-8")
+    def test_safety_policy_delegates_runtime_lifecycle_to_session(self) -> None:
+        header = SAFETY_MONITOR_POLICY_HEADER.read_text(encoding="utf-8")
+        source = SAFETY_MONITOR_POLICY_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "audio_codec.h"', source)
-        self.assertIn("background_service_manager_danger_block_reason_t", header)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED", header)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY", header)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO", header)
-        self.assertIn(
-            "BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_RUNTIME", header
-        )
-        self.assertIn("danger_should_run", header)
-        self.assertIn("danger_block_reason", header)
-        self.assertIn("danger_blocked_by_foreground_audio", header)
-        self.assertIn("danger_blocked_by_foreground_runtime", header)
-        self.assertIn(".danger_enabled_by_user = false", source)
-        self.assertIn('#include "services/runtime_gate/foreground_runtime_gate.h"', source)
-        self.assertIn(
-            "background_service_manager_set_foreground_audio_active",
-            header,
-        )
+        self.assertIn("safety_monitor_policy_block_reason_t", header)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_USER_DISABLED", header)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_POWER", header)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_FOREGROUND_AUDIO", header)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_RUNTIME_COORDINATOR", header)
+        self.assertIn("should_run", header)
+        self.assertIn("block_reason", header)
+        self.assertIn("blocked_by_runtime_coordinator", header)
+        self.assertIn('#include "services/runtime/runtime_coordinator.h"', source)
+        self.assertIn("safety_monitor_policy_set_foreground_audio_active", header)
         self.assertIn("foreground_audio_active", source)
         self.assertIn("audio_codec_get_session_snapshot", source)
         self.assertIn("audio_codec_owner_to_text", source)
         self.assertIn("AUDIO_CODEC_OWNER_HERMES", source)
-        self.assertIn("resource_blocked_change: resource=mic", source)
-        self.assertIn(
-            "resource_blocked_change: resource=foreground_runtime", source
-        )
-        self.assertIn("foreground_runtime_gate_is_active()", source)
-        self.assertIn("foreground_runtime_gate_current_owner()", source)
-        self.assertIn("foreground_runtime_gate_owner_text(foreground_owner)", source)
-        self.assertIn("background_target_change: danger_should_run=%d", source)
-        self.assertIn("background_service_manager_resolve_danger_block_reason", source)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE", source)
+        self.assertIn("safety_monitor_policy_request_quiesce", source)
+        self.assertIn("runtime_coordinator_report_quiesce_result", source)
+        self.assertIn("safety_monitor_policy_resolve_block", source)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_NONE", source)
         self.assertIn("safety_monitor_session_apply(should_run, reason)", source)
         self.assertIn("safety_monitor_session_get_snapshot()", source)
         self.assertIn("startup_readiness_wait_ui_first_frame(portMAX_DELAY)", source)
-        self.assertIn("background_gate_ready: ui_first_frame_ready", source)
+        self.assertIn("ready: ui_first_frame_ready", source)
         self.assertNotIn("k_boot_defer_ticks", source)
         self.assertNotIn("danger_detection_service_start_with_backend", source)
         self.assertNotIn("danger_detection_service_start()", source)
@@ -76,48 +64,34 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertNotIn("vTaskSuspend", source)
         self.assertNotIn("vTaskDelete", source)
 
-    def test_background_manager_uses_notify_plus_periodic_fallback(self) -> None:
-        header = BACKGROUND_SERVICE_MANAGER_HEADER.read_text(encoding="utf-8")
-        source = BACKGROUND_SERVICE_MANAGER_SOURCE.read_text(encoding="utf-8")
+    def test_safety_policy_uses_notify_plus_periodic_fallback(self) -> None:
+        header = SAFETY_MONITOR_POLICY_HEADER.read_text(encoding="utf-8")
+        source = SAFETY_MONITOR_POLICY_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("background_service_manager_notify_policy_changed", header)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_NOTIFY_USER_SWITCH", source)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_NOTIFY_FOREGROUND_AUDIO", source)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_NOTIFY_POWER_BUDGET", source)
+        self.assertIn("safety_monitor_policy_notify_power_changed", header)
+        self.assertIn("SAFETY_MONITOR_POLICY_NOTIFY_USER", source)
+        self.assertIn("SAFETY_MONITOR_POLICY_NOTIFY_AUDIO", source)
+        self.assertIn("SAFETY_MONITOR_POLICY_NOTIFY_POWER", source)
         self.assertIn("xTaskNotify(task_handle, reasons, eSetBits)", source)
-        self.assertIn("xTaskNotifyWait(0, UINT32_MAX, &notify_reasons", source)
-        self.assertIn("k_policy_poll_ticks = pdMS_TO_TICKS(1000)", source)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_NOTIFY_PERIODIC", source)
-        self.assertIn("background_service_manager_apply_policy(\"startup\")", source)
-        self.assertNotIn(
-            "return background_service_manager_apply_policy(\"user_switch\")",
-            source,
-        )
-        self.assertNotIn(
-            "return background_service_manager_apply_policy(\n"
-            "        reason != NULL ? reason : \"foreground_audio\")",
-            source,
-        )
+        self.assertIn("xTaskNotifyWait(0U, UINT32_MAX, &reasons", source)
+        self.assertIn("kPolicyPollTicks = pdMS_TO_TICKS(1000)", source)
+        self.assertIn("SAFETY_MONITOR_POLICY_NOTIFY_PERIODIC", source)
+        self.assertIn("safety_monitor_policy_apply(\"startup\")", source)
 
-    def test_power_policy_only_notifies_background_manager_on_budget_change(self) -> None:
+    def test_power_policy_only_notifies_safety_policy_on_budget_change(self) -> None:
         source = (
             REPO_ROOT / "main" / "services" / "power" / "power_policy.c"
         ).read_text(
             encoding="utf-8"
         )
 
-        self.assertIn('#include "services/safety/background_service_manager.h"', source)
-        self.assertIn("background_service_manager_notify_policy_changed()", source)
-        self.assertNotIn("background_service_manager_set_danger_detection_enabled", source)
+        self.assertIn('#include "services/runtime/safety_monitor_policy.h"', source)
+        self.assertIn("safety_monitor_policy_notify_power_changed()", source)
+        self.assertNotIn("safety_monitor_policy_set_enabled", source)
         self.assertNotIn("safety_monitor_session_apply", source)
 
     def test_main_cmake_registers_safety_monitor_session_source(self) -> None:
-        source = MAIN_CMAKE.read_text(encoding="utf-8")
-
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/safety/safety_monitor_session.c",
-            source,
-        )
+        assert_main_source_globbed(self, "services/safety/safety_monitor_session.c")
 
 
 if __name__ == "__main__":

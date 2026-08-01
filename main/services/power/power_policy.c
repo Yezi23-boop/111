@@ -10,7 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
-#include "services/safety/background_service_manager.h"
+#include "services/runtime/safety_monitor_policy.h"
 #include "services/power/power_service.h"
 #include "ui_refresh_policy.h"
 
@@ -376,7 +376,7 @@ static void power_policy_store_budget(const power_policy_budget_t *budget)
 
     if (changed)
     {
-        (void)background_service_manager_notify_policy_changed();
+        (void)safety_monitor_policy_notify_power_changed();
 
         char blocker_text[160];
         power_policy_format_sleep_blockers(budget->sleep_blockers,

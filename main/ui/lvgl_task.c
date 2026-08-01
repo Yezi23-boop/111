@@ -16,12 +16,13 @@
 #include "lvgl_task.h"
 #include "nvs_flash.h"
 #include "printf_esp32.h"
-#include "services/startup/startup_readiness.h"
+#include "services/runtime/startup_readiness.h"
 #include "ui/custom/ai_ui_controller.h"
 #include "ui/custom/custom.h"
 #include "ui/custom/danger_detection_controller.h"
 #include "ui/custom/memory_watch_controller.h"
 #include "ui/custom/mini_games_controller.h"
+#include "ui/custom/ota_maintenance_view.h"
 #include "ui/custom/wifi_management_controller.h"
 #include "ui_refresh_policy.h"
 
@@ -95,6 +96,7 @@ void lvgl_task(void *pvParameter)
     memory_watch_controller_init(&guider_ui);
     mini_games_controller_init(&guider_ui);
     wifi_management_controller_init(&guider_ui);
+    (void)ota_maintenance_view_init();
     events_init(&guider_ui);
     custom_init(&guider_ui);
     ui_refresh_policy_init();
@@ -116,6 +118,7 @@ void lvgl_task(void *pvParameter)
         danger_detection_controller_poll_ui();
         memory_watch_controller_poll_ui();
         mini_games_controller_poll_ui();
+        ota_maintenance_view_poll();
 
         next_call = lv_timer_handler();
         ui_refresh_policy_poll();

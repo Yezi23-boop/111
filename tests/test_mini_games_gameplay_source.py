@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import MINI_GAMES_DIR
 from tests.main_paths import UI_MINI_GAMES_CONTROLLER_SOURCE
@@ -53,12 +54,11 @@ class MiniGamesGameplaySourceTests(unittest.TestCase):
         progress_source = (MINI_GAMES_DIR / "mini_games_progress.c").read_text(
             encoding="utf-8"
         )
-        cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
         self.assertIn("mini_games_progress_worker", progress_source)
         self.assertIn("xQueueOverwrite", progress_source)
         self.assertIn("nvs_commit", progress_source)
-        self.assertIn("mini_games_progress.c", cmake)
+        assert_main_source_globbed(self, "features/mini_games/mini_games_progress.c")
         self.assertNotIn("nvs_open(", self.controller)
 
     def test_runtime_pause_reads_existing_ui_snapshots_only(self) -> None:

@@ -26,7 +26,8 @@ evidence_level: observed
 - UI 起来后再由后台服务继续推进，典型 owner 包括：
   - `main/services/power/power_service.c`
   - `main/services/power/power_policy.c`
-  - `main/services/safety/background_service_manager.c`
+  - `main/services/runtime/runtime_coordinator.c`
+  - `main/services/runtime/safety_monitor_policy.c`
   - `main/services/safety/safety_monitor_session.c`
   - `main/services/network/network_service.c`
   - `main/services/official_chat_service.c`

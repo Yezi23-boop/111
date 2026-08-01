@@ -9,7 +9,7 @@
 #include "esp_log.h"
 #include "esp_audio_types.h"
 #include "freertos/FreeRTOS.h"
-#include "services/safety/background_service_manager.h"
+#include "services/runtime/safety_monitor_policy.h"
 
 static const char *TAG = "memory_watch_rec";
 
@@ -276,7 +276,7 @@ esp_err_t memory_watch_recorder_capture_ogg_opus(
     uint8_t *opus_out = NULL;
     esp_err_t ret = ESP_OK;
 
-    ret = background_service_manager_set_foreground_audio_active(
+    ret = safety_monitor_policy_set_foreground_audio_active(
         true, "memory_watch_recording");
     if (ret != ESP_OK)
     {
@@ -492,7 +492,7 @@ cleanup:
     }
     if (foreground_active)
     {
-        (void)background_service_manager_set_foreground_audio_active(
+        (void)safety_monitor_policy_set_foreground_audio_active(
             false, "memory_watch_recording_done");
     }
     return ret;

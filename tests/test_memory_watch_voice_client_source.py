@@ -1,6 +1,7 @@
 import json
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import MEMORY_WATCH_VOICE_CLIENT_HEADER
 from tests.main_paths import MEMORY_WATCH_VOICE_CLIENT_SOURCE
@@ -287,10 +288,7 @@ class MemoryWatchVoiceClientSourceTests(unittest.TestCase):
     def test_main_cmake_registers_voice_client_without_new_dependency(self) -> None:
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_voice_client.c",
-            cmake,
-        )
+        assert_main_source_globbed(self, "services/memory_watch/memory_watch_voice_client.c")
         self.assertIn("esp_http_client", cmake)
         self.assertIn("esp-tls", cmake)
         self.assertIn("json", cmake)

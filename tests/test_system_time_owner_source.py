@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import GET_TIME_DIR
 from tests.main_paths import MAIN_DIR
@@ -87,9 +88,16 @@ class SystemTimeOwnerSourceTests(unittest.TestCase):
         self.assertIn("system_time_service_start()", app_main)
         self.assertIn('#include "services/time/system_time_service.h"', network_service)
         self.assertIn("system_time_service_note_network_ready()", network_service)
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/time/system_time_service.c", main_cmake)
+        assert_main_source_globbed(self, "services/time/system_time_service.c")
         self.assertRegex(main_cmake, r"\bREQUIRES\b[\s\S]*?\bsystem_time\b")
         self.assertNotRegex(main_cmake, r"\bREQUIRES\b[\s\S]*?\bget_time\b")
+
+    def test_network_time_sync_stack_is_internal_for_rtc_writeback(self) -> None:
+        service_source = SYSTEM_TIME_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("system_time_sync_sntp_and_write_rtc", service_source)
+        self.assertIn("MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT", service_source)
+        self.assertNotIn("&s_sync_task_handle, MALLOC_CAP_SPIRAM", service_source)
 
     def test_official_chat_requests_time_via_callback(self) -> None:
         header = OFFICIAL_CHAT_HEADER.read_text(encoding="utf-8")

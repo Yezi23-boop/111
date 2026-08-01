@@ -2,10 +2,10 @@
 id: project-low-power-framework-architecture
 tags: project, power, low-power, architecture, standby, sleep, power_policy
 summary: 当前手表项目低功耗总框架设计，固定产品状态、事实快照、预算发布、owner 执行和 sleep dry-run 边界。
-last_reviewed: 2026-06-02
+last_reviewed: 2026-07-31
 memory_type: project_knowledge
 scope: repo
-owners: main/services/power/power_policy.c, main/services/safety/background_service_manager.c, main/services/network/network_service.c, main/ui/ui_refresh_policy.c
+owners: main/services/power/power_policy.c, main/services/runtime/safety_monitor_policy.c, main/services/network/network_service.c, main/ui/ui_refresh_policy.c
 triggers: low power framework, power_policy, standby, sleep_coordinator, power_budget, 低功耗框架
 evidence_level: design
 status: active
@@ -27,7 +27,7 @@ route_area: "Low power framework"
   -> sleep_coordinator 只消费 sleep 预算并 dry-run 记录
 ```
 
-V1 采用 `FreeRTOS owner snapshot + power_budget` 基线，不做 `runtime lease`、不抢占资源、不新增中心化硬件管家。
+V1 采用 `FreeRTOS owner snapshot + power_budget` 基线，不做拥有硬件的 `runtime lease` 或中心化资源管家；`runtime_coordinator` 只协调已注册 owner 的让路协议。
 
 ## 设计目标
 
@@ -130,7 +130,7 @@ ui_refresh_policy_get_activity_snapshot()
 power_service_get_state()
 audio_codec_get_session_snapshot()
 network_service_get_snapshot()
-background_service_manager_get_snapshot()
+safety_monitor_policy_get_snapshot()
 ```
 
 规则：

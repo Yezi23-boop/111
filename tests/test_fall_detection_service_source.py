@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import APP_ALERT_MANAGER_HEADER
 from tests.main_paths import APP_ALERT_MANAGER_SOURCE
@@ -13,7 +14,7 @@ class FallDetectionServiceSourceTests(unittest.TestCase):
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
         app_main = APP_MAIN_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/fall_detection_service.c", cmake)
+        assert_main_source_globbed(self, "services/fall_detection_service.c")
         self.assertIn("fall_detection_inference", cmake)
         self.assertIn('#include "services/fall_detection_service.h"', app_main)
         self.assertIn("fall_detection_service_start()", app_main)

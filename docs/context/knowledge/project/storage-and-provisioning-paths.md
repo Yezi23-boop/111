@@ -15,9 +15,8 @@ evidence_level: observed
 ## 存储路径现状
 
 - SD 卡挂载点：`/sdcard`
-- 录音文件路径：`/sdcard/record/<timestamp>.wav`
+- 危险样本录音路径：`/sdcard/danger_samples`（`danger_sample_recorder` 输出 WAV+JSON）
 - MP3 示例路径：`/sdcard/mp3/qing.mp3`
-- 音频应用初始化入口：`audio_app_init()`
 - SD 卡初始化入口：`sd_manager_init()`
 
 ## SD 卡总线选择

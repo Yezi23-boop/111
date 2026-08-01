@@ -19,8 +19,8 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "official_chat.h"', source)
-        self.assertIn('#include "services/safety/background_service_manager.h"', source)
-        self.assertIn('#include "services/runtime_gate/foreground_runtime_gate.h"', source)
+        self.assertIn('#include "services/runtime/runtime_coordinator.h"', source)
+        self.assertIn('#include "services/runtime/safety_monitor_policy.h"', source)
         self.assertIn("official_chat_create(", source)
         self.assertIn("official_chat_destroy(", source)
         self.assertIn("official_chat_set_event_callback(", source)
@@ -40,11 +40,10 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND", source)
         self.assertIn("OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP",
                       source)
-        self.assertIn("FOREGROUND_RUNTIME_OWNER_OFFICIAL_CHAT", source)
-        self.assertIn("foreground_runtime_gate_try_acquire(", source)
-        self.assertIn("foreground_runtime_gate_release(", source)
-        self.assertIn("background_service_manager_notify_foreground_runtime_changed()",
-                      source)
+        self.assertIn("RUNTIME_COORDINATOR_PARTICIPANT_OFFICIAL_CHAT", source)
+        self.assertIn("runtime_coordinator_request_foreground(", source)
+        self.assertIn("runtime_coordinator_report_start_result(", source)
+        self.assertIn("runtime_coordinator_report_quiesce_result(", source)
         self.assertIn("official_chat_get_state(", source)
         self.assertIn("official_chat_stop_listening(", source)
         self.assertIn("official_chat_prepare_shutdown(", source)
@@ -55,12 +54,13 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("official_chat_service_get_last_user_text(", source)
         self.assertIn("official_chat_service_get_last_assistant_text(", source)
         self.assertIn(
-            "background_service_manager_set_foreground_audio_active(\n"
+            "safety_monitor_policy_set_foreground_audio_active(\n"
             "        active, reason)",
             source,
         )
         self.assertIn(
-            'official_chat_service_set_foreground_audio_active(true, "official_chat")',
+            "official_chat_service_set_foreground_audio_active(\n"
+            '                true, "official_chat")',
             source,
         )
         self.assertIn(
@@ -166,51 +166,25 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
             source,
         )
 
-    def test_foreground_gate_is_fail_closed_and_released_after_destroy(self) -> None:
+    def test_coordinator_ack_is_reported_after_owner_work(self) -> None:
         source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
-
-        gate_section = source.split(
-            "static esp_err_t official_chat_service_set_foreground_runtime_active"
-        )[1].split("static void official_chat_service_clear_cached_text_locked", 1)[0]
-        self.assertIn("return ret;", gate_section)
-        release_section = gate_section.split("if (!s_foreground_runtime_gate_held)", 1)[1]
-        self.assertLess(
-            release_section.index("foreground_runtime_gate_release"),
-            release_section.index("s_foreground_runtime_gate_held = false"),
-        )
 
         enter_section = source.split(
             "case OFFICIAL_CHAT_SERVICE_CMD_ENTER_FOREGROUND:"
         )[1].split("case OFFICIAL_CHAT_SERVICE_CMD_LEAVE_FOREGROUND_AND_STOP:", 1)[0]
-        self.assertIn("official_chat_service_set_foreground_runtime_active(true)", enter_section)
-        self.assertIn("if (gate_ret != ESP_OK)", enter_section)
-        self.assertLess(
-            enter_section.index("if (gate_ret != ESP_OK)"),
-            enter_section.index("s_foreground_requested = true"),
-        )
-
-        begin_shutdown_section = source.split(
-            "static void official_chat_service_begin_shutdown_from_task"
-        )[1].split("static void official_chat_service_handle_command", 1)[0]
-        self.assertNotIn(
-            "official_chat_service_set_foreground_runtime_active(false)",
-            begin_shutdown_section,
-        )
+        self.assertIn("runtime_coordinator_request_foreground(", enter_section)
+        self.assertIn("s_coordinator_request_generation = request_generation", enter_section)
 
         shutdown_section = source.split("if (s_shutdown_requested)", 1)[1].split(
             "if (!s_foreground_requested)", 1
         )[0]
         self.assertIn("official_chat_destroy(chat_handle)", shutdown_section)
-        self.assertIn(
-            "official_chat_service_set_foreground_runtime_active(false)",
-            shutdown_section,
-        )
+        self.assertIn("runtime_coordinator_report_quiesce_result(", shutdown_section)
         self.assertLess(
             shutdown_section.index("official_chat_destroy(chat_handle)"),
-            shutdown_section.index(
-                "official_chat_service_set_foreground_runtime_active(false)"
-            ),
+            shutdown_section.index("runtime_coordinator_report_quiesce_result("),
         )
+        self.assertNotIn("foreground_runtime_gate", source)
 
     def test_ui_exit_is_frontend_leave_not_blocking_shutdown(self) -> None:
         ui_source = AI_UI_SOURCE.read_text(encoding="utf-8")

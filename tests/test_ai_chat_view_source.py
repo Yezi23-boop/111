@@ -1,6 +1,8 @@
 import pathlib
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 AI_CHAT_VIEW_HEADER = REPO_ROOT / "main" / "ui" / "custom" / "ai_chat_view.h"
@@ -13,11 +15,7 @@ class AiChatViewSourceTests(unittest.TestCase):
         self.assertTrue(AI_CHAT_VIEW_SOURCE.exists())
 
     def test_main_cmakelists_registers_shared_chat_view_source(self) -> None:
-        source = (REPO_ROOT / "main" / "CMakeLists.txt").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("ui/custom/ai_chat_view.c", source)
+        assert_main_source_globbed(self, "ui/custom/ai_chat_view.c")
 
     def test_shared_chat_view_exposes_bubble_oriented_api(self) -> None:
         header = AI_CHAT_VIEW_HEADER.read_text(encoding="utf-8")

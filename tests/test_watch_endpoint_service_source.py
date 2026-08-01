@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import WATCH_ENDPOINT_SERVICE_HEADER
@@ -10,14 +11,13 @@ class WatchEndpointServiceSourceTests(unittest.TestCase):
     def test_watch_endpoint_facade_exists_and_is_built(self) -> None:
         source = WATCH_ENDPOINT_SERVICE_SOURCE.read_text(encoding="utf-8")
         header = WATCH_ENDPOINT_SERVICE_HEADER.read_text(encoding="utf-8")
-        cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
         self.assertIn("watch_endpoint_danger_alert_t", header)
         self.assertIn("watch_endpoint_service_init", header)
         self.assertIn("watch_endpoint_service_post_danger_alert", header)
         self.assertIn("watch_endpoint_service_init", source)
         self.assertIn("watch_endpoint_service_post_danger_alert", source)
-        self.assertIn("services/memory_watch/watch_endpoint_service.c", cmake)
+        assert_main_source_globbed(self, "services/memory_watch/watch_endpoint_service.c")
         self.assertNotIn("memory_watch_service_post_danger_alert", source)
         self.assertNotIn("memory_watch_service_danger_alert_t", source)
 

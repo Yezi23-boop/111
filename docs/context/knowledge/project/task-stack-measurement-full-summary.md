@@ -160,7 +160,7 @@ evidence_level: observed
 
 | task | 配置(B) | 触发条件 | 备注 |
 |---|---|---|---|
-| RecTask | 4096 | 录音启动 | `audio_app.c:239` |
+| RecTask | 4096 | 录音启动 | 已随 `audio_app` 删除（原 `audio_app.c:239`） |
 | audio_alert | 4096 | 告警播放 | `audio_alert_player.c:16` |
 | system_time_sync | 4096(PSRAM) | SNTP 同步 | `system_time_service.c:112` |
 | traffic_audio_rt | 配置值 | 危险识别推理 | `traffic_audio_runtime.cc:98`，高压时动态创建，已发现 internal RAM 不足崩溃 |

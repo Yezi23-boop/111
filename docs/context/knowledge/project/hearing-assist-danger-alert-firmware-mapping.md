@@ -72,7 +72,7 @@ route_area: "Hearing assist / danger alerts"
   - 首次危险强震（`haptic_alert_player` 异步调用 DS2413 马达）
   - 一次性 warning 音频播放
   - 红色危险覆盖层
-- 2026-05-13 当前决策：AI 对话页前台期间由 `official_chat_service -> background_service_manager` 暂停 Safety Monitor，退出 AI 对话后按安全监听开关恢复；不在 `app_alert_manager` 增加 official_chat speaking 特判。
+- 当前决策：AI 对话页前台期间由 `official_chat_service -> runtime_coordinator -> safety_monitor_policy` 暂停 Safety Monitor，退出 AI 对话后按安全监听开关恢复；不在 `app_alert_manager` 增加 official_chat speaking 特判。
 - 已补齐“首次震动优先”的最小链路，但还不是“持续提醒、分级提醒、用户可配置”的完整 hearing-assist 产品提醒层。
 
 ### `danger_detection_controller`
@@ -81,7 +81,7 @@ route_area: "Hearing assist / danger alerts"
 - 当前页面会：
   - 展示后台 Safety Monitor 状态
   - 提供 `安全监听` 用户开关
-  - 通过 `background_service_manager_set_danger_detection_enabled()` 表达用户意图
+  - 通过 `safety_monitor_policy_set_enabled()` 表达用户意图
   - 页面退出时只返回主界面，不再停止危险识别 runtime
 - 因此当前实现已经从“专页功能”提升为后台 Safety Monitor 的 UI 入口。
 
@@ -91,10 +91,10 @@ route_area: "Hearing assist / danger alerts"
 
 | 参数名 | 设计定义 | 当前归属 / 文件 | 当前状态 | 当前代码行为 | 主要差距 / 下一步 |
 | --- | --- | --- | --- | --- | --- |
-| `feature_enabled` | 控制危险提醒功能是否整体开启 | `danger_detection_controller.c` + `background_service_manager.c` | 已实现（默认关闭、非持久化） | 固件启动后默认 `danger_enabled_by_user=false`，后台 manager 默认不运行 Safety Monitor；用户在危险识别页开启 `安全监听` 开关后，才按 power budget 和麦克风 owner 运行 | 后续若需要重启后保持用户选择，再单独接 NVS 持久化 |
+| `feature_enabled` | 控制危险提醒功能是否整体开启 | `danger_detection_controller.c` + `safety_monitor_policy.c` | 已实现（默认关闭、非持久化） | 固件启动后默认 `enabled_by_user=false`，Safety policy 默认不运行 Safety Monitor；用户在危险识别页开启 `安全监听` 开关后，才按 power budget 和麦克风 owner 运行 | 后续若需要重启后保持用户选择，再单独接 NVS 持久化 |
 | `runtime_ready_required` | 运行时未就绪时不得进入监听 | `danger_detection_service.c` / `espdl_audio_runtime.cpp` | 已实现 | `danger_detection_service_start_with_backend()` 会检查 init 和 backend；`espdl_audio_runtime_start()` 会检查 runner、audio codec、input session 是否成功 | 已有基础，但仍缺少更明确的“用户看到功能开启/未就绪”的状态映射 |
-| `mic_resource_required` | 麦克风资源不可用时不得启动 | `background_service_manager.c` + `espdl_audio_runtime.cpp` + `audio_codec` | 已实现 | manager 读取 `audio_codec` input owner 快照并在前台音频占用时阻塞 Safety Monitor；ESP-DL runtime 启动时显式申请 `AUDIO_CODEC_OWNER_ESPDL_INFERENCE` input session | 已补 `danger_block_reason`，后续若 UI 需要展示具体 owner 再补窄字段 |
-| `background_run_allowed` | 离开专页后是否允许后台继续工作 | `background_service_manager.c` + `safety_monitor_session.c` | 已实现 | 用户打开 `安全监听` 后，页面退出不再 stop；后台 manager 按用户开关、power budget 和麦克风资源继续运行或恢复，并通过 `danger_should_run / danger_block_reason` 发布目标态 | 后续重点转向 stop timeout、提醒层并发安全、持续提醒和事件记录 |
+| `mic_resource_required` | 麦克风资源不可用时不得启动 | `safety_monitor_policy.c` + `espdl_audio_runtime.cpp` + `audio_codec` | 已实现 | policy 读取 `audio_codec` input owner 快照并在前台音频占用时阻塞 Safety Monitor；ESP-DL runtime 启动时显式申请 `AUDIO_CODEC_OWNER_ESPDL_INFERENCE` input session | 已补 `block_reason`，后续若 UI 需要展示具体 owner 再补窄字段 |
+| `background_run_allowed` | 离开专页后是否允许后台继续工作 | `safety_monitor_policy.c` + `safety_monitor_session.c` | 已实现 | 用户打开 `安全监听` 后，页面退出不再 stop；policy 按用户开关、power budget、麦克风资源和 coordinator block 继续运行或恢复，并通过 `should_run / block_reason` 发布目标态 | 后续重点转向 stop timeout、提醒层并发安全、持续提醒和事件记录 |
 | `ui_page_required` | 功能是否必须绑定专页可见 | `danger_detection_controller.c` | 已解除专页依赖 | 页面只做状态展示和开关入口，不再拥有 start/stop 生命周期 | 产品目标已对齐；后续可考虑全局设置页或持久化入口 |
 
 ### 第二组：状态机参数
@@ -145,9 +145,9 @@ route_area: "Hearing assist / danger alerts"
 
 ### 1. 后台化主链路已完成，可观测性已补第一层
 
-- 当前已经由 `background_service_manager` 和 `safety_monitor_session` 承接后台运行。
+- 当前已经由 `safety_monitor_policy` 和 `safety_monitor_session` 承接后台运行。
 - 危险识别页不再直接 start/stop runtime。
-- `background_service_manager_snapshot_t` 已发布 `danger_should_run` 和 `danger_block_reason`，UI 状态文案优先消费 manager 语义快照，不再重复组合多个布尔字段推导目标态。
+- `safety_monitor_policy_snapshot_t` 已发布 `should_run` 和 `block_reason`，UI 状态文案优先消费 policy 语义快照，不再重复组合多个布尔字段推导目标态。
 - 后续如果需要展示具体麦克风 owner，可在不改变 owner 链路的前提下补一个窄的只读字段。
 
 ### 2. 风险状态机已显式化，但还缺持续提醒和事件记录
@@ -197,7 +197,7 @@ route_area: "Hearing assist / danger alerts"
 
 ### 第二优先级：处理后台服务质量风险
 
-- 保持 `background_service_manager` 当前薄边界：只发布 `danger_should_run / danger_block_reason`，不扩大成音频仲裁器或模型 owner。
+- 保持 `safety_monitor_policy` 当前薄边界：只发布 `should_run / block_reason`，不扩大成音频仲裁器或模型 owner。
 - 单独处理嵌入式复查指出的质量 gate：
   - `espdl_audio_runtime_stop()` 超时时，service 层不能误认为底层资源一定已释放。当前已补第一层：stop 失败不清 `runtime_started/callback_registered`，session 不发布已停止；ESP-DL runtime 支持后续 stop/start 前补清资源。
   - `app_alert_manager` / `audio_alert_player` 的跨任务共享状态已补临界区保护，且显示/音频外部调用保持在锁外；`app_alert_manager_clear()` 已改为 hide 成功后提交 inactive，并用 generation 丢弃过期 raise/show 结果。

@@ -13,7 +13,7 @@ class DangerDetectionControllerSourceTests(unittest.TestCase):
         source = DANGER_DETECTION_CONTROLLER_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "background_service_manager_set_danger_detection_enabled(enabled)",
+            "safety_monitor_policy_set_enabled(enabled)",
             source,
         )
         self.assertNotIn("danger_detection_service_start_with_backend(", source)
@@ -25,22 +25,22 @@ class DangerDetectionControllerSourceTests(unittest.TestCase):
     def test_status_text_uses_manager_runtime_snapshot_for_transition(self) -> None:
         source = DANGER_DETECTION_CONTROLLER_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("manager_snapshot->danger_should_run", source)
-        self.assertIn("manager_snapshot->danger_runtime_running", source)
+        self.assertIn("manager_snapshot->should_run", source)
+        self.assertIn("manager_snapshot->runtime_running", source)
         self.assertIn(
-            "manager_snapshot->danger_block_reason",
+            "manager_snapshot->block_reason",
             source,
         )
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED", source)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_POLICY", source)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_AUDIO", source)
-        self.assertIn("BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_FOREGROUND_RUNTIME", source)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_USER_DISABLED", source)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_POWER", source)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_FOREGROUND_AUDIO", source)
+        self.assertIn("SAFETY_MONITOR_POLICY_BLOCK_RUNTIME_COORDINATOR", source)
         self.assertIn('return "资源占用，暂时等待";', source)
         self.assertIn('return "正在启动";', source)
         self.assertIn('return "正在停止";', source)
         self.assertLess(
             source.index("state == DANGER_DETECTION_STATE_STOPPING"),
-            source.index("manager_snapshot->danger_block_reason"),
+            source.index("manager_snapshot->block_reason"),
         )
 
     def test_ui_exposes_sensitivity_modes_without_raw_thresholds(self) -> None:

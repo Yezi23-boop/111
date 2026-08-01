@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import MEMORY_WATCH_RECORDER_HEADER
 from tests.main_paths import MEMORY_WATCH_RECORDER_SOURCE
@@ -28,8 +29,8 @@ class MemoryWatchRecorderSourceTests(unittest.TestCase):
         source = MEMORY_WATCH_RECORDER_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn('#include "audio_codec.h"', source)
-        self.assertIn('#include "services/safety/background_service_manager.h"', source)
-        self.assertIn("background_service_manager_set_foreground_audio_active", source)
+        self.assertIn('#include "services/runtime/safety_monitor_policy.h"', source)
+        self.assertIn("safety_monitor_policy_set_foreground_audio_active", source)
         self.assertIn("true, \"memory_watch_recording\"", source)
         self.assertIn("false, \"memory_watch_recording_done\"", source)
         self.assertIn("audio_codec_init()", source)
@@ -78,10 +79,7 @@ class MemoryWatchRecorderSourceTests(unittest.TestCase):
     def test_main_cmake_registers_recorder_and_audio_codec_dependency(self) -> None:
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
 
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_recorder.c",
-            cmake,
-        )
+        assert_main_source_globbed(self, "services/memory_watch/memory_watch_recorder.c")
         self.assertIn("espressif__esp_audio_codec", cmake)
 
 

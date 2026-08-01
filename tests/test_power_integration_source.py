@@ -1,9 +1,10 @@
 import unittest
 import re
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import APP_ALERT_MANAGER_SOURCE
-from tests.main_paths import BACKGROUND_SERVICE_MANAGER_SOURCE
+from tests.main_paths import SAFETY_MONITOR_POLICY_SOURCE
 from tests.main_paths import DISPLAY_ALERT_ADAPTER_SOURCE
 from tests.main_paths import HARDWARE_INIT_SOURCE
 from tests.main_paths import LVGL_TASK_SOURCE
@@ -143,17 +144,6 @@ def _extract_cmake_call_body(source: str, call_name: str) -> str:
     return match.group(1)
 
 
-def _extract_named_cmake_set_body(source: str, block_name: str) -> str:
-    match = re.search(
-        rf"set\s*\(\s*{re.escape(block_name)}\s*(.*?)\n\)",
-        source,
-        re.S,
-    )
-    if match is None:
-        return ""
-    return match.group(1)
-
-
 class PowerIntegrationSourceTests(unittest.TestCase):
     def test_hardware_init_brings_in_board_power_after_audio_init(self) -> None:
         self.assertTrue(HARDWARE_INIT_SOURCE.exists(), "main/app/hardware_init.c should exist")
@@ -213,24 +203,13 @@ class PowerIntegrationSourceTests(unittest.TestCase):
         self.assertTrue(MAIN_CMAKE.exists(), "main/CMakeLists.txt should exist")
         source = MAIN_CMAKE.read_text(encoding="utf-8")
 
-        app_srcs = _extract_named_cmake_set_body(source, "app_srcs")
-        service_srcs = _extract_named_cmake_set_body(source, "service_srcs")
-        register_block = _extract_cmake_call_body(source, "idf_component_register")
+        assert_main_source_globbed(self, "app/board_power.c")
+        assert_main_source_globbed(self, "services/power/power_service.c")
+        assert_main_source_globbed(self, "services/power/sleep_coordinator.c")
+        assert_main_source_globbed(self, "services/runtime/startup_readiness.c")
+        assert_main_source_globbed(self, "services/safety/safety_monitor_session.c")
 
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/app/board_power.c", app_srcs)
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/power/power_service.c", service_srcs)
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/power/sleep_coordinator.c",
-            service_srcs,
-        )
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/startup/startup_readiness.c",
-            service_srcs,
-        )
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/safety/safety_monitor_session.c",
-            service_srcs,
-        )
+        register_block = _extract_cmake_call_body(source, "idf_component_register")
         self.assertRegex(
             register_block,
             r"\bREQUIRES\b[\s\S]*?\baxp2101\b",
@@ -306,7 +285,7 @@ class PowerIntegrationSourceTests(unittest.TestCase):
 
     def test_low_battery_warn_is_flag_only_not_ui_prompt_or_shutdown(self) -> None:
         power_source = POWER_POLICY_SOURCE.read_text(encoding="utf-8")
-        background_source = BACKGROUND_SERVICE_MANAGER_SOURCE.read_text(encoding="utf-8")
+        background_source = SAFETY_MONITOR_POLICY_SOURCE.read_text(encoding="utf-8")
         app_alert_source = APP_ALERT_MANAGER_SOURCE.read_text(encoding="utf-8")
         display_source = DISPLAY_ALERT_ADAPTER_SOURCE.read_text(encoding="utf-8")
         app_main_source = APP_MAIN_SOURCE.read_text(encoding="utf-8")

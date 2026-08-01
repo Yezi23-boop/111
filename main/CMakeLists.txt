@@ -1,141 +1,32 @@
-set(app_srcs
+file(GLOB app_srcs
 
-    ${CMAKE_CURRENT_LIST_DIR}/app/app_main.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/app/hardware_init.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/app/board_button.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/app/board_ds2413_motor.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/app/board_power.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/app/board_imu.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/app/resource_fs.c
+    ${CMAKE_CURRENT_LIST_DIR}/app/*.c
 
 )
 
 
 
-set(service_srcs
+file(GLOB_RECURSE service_srcs
 
-    ${CMAKE_CURRENT_LIST_DIR}/services/network/network_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/runtime_gate/foreground_runtime_gate.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/runtime_gate/runtime_resource_gate_board_test.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/official_chat_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_ogg_opus_muxer.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_recorder.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/audio_diag/audio_mic_test_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_voice_client.c
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/watch_endpoint_service.c
-    ${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_ws_client.cc
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/power/power_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/power/power_policy.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/power/sleep_coordinator.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/power/wakeup_evidence_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/time/system_time_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/weather/weather_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/weather/weather_http_client.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/sensors/imu_service.c
-    ${CMAKE_CURRENT_LIST_DIR}/services/fall_detection_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/startup/startup_readiness.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/safety/safety_monitor_session.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/services/safety/background_service_manager.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/*.c
+    ${CMAKE_CURRENT_LIST_DIR}/services/*.cc
 
 )
 
 
 
-set(feature_srcs
+file(GLOB_RECURSE feature_srcs
 
-    ${CMAKE_CURRENT_LIST_DIR}/features/alerts/app_alert_manager.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/alerts/audio_alert_player.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/alerts/haptic_alert_player.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/alerts/display_alert_adapter.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/audio/audio_app.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/danger_detection/danger_detection_service.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/danger_detection/danger_sample_recorder.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_2048.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_flappy.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_game_dino.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/features/mini_games/mini_games_progress.c
+    ${CMAKE_CURRENT_LIST_DIR}/features/*.c
 
 )
 
 
 
-set(ui_runtime_srcs
+file(GLOB ui_runtime_srcs
 
-    ${CMAKE_CURRENT_LIST_DIR}/ui/lvgl_task.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/ui_refresh_policy.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ai_chat_view.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ai_ui_controller.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/cbin_font_bridge.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/clock_functions.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/custom.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/emissive_calendar_view.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_controller.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/danger_detection_view.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/main_dropdown_controller.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/main_screen_runtime.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/memory_watch_controller.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/watch_notification_center.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/memory_watch_view.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/mini_games_controller.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/wifi_management_controller.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/scroll_functions.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/ui_font_assets.c
-
-    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/mini_game_sprites.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/*.c
+    ${CMAKE_CURRENT_LIST_DIR}/ui/custom/*.c
 
 )
 
@@ -269,6 +160,10 @@ idf_component_register(
         esp_system
 
         esp-tls
+
+        esp_https_ota
+
+        mbedtls
 
         json
 

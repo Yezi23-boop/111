@@ -31,7 +31,7 @@ GUI Guider 在当前项目里只作为视觉主编辑器和 intent 入口生成�
 - `official_chat`、危险识别、联网、音频、功耗、后台任务等产品状态机。
 - 麦克风、喇叭、Wi-Fi、BLE、模型、DMA/internal RAM 等资源生命周期。
 - 跨任务同步、队列、锁、服务启动停止、重试、退避或错误恢复。
-- `power_policy`、`background_service_manager`、`danger_detection_service`、`network_manager` 等 runtime owner 的决策。
+- `power_policy`、`safety_monitor_policy`、`danger_detection_service`、`network_manager` 等 runtime owner 的决策。
 
 ## 当前不新增的层
 

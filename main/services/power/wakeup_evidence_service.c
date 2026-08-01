@@ -233,14 +233,16 @@ esp_err_t wakeup_evidence_service_start(void)
         return ESP_OK;
     }
 
-    /* 栈迁 PSRAM：省 internal RAM，该任务不直接操作 flash/NVS/sleep 入口。 */
+    /* 此轮询任务会直接访问 RTC 与 AXP2101。I2C 新驱动的 ISR 会在 Flash
+       cache-disabled 窗口读取调用任务栈的事务描述符，所以必须留在 internal
+       RAM；这不是 OTA 生命周期控制，I2C 在 OTA 期间仍可正常工作。 */
     BaseType_t ok = xTaskCreateWithCaps(wakeup_evidence_task,
                                         "wakeup_evidence",
                                         4096,
                                         NULL,
                                         4,
                                         &s_task_handle,
-                                        MALLOC_CAP_SPIRAM);
+                                        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (ok != pdPASS)
     {
         s_task_handle = NULL;

@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import AUDIO_DIAG_SERVICES_DIR, MAIN_CMAKE
 
 
@@ -38,7 +39,7 @@ class AudioMicTestServiceSourceTests(unittest.TestCase):
         source = MIC_TEST_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn(
-            'background_service_manager_set_foreground_audio_active(\n'
+            'safety_monitor_policy_set_foreground_audio_active(\n'
             '        true, "mic_test")',
             source,
         )
@@ -54,7 +55,7 @@ class AudioMicTestServiceSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            'background_service_manager_set_foreground_audio_active(\n'
+            'safety_monitor_policy_set_foreground_audio_active(\n'
             '            false, "mic_test_done")',
             source,
         )
@@ -86,9 +87,7 @@ class AudioMicTestServiceSourceTests(unittest.TestCase):
         self.assertIn("MIC_TEST: DONE status=%s", source)
 
     def test_main_cmake_includes_service(self) -> None:
-        cmake = MAIN_CMAKE.read_text(encoding="utf-8")
-
-        self.assertIn("services/audio_diag/audio_mic_test_service.c", cmake)
+        assert_main_source_globbed(self, "services/audio_diag/audio_mic_test_service.c")
 
 
 if __name__ == "__main__":

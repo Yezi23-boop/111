@@ -94,6 +94,8 @@ class NetworkServiceWifiManagementSourceTests(unittest.TestCase):
         self.assertIn("network_service_set_probe_snapshot(", source)
         self.assertIn("probe_paused_by_budget", source)
         self.assertIn("network sync paused by power budget", source)
+        self.assertIn("maintenance_keeps_wifi_awake", source)
+        self.assertIn("POWER_POLICY_FLAG_MAINTENANCE", source)
         probe_body = source.split(
             "static esp_err_t probe_network_services_ready(void)", 1)[1].split(
             "static void network_service_apply_power_budget(void)", 1)[0]

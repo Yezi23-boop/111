@@ -64,12 +64,18 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
         self.assertIn("xTaskNotifyGive(notify_handle)", source)
         self.assertIn("xTaskGetCurrentTaskHandle()", source)
         self.assertIn("ulTaskNotifyTake(pdTRUE", source)
-        self.assertIn("FOREGROUND_RUNTIME_OWNER_BLE_PROVISIONING", source)
-        self.assertIn("foreground_runtime_gate_try_acquire", source)
-        self.assertIn("foreground_runtime_gate_release", source)
-        self.assertIn("network_service_release_completed_ble_provisioning_gate", source)
+        self.assertIn("RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING", source)
+        self.assertIn("RUNTIME_COORDINATOR_PARTICIPANT_BLE_PRESENCE", source)
+        self.assertIn("runtime_coordinator_request_foreground", source)
+        self.assertIn("runtime_coordinator_report_start_result", source)
+        self.assertIn("runtime_coordinator_report_quiesce_result", source)
+        self.assertIn("s_ble_runtime_target_enabled", source)
+        self.assertIn("s_ble_presence_blocked", source)
+        self.assertNotIn("foreground_runtime_gate_", source)
         self.assertIn("MALLOC_CAP_INTERNAL", source)
         self.assertIn("xTaskCreatePinnedToCoreWithCaps(", source)
+        self.assertIn("ulTaskNotifyTake(pdTRUE, portMAX_DELAY)", source)
+        self.assertIn("xTaskNotifyGive(worker_handle)", source)
         self.assertIn("vTaskDeleteWithCaps(completed_worker)", source)
         self.assertIn("vTaskSuspend(NULL)", source)
         self.assertIn("s_ble_transition_completed", source)
@@ -92,7 +98,7 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
             task_section,
         )
         self.assertIn(
-            "network_service_release_completed_ble_provisioning_gate(&status)",
+            "network_service_cancel_completed_ble_provisioning_request(&status)",
             task_section,
         )
 
@@ -101,16 +107,14 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
         body = source.split(
             "static void network_service_stop_completed_ble_provisioning_if_connected",
             1,
-        )[1].split("/**\n * @brief 在官方 provisioning 自动结束后释放", 1)[0]
+        )[1].split("/**\n * @brief 在官方 provisioning 自动结束后取消", 1)[0]
 
         self.assertIn("!status->wifi_connected", body)
         self.assertIn("!status->ble_active", body)
-        self.assertIn("s_ble_provisioning_gate_held", body)
-        self.assertIn("s_ble_transition_task_handle == NULL", body)
-        self.assertIn(
-            "NETWORK_SERVICE_BLE_OPERATION_STOP_PROVISIONING", body
-        )
-        self.assertIn("xTaskNotifyGive(notify_handle)", body)
+        self.assertIn("s_provision_request_generation", body)
+        self.assertIn("s_provision_stop_requested", body)
+        self.assertIn("runtime_coordinator_cancel_request", body)
+        self.assertIn("RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING", body)
 
     def test_provisioning_requests_publish_pending_and_result_snapshot(self) -> None:
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
@@ -138,21 +142,22 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
         self.assertIn("s_snapshot.provisioning_last_error = result", finish_body)
         self.assertIn("s_snapshot.provisioning_last_error = ESP_ERR_NO_MEM", create_fail_body)
 
-    def test_ble_provisioning_auto_stop_releases_only_provisioning_gate(self) -> None:
+    def test_ble_provisioning_auto_stop_cancels_only_provisioning_request(self) -> None:
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
         body = source.split(
-            "static void network_service_release_completed_ble_provisioning_gate",
+            "static void network_service_cancel_completed_ble_provisioning_request",
             1,
         )[1].split("/**\n * @brief 复制网络服务快照。", 1)[0]
 
-        self.assertIn("s_ble_provisioning_gate_held", body)
+        self.assertIn("s_provision_request_generation", body)
+        self.assertIn("s_provision_stop_requested", body)
         self.assertIn("!status->ble_active", body)
         self.assertIn(
             "status->state != NETWORK_MANAGER_STATE_PROVISIONING_BLE", body
         )
-        self.assertIn("network_service_ble_release_gate()", body)
+        self.assertIn("runtime_coordinator_cancel_request", body)
 
-    def test_softap_start_acquires_provisioning_gate(self) -> None:
+    def test_softap_start_runs_only_after_coordinator_grant(self) -> None:
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
         body = source.split(
             "if (operation == NETWORK_SERVICE_BLE_OPERATION_START_SOFTAP_PROVISIONING)",
@@ -162,11 +167,11 @@ class NetworkServiceBleSourceTests(unittest.TestCase):
             1,
         )[0]
 
-        self.assertIn("s_ble_provisioning_gate_held", body)
-        self.assertIn("network_service_ble_acquire_gate()", body)
-        self.assertIn("s_ble_provisioning_gate_held = true", body)
-        self.assertIn("network_service_ble_release_gate()", body)
+        self.assertIn("network_manager_start_softap_provisioning()", body)
+        self.assertIn("network_service_restore_ble_presence_if_desired()", body)
         self.assertIn("network_service_finish_ble_provisioning", body)
+        self.assertNotIn("runtime_coordinator_request_foreground", body)
+        self.assertIn("network_service_coordinator_grant_provisioning", source)
 
     def test_network_service_maps_softap_provisioning_to_portal_required(self) -> None:
         source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")

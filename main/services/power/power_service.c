@@ -339,11 +339,14 @@ esp_err_t power_service_start(void)
     }
 
     /* 电源状态变化不要求极低延迟，普通优先级后台任务即可。 */
-    /* 栈缩为 3072B：高压实测 free=2624B（64% 空闲），缩 1KB 仍有余量。
-       栈迁 PSRAM：省 internal RAM，该任务不直接操作 flash/NVS/sleep 入口。 */
+    /* 该任务每秒通过 I2C 读取 AXP2101。IDF 新 I2C 驱动的 ISR 在 Flash
+       cache-disabled 窗口仍会访问调用任务栈里的事务描述符；若栈在 PSRAM，
+       OTA 写 Flash 时会触发 cache error。因此此 I2C owner 必须使用 internal
+       RAM 栈，不能按普通后台任务迁到 PSRAM。 */
     BaseType_t ok =
         xTaskCreateWithCaps(power_service_task, "power_service", 3072, NULL, 5,
-                            &s_task_handle, MALLOC_CAP_SPIRAM);
+                            &s_task_handle,
+                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (ok != pdPASS)
     {
         s_task_handle = NULL;

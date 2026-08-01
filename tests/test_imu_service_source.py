@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import BOARD_IMU_HEADER
 from tests.main_paths import BOARD_IMU_SOURCE
@@ -12,8 +13,8 @@ class ImuServiceSourceTests(unittest.TestCase):
     def test_main_cmake_registers_imu_service_and_dependencies(self) -> None:
         self.assertTrue(MAIN_CMAKE.exists(), "main/CMakeLists.txt should exist")
         cmake = MAIN_CMAKE.read_text(encoding="utf-8")
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/services/sensors/imu_service.c", cmake)
-        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/app/board_imu.c", cmake)
+        assert_main_source_globbed(self, "services/sensors/imu_service.c")
+        assert_main_source_globbed(self, "app/board_imu.c")
         self.assertIn("imu_sensor", cmake)
         self.assertNotIn("qmi8658c", cmake)
         self.assertNotIn("imu_motion", cmake)

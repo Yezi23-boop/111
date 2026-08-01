@@ -1,5 +1,6 @@
 import unittest
 
+from tests.main_cmake_contract import assert_main_source_globbed
 from tests.main_paths import APP_MAIN_SOURCE
 from tests.main_paths import MAIN_CMAKE
 from tests.main_paths import MAIN_KCONFIG
@@ -484,7 +485,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         copy_section = source.split(
             "esp_err_t memory_watch_service_copy_conversation_items"
         )[1].split("bool memory_watch_service_is_endpoint_configured", 1)[0]
-        self.assertIn("portENTER_CRITICAL(&s_snapshot_lock)", copy_section)
+        self.assertIn("taskENTER_CRITICAL(&s_snapshot_lock)", copy_section)
         self.assertIn("out_items[i] = s_conversation_items[i]", copy_section)
         self.assertNotIn("esp_http_client", copy_section)
         self.assertNotIn("nvs_", copy_section)
@@ -497,11 +498,11 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
 
         self.assertIn("memory_watch_service_set_foreground", header)
         self.assertIn("memory_watch_service_reconcile_foreground", source)
-        self.assertIn('#include "services/runtime_gate/foreground_runtime_gate.h"', source)
-        self.assertIn("FOREGROUND_RUNTIME_OWNER_HERMES", source)
-        self.assertIn("foreground_runtime_gate_try_acquire", source)
-        self.assertIn("foreground_runtime_gate_release", source)
-        self.assertIn("background_service_manager_notify_foreground_runtime_changed", source)
+        self.assertIn('#include "services/runtime/runtime_coordinator.h"', source)
+        self.assertIn("RUNTIME_COORDINATOR_PARTICIPANT_HERMES", source)
+        self.assertIn("runtime_coordinator_request_foreground", source)
+        self.assertIn("runtime_coordinator_report_start_result", source)
+        self.assertIn("runtime_coordinator_report_quiesce_result", source)
         self.assertIn("MEMORY_WATCH_SERVICE_CMD_CONVERSATION_POLL_DONE", source)
         self.assertIn("kConversationPollIntervalMs = 5000", source)
         self.assertIn("kConversationPollTimeoutMs = 4000U", source)
@@ -565,8 +566,8 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
             "esp_err_t memory_watch_service_set_foreground"
         )[1].split("esp_err_t memory_watch_service_begin_recording", 1)[0]
         self.assertIn("s_foreground_desired = foreground", public_section)
-        self.assertNotIn("foreground_runtime_gate_acquire", public_section)
-        self.assertNotIn("foreground_runtime_gate_release", public_section)
+        self.assertIn("runtime_coordinator_request_foreground", public_section)
+        self.assertIn("runtime_coordinator_cancel_request", public_section)
         self.assertNotIn("memory_watch_service_set_foreground_active", public_section)
 
         task_section = source.split(
@@ -588,7 +589,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_service_is_upload_worker_busy()", reconcile_section)
         self.assertLess(
             reconcile_section.index("memory_watch_service_is_upload_worker_busy()"),
-            reconcile_section.rindex("foreground_runtime_gate_release"),
+            reconcile_section.rindex("runtime_coordinator_report_quiesce_result"),
         )
         self.assertIn("MEMORY_WATCH_FOREGROUND_STOPPING", reconcile_section)
         self.assertIn("ESP_ERR_TIMEOUT", reconcile_section)
@@ -670,12 +671,7 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertNotIn("ai_chat_view", source)
 
     def test_main_cmake_registers_memory_watch_service(self) -> None:
-        cmake = MAIN_CMAKE.read_text(encoding="utf-8")
-
-        self.assertIn(
-            "${CMAKE_CURRENT_LIST_DIR}/services/memory_watch/memory_watch_service.c",
-            cmake,
-        )
+        assert_main_source_globbed(self, "services/memory_watch/memory_watch_service.c")
 
     def test_app_main_registers_ap_portal_endpoint_config_callback(self) -> None:
         source = APP_MAIN_SOURCE.read_text(encoding="utf-8")

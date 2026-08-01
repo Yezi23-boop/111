@@ -9,11 +9,11 @@ extern "C"
 #endif
 
     /**
-     * @brief 启动一次性运行时资源 gate 板端高压测试。
+     * @brief 启动一次性 Runtime Coordinator 模拟 participant 板测。
      *
      * 该测试只在 `CONFIG_RUNTIME_RESOURCE_GATE_BOARD_TEST=y` 时创建后台任务；
-     * 默认配置下本函数为空操作。测试任务用于串口验证 Hermes 强前台 owner、
-     * Safety Monitor 让路和 BLE 强前台/fail-closed 资源模型。
+     * 默认配置下本函数为空操作。测试覆盖请求覆盖、陈旧 ACK、拒绝、超时、
+     * grant 失败与 rollback fail-closed 状态。
      *
      * @return `ESP_OK` 表示未启用、已启动或本次启动成功。
      */

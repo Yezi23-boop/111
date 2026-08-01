@@ -19,7 +19,7 @@ from typing import Literal
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, WebSocket
 from pydantic import BaseModel
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
 from conversation_repo import ConversationMessage, ConversationRepo, ConversationValidationError
@@ -31,6 +31,7 @@ from relay_transport import (
 )
 from run_events import SseLineParser
 from session_repo import TERMINAL_STATES, SessionRepo, SessionValidationError, WatchSession
+from ota_release import OtaReleaseError, default_store
 
 
 HERMES_API_URL = os.getenv("HERMES_API_URL", "http://127.0.0.1:8642").rstrip("/")
@@ -75,6 +76,7 @@ WATCH_RELAY_CONNECTOR_TOKEN = os.getenv("WATCH_RELAY_CONNECTOR_TOKEN", "").strip
 WATCH_RELAY_SESSION_KEY = os.getenv(
     "WATCH_RELAY_SESSION_KEY", "agent:main:relay:dm:watch-001"
 ).strip()
+WATCH_OTA_ADMIN_TOKEN = os.getenv("WATCH_OTA_ADMIN_TOKEN", "")
 MIMO_ASR_DIRECT_MIME_TYPES = {"audio/wav", "audio/mp3", "audio/mpeg"}
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,96}$")
 INVALID_REQUEST_ID = "invalid-request"
@@ -369,6 +371,19 @@ def _require_internal(authorization: str | None) -> None:
         authorization[len(prefix) :], WATCH_INTERNAL_API_KEY
     ):
         raise HTTPException(status_code=403, detail="invalid_internal_token")
+
+
+def _require_ota_admin(request: Request) -> None:
+    """校验仅用于发布固件的管理员令牌，不接受设备 token。"""
+    if not WATCH_OTA_ADMIN_TOKEN:
+        raise HTTPException(status_code=503, detail="ota_admin_token_not_configured")
+    supplied = request.headers.get("x-ota-admin-token", "")
+    if not supplied:
+        authorization = request.headers.get("authorization", "")
+        if authorization.startswith("Bearer "):
+            supplied = authorization[len("Bearer ") :]
+    if not supplied or not hmac.compare_digest(supplied, WATCH_OTA_ADMIN_TOKEN):
+        raise HTTPException(status_code=403, detail="invalid_ota_admin_token")
 
 
 def _hermes_headers() -> dict[str, str]:
@@ -2822,6 +2837,62 @@ async def internal_relay_outbound(
         "request_id": payload.request_id,
         "message_id": message.message_id,
     }
+
+
+@app.get("/v1/watch/ota/admin", response_class=HTMLResponse)
+async def ota_admin_page() -> HTMLResponse:
+    """提供最小 OTA 发布页；真正的上传操作仍需管理员令牌。"""
+    page = Path(__file__).with_name("ota_admin.html").read_text(encoding="utf-8")
+    return HTMLResponse(page)
+
+
+@app.post("/v1/watch/ota/admin/releases")
+async def ota_admin_publish_release(
+    request: Request,
+    version: str = Form(...),
+    channel: str = Form("stable"),
+    file: UploadFile = File(...),
+) -> dict[str, object]:
+    """管理员上传完整 app bin，并原子发布该通道的 manifest。"""
+    _require_ota_admin(request)
+    try:
+        manifest = default_store().publish(
+            file.file,
+            version=version,
+            channel=channel,
+        )
+    except OtaReleaseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        logger.error("OTA release storage failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=507, detail="ota_release_storage_failed") from exc
+    finally:
+        await file.close()
+    return manifest
+
+
+@app.get("/v1/watch/ota/manifest")
+async def ota_manifest(channel: str = Query("stable")) -> dict[str, object]:
+    """设备读取当前通道 manifest；发布权限与读取权限分离。"""
+    try:
+        manifest = default_store().current_manifest(channel)
+    except OtaReleaseError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if manifest is None:
+        raise HTTPException(status_code=404, detail="ota_manifest_not_found")
+    return manifest
+
+
+@app.get("/v1/watch/ota/artifacts/{channel}/{version}/firmware.bin")
+async def ota_artifact(channel: str, version: str) -> FileResponse:
+    """提供已发布的不可变固件文件；设备端仍校验 manifest 中的 SHA-256。"""
+    try:
+        path = default_store().artifact_path(channel, version)
+    except OtaReleaseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="ota_artifact_not_found")
+    return FileResponse(path, media_type="application/octet-stream", filename="firmware.bin")
 
 
 @app.get("/v1/watch/inbox", response_model=InboxListResponse)

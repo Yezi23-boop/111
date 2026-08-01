@@ -1,14 +1,14 @@
 ---
 id: watch-runtime-resource-gate-plan
 tags: context, plans, resource-arbitration, foreground-runtime-gate, espdl, hermes, ble, ram, freertos
-summary: ESP32-S3 手表运行时资源 gate 执行计划：在 UI+Wi-Fi 基础常驻上保留强前台独占和 ESP-DL 可抢占让路；后台 HTTPS gate 已撤除，各网络 owner 自行调度和重试。
-last_reviewed: 2026-07-14
+summary: ESP32-S3 手表运行时资源 gate 历史执行计划；旧薄 gate 已由注册式 runtime_coordinator 接续，本文保留原阶段与回归证据。
+last_reviewed: 2026-07-31
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-06-29-watch-runtime-resource-gate-plan.md, main/services/power/power_policy.c, main/services/safety/background_service_manager.c, components/espdl_inference, components/network_manager, main/services/memory_watch/memory_watch_service.c
+owners: docs/context/plans/completed/2026-06-29-watch-runtime-resource-gate-plan.md, main/services/power/power_policy.c, main/services/runtime/runtime_coordinator.c, components/espdl_inference, components/network_manager, main/services/memory_watch/memory_watch_service.c
 triggers: runtime resource gate, foreground_runtime_gate, ESP-DL, Hermes foreground, BLE provisioning, internal RAM, resource arbitration, 前台重任务, 资源冲突
-evidence_level: design
-status: active
+evidence_level: observed
+status: archived
 ---
 
 # Watch Runtime Resource Gate 执行计划
@@ -260,7 +260,9 @@ ble_presence_start() -> ESP_ERR_NO_MEM
 - `[x]` 阶段 3：Hermes 与未来前台页面接入。
 - `[x]` 阶段 4：后台 HTTPS gate 历史接入后已于 2026-07-14 完整撤除。
 - `[x]` 阶段 5：BLE 单次延迟重试。
-- `[ ]` 阶段 6：真机高压回归。（foreground/BLE fail-closed 回归已完成；撤除后台 gate 后的公网 HTTPS/WSS 自然并发和 ESP-DL running -> 强前台让路仍待补测。）
+- `[x]` 阶段 6：旧 gate 高压回归已完成；其后由 runtime coordinator 模拟状态机、Hermes/OTA 真实交接和默认配置冷启动继续完成当前协议回归。
+- `[x]` 目录收敛：已将运行时编排层迁入 `main/services/runtime/`，只移动 gate、后台策略编排和启动 readiness；Safety Monitor、OTA、网络、Hermes 与电源等资源 owner 保持原目录。
+- `[x]` 目录收敛补漏：已更新 host preview mock 的 runtime gate 和后台 manager include；host 构建已越过旧路径，但随后因既有 `active_backend` mock initializer 与当前 `danger_detection_snapshot_t` 不匹配而停止，未将无关 API 漂移混入本次目录修复。
 
 ## 决策记录
 
@@ -272,6 +274,8 @@ ble_presence_start() -> ESP_ERR_NO_MEM
 - 2026-06-29：确认后台 HTTPS gate 只覆盖低优先级 health/sync/inbox/mark-read/weather，不覆盖 Hermes 前台 WSS、语音上传、文本命令或 cancel。
 - 2026-07-14：重审 `watch-resource-arbitration-report.md`，将旧的统一 memory pressure 阈值、全局 allocator、固定内存池和 LVGL heap 整体迁移降为证据驱动候选；同时识别 foreground `timeout_ms` 无实际语义、同 owner 无引用计数，以及 background token 不记录 holder、quiet window 不排空在途请求等缺点。
 - 2026-07-14：用户确认撤除 `background_https_gate`。理由是它不提供资源预留或在途排空，却引入共享 token、quiet/busy 状态和跨 owner 测试成本；后台网络恢复为 owner 自治。保留 `foreground_runtime_gate`、ESP-DL 主动让路、BLE 单次延迟重试和各 owner 的瞬时错误退避。
+- 2026-07-31：用户确认 OTA 采用“强前台 owner 契约”而不是 OTA 逐项停止/销毁后台服务。OTA 只 acquire `FOREGROUND_RUNTIME_OWNER_OTA`、设置 power maintenance window 并通知后台 manager 重新读取前台事实；已占用强前台 gate 的 BLE/SoftAP/聊天/Hermes 等会阻止 OTA 进入，而不是由 OTA 自动停止它们。默认 OTA 路径不再关闭 I2C/touch/wakeup 等基础硬件链路，也不要求普通业务入口直接消费 OTA owner。
+- 2026-07-31：用户基于四个强前台 owner 已重复实现相同 quiesce/acquire/release 协议，确认以 `runtime_coordinator` 替代薄 gate。新协调器只拥有注册、generation、deadline、ACK 和当前 owner 事实，不拥有业务资源；详细实施转入 `2026-07-31-runtime-coordinator-plan.md`，本计划保留历史证据和原 gate 回归记录。
 
 ## 意外与发现
 
@@ -302,7 +306,7 @@ idf.py build
 当前实际结果：
 
 - 阶段 0 文档已落地。
-- 阶段 1 已新增 `main/services/runtime_gate/foreground_runtime_gate.[ch]`、接入 `main/CMakeLists.txt`，并新增 `tests/test_foreground_runtime_gate_source.py` 锁住最小 API 与“非 ResourceManager”边界。
+- 阶段 1 已新增 `main/services/runtime/foreground_runtime_gate.[ch]`、接入 `main/CMakeLists.txt`，并新增 `tests/test_foreground_runtime_gate_source.py` 锁住最小 API 与“非 ResourceManager”边界。
 - 阶段 1 验证：`uv run python -m unittest tests.test_foreground_runtime_gate_source` 通过；`idf.py build` 通过，`111.bin` `0xabc140`，最小 app 分区剩余 `0x343ec0`（23%）。
 - 阶段 2 已在 `background_service_manager` 增加 `FOREGROUND_RUNTIME` 阻塞原因：强前台 active 时 Safety Monitor 目标态为 false，ESP-DL 不启动或恢复；gate 不直接 suspend/delete ESP-DL task。验证：`uv run python -m unittest tests.test_safety_monitor_session_source tests.test_danger_detection_controller_source tests.test_foreground_runtime_gate_source` 通过。
 - 阶段 3 已完成：`memory_watch_service_set_foreground_active(true/false)` 在 Hermes 前台进入/退出时 acquire/release `FOREGROUND_RUNTIME_OWNER_HERMES`，并通知 `background_service_manager_notify_foreground_runtime_changed()`；录音路径继续由 `memory_watch_recorder.c` 声明 foreground audio。
@@ -317,6 +321,8 @@ idf.py build
 - 阶段 6 真实 BLE toggle 修复后 COM3 结果：`board_logs/2026-06-29-10-31-09-runtime-resource-gate-board-test-real-ble-internal-stack.log` 未见 assert/Guru/panic/stack overflow；BLE guard 返回 `real_ble_enable: result=ESP_ERR_NO_MEM`，随后 `real_ble_disable: result=ESP_OK`，属于可解释 fail closed。结束内存约 `internal_free=43690 largest=20480 psram_free=6953672`。
 - 阶段 6 当前限制：撤除后台 gate 后的公网 HTTPS/WSS 自然并发尚未板测；Safety Monitor 当时包含 `user_disabled` 阻塞，未覆盖 ESP-DL 正在运行后被强前台暂停的完整路径。历史构建和串口结果继续保留，但不能代替撤除后的新回归。
 - 2026-07-08 补修后台 HTTPS 重试语义：真机日志显示 health/inbox 在 gate busy 时会连续失败并让 `hermes_online` 抖到 0。`memory_watch_service` 已增加 health worker busy/pending/retry due，transient failure 保持上次在线状态；inbox poll 失败保留 pending 并按 5 秒 due 重试，auth/protocol 错误才暂停。验证：`tests.test_memory_watch_service_source` 20 passed；相关 gate/source tests 27 passed；`idf.py build` 通过（`111.bin` `0xace350`，app free `0x331cb0`/23%）。attempt log：`docs/context/runs/2026-07-08-attempt-memory-watch-background-https-retry.md`。
+- 2026-07-31 OTA 强前台契约收敛：`ota_service` 默认路径已移除逐项 owner maintenance 调用、Safety Monitor quiesce ACK 等待和 I2C/touch/wakeup 硬维护 gate；改为 acquire `FOREGROUND_RUNTIME_OWNER_OTA`、设置 `power_policy_set_maintenance_window(true, "ota")`、通知 `background_service_manager_notify_foreground_runtime_changed()`。`network_service` 和录音入口不作为 OTA gate 的直接消费者；已有配网/聊天/Hermes 等强前台会话若占用 gate，OTA acquire 会 fail closed，是否从 OTA 页触发其他业务由 UI 路由保证。验证：`uv run python -m pytest tests/test_ota_service_source.py tests/test_network_service_ble_source.py tests/test_foreground_runtime_gate_source.py tests/test_safety_monitor_session_source.py -q` 25 passed；`idf.py build` 通过，当前 `build/111.bin=0xab56d0`，最小 app 分区剩余 `0x14a930`（11%）；全量 `uv run python -m pytest tests -q` 454 passed / 1 warning。阶段 6 仍需后续板端组合回归。
+- 2026-07-31 目录收敛：`foreground_runtime_gate`、runtime gate board test、`background_service_manager` 与 `startup_readiness` 迁入 `main/services/runtime/`；只更新 CMake、include、source-test 路径和当前框架卡，不改变 API、FreeRTOS task、资源 owner 或前后台策略。聚焦 source tests `78 passed`；`idf.py build` 通过，`111.bin=0xab5020`，最小 app 分区剩余 `0x14afe0`（11%）。
 
 ## 幂等与恢复
 
@@ -340,5 +346,5 @@ uv run python scripts/context/validate_context.py --level standard --q "watch ru
 
 ## 下一步
 
-- 下一步最小动作：阶段 6 补测撤除后台 gate 后的公网 HTTPS/WSS 自然并发，以及 ESP-DL running -> 强前台让路。COM3 冷启动后依次观察 Hermes 前台/离页、official_chat 预连接、Bluetooth 点击、天气/inbox/health 后台并发和 Safety Monitor/ESP-DL 让路日志。
-- 前台资源的 owner 内部 create/destroy、自动切换、5 秒旧 owner 超时和 quiesced ACK 细化到 `2026-07-14-watch-foreground-session-lifecycle-plan.md`；后续代码按新计划分阶段执行，本计划继续保留资源 gate 历史和阶段 6 高压验收。
+- 本计划已被 `2026-07-31-runtime-coordinator-plan.md` supersede 并归档；旧 gate 不得与 coordinator 并行成为 owner 真相。
+- 当前 coordinator 的实现、迁移和 COM7 证据见 `docs/context/plans/completed/2026-07-31-runtime-coordinator-plan.md` 及对应 run。

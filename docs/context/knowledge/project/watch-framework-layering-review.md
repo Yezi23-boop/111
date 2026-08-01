@@ -1,17 +1,19 @@
 ---
 id: watch-framework-layering-review
 tags: project, architecture, framework, layering, owner, resource-gate, review
-summary: 记录 2026-07-07 多 agent 对当前 ESP32-S3 手表固件框架分层的审查结论：主干分层成立，但 network getter 副作用、BLE UI 重动作、memory_watch_service 膨胀、runtime gate 边界和天气模块混层需要优先收敛。
-last_reviewed: 2026-07-07
+summary: 记录 2026-07-07 多 agent 的框架分层审查历史；其中 foreground gate 与 Safety manager 结论已由 2026-07-31 runtime coordinator 架构接续。
+last_reviewed: 2026-07-31
 memory_type: project_knowledge
 scope: repo
 owners: docs/context/knowledge/project/watch-framework-layering-review.md
 triggers: 框架审查, 分层审查, owner 边界, 解耦, 架构问题, runtime gate, memory_watch_service, network_manager getter
 evidence_level: review
-status: active
+status: archived
 ---
 
 # Watch Framework Layering Review
+
+> 2026-07-31 更新：本文保留 2026-07-07 审查时的代码事实。当前强前台协议已迁到 `runtime_coordinator`，Safety 目标态已迁到 `safety_monitor_policy`；当前合同以 `project-framework.md` 和 `runtime-owner-contract.md` 为准。
 
 ## 一句话结论
 
@@ -28,7 +30,7 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 本次由主线程和多个只读 subagent 分别审查：
 
 - 总框架与 owner 文档一致性。
-- `power_policy`、`foreground_runtime_gate`、BLE/Hermes/ESP-DL 资源冲突。
+- `power_policy`、当时的 `foreground_runtime_gate`、BLE/Hermes/ESP-DL 资源冲突。
 - AI Memory Watch / Hermes 固件、server、endpoint 边界。
 - `network_manager`、`network_service`、BLE provisioning、SoftAP portal 边界。
 - UI/LVGL/generated/custom/runtime 越界风险。
@@ -38,11 +40,11 @@ App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK
 ## 当前合理的边界
 
 - 启动主线基本正确：board foundation -> display foundation -> UI first frame -> core policy -> service managers -> deferred services。
-- Safety Monitor 链路合理：UI 写用户意图，`background_service_manager` 合成目标态，`safety_monitor_session` 执行生命周期，`danger_detection_service` 管风险状态，`app_alert_manager` 管提醒编排。
+- Safety Monitor 链路判断仍成立；当前名称为 UI 写用户意图，`safety_monitor_policy` 合成目标态，`safety_monitor_session` 执行生命周期，`danger_detection_service` 管风险状态，`app_alert_manager` 管提醒编排。
 - Hermes 大方向正确：ESP32 固件只面向 watch endpoint 和 device token，不直连 Hermes Dashboard、Hermes API Server 或 MiMo API key。
 - `audio_codec` session owner 边界基本正确：official_chat、Hermes recorder、ESP-DL 不应绕过 input/output session。
 - `power_policy` / `sleep_coordinator` 当前保持克制：只发布预算和 dry-run，不直接控制硬件、模型或 `esp_sleep_*`。
-- `foreground_runtime_gate` 当前仍是薄 gate，没有直接 start/stop 业务 task 或释放硬件资源；`background_https_gate` 已于 2026-07-14 撤除，后台网络恢复为各 owner 自治。
+- 当时的 `foreground_runtime_gate` 后续已由同样不持有业务资源的 `runtime_coordinator` 替代；`background_https_gate` 已于 2026-07-14 撤除，后台网络保持各 owner 自治。
 
 ## 主要问题
 
@@ -116,9 +118,9 @@ memory_watch_upload_worker.c    upload / cancel / health job
 memory_watch_foreground.c       foreground gate / WS 状态协调
 ```
 
-### P2: foreground runtime gate 边界没有被框架文档充分吸收
+### P2: foreground runtime gate 边界没有被框架文档充分吸收（已关闭）
 
-项目文档强调 V1 不做 runtime lease 或中心化资源管家，但代码中仍存在 `foreground_runtime_gate`。它是强前台 owner 事实，不是硬件 owner；原 `background_https_gate` 已撤除。问题在于后续仍可能把 foreground gate 误用成通用仲裁层。
+该问题已通过 `runtime_coordinator` 合同关闭：coordinator 只拥有协议、generation、deadline、ACK 和当前强前台事实，不拥有硬件或业务生命周期；原 `background_https_gate` 继续保持撤除。
 
 建议：
 
@@ -221,7 +223,7 @@ memory_watch_foreground.c       foreground gate / WS 状态协调
 
 - 不推倒现有 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 分层。
 - 不新增大 `ResourceManager`、`session_router`、默认 `ui_manager`。
-- 不把 `foreground_runtime_gate` 升级成通用资源账本。
+- 不把 `runtime_coordinator` 升级成通用资源账本。
 - 不让 `power_policy` 直接停 task、关硬件或释放 session。
 - 不把 Hermes/MiMo/API key 下放到 ESP32 固件。
 - 不把 UI 页面退出解释为长期后台能力停止。

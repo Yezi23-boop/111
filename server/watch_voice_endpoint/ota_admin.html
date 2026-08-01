@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Watch OTA 发布</title>
+  <style>
+    body { max-width: 680px; margin: 2rem auto; padding: 0 1rem; font: 16px sans-serif; }
+    label { display: block; margin-top: 1rem; }
+    input, button { box-sizing: border-box; font: inherit; padding: .55rem; width: 100%; }
+    button { margin-top: 1.2rem; cursor: pointer; }
+    pre { background: #f3f3f3; padding: 1rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Watch OTA 发布</h1>
+  <p>上传完整 ESP-IDF app bin。服务器会计算 SHA-256，并原子发布 stable manifest。</p>
+  <label>管理员令牌<input id="token" type="password" autocomplete="off"></label>
+  <label>版本（例如 0.2.0）<input id="version" value="0.2.0" pattern="[0-9]+\.[0-9]+\.[0-9]+"></label>
+  <label>通道<input id="channel" value="stable" pattern="[a-z0-9-]+"></label>
+  <label>固件 bin<input id="firmware" type="file" accept=".bin,application/octet-stream"></label>
+  <button id="publish">上传并发布</button>
+  <pre id="result">尚未发布</pre>
+  <script>
+    const result = document.getElementById('result');
+    document.getElementById('publish').onclick = async () => {
+      const file = document.getElementById('firmware').files[0];
+      if (!file) { result.textContent = '请选择 bin 文件'; return; }
+      const form = new FormData();
+      form.append('version', document.getElementById('version').value);
+      form.append('channel', document.getElementById('channel').value);
+      form.append('file', file, file.name);
+      result.textContent = '上传中…';
+      try {
+        const response = await fetch('/v1/watch/ota/admin/releases', {
+          method: 'POST',
+          headers: {'X-OTA-Admin-Token': document.getElementById('token').value},
+          body: form
+        });
+        const body = await response.json();
+        result.textContent = JSON.stringify(body, null, 2);
+      } catch (error) {
+        result.textContent = String(error);
+      }
+    };
+  </script>
+</body>
+</html>
