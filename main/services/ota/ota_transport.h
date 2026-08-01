@@ -6,35 +6,19 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "services/ota/ota_update_plan.h"
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-#define OTA_TRANSPORT_URL_MAX 192U
-#define OTA_TRANSPORT_VERSION_MAX 32U
-#define OTA_TRANSPORT_SHA256_HEX_LEN 64U
-#define OTA_TRANSPORT_MD5_HEX_LEN 32U
-#define OTA_TRANSPORT_AUTHORIZATION_MAX 256U
+#define OTA_TRANSPORT_URL_MAX OTA_UPDATE_URL_MAX
+#define OTA_TRANSPORT_VERSION_MAX OTA_UPDATE_VERSION_MAX
+#define OTA_TRANSPORT_SHA256_HEX_LEN OTA_UPDATE_SHA256_HEX_LEN
+#define OTA_TRANSPORT_MD5_HEX_LEN OTA_UPDATE_MD5_HEX_LEN
+#define OTA_TRANSPORT_AUTHORIZATION_MAX OTA_UPDATE_AUTHORIZATION_MAX
 #define OTA_TRANSPORT_MANIFEST_BUFFER_MAX 2048U
-
-    typedef enum
-    {
-        OTA_TRANSPORT_CHECKSUM_SHA256 = 0,
-        OTA_TRANSPORT_CHECKSUM_MD5,
-    } ota_transport_checksum_type_t;
-
-    /** 设备端接受的独立 OTA manifest。 */
-    typedef struct
-    {
-        char version[OTA_TRANSPORT_VERSION_MAX];
-        char url[OTA_TRANSPORT_URL_MAX];
-        size_t size;
-        ota_transport_checksum_type_t checksum_type;
-        char sha256[OTA_TRANSPORT_SHA256_HEX_LEN + 1U];
-        char md5[OTA_TRANSPORT_MD5_HEX_LEN + 1U];
-    } ota_transport_manifest_t;
 
     /**
      * manifest 请求配置；CA/host/current_version 指针必须在请求完成前保持
@@ -81,7 +65,11 @@ extern "C"
      */
     esp_err_t ota_transport_fetch_manifest(
         const ota_transport_manifest_request_t *request,
-        ota_transport_manifest_t *out_manifest);
+        ota_update_plan_t *out_plan);
+
+    /** @brief 比较最多三段数字版本；candidate 必须严格高于 current。 */
+    bool ota_transport_version_is_newer(const char *current,
+                                        const char *candidate);
 
     /**
      * @brief 下载并校验镜像到备用 OTA 槽，但不改变启动选择。
@@ -90,7 +78,19 @@ extern "C"
      * 在 activate 前 `otadata` 不会更新。
      */
     esp_err_t ota_transport_download_to_staging(
-        const ota_transport_manifest_t *manifest,
+        const ota_update_plan_t *manifest,
+        const ota_transport_download_config_t *config);
+
+    /**
+     * @brief 下载差分 patch 并流式应用到备用 OTA 槽（差分升级）。
+     *
+     * 要求 manifest->has_delta 为 true。与全量路径相同：成功后 transport 保留
+     * delta staged 状态，调用方必须继续调用 activate 或 abort；activate 前
+     * `otadata` 不会更新。内部完成 patch 完整性校验（patch_sha256）与应用后
+     * 目标分区哈希校验（target_sha256），任一失败返回错误且不切换启动槽。
+     */
+    esp_err_t ota_transport_download_delta_to_staging(
+        const ota_update_plan_t *manifest,
         const ota_transport_download_config_t *config);
 
     /**

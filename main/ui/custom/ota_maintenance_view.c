@@ -12,12 +12,6 @@ static lv_obj_t *s_progress_bar = NULL;
 static lv_obj_t *s_progress_label = NULL;
 static lv_obj_t *s_primary_label = NULL;
 
-static void ota_view_onenet_event(lv_event_t *event)
-{
-    (void)event;
-    (void)ota_service_request_onenet_check();
-}
-
 static void ota_view_primary_event(lv_event_t *event)
 {
     (void)event;
@@ -27,14 +21,15 @@ static void ota_view_primary_event(lv_event_t *event)
         return;
     }
 
-    if (!snapshot.manifest_valid || snapshot.state == OTA_SERVICE_STATE_IDLE ||
-        snapshot.state == OTA_SERVICE_STATE_FAILED)
+    if (snapshot.state == OTA_SERVICE_STATE_IDLE ||
+        snapshot.state == OTA_SERVICE_STATE_FAILED ||
+        snapshot.state == OTA_SERVICE_STATE_NO_UPDATE)
     {
-        (void)ota_service_request_remote_manifest();
+        (void)ota_service_request_check();
     }
     else if (snapshot.state == OTA_SERVICE_STATE_READY)
     {
-        (void)ota_service_request_start();
+        (void)ota_service_request_download();
     }
     else if (snapshot.state == OTA_SERVICE_STATE_STAGED)
     {
@@ -97,17 +92,8 @@ esp_err_t ota_maintenance_view_init(void)
     lv_obj_set_style_text_align(s_progress_label, LV_TEXT_ALIGN_CENTER,
                                 LV_PART_MAIN);
 
-    lv_obj_t *onenet = lv_button_create(s_screen);
-    lv_obj_set_pos(onenet, 40, 320);
-    lv_obj_set_size(onenet, 160, 44);
-    lv_obj_add_event_cb(onenet, ota_view_onenet_event, LV_EVENT_CLICKED,
-                        NULL);
-    lv_obj_t *onenet_label = lv_label_create(onenet);
-    lv_label_set_text(onenet_label, "OneNET检查");
-    lv_obj_center(onenet_label);
-
     lv_obj_t *prepare = lv_button_create(s_screen);
-    lv_obj_set_pos(prepare, 40, 380);
+    lv_obj_set_pos(prepare, 40, 320);
     lv_obj_set_size(prepare, 160, 54);
     lv_obj_add_event_cb(prepare, ota_view_primary_event, LV_EVENT_CLICKED,
                         NULL);
@@ -116,7 +102,7 @@ esp_err_t ota_maintenance_view_init(void)
     lv_obj_center(s_primary_label);
 
     lv_obj_t *cancel = lv_button_create(s_screen);
-    lv_obj_set_pos(cancel, 210, 380);
+    lv_obj_set_pos(cancel, 210, 320);
     lv_obj_set_size(cancel, 160, 54);
     lv_obj_add_event_cb(cancel, ota_view_cancel_event, LV_EVENT_CLICKED,
                         NULL);
@@ -152,14 +138,14 @@ void ota_maintenance_view_poll(void)
         return;
     }
 
-    if (snapshot.onenet_task_valid && snapshot.state == OTA_SERVICE_STATE_READY)
+    if (snapshot.update_available && snapshot.state == OTA_SERVICE_STATE_READY)
     {
-        lv_label_set_text_fmt(s_status_label, "OneNET目标 %s",
-                              snapshot.onenet_target_version);
+        lv_label_set_text_fmt(s_status_label, "目标 %s",
+                              snapshot.target_version);
     }
     else if (snapshot.state == OTA_SERVICE_STATE_NO_UPDATE)
     {
-        lv_label_set_text(s_status_label, "OneNET：无更新");
+        lv_label_set_text(s_status_label, "没有可用更新");
     }
     else
     {
@@ -170,7 +156,7 @@ void ota_maintenance_view_poll(void)
     lv_label_set_text_fmt(s_progress_label, "%u%%",
                           (unsigned int)snapshot.progress_percent);
 
-    if (snapshot.state == OTA_SERVICE_STATE_READY && snapshot.manifest_valid)
+    if (snapshot.state == OTA_SERVICE_STATE_READY && snapshot.update_available)
     {
         lv_label_set_text(s_primary_label, "下载更新");
     }

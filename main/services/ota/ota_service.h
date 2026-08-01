@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
-#include "services/ota/onenet_ota_provider.h"
+#include "services/ota/ota_update_plan.h"
 #include "services/ota/ota_transport.h"
 
 #ifdef __cplusplus
@@ -49,14 +49,10 @@ extern "C"
         esp_err_t last_error;
         bool task_started;
         bool maintenance_active;
-        bool manifest_valid;
-        bool onenet_task_valid;
-        char manifest_version[OTA_TRANSPORT_VERSION_MAX];
-        size_t manifest_size;
-        char manifest_sha256[OTA_TRANSPORT_SHA256_HEX_LEN + 1U];
-        char onenet_target_version[ONENET_OTA_TARGET_VERSION_MAX];
-        size_t onenet_image_size;
-        char onenet_md5[ONENET_OTA_MD5_HEX_LEN + 1U];
+        ota_update_source_t source;
+        bool update_available;
+        bool delta_available;
+        char target_version[OTA_UPDATE_VERSION_MAX];
     } ota_service_snapshot_t;
 
     /**
@@ -76,28 +72,11 @@ extern "C"
     esp_err_t ota_service_request_prepare(void);
 
     /**
-     * @brief 请求拉取并校验 manifest；该阶段不申请维护 gate、不写 Flash。
-     * @param[in] config manifest URL、CA、允许主机和当前版本配置。
-     * @return ESP_OK 表示命令已入队。
-     */
-    esp_err_t ota_service_request_manifest(
-        const ota_transport_manifest_request_t *config);
-
-    /**
-     * @brief 使用产品配置的云端 manifest 地址检查远端 OTA。
+     * @brief 按编译期选择的 provider 检查更新。
      *
-     * 该接口只读取 manifest，不申请前台 owner，也不写入 Flash；云端 HTTPS
-     * 使用 ESP-IDF certificate bundle，下载和切换仍由后续两个请求完成。
+     * 检查只访问 provider，不申请前台 owner，也不写入 Flash。
      */
-    esp_err_t ota_service_request_remote_manifest(void);
-
-    /**
-     * @brief 使用内置 OneNET 凭据上报当前版本并检查 SOTA 任务。
-     *
-     * 该阶段只访问 OneNET HTTPS API，不申请维护 owner、不写 Flash，也不会
-     * 把检查结果误标记为可下载的自建 manifest。
-     */
-    esp_err_t ota_service_request_onenet_check(void);
+    esp_err_t ota_service_request_check(void);
 
     /**
      * @brief 用户确认后开始维护并下载、校验备用槽。
@@ -105,7 +84,7 @@ extern "C"
      * 成功后状态为 `STAGED`，此接口不更新 `otadata`。
      * @return ESP_OK 表示命令已入队。
      */
-    esp_err_t ota_service_request_start(void);
+    esp_err_t ota_service_request_download(void);
 
     /**
      * @brief 激活已完成校验的备用槽并立即重启。

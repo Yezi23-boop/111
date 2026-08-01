@@ -5,25 +5,24 @@
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_system.h"
-#include "nvs.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-#include "services/power/power_policy.h"
-#include "services/ota/onenet_ota_provider.h"
+#include "services/ota/ota_metrics.h"
+#include "services/ota/ota_provider.h"
 #include "services/network/network_service.h"
+#include "services/power/power_policy.h"
 #include "services/runtime/runtime_coordinator.h"
 #include "services/runtime/startup_readiness.h"
-#include "services/time/system_time_service.h"
 
 static const char *TAG = "ota_service";
 
 enum
 {
     kCommandQueueLength = 4,
-    /* OneNET HTTPS/TLS plus the maintenance-window handoff can exceed 8 KiB. */
+    /* Flash 写入期间 cache 可能被冻结，OTA owner 的栈必须留在片内 RAM。 */
     kTaskStackBytes = 16384,
 };
 
@@ -31,8 +30,7 @@ typedef enum
 {
     OTA_SERVICE_COMMAND_PREPARE = 0,
     OTA_SERVICE_COMMAND_CANCEL,
-    OTA_SERVICE_COMMAND_FETCH_MANIFEST,
-    OTA_SERVICE_COMMAND_CHECK_ONENET,
+    OTA_SERVICE_COMMAND_CHECK_UPDATE,
     OTA_SERVICE_COMMAND_START_DOWNLOAD,
     OTA_SERVICE_COMMAND_ACTIVATE,
     OTA_SERVICE_COMMAND_COORDINATOR_GRANTED,
@@ -56,21 +54,13 @@ typedef struct
     TaskHandle_t task;
     portMUX_TYPE lock;
     ota_service_snapshot_t snapshot;
+    ota_update_plan_t plan;
+    bool plan_valid;
     bool coordinator_granted;
     bool start_after_grant;
     bool power_maintenance_active;
-    bool use_cert_bundle;
     bool staged;
     bool cancel_requested;
-    char manifest_url[OTA_TRANSPORT_URL_MAX];
-    char allowed_host[96];
-    char current_version[OTA_TRANSPORT_VERSION_MAX];
-    char onenet_authorization[ONENET_OTA_AUTHORIZATION_MAX];
-    const char *root_ca_pem;
-    ota_transport_manifest_t manifest;
-    bool manifest_valid;
-    bool onenet_task_valid;
-    onenet_ota_task_t onenet_task;
     ota_transport_fault_mode_t fault_mode;
     uint32_t restart_hold_ms;
     uint32_t coordinator_request_generation;
@@ -165,8 +155,7 @@ static void ota_service_cleanup_maintenance(void)
 static esp_err_t ota_service_prepare(void)
 {
     ota_service_publish_state(OTA_SERVICE_STATE_PREPARING, ESP_OK);
-
-    esp_err_t ret = power_policy_set_maintenance_window(true, "ota");
+    const esp_err_t ret = power_policy_set_maintenance_window(true, "ota");
     if (ret != ESP_OK)
     {
         ota_service_cleanup_maintenance();
@@ -174,9 +163,7 @@ static esp_err_t ota_service_prepare(void)
         return ret;
     }
     s_ota.power_maintenance_active = true;
-
     ota_service_publish_state(OTA_SERVICE_STATE_QUIESCED, ESP_OK);
-
     /* OTA 只发布强前台 owner 事实；业务 owner 观测该事实后自行让路。 */
     ota_service_publish_state(OTA_SERVICE_STATE_READY, ESP_OK);
     return ESP_OK;
@@ -210,60 +197,25 @@ static bool ota_service_cancel_cb(void *user_ctx)
     return s_ota.cancel_requested;
 }
 
-static void ota_service_report_pending(void);
-
-static esp_err_t ota_service_fetch_manifest(void)
+static esp_err_t ota_service_check_update(void)
 {
+    ota_service_state_t state = OTA_SERVICE_STATE_IDLE;
     taskENTER_CRITICAL(&s_ota.lock);
-    s_ota.onenet_task_valid = false;
-    s_ota.snapshot.onenet_task_valid = false;
-    s_ota.snapshot.onenet_target_version[0] = '\0';
-    s_ota.snapshot.onenet_image_size = 0U;
-    s_ota.snapshot.onenet_md5[0] = '\0';
+    state = s_ota.snapshot.state;
     taskEXIT_CRITICAL(&s_ota.lock);
-    ota_service_publish_state(OTA_SERVICE_STATE_PREPARING, ESP_OK);
-    const ota_transport_manifest_request_t request = {
-        .manifest_url = s_ota.manifest_url,
-        .root_ca_pem = s_ota.root_ca_pem,
-        .use_cert_bundle = s_ota.use_cert_bundle,
-        .allowed_host = s_ota.allowed_host,
-        .current_version = s_ota.current_version,
-    };
-    ota_transport_manifest_t manifest = {0};
-    const esp_err_t ret =
-        ota_transport_fetch_manifest(&request, &manifest);
-    if (ret != ESP_OK)
+    if (state == OTA_SERVICE_STATE_PREPARING ||
+        state == OTA_SERVICE_STATE_QUIESCING ||
+        state == OTA_SERVICE_STATE_QUIESCED ||
+        state == OTA_SERVICE_STATE_DOWNLOADING ||
+        state == OTA_SERVICE_STATE_STAGED ||
+        state == OTA_SERVICE_STATE_VERIFYING ||
+        state == OTA_SERVICE_STATE_RESTARTING)
     {
-        taskENTER_CRITICAL(&s_ota.lock);
-        s_ota.manifest_valid = false;
-        s_ota.snapshot.manifest_valid = false;
-        taskEXIT_CRITICAL(&s_ota.lock);
-        ota_service_publish_state(OTA_SERVICE_STATE_FAILED, ret);
-        return ret;
+        ESP_LOGW(TAG, "check ignored while state=%s",
+                 ota_service_state_text(state));
+        return ESP_ERR_INVALID_STATE;
     }
 
-    manifest.checksum_type = OTA_TRANSPORT_CHECKSUM_SHA256;
-    taskENTER_CRITICAL(&s_ota.lock);
-    s_ota.snapshot.onenet_task_valid = false;
-    s_ota.snapshot.onenet_target_version[0] = '\0';
-    s_ota.snapshot.onenet_image_size = 0U;
-    s_ota.snapshot.onenet_md5[0] = '\0';
-    s_ota.manifest = manifest;
-    s_ota.manifest_valid = true;
-    s_ota.snapshot.manifest_valid = true;
-    s_ota.snapshot.manifest_size = manifest.size;
-    strncpy(s_ota.snapshot.manifest_version, manifest.version,
-            sizeof(s_ota.snapshot.manifest_version) - 1U);
-    strncpy(s_ota.snapshot.manifest_sha256, manifest.sha256,
-            sizeof(s_ota.snapshot.manifest_sha256) - 1U);
-    taskEXIT_CRITICAL(&s_ota.lock);
-    ota_service_publish_state(OTA_SERVICE_STATE_READY, ESP_OK);
-    return ESP_OK;
-}
-
-static esp_err_t ota_service_check_onenet(void)
-{
-    ota_service_report_pending();
     const esp_app_desc_t *description = esp_app_get_description();
     if (description == NULL || description->version[0] == '\0')
     {
@@ -273,112 +225,172 @@ static esp_err_t ota_service_check_onenet(void)
     }
 
     taskENTER_CRITICAL(&s_ota.lock);
-    s_ota.manifest_valid = false;
-    s_ota.onenet_task_valid = false;
-    s_ota.onenet_authorization[0] = '\0';
-    s_ota.snapshot.manifest_valid = false;
-    s_ota.snapshot.onenet_task_valid = false;
-    s_ota.snapshot.onenet_target_version[0] = '\0';
-    s_ota.snapshot.onenet_image_size = 0U;
-    s_ota.snapshot.onenet_md5[0] = '\0';
+    memset(&s_ota.plan, 0, sizeof(s_ota.plan));
+    s_ota.plan_valid = false;
+    s_ota.snapshot.update_available = false;
+    s_ota.snapshot.delta_available = false;
+    s_ota.snapshot.target_version[0] = '\0';
+    s_ota.snapshot.image_size = 0U;
     taskEXIT_CRITICAL(&s_ota.lock);
+
     ota_service_publish_state(OTA_SERVICE_STATE_PREPARING, ESP_OK);
-    onenet_ota_task_t task = {0};
-    esp_err_t ret = onenet_ota_provider_report_version(description->version);
+    /* 网络恢复后再次进入检查页时，顺便重试上次启动未完成的终态上报。 */
+    if (network_service_is_service_ready())
+    {
+        ota_provider_report_pending();
+    }
+    ota_metrics_stage_begin(OTA_METRICS_STAGE_MANIFEST);
+    ota_update_plan_t plan = {0};
+    esp_err_t ret = ota_provider_check(description->version, &plan);
     if (ret == ESP_OK)
     {
-        ret = onenet_ota_provider_check(description->version, &task);
+        ret = ota_provider_prepare_download(&plan);
     }
     if (ret == ESP_ERR_NOT_FOUND)
     {
-        taskENTER_CRITICAL(&s_ota.lock);
-        s_ota.manifest_valid = false;
-        s_ota.onenet_task_valid = false;
-        s_ota.snapshot.manifest_valid = false;
-        s_ota.snapshot.onenet_task_valid = false;
-        taskEXIT_CRITICAL(&s_ota.lock);
+        ota_metrics_record_result(OTA_METRICS_STAGE_MANIFEST, NULL, ret,
+                                  ota_metrics_stage_elapsed_ms(
+                                      OTA_METRICS_STAGE_MANIFEST),
+                                  false, 0U);
         ota_service_publish_state(OTA_SERVICE_STATE_NO_UPDATE, ret);
         return ret;
     }
     if (ret != ESP_OK)
     {
-        taskENTER_CRITICAL(&s_ota.lock);
-        s_ota.snapshot.onenet_task_valid = false;
-        s_ota.onenet_task_valid = false;
-        taskEXIT_CRITICAL(&s_ota.lock);
+        ota_metrics_record_result(OTA_METRICS_STAGE_MANIFEST, NULL, ret,
+                                  ota_metrics_stage_elapsed_ms(
+                                      OTA_METRICS_STAGE_MANIFEST),
+                                  false, 0U);
         ota_service_publish_state(OTA_SERVICE_STATE_FAILED, ret);
         return ret;
     }
-
-    char download_url[OTA_TRANSPORT_URL_MAX] = {0};
-    char authorization[ONENET_OTA_AUTHORIZATION_MAX] = {0};
-    ret = onenet_ota_provider_prepare_download(
-        &task, download_url, sizeof(download_url), authorization,
-        sizeof(authorization));
-    if (ret != ESP_OK)
-    {
-        ota_service_publish_state(OTA_SERVICE_STATE_FAILED, ret);
-        return ret;
-    }
-
-    ota_transport_manifest_t manifest = {0};
-    strncpy(manifest.version, task.target, sizeof(manifest.version) - 1U);
-    strncpy(manifest.url, download_url, sizeof(manifest.url) - 1U);
-    manifest.size = task.size;
-    manifest.checksum_type = OTA_TRANSPORT_CHECKSUM_MD5;
-    strncpy(manifest.md5, task.md5, sizeof(manifest.md5) - 1U);
 
     taskENTER_CRITICAL(&s_ota.lock);
-    s_ota.use_cert_bundle = true;
-    s_ota.root_ca_pem = NULL;
-    s_ota.manifest = manifest;
-    s_ota.manifest_valid = true;
-    s_ota.onenet_task_valid = true;
-    s_ota.onenet_task = task;
-    s_ota.snapshot.manifest_valid = true;
-    s_ota.snapshot.manifest_size = task.size;
-    strncpy(s_ota.snapshot.manifest_version, task.target,
-            sizeof(s_ota.snapshot.manifest_version) - 1U);
-    s_ota.snapshot.manifest_sha256[0] = '\0';
-    strncpy(s_ota.onenet_authorization, authorization,
-            sizeof(s_ota.onenet_authorization) - 1U);
-    s_ota.snapshot.onenet_task_valid = true;
-    strncpy(s_ota.snapshot.onenet_target_version, task.target,
-            sizeof(s_ota.snapshot.onenet_target_version) - 1U);
-    s_ota.snapshot.onenet_image_size = task.size;
-    strncpy(s_ota.snapshot.onenet_md5, task.md5,
-            sizeof(s_ota.snapshot.onenet_md5) - 1U);
+    s_ota.plan = plan;
+    s_ota.plan_valid = true;
+    s_ota.snapshot.source = plan.source;
+    s_ota.snapshot.update_available = true;
+    s_ota.snapshot.delta_available = plan.has_delta;
+    s_ota.snapshot.image_size = plan.size;
+    strncpy(s_ota.snapshot.target_version, plan.version,
+            sizeof(s_ota.snapshot.target_version) - 1U);
     taskEXIT_CRITICAL(&s_ota.lock);
+
+    ota_metrics_record_result(OTA_METRICS_STAGE_MANIFEST, plan.version,
+                              ESP_OK,
+                              ota_metrics_stage_elapsed_ms(
+                                  OTA_METRICS_STAGE_MANIFEST),
+                              plan.has_delta, 0U);
     ota_service_publish_state(OTA_SERVICE_STATE_READY, ESP_OK);
-    ESP_LOGI(TAG, "OneNET task ready: target=%s size=%u tid=%u",
-             task.target, (unsigned int)task.size,
-             (unsigned int)task.task_id);
+    ESP_LOGI(TAG, "update ready: source=%d target=%s size=%u delta=%d",
+             (int)plan.source, plan.version, (unsigned int)plan.size,
+             plan.has_delta ? 1 : 0);
     return ESP_OK;
+}
+
+static esp_err_t ota_service_download_delta_to_staging(void)
+{
+    if (!s_ota.plan_valid || !s_ota.plan.has_delta)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_app_desc_t *description = esp_app_get_description();
+    if (description == NULL || description->version[0] == '\0')
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (strcmp(description->version, s_ota.plan.baseline_version) != 0)
+    {
+        ESP_LOGW(TAG, "delta baseline mismatch: current=%s baseline=%s",
+                 description->version, s_ota.plan.baseline_version);
+        return ESP_ERR_INVALID_VERSION;
+    }
+    const ota_transport_download_config_t config = {
+        .root_ca_pem = s_ota.plan.root_ca_pem,
+        .use_cert_bundle = s_ota.plan.use_cert_bundle,
+        .authorization = s_ota.plan.authorization[0] == '\0'
+                             ? NULL
+                             : s_ota.plan.authorization,
+        .progress_cb = ota_service_progress_cb,
+        .cancel_cb = ota_service_cancel_cb,
+        .user_ctx = NULL,
+        .fault_mode = s_ota.fault_mode,
+    };
+    return ota_transport_download_delta_to_staging(&s_ota.plan, &config);
 }
 
 static esp_err_t ota_service_download_to_staging(void)
 {
-    if (!s_ota.manifest_valid)
+    if (!s_ota.plan_valid)
     {
         return ESP_ERR_INVALID_STATE;
     }
 
     s_ota.cancel_requested = false;
     ota_service_publish_state(OTA_SERVICE_STATE_DOWNLOADING, ESP_OK);
+    ota_metrics_stage_begin(OTA_METRICS_STAGE_DOWNLOAD);
     const ota_transport_download_config_t config = {
-        .root_ca_pem = s_ota.root_ca_pem,
-        .use_cert_bundle = s_ota.use_cert_bundle,
-        .authorization = s_ota.onenet_task_valid
-                             ? s_ota.onenet_authorization
-                             : NULL,
+        .root_ca_pem = s_ota.plan.root_ca_pem,
+        .use_cert_bundle = s_ota.plan.use_cert_bundle,
+        .authorization = s_ota.plan.authorization[0] == '\0'
+                             ? NULL
+                             : s_ota.plan.authorization,
         .progress_cb = ota_service_progress_cb,
         .cancel_cb = ota_service_cancel_cb,
         .user_ctx = NULL,
         .fault_mode = s_ota.fault_mode,
     };
-    esp_err_t ret = ota_transport_download_to_staging(&s_ota.manifest, &config);
+
+    esp_err_t ret = ESP_OK;
+    bool used_delta = false;
+    uint8_t delta_retry = 0U;
+#if CONFIG_OTA_DELTA_ENABLED
+    if (s_ota.plan.has_delta)
+    {
+        used_delta = true;
+        for (uint32_t attempt = 0U;
+             attempt <= (uint32_t)CONFIG_OTA_DELTA_MAX_RETRY; ++attempt)
+        {
+            ret = ota_service_download_delta_to_staging();
+            if (ret == ESP_OK || s_ota.cancel_requested)
+            {
+                break;
+            }
+            delta_retry = (uint8_t)attempt + 1U;
+            ESP_LOGW(TAG, "delta attempt %u failed: %s, retry or fallback",
+                     attempt + 1U, esp_err_to_name(ret));
+        }
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "delta exhausted, falling back to full image");
+            /* plan 保持原样，fallback 只改变本次执行路径。 */
+            ret = ota_transport_download_to_staging(&s_ota.plan, &config);
+        }
+    }
+    else
+#endif
+    {
+        ret = ota_transport_download_to_staging(&s_ota.plan, &config);
+    }
+
+    const uint32_t download_ms =
+        ota_metrics_stage_elapsed_ms(OTA_METRICS_STAGE_DOWNLOAD);
     if (ret != ESP_OK)
     {
+        if (!s_ota.cancel_requested)
+        {
+            const esp_err_t report_ret =
+                ota_provider_report_status(&s_ota.plan,
+                                            OTA_PROVIDER_STATUS_DOWNLOAD_FAILURE);
+            if (report_ret != ESP_OK)
+            {
+                ESP_LOGW(TAG, "provider download failure report failed: %s",
+                         esp_err_to_name(report_ret));
+            }
+        }
+        ota_metrics_record_result(OTA_METRICS_STAGE_DOWNLOAD,
+                                  s_ota.plan.version, ret, download_ms,
+                                  used_delta, delta_retry);
         ota_service_cleanup_maintenance();
         ota_service_publish_state(
             s_ota.cancel_requested ? OTA_SERVICE_STATE_IDLE
@@ -388,55 +400,11 @@ static esp_err_t ota_service_download_to_staging(void)
     }
 
     s_ota.staged = true;
+    ota_metrics_record_result(OTA_METRICS_STAGE_DOWNLOAD,
+                              s_ota.plan.version, ESP_OK, download_ms,
+                              used_delta, delta_retry);
     ota_service_publish_state(OTA_SERVICE_STATE_STAGED, ESP_OK);
     return ESP_OK;
-}
-
-static void ota_service_report_pending(void)
-{
-    onenet_ota_pending_t pending = {0};
-    esp_err_t ret = onenet_ota_provider_load_pending(&pending);
-    if (ret == ESP_ERR_NVS_NOT_FOUND)
-    {
-        return;
-    }
-    if (ret != ESP_OK)
-    {
-        ESP_LOGW(TAG, "OneNET pending load failed: %s", esp_err_to_name(ret));
-        return;
-    }
-
-    for (unsigned int attempt = 0U;
-         attempt < 30U && !network_service_is_service_ready(); ++attempt)
-    {
-        vTaskDelay(pdMS_TO_TICKS(1000U));
-    }
-    if (!network_service_is_service_ready() ||
-        system_time_service_ensure_valid_for_tls(5000U) != ESP_OK)
-    {
-        ESP_LOGW(TAG, "OneNET pending deferred: network or TLS time unavailable");
-        return;
-    }
-
-    const esp_app_desc_t *description = esp_app_get_description();
-    if (description == NULL || description->version[0] == '\0')
-    {
-        return;
-    }
-    const bool booted_target = strcmp(description->version, pending.target) == 0;
-    ret = onenet_ota_provider_report_version(description->version);
-    if (ret == ESP_OK)
-    {
-        ret = onenet_ota_provider_report_status(pending.task_id,
-                                                booted_target ? 100 : 0);
-    }
-    if (ret == ESP_OK && booted_target)
-    {
-        ret = onenet_ota_provider_clear_pending();
-    }
-    ESP_LOGI(TAG, "OneNET pending report: tid=%u target=%s booted=%d result=%s",
-             (unsigned int)pending.task_id, pending.target,
-             booted_target ? 1 : 0, esp_err_to_name(ret));
 }
 
 static esp_err_t ota_service_activate_staging(void)
@@ -448,26 +416,49 @@ static esp_err_t ota_service_activate_staging(void)
     }
 
     ota_service_publish_state(OTA_SERVICE_STATE_VERIFYING, ESP_OK);
-    if (s_ota.onenet_task_valid)
+    ota_metrics_stage_begin(OTA_METRICS_STAGE_ACTIVATE);
+    bool pending_stored = false;
+    esp_err_t ret = ota_provider_store_pending(&s_ota.plan);
+    if (ret == ESP_OK)
     {
-        const esp_err_t pending_ret =
-            onenet_ota_provider_store_pending(&s_ota.onenet_task);
-        if (pending_ret != ESP_OK)
-        {
-            ota_service_cleanup_maintenance();
-            ota_service_publish_state(OTA_SERVICE_STATE_FAILED, pending_ret);
-            return pending_ret;
-        }
+        pending_stored = true;
+        ret = ota_transport_activate_staging();
     }
-    const esp_err_t ret = ota_transport_activate_staging();
     s_ota.staged = false;
     if (ret != ESP_OK)
     {
+        const esp_err_t report_ret =
+            ota_provider_report_status(&s_ota.plan,
+                                        OTA_PROVIDER_STATUS_ACTIVATE_FAILURE);
+        if (report_ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "provider activation failure report failed: %s",
+                     esp_err_to_name(report_ret));
+        }
+        if (pending_stored)
+        {
+            const esp_err_t clear_ret = ota_provider_clear_pending();
+            if (clear_ret != ESP_OK)
+            {
+                ESP_LOGW(TAG, "provider pending cleanup failed: %s",
+                         esp_err_to_name(clear_ret));
+            }
+        }
+        ota_metrics_record_result(OTA_METRICS_STAGE_ACTIVATE,
+                                  s_ota.plan.version, ret,
+                                  ota_metrics_stage_elapsed_ms(
+                                      OTA_METRICS_STAGE_ACTIVATE),
+                                  s_ota.plan.has_delta, 0U);
         ota_service_cleanup_maintenance();
         ota_service_publish_state(OTA_SERVICE_STATE_FAILED, ret);
         return ret;
     }
 
+    ota_metrics_record_result(OTA_METRICS_STAGE_ACTIVATE, s_ota.plan.version,
+                              ESP_OK,
+                              ota_metrics_stage_elapsed_ms(
+                                  OTA_METRICS_STAGE_ACTIVATE),
+                              s_ota.plan.has_delta, 0U);
     ota_service_publish_state(OTA_SERVICE_STATE_RESTARTING, ESP_OK);
     ESP_LOGW(TAG, "fault_window: finish_succeeded_before_restart hold_ms=%u",
              (unsigned int)s_ota.restart_hold_ms);
@@ -491,9 +482,8 @@ static esp_err_t ota_service_send_coordinator_command(
         .generation = generation,
         .result = result,
     };
-    return xQueueSend(s_ota.queue, &command, 0) == pdTRUE
-               ? ESP_OK
-               : ESP_ERR_TIMEOUT;
+    return xQueueSend(s_ota.queue, &command, 0) == pdTRUE ? ESP_OK
+                                                           : ESP_ERR_TIMEOUT;
 }
 
 static esp_err_t ota_service_coordinator_grant(uint32_t generation,
@@ -521,8 +511,6 @@ static esp_err_t ota_service_coordinator_quiesce(uint32_t generation,
     taskENTER_CRITICAL(&s_ota.lock);
     state = s_ota.snapshot.state;
     taskEXIT_CRITICAL(&s_ota.lock);
-
-    /* 自动交接不能冒充用户取消正在写 Flash 的 OTA 会话。 */
     if (state == OTA_SERVICE_STATE_DOWNLOADING ||
         state == OTA_SERVICE_STATE_VERIFYING ||
         state == OTA_SERVICE_STATE_RESTARTING)
@@ -536,19 +524,15 @@ static esp_err_t ota_service_coordinator_quiesce(uint32_t generation,
 static void ota_service_task(void *arg)
 {
     (void)arg;
-
     ESP_LOGI(TAG, "wait: ui_first_frame_ready");
     (void)startup_readiness_wait_ui_first_frame(portMAX_DELAY);
     ESP_LOGI(TAG, "ready: ui_first_frame_ready");
 
-    /* 只初始化并持久化 OneNET 默认凭据，不在启动阶段发起网络请求。 */
-    const esp_err_t onenet_init_ret = onenet_ota_provider_init();
-    if (onenet_init_ret != ESP_OK)
+    if (ota_metrics_init() == ESP_OK)
     {
-        ESP_LOGW(TAG, "OneNET credentials unavailable: %s",
-                 esp_err_to_name(onenet_init_ret));
+        (void)ota_metrics_dump_recent();
     }
-    ota_service_report_pending();
+    ota_provider_report_pending();
 
     while (true)
     {
@@ -570,7 +554,7 @@ static void ota_service_task(void *arg)
                 continue;
             }
             if (command.type == OTA_SERVICE_COMMAND_START_DOWNLOAD &&
-                !s_ota.manifest_valid)
+                !s_ota.plan_valid)
             {
                 ota_service_publish_state(OTA_SERVICE_STATE_FAILED,
                                           ESP_ERR_INVALID_STATE);
@@ -579,10 +563,8 @@ static void ota_service_task(void *arg)
             s_ota.start_after_grant =
                 command.type == OTA_SERVICE_COMMAND_START_DOWNLOAD;
             uint32_t request_generation = 0U;
-            const esp_err_t request_ret =
-                runtime_coordinator_request_foreground(
-                    RUNTIME_COORDINATOR_PARTICIPANT_OTA,
-                    &request_generation);
+            const esp_err_t request_ret = runtime_coordinator_request_foreground(
+                RUNTIME_COORDINATOR_PARTICIPANT_OTA, &request_generation);
             if (request_ret != ESP_OK)
             {
                 ota_service_publish_state(OTA_SERVICE_STATE_FAILED,
@@ -594,19 +576,18 @@ static void ota_service_task(void *arg)
         }
         else if (command.type == OTA_SERVICE_COMMAND_COORDINATOR_GRANTED)
         {
-            if (command.generation !=
-                s_ota.coordinator_request_generation)
+            if (command.generation != s_ota.coordinator_request_generation)
             {
                 (void)runtime_coordinator_report_start_result(
-                    RUNTIME_COORDINATOR_PARTICIPANT_OTA,
-                    command.generation, ESP_ERR_INVALID_STATE);
+                    RUNTIME_COORDINATOR_PARTICIPANT_OTA, command.generation,
+                    ESP_ERR_INVALID_STATE);
                 continue;
             }
             s_ota.coordinator_granted = true;
             const esp_err_t prepare_ret = ota_service_prepare();
             (void)runtime_coordinator_report_start_result(
-                RUNTIME_COORDINATOR_PARTICIPANT_OTA,
-                command.generation, prepare_ret);
+                RUNTIME_COORDINATOR_PARTICIPANT_OTA, command.generation,
+                prepare_ret);
             if (prepare_ret == ESP_OK && s_ota.start_after_grant)
             {
                 (void)ota_service_download_to_staging();
@@ -633,8 +614,7 @@ static void ota_service_task(void *arg)
         }
         else if (command.type == OTA_SERVICE_COMMAND_COORDINATOR_CANCELLED)
         {
-            if (command.generation ==
-                s_ota.coordinator_request_generation)
+            if (command.generation == s_ota.coordinator_request_generation)
             {
                 s_ota.coordinator_request_generation = 0U;
                 s_ota.start_after_grant = false;
@@ -642,13 +622,9 @@ static void ota_service_task(void *arg)
                                           command.result);
             }
         }
-        else if (command.type == OTA_SERVICE_COMMAND_FETCH_MANIFEST)
+        else if (command.type == OTA_SERVICE_COMMAND_CHECK_UPDATE)
         {
-            (void)ota_service_fetch_manifest();
-        }
-        else if (command.type == OTA_SERVICE_COMMAND_CHECK_ONENET)
-        {
-            (void)ota_service_check_onenet();
+            (void)ota_service_check_update();
         }
         else if (command.type == OTA_SERVICE_COMMAND_ACTIVATE)
         {
@@ -687,7 +663,6 @@ esp_err_t ota_service_start(void)
     {
         return ESP_FAIL;
     }
-
     s_ota.queue = xQueueCreateStatic(
         kCommandQueueLength, sizeof(ota_service_command_message_t),
         s_ota.queue_storage, &s_ota.queue_buffer);
@@ -710,8 +685,6 @@ esp_err_t ota_service_start(void)
         return register_ret;
     }
 
-    /* Flash 写入期间 cache 会被冻结；执行 OTA 下载的任务栈必须留在
-     * internal RAM，不能像普通网络后台任务一样放到 PSRAM。 */
     const BaseType_t task_ret = xTaskCreateWithCaps(
         ota_service_task, "ota_service", kTaskStackBytes, NULL, 5,
         &s_ota.task, MALLOC_CAP_INTERNAL);
@@ -744,12 +717,9 @@ static esp_err_t ota_service_send_command(ota_service_command_t command)
     {
         return ESP_ERR_INVALID_STATE;
     }
-    const ota_service_command_message_t message = {
-        .type = command,
-    };
-    return xQueueSend(s_ota.queue, &message, 0) == pdTRUE
-               ? ESP_OK
-               : ESP_ERR_TIMEOUT;
+    const ota_service_command_message_t message = {.type = command};
+    return xQueueSend(s_ota.queue, &message, 0) == pdTRUE ? ESP_OK
+                                                           : ESP_ERR_TIMEOUT;
 }
 
 esp_err_t ota_service_request_prepare(void)
@@ -757,58 +727,12 @@ esp_err_t ota_service_request_prepare(void)
     return ota_service_send_command(OTA_SERVICE_COMMAND_PREPARE);
 }
 
-esp_err_t ota_service_request_manifest(
-    const ota_transport_manifest_request_t *config)
+esp_err_t ota_service_request_check(void)
 {
-    if (config == NULL || config->manifest_url == NULL ||
-        (!config->use_cert_bundle &&
-         (config->root_ca_pem == NULL || config->root_ca_pem[0] == '\0')) ||
-        config->allowed_host == NULL ||
-        config->current_version == NULL ||
-        strlen(config->manifest_url) >= sizeof(s_ota.manifest_url) ||
-        strlen(config->allowed_host) >= sizeof(s_ota.allowed_host) ||
-        strlen(config->current_version) >= sizeof(s_ota.current_version))
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-    strncpy(s_ota.manifest_url, config->manifest_url,
-            sizeof(s_ota.manifest_url) - 1U);
-    strncpy(s_ota.allowed_host, config->allowed_host,
-            sizeof(s_ota.allowed_host) - 1U);
-    strncpy(s_ota.current_version, config->current_version,
-            sizeof(s_ota.current_version) - 1U);
-    s_ota.root_ca_pem = config->root_ca_pem;
-    s_ota.use_cert_bundle = config->use_cert_bundle;
-    return ota_service_send_command(OTA_SERVICE_COMMAND_FETCH_MANIFEST);
+    return ota_service_send_command(OTA_SERVICE_COMMAND_CHECK_UPDATE);
 }
 
-esp_err_t ota_service_request_remote_manifest(void)
-{
-#if CONFIG_OTA_SERVICE_REMOTE_ENABLED
-    const esp_app_desc_t *description = esp_app_get_description();
-    if (description == NULL || description->version[0] == '\0')
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-    const ota_transport_manifest_request_t config = {
-        .manifest_url = CONFIG_OTA_SERVICE_REMOTE_MANIFEST_URL,
-        .root_ca_pem = NULL,
-        .use_cert_bundle = true,
-        .allowed_host = CONFIG_OTA_SERVICE_REMOTE_ALLOWED_HOST,
-        .current_version = description->version,
-    };
-    return ota_service_request_manifest(&config);
-#else
-    return ESP_ERR_NOT_SUPPORTED;
-#endif
-}
-
-esp_err_t ota_service_request_onenet_check(void)
-{
-    return ota_service_send_command(OTA_SERVICE_COMMAND_CHECK_ONENET);
-}
-
-esp_err_t ota_service_request_start(void)
+esp_err_t ota_service_request_download(void)
 {
     return ota_service_send_command(OTA_SERVICE_COMMAND_START_DOWNLOAD);
 }
@@ -850,7 +774,6 @@ esp_err_t ota_service_get_snapshot(ota_service_snapshot_t *out_snapshot)
     {
         return ESP_ERR_INVALID_ARG;
     }
-
     taskENTER_CRITICAL(&s_ota.lock);
     *out_snapshot = s_ota.snapshot;
     out_snapshot->maintenance_active = s_ota.coordinator_granted;

@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "services/ota/ota_update_plan.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -35,18 +36,6 @@ extern "C"
         char target[ONENET_OTA_TARGET_VERSION_MAX];
     } onenet_ota_pending_t;
 
-    /** @brief 从 `onenet_ota` NVS namespace 加载产品级 OTA 凭据。 */
-    esp_err_t onenet_ota_provider_init(void);
-
-    /**
-     * @brief 保存 OneNET 产品级 OTA 凭据。
-     *
-     * AccessKey 只进入 NVS，不写日志；调用方必须通过受控的本地配置流程提供它。
-     */
-    esp_err_t onenet_ota_provider_store_credentials(
-        const char *product_id, const char *device_name,
-        const char *access_key);
-
     /** @brief 上报当前应用版本和固定模组占位版本。 */
     esp_err_t onenet_ota_provider_report_version(const char *app_version);
 
@@ -66,8 +55,24 @@ extern "C"
         const onenet_ota_task_t *task, char *out_url, size_t url_size,
         char *out_authorization, size_t authorization_size);
 
+    /**
+     * @brief 将当前 OneNET 任务转换成公共 OTA 计划。
+     *
+     * 当前 OneNET 任务为完整包；未来增加 delta 时只扩展该 provider 的
+     * JSON 映射，不改变 ota_service 的执行流程。
+     */
+    esp_err_t onenet_ota_provider_check_plan(const char *current_version,
+                                             ota_update_plan_t *out_plan);
+
+    /** @brief 为公共 OTA 计划生成 OneNET 下载地址和会话 Authorization。 */
+    esp_err_t onenet_ota_provider_prepare_plan(ota_update_plan_t *plan);
+
     /** @brief 持久化待上报的 OneNET 任务，必须在切换启动槽前调用。 */
     esp_err_t onenet_ota_provider_store_pending(const onenet_ota_task_t *task);
+
+    /** @brief 保存公共 OTA 计划中的 OneNET pending 任务。 */
+    esp_err_t onenet_ota_provider_store_pending_plan(
+        const ota_update_plan_t *plan);
 
     /** @brief 读取上次已激活但尚未向 OneNET 完成状态上报的任务。 */
     esp_err_t onenet_ota_provider_load_pending(onenet_ota_pending_t *out_pending);

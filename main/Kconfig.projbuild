@@ -55,24 +55,31 @@ endmenu
 
 menu "Standalone HTTPS OTA"
 
-config OTA_SERVICE_REMOTE_ENABLED
-    bool "Enable remote cloud OTA configuration"
-    default y
+choice OTA_SERVICE_SOURCE
+    prompt "OTA source"
+    default OTA_SOURCE_ONENET
     help
-        Enable the product-configured remote manifest request API. This does
-        not start an automatic OTA task; the UI or an explicit product flow
-        still submits the three OTA stages.
+        Select the protocol provider used by the unified OTA service. The UI
+        and the three-step service flow are identical for both sources.
+
+config OTA_SOURCE_ONENET
+    bool "OneNET"
+
+config OTA_SOURCE_REMOTE_MANIFEST
+    bool "Self-hosted HTTPS manifest"
+
+endchoice
 
 config OTA_SERVICE_REMOTE_MANIFEST_URL
     string "Remote OTA manifest URL"
-    depends on OTA_SERVICE_REMOTE_ENABLED
+    depends on OTA_SOURCE_REMOTE_MANIFEST
     default "https://watch.934000.xyz/v1/watch/ota/manifest?channel=stable"
     help
         HTTPS manifest endpoint published by the remote OTA server.
 
 config OTA_SERVICE_REMOTE_ALLOWED_HOST
     string "Remote OTA allowed host"
-    depends on OTA_SERVICE_REMOTE_ENABLED
+    depends on OTA_SOURCE_REMOTE_MANIFEST
     default "watch.934000.xyz"
     help
         Exact host portion accepted in both the manifest URL and image URL.
@@ -116,15 +123,6 @@ config OTA_SERVICE_BOARD_TEST
         It is for a dedicated test image only; normal boot never fetches a
         manifest or writes an OTA slot.
 
-config OTA_SERVICE_BOARD_TEST_ONENET
-    bool "Use OneNET for standalone OTA board test"
-    depends on OTA_SERVICE_BOARD_TEST
-    default n
-    help
-        Use the OneNET report/check/download/activate path in the dedicated
-        board-test image. Keep disabled in product images; this option starts
-        one automatic test after boot and is not a normal OTA policy.
-
 config OTA_SERVICE_BOARD_TEST_START_DELAY_MS
     int "OTA board test start delay (ms)"
     depends on OTA_SERVICE_BOARD_TEST
@@ -133,6 +131,48 @@ config OTA_SERVICE_BOARD_TEST_START_DELAY_MS
     help
         Delay after boot before the test waits for Wi-Fi and TLS time. This
         also lets boot-time HTTPS probes finish before the one-shot test.
+
+config OTA_DELTA_ENABLED
+    bool "Enable delta OTA (standalone manifest delta fields)"
+    default n
+    help
+        Apply delta patches from the standalone manifest when its optional
+        delta fields are present and complete. Keep disabled in product images
+        unless the server publishes verified patches; fallback to full image
+        on any delta failure.
+
+config OTA_DELTA_MAX_RETRY
+    int "Delta OTA max retry count (fallback after)"
+    depends on OTA_DELTA_ENABLED
+    default 3
+    range 0 5
+    help
+        Number of retries for a failed delta apply before falling back to the
+        full-image path. 0 disables retries and falls back immediately.
+
+config OTA_DELTA_FEED_BUFFER_BYTES
+    int "Delta OTA patch feed buffer size (bytes)"
+    depends on OTA_DELTA_ENABLED
+    default 8192
+    range 1024 16384
+    help
+        Per-chunk buffer used to stream the downloaded patch into the
+        esp_delta_ota engine. Allocated from PSRAM when available.
+
+config OTA_METRICS_ENABLED
+    bool "Enable OTA metrics"
+    default n
+    help
+        Persist OTA stage results only in dedicated diagnostics builds.
+
+config OTA_METRICS_LOG_COUNT
+    int "OTA metrics recent-result log count"
+    depends on OTA_METRICS_ENABLED
+    default 10
+    range 1 50
+    help
+        Number of recent OTA upgrade results persisted to NVS in a ring
+        buffer by ota_metrics.
 
 endmenu
 

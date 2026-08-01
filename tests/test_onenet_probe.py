@@ -60,6 +60,21 @@ class OneNetProbeTests(unittest.TestCase):
         self.assertEqual("cd580293829da0e5a94265f5cd7bf286", result.md5)
         self.assertEqual(1, result.package_type)
 
+    def test_check_response_keeps_non_full_package_type_for_provider_mapping(self) -> None:
+        result = onenet_probe.parse_check_response({
+            "code": 0,
+            "msg": "succ",
+            "data": {
+                "target": "1.0.9",
+                "tid": 456,
+                "size": 224000,
+                "md5": "cd580293829da0e5a94265f5cd7bf286",
+                "status": 1,
+                "type": 2,
+            },
+        })
+        self.assertEqual(2, result.package_type)
+
     def test_no_task_response_does_not_create_download_metadata(self) -> None:
         result = onenet_probe.parse_check_response({"code": 12012, "msg": "not exist"})
         self.assertEqual(12012, result.code)

@@ -1,0 +1,12 @@
+{
+  "version": "1.0.9",
+  "url": "https://watch.934000.xyz/v1/watch/ota/artifacts/stable/1.0.9/firmware.bin?rev=delta-20260801",
+  "size": 11246928,
+  "sha256": "fba09aa858370ebabaa761eb31916c3db382dbcc823a1742124610e027a1f09c",
+  "channel": "stable",
+  "baseline_version": "1.0.8",
+  "patch_url": "https://watch.934000.xyz/v1/watch/ota/patches/stable/1.0.8_to_1.0.9.patch?rev=delta-20260801",
+  "patch_size": 223923,
+  "patch_sha256": "70d9afbfcf3552c4b94a6f1cc930d5bc7c2e77e6982d4ae23f92376405639fa7",
+  "target_sha256": "fba09aa858370ebabaa761eb31916c3db382dbcc823a1742124610e027a1f09c"
+}

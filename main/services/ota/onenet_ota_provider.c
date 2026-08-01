@@ -27,50 +27,13 @@ enum
 
 static const char *kApiBase = "https://iot-api.heclouds.com/fuse-ota";
 static const char *kNvsNamespace = "onenet_ota";
-static const char *kProductIdKey = "product_id";
-static const char *kDeviceNameKey = "device_name";
-static const char *kAccessKeyKey = "access_key";
 static const char *kPendingTaskIdKey = "pending_tid";
 static const char *kPendingTargetKey = "pending_target";
 static const char *kModuleVersion = "1.0.0";
 /* 用户明确允许产品级 AccessKey 编译进固件；轮换时同步仓库运维文件。 */
-static const char *kDefaultProductId = "w23kT21Z3x";
-static const char *kDefaultDeviceName = "watch-001";
-static const char *kDefaultAccessKey = "09d3LfWlh20jU2c/7QcDbZlPB98ZkUXrjYkTz5OXHTE=";
-
-typedef struct
-{
-    bool loaded;
-    char product_id[ONENET_OTA_PRODUCT_ID_MAX];
-    char device_name[ONENET_OTA_DEVICE_NAME_MAX];
-    char access_key[ONENET_OTA_ACCESS_KEY_MAX];
-} onenet_ota_credentials_t;
-
-static onenet_ota_credentials_t s_credentials;
-
-static bool onenet_ota_default_credentials_available(void)
-{
-    return kDefaultProductId[0] != '\0' && kDefaultDeviceName[0] != '\0' &&
-           kDefaultAccessKey[0] != '\0';
-}
-
-static bool onenet_ota_identifier_is_safe(const char *value, size_t max_len)
-{
-    if (value == NULL || value[0] == '\0' || strlen(value) >= max_len)
-    {
-        return false;
-    }
-    for (const unsigned char *cursor = (const unsigned char *)value;
-         *cursor != '\0'; ++cursor)
-    {
-        if (!isalnum(*cursor) && *cursor != '-' && *cursor != '_' &&
-            *cursor != '.')
-        {
-            return false;
-        }
-    }
-    return true;
-}
+static const char *kProductId = "w23kT21Z3x";
+static const char *kDeviceName = "watch-001";
+static const char *kAccessKey = "09d3LfWlh20jU2c/7QcDbZlPB98ZkUXrjYkTz5OXHTE=";
 
 static bool onenet_ota_md5_is_hex(const char *value)
 {
@@ -86,123 +49,6 @@ static bool onenet_ota_md5_is_hex(const char *value)
         }
     }
     return true;
-}
-
-static esp_err_t onenet_ota_read_nvs_string(nvs_handle_t handle,
-                                            const char *key, char *out,
-                                            size_t out_size)
-{
-    size_t length = out_size;
-    esp_err_t ret = nvs_get_str(handle, key, out, &length);
-    if (ret != ESP_OK)
-    {
-        return ret;
-    }
-    if (length == 0U || length > out_size)
-    {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    out[out_size - 1U] = '\0';
-    return ESP_OK;
-}
-
-static esp_err_t onenet_ota_load_credentials(void)
-{
-    nvs_handle_t handle = 0;
-    esp_err_t ret = nvs_open(kNvsNamespace, NVS_READONLY, &handle);
-    if (ret != ESP_OK)
-    {
-        return ret;
-    }
-
-    onenet_ota_credentials_t loaded = {0};
-    ret = onenet_ota_read_nvs_string(handle, kProductIdKey,
-                                     loaded.product_id,
-                                     sizeof(loaded.product_id));
-    if (ret == ESP_OK)
-    {
-        ret = onenet_ota_read_nvs_string(handle, kDeviceNameKey,
-                                         loaded.device_name,
-                                         sizeof(loaded.device_name));
-    }
-    if (ret == ESP_OK)
-    {
-        ret = onenet_ota_read_nvs_string(handle, kAccessKeyKey,
-                                         loaded.access_key,
-                                         sizeof(loaded.access_key));
-    }
-    nvs_close(handle);
-    if (ret != ESP_OK ||
-        !onenet_ota_identifier_is_safe(loaded.product_id,
-                                        sizeof(loaded.product_id)) ||
-        !onenet_ota_identifier_is_safe(loaded.device_name,
-                                       sizeof(loaded.device_name)) ||
-        loaded.access_key[0] == '\0')
-    {
-        return ret == ESP_OK ? ESP_ERR_INVALID_ARG : ret;
-    }
-
-    loaded.loaded = true;
-    s_credentials = loaded;
-    return ESP_OK;
-}
-
-esp_err_t onenet_ota_provider_init(void)
-{
-    if (s_credentials.loaded)
-    {
-        return ESP_OK;
-    }
-    esp_err_t ret = onenet_ota_load_credentials();
-    if (ret == ESP_OK || !onenet_ota_default_credentials_available() ||
-        (ret != ESP_ERR_NVS_NOT_FOUND && ret != ESP_ERR_INVALID_ARG))
-    {
-        return ret;
-    }
-
-    /* 首次烧录没有 OneNET NVS 时，把源码默认值落盘；后续优先使用 NVS。 */
-    return onenet_ota_provider_store_credentials(
-        kDefaultProductId, kDefaultDeviceName, kDefaultAccessKey);
-}
-
-esp_err_t onenet_ota_provider_store_credentials(
-    const char *product_id, const char *device_name, const char *access_key)
-{
-    if (!onenet_ota_identifier_is_safe(product_id,
-                                       ONENET_OTA_PRODUCT_ID_MAX) ||
-        !onenet_ota_identifier_is_safe(device_name,
-                                       ONENET_OTA_DEVICE_NAME_MAX) ||
-        access_key == NULL || access_key[0] == '\0' ||
-        strlen(access_key) >= ONENET_OTA_ACCESS_KEY_MAX)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    nvs_handle_t handle = 0;
-    esp_err_t ret = nvs_open(kNvsNamespace, NVS_READWRITE, &handle);
-    if (ret != ESP_OK)
-    {
-        return ret;
-    }
-    ret = nvs_set_str(handle, kProductIdKey, product_id);
-    if (ret == ESP_OK)
-    {
-        ret = nvs_set_str(handle, kDeviceNameKey, device_name);
-    }
-    if (ret == ESP_OK)
-    {
-        ret = nvs_set_str(handle, kAccessKeyKey, access_key);
-    }
-    if (ret == ESP_OK)
-    {
-        ret = nvs_commit(handle);
-    }
-    nvs_close(handle);
-    if (ret == ESP_OK)
-    {
-        ret = onenet_ota_load_credentials();
-    }
-    return ret;
 }
 
 static char onenet_ota_hex_digit(unsigned int value)
@@ -245,8 +91,8 @@ static esp_err_t onenet_ota_build_authorization(char output[kAuthorizationMax])
     size_t decoded_length = 0U;
     int ret = mbedtls_base64_decode(decoded_key, sizeof(decoded_key),
                                     &decoded_length,
-                                    (const unsigned char *)s_credentials.access_key,
-                                    strlen(s_credentials.access_key));
+                                    (const unsigned char *)kAccessKey,
+                                    strlen(kAccessKey));
     if (ret != 0 || decoded_length == 0U)
     {
         return ESP_ERR_INVALID_ARG;
@@ -263,7 +109,7 @@ static esp_err_t onenet_ota_build_authorization(char output[kAuthorizationMax])
     char raw_sign[64] = {0};
     char encoded_sign[96] = {0};
     snprintf(resource, sizeof(resource), "products/%s",
-             s_credentials.product_id);
+             kProductId);
     if (onenet_ota_url_encode(resource, encoded_resource,
                               sizeof(encoded_resource)) != ESP_OK)
     {
@@ -315,8 +161,8 @@ static esp_err_t onenet_ota_build_url(const char *suffix, char *output,
                                       size_t output_size)
 {
     const int length = snprintf(output, output_size, "%s/%s/%s/%s", kApiBase,
-                                s_credentials.product_id,
-                                s_credentials.device_name, suffix);
+                                kProductId,
+                                kDeviceName, suffix);
     return length > 0 && (size_t)length < output_size ? ESP_OK
                                                        : ESP_ERR_INVALID_SIZE;
 }
@@ -422,11 +268,7 @@ esp_err_t onenet_ota_provider_report_version(const char *app_version)
     {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = onenet_ota_provider_init();
-    if (err != ESP_OK)
-    {
-        return err;
-    }
+    esp_err_t err = ESP_OK;
 
     char authorization[kAuthorizationMax] = {0};
     err = onenet_ota_build_authorization(authorization);
@@ -472,11 +314,7 @@ esp_err_t onenet_ota_provider_check(const char *current_version,
     {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = onenet_ota_provider_init();
-    if (err != ESP_OK)
-    {
-        return err;
-    }
+    esp_err_t err = ESP_OK;
     char authorization[kAuthorizationMax] = {0};
     err = onenet_ota_build_authorization(authorization);
     if (err != ESP_OK)
@@ -547,6 +385,41 @@ esp_err_t onenet_ota_provider_check(const char *current_version,
     return out_task->package_type == 1 ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
 }
 
+esp_err_t onenet_ota_provider_check_plan(const char *current_version,
+                                         ota_update_plan_t *out_plan)
+{
+    if (current_version == NULL || out_plan == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // OneNET 以设备上报的当前版本作为任务匹配依据；协议动作属于 provider，
+    // 不应让 ota_service 重新理解 OneNET 的 version 接口。
+    esp_err_t ret = onenet_ota_provider_report_version(current_version);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    onenet_ota_task_t task = {0};
+    ret = onenet_ota_provider_check(current_version, &task);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    memset(out_plan, 0, sizeof(*out_plan));
+    out_plan->source = OTA_UPDATE_SOURCE_ONENET;
+    out_plan->provider_task_id = task.task_id;
+    out_plan->size = task.size;
+    out_plan->checksum_type = OTA_UPDATE_CHECKSUM_MD5;
+    out_plan->use_cert_bundle = true;
+    snprintf(out_plan->version, sizeof(out_plan->version), "%s",
+             task.target);
+    snprintf(out_plan->md5, sizeof(out_plan->md5), "%s", task.md5);
+    return ESP_OK;
+}
+
 esp_err_t onenet_ota_provider_prepare_download(
     const onenet_ota_task_t *task, char *out_url, size_t url_size,
     char *out_authorization, size_t authorization_size)
@@ -557,11 +430,7 @@ esp_err_t onenet_ota_provider_prepare_download(
     {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = onenet_ota_provider_init();
-    if (err != ESP_OK)
-    {
-        return err;
-    }
+    esp_err_t err = ESP_OK;
 
     char suffix[48] = {0};
     const int suffix_length =
@@ -588,6 +457,31 @@ esp_err_t onenet_ota_provider_prepare_download(
     return ESP_OK;
 }
 
+esp_err_t onenet_ota_provider_prepare_plan(ota_update_plan_t *plan)
+{
+    if (plan == NULL || plan->source != OTA_UPDATE_SOURCE_ONENET ||
+        plan->provider_task_id == 0U || plan->size == 0U ||
+        plan->version[0] == '\0')
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    onenet_ota_task_t task = {0};
+    task.task_id = plan->provider_task_id;
+    task.size = plan->size;
+    task.package_type = 1;
+    snprintf(task.target, sizeof(task.target), "%s", plan->version);
+    snprintf(task.md5, sizeof(task.md5), "%s", plan->md5);
+    const esp_err_t ret = onenet_ota_provider_prepare_download(
+        &task, plan->url, sizeof(plan->url), plan->authorization,
+        sizeof(plan->authorization));
+    if (ret == ESP_OK)
+    {
+        plan->use_cert_bundle = true;
+    }
+    return ret;
+}
+
 esp_err_t onenet_ota_provider_store_pending(const onenet_ota_task_t *task)
 {
     if (task == NULL || task->task_id == 0U || task->target[0] == '\0' ||
@@ -612,6 +506,21 @@ esp_err_t onenet_ota_provider_store_pending(const onenet_ota_task_t *task)
     }
     nvs_close(handle);
     return ret;
+}
+
+esp_err_t onenet_ota_provider_store_pending_plan(
+    const ota_update_plan_t *plan)
+{
+    if (plan == NULL || plan->source != OTA_UPDATE_SOURCE_ONENET ||
+        plan->provider_task_id == 0U || plan->version[0] == '\0')
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    onenet_ota_task_t task = {0};
+    task.task_id = plan->provider_task_id;
+    snprintf(task.target, sizeof(task.target), "%s", plan->version);
+    return onenet_ota_provider_store_pending(&task);
 }
 
 esp_err_t onenet_ota_provider_load_pending(onenet_ota_pending_t *out_pending)
@@ -673,17 +582,21 @@ esp_err_t onenet_ota_provider_clear_pending(void)
     return ret;
 }
 
+static bool onenet_ota_status_step_is_valid(int step)
+{
+    /* 0-100 是进度；101-107 是下载结果；201-208 是升级结果。 */
+    return (step >= 0 && step <= 100) ||
+           (step >= 101 && step <= 107) ||
+           (step >= 201 && step <= 208);
+}
+
 esp_err_t onenet_ota_provider_report_status(uint32_t task_id, int step)
 {
-    if (task_id == 0U || step < 0 || step > 100)
+    if (task_id == 0U || !onenet_ota_status_step_is_valid(step))
     {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = onenet_ota_provider_init();
-    if (err != ESP_OK)
-    {
-        return err;
-    }
+    esp_err_t err = ESP_OK;
     char authorization[kAuthorizationMax] = {0};
     err = onenet_ota_build_authorization(authorization);
     if (err != ESP_OK)

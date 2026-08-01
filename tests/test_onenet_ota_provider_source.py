@@ -29,17 +29,21 @@ class OneNetOtaProviderSourceTests(unittest.TestCase):
     def test_provider_rejects_non_full_package(self) -> None:
         self.assertIn("out_task->package_type == 1", PROVIDER_SOURCE)
 
-    def test_default_credentials_are_compiled_and_nvs_overridable(self) -> None:
-        self.assertIn("onenet_ota_provider_store_credentials", PROVIDER_HEADER)
-        self.assertIn('kDefaultProductId = "w23kT21Z3x"', PROVIDER_SOURCE)
-        self.assertIn("kDefaultAccessKey", PROVIDER_SOURCE)
-        self.assertIn("onenet_ota_provider_store_credentials(", PROVIDER_SOURCE)
+    def test_product_credentials_are_compiled_and_session_auth_is_generated(self) -> None:
+        self.assertIn('kProductId = "w23kT21Z3x"', PROVIDER_SOURCE)
+        self.assertIn("kAccessKey", PROVIDER_SOURCE)
+        self.assertNotIn("store_credentials", PROVIDER_HEADER)
         self.assertIn("onenet_ota_provider_prepare_download", PROVIDER_SOURCE)
+        self.assertIn("onenet_ota_provider_check_plan", PROVIDER_HEADER)
+        self.assertIn("onenet_ota_provider_prepare_plan", PROVIDER_HEADER)
+        self.assertIn("onenet_ota_provider_store_pending_plan", PROVIDER_HEADER)
         self.assertIn("/download", PROVIDER_SOURCE)
         self.assertIn("onenet_ota_provider_store_pending", PROVIDER_SOURCE)
         self.assertIn("onenet_ota_provider_report_status", PROVIDER_SOURCE)
         self.assertIn(r'{\"step\":%d}', PROVIDER_SOURCE)
         self.assertIn("step == 100 && code == 20", PROVIDER_SOURCE)
+        self.assertIn("step >= 101 && step <= 107", PROVIDER_SOURCE)
+        self.assertIn("step >= 201 && step <= 208", PROVIDER_SOURCE)
 
 
 if __name__ == "__main__":

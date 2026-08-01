@@ -13,8 +13,6 @@ file(GLOB_RECURSE service_srcs
 
 )
 
-
-
 file(GLOB_RECURSE feature_srcs
 
     ${CMAKE_CURRENT_LIST_DIR}/features/*.c
@@ -162,6 +160,7 @@ idf_component_register(
         esp-tls
 
         esp_https_ota
+        esp_delta_ota
 
         mbedtls
 

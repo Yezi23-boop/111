@@ -32,6 +32,16 @@ triggers: ai-memory-watch, online-music, music-service, mp3-streaming, ffmpeg, n
 - UI 只提交意图并读取快照；网络、解码、队列、音频 session 与停止顺序只能由 music service owner 推进。
 - 不新增通用资源管理器。音乐服务通过窄 API 响应安全告警与 Hermes 录音的音频交接请求。
 
+## 后续扩展：Hermes Music MCP（不属于首版）
+
+首版稳定后，可将 `music-service` 以受限 Music MCP 工具面接入 Hermes，使 Hermes 能将自然语言转换为音乐控制意图，例如获取来源、播放指定曲目、暂停、上一首、下一首、切换模式和查询状态。
+
+- MCP 仅是控制面，仍调用同一个服务器 `music-service` 和同一份 `music_session_id`；它不传输音频、Cookie、播放 URL 或设备 token。
+- 音频主链保持手表直连 `GET /v1/music/streams/{stream_id}` 的 HTTPS/TCP `audio/mpeg` 流，不经过 Hermes、MCP、Relay 或 WSS。
+- MCP 工具必须是窄白名单，首批仅允许 `sources`、`play`、`pause`、`previous`、`next`、`set_mode`、`status`；不得开放搜索、账号操作、Cookie、通用网易云 API 或 FFmpeg 管理。
+- 该能力不改变首版独立音乐页、上拉栏播放控制和资源仲裁。Hermes 不可用时，音乐 V1 必须仍可完整使用。
+- 在首版端到端验证通过前，不实现或配置该 MCP，避免将 Agent 推理延迟引入实时播放控制主路。
+
 ## 目标架构
 
 ```text
@@ -170,6 +180,7 @@ ESP32 music UI / 上拉栏
 - [ ] 阶段 4：独立音乐 UI 与上拉栏。
 - [ ] 阶段 5：固定流端到端验证。
 - [ ] 阶段 6：网易云私有联调。
+- [x] 已记录后续 Hermes Music MCP 控制面路线；明确不进入首版实施范围。
 - [ ] 收尾：文档、门禁与相关提交。
 
 ## 验证
