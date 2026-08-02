@@ -81,6 +81,48 @@ services:
     networks:
       - watch-relay-private
 
+  ai-memory-watch-music-service:
+    image: ai-memory-watch-music-service:hk
+    build:
+      context: ${WATCH_MUSIC_SOURCE_ROOT:-../music_service}
+    container_name: ai-memory-watch-music-service
+    restart: unless-stopped
+    pids_limit: 64
+    env_file:
+      - /opt/ai-memory-watch/secrets/music-service.env
+    environment:
+      MUSIC_HOST: 0.0.0.0
+      MUSIC_PORT: 8788
+      MUSIC_DATA_DIR: /data
+    volumes:
+      - /opt/ai-memory-watch/music-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:18788:8788"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8788/health').then(r => { if (!r.ok) process.exit(1); })"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    networks:
+      - music-service-egress
+
 networks:
   ai-memory-watch:
     external: true
@@ -88,3 +130,5 @@ networks:
   watch-relay-private:
     external: true
     name: watch-relay-private
+  music-service-egress:
+    name: ai-memory-watch-music-egress
