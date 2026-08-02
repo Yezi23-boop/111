@@ -1,14 +1,14 @@
 ---
 id: ai-memory-watch-online-music-streaming-execution-plan
-tags: context, plans, ai-memory-watch, music, streaming, esp32-s3, nodejs, ffmpeg, cloudflare
+tags: context, plans, ai-memory-watch, music, streaming, esp32-s3, nodejs, ffmpeg, hong-kong, 1panel, openresty
 title: AI Memory Watch 在线音乐播放执行计划
 summary: 分阶段实现独立 music-service、HTTPS MP3 流、ESP32 PSRAM 流式解码与独立音乐 UI；先通过固定测试流门禁，再接入个人网易云账号。
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-07-31-ai-memory-watch-online-music-streaming-execution-plan.md, docs/context/plans/completed/2026-07-30-ai-memory-watch-online-music-streaming-discussion.md, components/mp3_player/mp3_player.c, components/audio_codec/include/audio_codec.h, main/ui/custom/main_dropdown_controller.c, server/watch_voice_endpoint/compose.cloud.yml
+owners: docs/context/plans/active/2026-07-31-ai-memory-watch-online-music-streaming-execution-plan.md, docs/context/plans/completed/2026-07-30-ai-memory-watch-online-music-streaming-discussion.md, components/mp3_player/mp3_player.c, components/audio_codec/include/audio_codec.h, main/ui/custom/main_dropdown_controller.c, server/watch_voice_endpoint/compose.hk.yml, server/deploy/openresty/ai-memory-watch.conf
 evidence_level: design
 status: active
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-02
 triggers: ai-memory-watch, online-music, music-service, mp3-streaming, ffmpeg, netease-cloud-music
 ---
 
@@ -27,10 +27,19 @@ triggers: ai-memory-watch, online-music, music-service, mp3-streaming, ffmpeg, n
 - 不修改 `official_chat` 主线，不让音乐复用 Hermes WSS、Gateway Relay、对话 session 或收件箱。
 - 不公开 Hermes、网易云通用 API、账号 Cookie、播放 URL、调试端口或 FFmpeg 控制入口。
 - 手表仅使用现有 `device_id + device_token`；账号授权、上游 URL、队列、SQLite 和转码都在服务器。
+- `/v1/music/*` 由 `music-service` 独立校验现有设备鉴权；OpenResty 只转发，不依赖 watch endpoint 代验，也不把设备 token 传给上游网易云。
+- 尽量复用现有 `WATCH_DEVICE_TOKENS` 的服务器配置源、`device_id` 语义、Bearer 格式和鉴权错误约定；音乐服务不创建第二套设备 token。Hermes/watch 的 SQLite、会话状态和网易云 Cookie 不跨服务共享。
+- 网易云二维码登录只在服务器完成授权状态管理；Cookie 和账号元数据仅保存于 music-service 的私有数据目录，ESP32 只接收二维码位图与登录状态，不保存或回传网易云凭据。
+- 网易云授权过期只发布 `expired` 状态并拒绝新建播放流；不自动刷新二维码、自动登录或切换账号，必须由用户主动重新扫码。
+- 登录成功后不自动加载歌曲目录；仅在进入音乐页或用户打开具体来源时按需请求，目录缓存 5 分钟。
+- 退出网易云账号必须二次确认；确认后停止当前音乐会话并删除服务器 Cookie 与账号元数据，手表不接触凭据。
 - 只新增一个独立 Node.js 22 `music-service` 容器；首版不部署独立 `ncm-api` 容器。
+- `api-enhanced` 作为 `music-service` 进程内私有模块加载；不得为了它再拆出一个容器或公网 API。
 - 全局只允许一个活动 FFmpeg 转码；没有多设备、搜索、语音点歌、封面、音量、精确进度、歌词、离线下载或 gapless。
+- 首版不设置 music-service 的 Docker 内存上限；仍限制全局单个 FFmpeg，并记录服务、FFmpeg 和宿主机内存峰值，实测后再决定是否增加 `mem_limit`。
 - UI 只提交意图并读取快照；网络、解码、队列、音频 session 与停止顺序只能由 music service owner 推进。
 - 不新增通用资源管理器。音乐服务通过窄 API 响应安全告警与 Hermes 录音的音频交接请求。
+- 音乐是可熄屏持续运行的后台播放 owner，不注册为 `runtime_coordinator` 的强前台 owner；强前台只用于 Hermes、配网、OTA 等前台独占生命周期。
 
 ## 后续扩展：Hermes Music MCP（不属于首版）
 
@@ -60,7 +69,7 @@ ESP32 music UI / 上拉栏
 
 ## 协议契约
 
-所有 `/v1/music/*` 请求使用现有设备鉴权。成功 JSON 必须至少携带稳定 `state`；错误 JSON 必须至少携带稳定 `error_code`，不得回传上游 Cookie、URL 或原始异常。
+所有 `/v1/music/*` 请求由 `music-service` 独立执行现有设备鉴权。成功 JSON 必须至少携带稳定 `state`；错误 JSON 必须至少携带稳定 `error_code`，不得回传上游 Cookie、URL 或原始异常。
 
 | 接口 | 职责 |
 | --- | --- |
@@ -84,9 +93,13 @@ ESP32 music UI / 上拉栏
 ## 阶段 0：解码可行性与资源基线
 
 - [ ] 盘点当前 `components/mp3_player` 的文件句柄式解码路径，确认它不能直接作为网络流播放器；不得为了复用而把整首流落盘。
-- [ ] 新增最小流式解码 spike：从内存分块喂入固定 MP3 fixture，验证选定 decoder 能持续输出 PCM 到 `audio_codec_write()`。
+- [ ] 新增最小流式解码 spike：复用已安装的 `espressif__esp_audio_codec` `esp_audio_simple_dec_*` MP3 解码接口，从内存分块喂入固定 MP3 fixture，验证能持续输出 PCM 到 `audio_codec_write()`。
 - [ ] 明确并记录最终 decoder adapter 的 API、输入分块大小、解码 task 栈、PCM 工作缓冲和错误恢复；大块压缩缓冲必须在 PSRAM。
+- [ ] decoder adapter 必须保留 `esp_audio_simple_dec_process()` 尚未消费的输入字节；只有 `raw.consumed` 对应的数据被确认消费后，reader 才能推进 PSRAM ring，不能覆盖未消费的 MP3 帧。
+- [x] 硬件格式已确认：当前 `audio_platform_config.h` 的 ES8311/I2S 输出为 `24 kHz / 16-bit / mono`，与首版服务器转码目标一致，首版不新增采样率转换。
 - [ ] 记录实现前的 internal RAM、PSRAM 与 task stack 基线，复用已有 `printf_esp32_memory_stats()`、`printf_esp32_task_stack_stats()` 观测能力。
+
+**已确定的解码路线：** 首版不新增 `minimp3` 等第三方解码依赖，不改造当前 `audio_player_play(FILE *)` 文件播放器；新增窄的流式 adapter，使用现有 `esp_audio_codec` 的 MP3 增量解码回调输出 PCM。
 
 **门禁：** 流式 decoder spike 可连续解码固定 fixture，不依赖 `FILE *`，无 internal RAM 大对象、无 panic、无 stack overflow。
 
@@ -99,19 +112,29 @@ ESP32 music UI / 上拉栏
 - [ ] 会话 owner：全局一个活动 FFmpeg；新会话/恢复/切歌先停止旧进程，重复 `stream_id` GET 不得重复 spawn。
 - [ ] 先实现固定测试 MP3 upstream，不需要任何网易云账号；实现实时输出、暂停、恢复、停止、断线回收和 60 秒首次建流超时。
 - [ ] 设置稳定错误码：`music_auth_required`、`music_session_not_found`、`music_stream_expired`、`track_unplayable`、`upstream_unavailable`、`transcode_failed`、`music_busy`。
+- [ ] 单元测试覆盖缺失、错误和有效 `device_id + device_token`；鉴权失败不得创建会话、读取 Cookie、启动 FFmpeg 或泄露上游信息。
 - [ ] 普通日志只记录会话 ID、状态、时长、字节数和错误码，不记录歌曲正文、Cookie、上游 URL 或 Bearer token。
 
-**门禁：** Node 单元测试覆盖 command 幂等、会话替换、60 秒超时、15 秒失联回收、暂停续播、重启 SQLite 恢复与重复流 GET；本机脚本能持续读取测试 `audio/mpeg` 流。
+**门禁：** Node 单元测试覆盖 command 幂等、会话替换、60 秒超时、15 秒失联回收、暂停续播、重启后的会话元数据保留且不自动建流、重复流 GET；本机脚本能持续读取测试 `audio/mpeg` 流。
 
-## 阶段 2：云端隔离与 Cloudflare 路由
+## 当前部署基线
 
-- [ ] 在 `server/watch_voice_endpoint/compose.cloud.yml` 增加 `ai-memory-watch-music-service`，使用受限 Node/FFmpeg 镜像、`read_only`、受控 `tmpfs`、`pids_limit`、初始 `mem_limit: 256m` 和单进程转码约束。
+当前生产主栈运行在香港 1Panel：Hermes、watch endpoint、Gateway Relay 由 `server/watch_voice_endpoint/compose.hk.yml` 管理，公网 HTTPS/WSS 由香港 OpenResty 终止。音乐服务应作为同一编排中的第四个独立容器加入，不迁回阿里云，也不新增独立 `ncm-api` 容器。
+
+- 音乐服务只绑定宿主机回环端口 `127.0.0.1:18788:8788`；不加入 Hermes 或 `watch-relay-private` 网络。
+- OpenResty 新增与 `/v1/watch/` 同级的 `location ^~ /v1/music/`，转发到 `http://127.0.0.1:18788`，并为持续音频流关闭代理缓冲、设置长读超时。
+- 公网仍只允许设备鉴权的 `/v1/music/*`；音乐服务 `/health`、调试接口、Cookie、上游 URL 和通用 api-enhanced API 不得由 OpenResty 代理。
+- 源码和 Compose 通过 1Panel 当前“路径选择”导入到 `/opt/1panel/docker/compose/ai-memory-watch/`；音乐数据与授权文件继续放在 `/opt/ai-memory-watch/music-data`，不提交到仓库。
+
+## 阶段 2：香港 1Panel 隔离与 OpenResty 路由
+
+- [ ] 在 `server/watch_voice_endpoint/compose.hk.yml` 增加 `ai-memory-watch-music-service`，使用受限 Node/FFmpeg 镜像、`read_only`、受控 `tmpfs`、`pids_limit` 和单进程转码约束；首版不设置 `mem_limit`，待真实播放测量后再决定。
 - [ ] 将音乐数据挂载到 `/opt/ai-memory-watch/music-data:/data`；部署脚本在主机创建 `0700` 目录和 `0600` Cookie 文件，不把任何密钥写入 compose 或仓库。
-- [ ] 只将 music-service 绑定宿主 loopback，例如 `127.0.0.1:18788:8788`；容器 health check 只从本机/私网检查。
-- [ ] 配置 Cloudflare Tunnel ingress，仅路由 `watch.934000.xyz/v1/music/*` 到该 loopback 端口；确认 `/health`、调试路径与任意 api-enhanced 路径仍不可公网访问。
+- [ ] 只将 music-service 绑定宿主 loopback：`127.0.0.1:18788:8788`；容器 health check 只从本机检查。
+- [ ] 更新 `server/deploy/openresty/ai-memory-watch.conf`，仅将 `watch.934000.xyz/v1/music/*` 路由到该 loopback 端口；确认 `/health`、调试路径与任意 api-enhanced 路径仍不可公网访问。
 - [ ] 设置流响应 `Content-Type: audio/mpeg`、`Cache-Control: no-store`，不发送 Cookie、上游重定向或私有诊断头。
 
-**门禁：** 容器健康、内存限制、私网 health、Cloudflare 公网设备鉴权、未鉴权 401/403 和私有路径不可达全部通过；watch endpoint、Hermes、Relay 与 Dashboard 不受影响。
+**门禁：** 香港 1Panel 编排 `4/4` healthy、内存限制、回环 health、OpenResty 公网设备鉴权、未鉴权 401/403 和私有路径不可达全部通过；watch endpoint、Hermes、Relay 与 Dashboard 不受影响。
 
 ## 阶段 3：ESP32 music service 与流式播放器
 
@@ -128,10 +151,11 @@ ESP32 music UI / 上拉栏
 - [ ] reader 与 decoder 之间使用 PSRAM ring + FreeRTOS task notification 或 queue 表达数据到达、空间释放、停止和错误，不能用裸 `volatile` 协调。
 - [ ] 压缩环形缓冲 128 KB 放 PSRAM；decoder 临时 PCM 分块、HTTP read buffer 和 task stack 尺寸以阶段 0 实测为准，不允许把 128 KB 放任务栈或 internal RAM。
 - [ ] 新增 `AUDIO_CODEC_OWNER_MUSIC_PLAYER`，通过 `audio_codec` 获取/释放 output session；不得绕过 owner 接口直接操作 I2S 或 PA。
-- [ ] 为 Hermes 录音和 P0 告警提供窄的 `music_service_prepare_for_foreground_audio()` / `music_service_request_alert_preempt()` 请求与 ACK。音乐 owner 自行停流、清缓冲、释放 output session；调用方不得直接释放音乐资源。
-- [ ] 音乐后台播放、熄屏继续；安全告警停止音乐，普通通知不发提示音；不新增低电量专用行为。
-- [ ] 网络中断仅自动恢复此前播放状态，30 秒失败后暂停；用户主动暂停、重启或长按后不自动播放。
-- [ ] 容器重启导致流失效时，使用持久化 `music_session_id` 请求恢复，不能恢复则发布稳定错误状态。
+- [ ] 为 Hermes 页面进入提供窄的 `music_service_pause_for_hermes_page()` 请求与 ACK。进入页面立即暂停音乐，音乐 owner 自行停流、清缓冲、释放 output session；调用方不得直接释放音乐资源。离开 Hermes 页面后音乐仍保持暂停，只有用户再次短按音乐控制才可继续。
+- [ ] 固定播放期间资源策略：music service 只通过窄状态通知报告 `music_active`，不请求强前台；`safety_monitor_policy` 增加 `MUSIC_PLAYBACK` 阻塞原因并统一停止 `danger_detection_service` 的检测与危险状态机，同时关闭音频、视觉和震动提醒。不产生、不缓存、不补发告警事件，安全告警不得抢占或停止音乐。该规则覆盖危险提醒默认高优先级策略，必须由安全策略/session owner 执行，`app_alert_manager` 不得绕过该门禁。
+- [ ] 音乐后台播放、熄屏继续；音乐 inactive 后从新的采样窗口重新启动危险检测，不恢复音乐 active 期间的旧状态；普通通知不发提示音；不新增低电量专用行为。
+- [ ] 网络中断、music-service 重启或 ESP32 重启都不得自动播放；只保留曲目、队列、模式和近似进度，用户主动短按继续时才用持久化 `music_session_id` 创建新的 `stream_id`。
+- [ ] 容器重启导致流失效时只恢复会话元数据并发布可继续状态，不自动启动 FFmpeg 或上游流。
 
 **门禁：** source tests 覆盖 owner 边界、PSRAM 分配、无 UI 直接联网、命令幂等、告警/Hermes 交接、暂停/长按/断流状态；`idf.py build` 通过。
 
@@ -149,17 +173,18 @@ ESP32 music UI / 上拉栏
 
 ## 阶段 5：固定流端到端验证
 
-- [ ] 运行 server unit tests、compose health、私网流读取和 Cloudflare 设备鉴权 smoke。
+- [ ] 运行 server unit tests、香港 1Panel Compose health、回环流读取和 OpenResty 公网设备鉴权 smoke。
 - [ ] 固件执行 source tests、`idf.py build`、`idf.py -p <PORT> app-flash`，再以 `scripts/board/agent_serial_monitor.ps1` 限时观察。
-- [ ] 验证固定测试流：4 秒起播、连续 30 分钟、熄屏继续、短按暂停/近似恢复、长按释放、Wi-Fi 短断 30 秒恢复、超时暂停、服务重启恢复。
+- [ ] 验证固定测试流：4 秒起播、连续 30 分钟、熄屏继续、短按暂停/近似恢复、长按释放、Wi-Fi 短断后停止且不自动出声、用户短按后恢复、服务/手表重启只保留状态不自动播放。
 - [ ] 记录 internal RAM、PSRAM、reader/decoder/service task 栈高水位；无 `ESP_ERR_NO_MEM`、panic、Guru、stack overflow、输出 session 泄漏或重复 FFmpeg。
-- [ ] 触发安全告警与 Hermes 录音，验证音乐 owner 有序释放输出后才允许高优先级路径进入。
+- [ ] 触发安全告警与 Hermes 页面：音乐播放期间 `danger_detection_service` 与安全告警整条链完全停止且不缓存；进入 Hermes 页面即可按 owner 协议让音乐有序释放输出，离开页面后音乐保持暂停；音乐停止后只验证从新采样窗口恢复危险检测。
+- [ ] 检查音乐播放期间 runtime snapshot 未把音乐误报为强前台 owner，Safety Monitor snapshot 的阻塞原因为 `MUSIC_PLAYBACK`；进入 Hermes 时音乐通过音频交接释放，不依赖强前台抢占。
 
 ## 阶段 6：网易云私有联调
 
 - [ ] 仅在固定流门禁通过后启用 api-enhanced 私有适配与二维码登录；不得打印或提交 Cookie。
-- [ ] 验证 QR 创建、扫码、确认、120 秒过期、主动退出、授权失效、我喜欢、歌单、今日推荐和最近播放。
-- [ ] 验证手表分页、来源队列快照、三种模式、不可播放歌曲、自动跳过上限、流断重连和容器重启恢复。
+- [ ] 验证 QR 创建、扫码、确认、120 秒过期、主动退出、授权失效后只显示 `expired` 且不自动建流；登录成功不自动加载目录，进入音乐页/打开来源时按需读取并验证我喜欢、歌单、今日推荐和最近播放。
+- [ ] 验证手表分页、来源队列快照、三种模式、不可播放歌曲、自动跳过上限、断流后不自动播放、用户主动继续和容器重启后的元数据保留。
 - [ ] 再次确认公网只能访问已鉴权 `/v1/music/*`，且没有暴露上游 URL、Cookie、health 或通用 API。
 
 ## 收尾与回滚
@@ -169,13 +194,15 @@ ESP32 music UI / 上拉栏
 - [ ] 运行 `uv run python scripts/context/validate_context.py --level standard --q "AI Memory Watch online music streaming" --brief` 与 `git diff --check`。
 - [ ] 仅暂存本任务相关文件，提交信息使用中文。
 
-回滚路径：删除 Cloudflare `/v1/music/*` ingress、停止 `ai-memory-watch-music-service` 容器、移除音乐页面入口或关闭其 Kconfig 开关；不修改 Hermes、watch voice endpoint、Relay 和 official_chat 的既有公网/会话路径。
+回滚路径：从香港 OpenResty 删除 `/v1/music/*` 路由、停止 `ai-memory-watch-music-service` 容器、移除音乐页面入口或关闭其 Kconfig 开关；不修改 Hermes、watch voice endpoint、Relay 和 official_chat 的既有公网/会话路径。
 
 ## 进度
 
+- [x] 设计审查：确定后台音乐不占用强前台、音乐期间完全关闭安全告警、所有恢复须用户主动继续、独立设备鉴权、服务器 Cookie、香港单容器部署和首版不设 Docker 内存上限。
 - [ ] 阶段 0：流式解码可行性与资源基线。
+- [x] 阶段 0 解码器选型：复用 `espressif__esp_audio_codec` 的 MP3 增量解码接口。
 - [ ] 阶段 1：music-service 测试流与会话核心。
-- [ ] 阶段 2：云端隔离与 Cloudflare 路由。
+- [ ] 阶段 2：香港 1Panel 隔离与 OpenResty 路由。
 - [ ] 阶段 3：ESP32 music service 与流式播放器。
 - [ ] 阶段 4：独立音乐 UI 与上拉栏。
 - [ ] 阶段 5：固定流端到端验证。
@@ -185,7 +212,9 @@ ESP32 music UI / 上拉栏
 
 ## 验证
 
-- 尚未开始实现。
+- 2026-08-02：`uv run python scripts/context/validate_context.py --level standard` 通过，0 errors，0 warnings。
+- 2026-08-02：音乐 active plan 与讨论归档文档 `git diff --check` 通过。
+- 尚未开始代码实现和端到端验证。
 
 ## 下一步
 
