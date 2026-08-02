@@ -263,6 +263,23 @@ config MEMORY_WATCH_WEBSOCKET_ENABLED
         conversations. The existing HTTP voice-command path remains available
         as a rollback route during development.
 
+config MUSIC_SERVICE_BOARD_TEST
+    bool "Run online music fixed-stream board test"
+    default n
+    help
+        Start one fixed-stream playback test after network service readiness.
+        This is for a dedicated test image only; normal firmware never starts
+        music automatically.
+
+config MUSIC_SERVICE_BOARD_TEST_START_DELAY_MS
+    int "Music board test start delay (ms)"
+    depends on MUSIC_SERVICE_BOARD_TEST
+    default 20000
+    range 1000 120000
+    help
+        Delay before the fixed-stream playback test starts, allowing boot-time
+        HTTPS probes and the UI/network owners to settle.
+
 config RUNTIME_RESOURCE_GATE_BOARD_TEST
     bool "Run runtime coordinator board state-machine test"
     default n

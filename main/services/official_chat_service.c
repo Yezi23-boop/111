@@ -7,6 +7,7 @@
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "audio_codec.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -724,9 +725,15 @@ static void official_chat_service_event_cb(const official_chat_event_t *event,
  */
 static esp_err_t official_chat_service_start_internal(void)
 {
+    int speaker_volume = 60;
+    if (audio_codec_get_volume(&speaker_volume) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "speaker volume unavailable, use default 60%%");
+    }
+
     /* 启动参数由服务层集中指定，避免页面或控制器分散管理底层配置。 */
     official_chat_config_t config = {
-        .speak_volume = 60,
+        .speak_volume = speaker_volume,
         .record_gain_db = 24.0f,
         .websocket_url = NULL,
         .access_token = NULL,

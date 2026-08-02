@@ -44,6 +44,7 @@ extern "C"
         AUDIO_CODEC_OWNER_AUDIO_RECORDER,       /**< 前台本地录音链路。 */
         AUDIO_CODEC_OWNER_OFFICIAL_CHAT,        /**< 官方聊天/语音链路。 */
         AUDIO_CODEC_OWNER_HERMES,               /**< AI Memory Watch / Hermes 语音链路。 */
+        AUDIO_CODEC_OWNER_MUSIC_PLAYER,         /**< 在线音乐流播放链路。 */
     } audio_codec_owner_t;
 
     /** 音频独占会话只读快照。 */
@@ -174,6 +175,17 @@ extern "C"
      * @return `ESP_OK` 表示成功；其他错误表示参数非法或底层设置失败。
      */
     esp_err_t audio_codec_set_volume(int volume);
+
+    /**
+     * @brief 设置并持久化用户扬声器音量。
+     *
+     * 音量立即应用到播放 codec，并在值发生变化时写入 NVS；下次
+     * `audio_codec_init()` 会自动恢复该值。
+     *
+     * @param[in] volume 音量百分比，范围为 0~100。
+     * @return `ESP_OK` 表示硬件和 NVS 均更新成功；其他错误表示设置或保存失败。
+     */
+    esp_err_t audio_codec_set_volume_preference(int volume);
 
     /**
      * @brief 获取当前缓存音量。

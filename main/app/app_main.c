@@ -19,6 +19,8 @@
 #include "services/network/network_service.h"
 #include "services/memory_watch/memory_watch_service.h"
 #include "services/memory_watch/watch_endpoint_service.h"
+#include "services/music/music_service.h"
+#include "services/music/music_board_test.h"
 #include "services/official_chat_service.h"
 #include "services/power/power_service.h"
 #include "services/power/power_policy.h"
@@ -277,6 +279,20 @@ static void start_deferred_services(void)
     else
     {
         ESP_LOGI(TAG, "boot_stage: memory_watch_ready");
+    }
+
+    if (music_service_init() != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Music service init failed");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "boot_stage: music_service_ready");
+    }
+
+    if (music_board_test_start() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Music board test start failed");
     }
 
     if (watch_endpoint_service_init() != ESP_OK)

@@ -20,6 +20,7 @@ extern "C"
         SAFETY_MONITOR_POLICY_BLOCK_POWER,
         SAFETY_MONITOR_POLICY_BLOCK_FOREGROUND_AUDIO,
         SAFETY_MONITOR_POLICY_BLOCK_RUNTIME_COORDINATOR,
+        SAFETY_MONITOR_POLICY_BLOCK_MUSIC_PLAYBACK,
     } safety_monitor_policy_block_reason_t;
 
     /** Safety Monitor 用户意图、策略许可和真实运行态快照。 */
@@ -31,6 +32,7 @@ extern "C"
         bool should_run;
         bool runtime_running;
         safety_monitor_policy_block_reason_t block_reason;
+        bool music_playback_active;
         bool blocked_by_runtime_coordinator;
         power_policy_state_t policy_state;
         uint32_t policy_flags;
@@ -41,6 +43,18 @@ extern "C"
     esp_err_t safety_monitor_policy_set_enabled(bool enabled);
     esp_err_t safety_monitor_policy_set_foreground_audio_active(
         bool active, const char *reason);
+    /**
+     * @brief 设置音乐播放期间的安全告警策略状态。
+     *
+     * 音乐是后台播放 owner；active 时由安全策略停止危险检测运行时，且不缓存
+     * 或补发音乐期间产生的告警。音乐 service 只报告状态，不直接操作安全检测。
+     *
+     * @param[in] active true 表示音乐正在输出；false 表示音乐已停止或暂停。
+     * @param[in] reason 仅用于诊断日志，可为 NULL。
+     * @return `ESP_OK` 表示状态已接受。
+     */
+    esp_err_t safety_monitor_policy_set_music_active(bool active,
+                                                      const char *reason);
     esp_err_t safety_monitor_policy_notify_power_changed(void);
     safety_monitor_policy_snapshot_t safety_monitor_policy_get_snapshot(void);
 

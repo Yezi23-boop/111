@@ -21,6 +21,7 @@ typedef enum
     SAFETY_MONITOR_POLICY_NOTIFY_COORDINATOR = 1U << 3,
     SAFETY_MONITOR_POLICY_NOTIFY_STARTUP = 1U << 4,
     SAFETY_MONITOR_POLICY_NOTIFY_PERIODIC = 1U << 5,
+    SAFETY_MONITOR_POLICY_NOTIFY_MUSIC = 1U << 6,
 } safety_monitor_policy_notify_t;
 
 typedef struct
@@ -33,6 +34,7 @@ typedef struct
     bool runtime_running;
     safety_monitor_policy_block_reason_t block_reason;
     bool foreground_audio_active;
+    bool music_playback_active;
     bool blocked_by_runtime_coordinator;
     power_policy_state_t policy_state;
     uint32_t policy_flags;
@@ -57,6 +59,10 @@ static const char *safety_monitor_policy_notify_text(uint32_t reasons)
     if ((reasons & SAFETY_MONITOR_POLICY_NOTIFY_AUDIO) != 0U)
     {
         return "foreground_audio";
+    }
+    if ((reasons & SAFETY_MONITOR_POLICY_NOTIFY_MUSIC) != 0U)
+    {
+        return "music_playback";
     }
     if ((reasons & SAFETY_MONITOR_POLICY_NOTIFY_COORDINATOR) != 0U)
     {
@@ -90,6 +96,8 @@ static const char *safety_monitor_policy_block_text(
         return "foreground_audio";
     case SAFETY_MONITOR_POLICY_BLOCK_RUNTIME_COORDINATOR:
         return "runtime_coordinator";
+    case SAFETY_MONITOR_POLICY_BLOCK_MUSIC_PLAYBACK:
+        return "music_playback";
     default:
         return "unknown";
     }
@@ -141,7 +149,8 @@ static bool safety_monitor_policy_audio_blocks(
 static safety_monitor_policy_block_reason_t
 safety_monitor_policy_resolve_block(bool enabled, bool power_allowed,
                                     bool audio_blocked,
-                                    bool coordinator_blocked)
+                                    bool coordinator_blocked,
+                                    bool music_playback_active)
 {
     if (!enabled)
     {
@@ -150,6 +159,10 @@ safety_monitor_policy_resolve_block(bool enabled, bool power_allowed,
     if (audio_blocked)
     {
         return SAFETY_MONITOR_POLICY_BLOCK_FOREGROUND_AUDIO;
+    }
+    if (music_playback_active)
+    {
+        return SAFETY_MONITOR_POLICY_BLOCK_MUSIC_PLAYBACK;
     }
     if (coordinator_blocked)
     {
@@ -182,12 +195,14 @@ static esp_err_t safety_monitor_policy_apply(const char *reason)
     bool enabled = false;
     bool explicit_audio = false;
     bool coordinator_blocked = false;
+    bool music_playback_active = false;
     uint32_t quiesce_generation = 0U;
 
     taskENTER_CRITICAL(&s_policy.lock);
     enabled = s_policy.enabled_by_user;
     explicit_audio = s_policy.foreground_audio_active;
     coordinator_blocked = s_policy.blocked_by_runtime_coordinator;
+    music_playback_active = s_policy.music_playback_active;
     quiesce_generation = s_policy.pending_quiesce_generation;
     taskEXIT_CRITICAL(&s_policy.lock);
 
@@ -197,7 +212,7 @@ static esp_err_t safety_monitor_policy_apply(const char *reason)
     const safety_monitor_policy_block_reason_t block_reason =
         safety_monitor_policy_resolve_block(
             enabled, budget.danger_detection_allowed, audio_blocked,
-            coordinator_blocked);
+            coordinator_blocked, music_playback_active);
     const bool should_run =
         block_reason == SAFETY_MONITOR_POLICY_BLOCK_NONE;
 
@@ -416,6 +431,27 @@ esp_err_t safety_monitor_policy_set_foreground_audio_active(
     return safety_monitor_policy_notify(SAFETY_MONITOR_POLICY_NOTIFY_AUDIO);
 }
 
+esp_err_t safety_monitor_policy_set_music_active(bool active,
+                                                  const char *reason)
+{
+    esp_err_t ret = safety_monitor_policy_init();
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+    ESP_LOGD(TAG, "set_music_active: active=%d reason=%s", active ? 1 : 0,
+             reason != NULL ? reason : "unknown");
+    taskENTER_CRITICAL(&s_policy.lock);
+    s_policy.music_playback_active = active;
+    const bool started = s_policy.started;
+    taskEXIT_CRITICAL(&s_policy.lock);
+    if (!started)
+    {
+        return ESP_OK;
+    }
+    return safety_monitor_policy_notify(SAFETY_MONITOR_POLICY_NOTIFY_MUSIC);
+}
+
 esp_err_t safety_monitor_policy_notify_power_changed(void)
 {
     const esp_err_t ret =
@@ -433,6 +469,7 @@ safety_monitor_policy_snapshot_t safety_monitor_policy_get_snapshot(void)
     snapshot.should_run = s_policy.should_run;
     snapshot.runtime_running = s_policy.runtime_running;
     snapshot.block_reason = s_policy.block_reason;
+    snapshot.music_playback_active = s_policy.music_playback_active;
     snapshot.blocked_by_runtime_coordinator =
         s_policy.blocked_by_runtime_coordinator;
     snapshot.policy_state = s_policy.policy_state;

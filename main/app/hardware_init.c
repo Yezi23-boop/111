@@ -129,7 +129,6 @@ esp_err_t hardware_init(void)
     else
     {
         ESP_LOGI(TAG, "Audio system initialized successfully");
-        audio_codec_set_volume(60);
     }
 
     /* 板级电源快照用于 UI 电量展示和后续功耗策略观察。 */
