@@ -10,6 +10,7 @@ OTA_HEADER = REPO_ROOT / "main" / "services" / "ota" / "ota_service.h"
 OTA_VIEW = REPO_ROOT / "main" / "ui" / "custom" / "ota_maintenance_view.c"
 OTA_BOOT_CHECK = REPO_ROOT / "main" / "services" / "ota" / "ota_boot_check.c"
 OTA_BOARD_TEST = REPO_ROOT / "main" / "services" / "ota" / "ota_board_test.c"
+EVENTS_INIT = REPO_ROOT / "main" / "ui" / "generated" / "events_init.c"
 MAIN_CMAKE = REPO_ROOT / "main" / "CMakeLists.txt"
 
 
@@ -68,7 +69,34 @@ class OtaServiceSourceTests(unittest.TestCase):
         self.assertIn("ota_service_request_check", source)
         self.assertIn("ota_service_request_download", source)
         self.assertIn("ota_service_request_activate", source)
+        self.assertIn("ota_view_state_text", source)
+        self.assertIn('return "下载中";', source)
+        self.assertIn('return "更新失败";', source)
+        self.assertNotIn("ota_service_state_text(snapshot.state)", source)
+        self.assertIn("ota_view_back_event", source)
+        self.assertIn("s_previous_screen", source)
+        self.assertIn("lv_screen_load_anim(s_screen, LV_SCR_LOAD_ANIM_MOVE_LEFT", source)
+        self.assertIn("lv_screen_load_anim(target, LV_SCR_LOAD_ANIM_MOVE_RIGHT", source)
+        self.assertIn('lv_label_set_text(back_label, "<")', source)
         self.assertNotIn("ota_service_request_onenet_check", source)
+        self.assertIn("guider_ui.screen_main_Function_main", source)
+        self.assertIn("ota_maintenance_view_bind_entry", source)
+        self.assertIn("ui_chinese_fonts.h", source)
+        self.assertIn("lv_font_montserrat_lxgw_tghz_level1_3500_22_4", source)
+        self.assertIn("ota_cloud_download_icon.h", source)
+        self.assertIn("lv_image_set_src(icon, &ota_cloud_download_icon)", source)
+        self.assertIn("s_entry = lv_obj_create", source)
+        self.assertIn("lv_obj_set_pos(icon, 13, 3)", source)
+        self.assertIn("LV_OBJ_FLAG_EVENT_BUBBLE", source)
+        self.assertIn("lv_obj_update_layout(guider_ui.screen_main_Function_main)", source)
+        self.assertIn("lv_obj_send_event(guider_ui.screen_main_Function_main, LV_EVENT_SCROLL", source)
+        self.assertIn("lv_obj_add_event_cb(s_entry, ota_view_entry_event, LV_EVENT_ALL", source)
+        self.assertIn("LV_ABS(current_point.x - start_point.x) <= 12", source)
+        self.assertNotIn("screen_main_seting", source)
+
+        events_source = EVENTS_INIT.read_text(encoding="utf-8")
+        self.assertIn("setup_scr_screen_main_function_page(&guider_ui);", events_source)
+        self.assertIn("ota_maintenance_view_bind_entry();", events_source)
 
     def test_build_includes_service_and_view(self) -> None:
         assert_main_source_globbed(self, "services/ota/ota_service.c")

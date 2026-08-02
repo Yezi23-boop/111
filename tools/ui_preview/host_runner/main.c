@@ -14,6 +14,7 @@
 #include "danger_detection_controller.h"
 #include "memory_watch_controller.h"
 #include "mini_games_controller.h"
+#include "ota_maintenance_view.h"
 #include "drivers/sdl/lv_sdl_keyboard.h"
 #include "drivers/sdl/lv_sdl_mouse.h"
 #include "drivers/sdl/lv_sdl_mousewheel.h"
@@ -37,6 +38,8 @@ typedef struct {
     bool open_hermes_detail;
     bool open_ai;
     bool open_calendar;
+    bool open_ota;
+    bool open_function;
     bool open_danger;
     bool open_games;
     uint8_t open_game_index;
@@ -144,6 +147,14 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         else if (strcmp(argv[i], "--open-calendar") == 0)
         {
             args.open_calendar = true;
+        }
+        else if (strcmp(argv[i], "--open-ota") == 0)
+        {
+            args.open_ota = true;
+        }
+        else if (strcmp(argv[i], "--open-function") == 0)
+        {
+            args.open_function = true;
         }
         else if (strcmp(argv[i], "--open-danger") == 0)
         {
@@ -302,6 +313,22 @@ int main(int argc, char **argv)
         setup_scr_screen_time(&guider_ui);
         lv_label_set_text(guider_ui.screen_time_datetext_1, "2026/09/09");
         lv_screen_load(guider_ui.screen_time);
+    }
+    else if (args.open_ota)
+    {
+        (void)ota_maintenance_view_init();
+        (void)ota_maintenance_view_open();
+    }
+    else if (args.open_function)
+    {
+        setup_scr_screen_main_function_page(&guider_ui);
+        ota_maintenance_view_bind_entry();
+        lv_obj_set_x(guider_ui.screen_main_tileview_1_main, -PREVIEW_W);
+        lv_obj_set_x(guider_ui.screen_main_tileview_1_Function, 0);
+        lv_obj_t *entry = lv_obj_get_child(
+            guider_ui.screen_main_Function_main,
+            lv_obj_get_child_cnt(guider_ui.screen_main_Function_main) - 1);
+        lv_obj_scroll_to_view(entry, LV_ANIM_OFF);
     }
     else if (args.open_danger)
     {

@@ -3,9 +3,10 @@
 #include "esp_err.h"
 #include "network_manager.h"
 #include "features/danger_detection/danger_detection_service.h"
-#include "services/runtime/background_service_manager.h"
 #include "services/audio_diag/audio_mic_test_service.h"
-#include "services/power/power_policy.h"
+#include "services/ota/ota_service.h"
+#include "services/runtime/safety_monitor_policy.h"
+#include "services/safety/safety_monitor_session.h"
 #include "system_time.h"
 #include "services/network/network_service.h"
 #include "services/weather/weather_service.h"
@@ -325,6 +326,59 @@ esp_err_t app_alert_manager_set_traffic_audio_overlay_enabled(bool enabled) {
     return ESP_OK;
 }
 
+static safety_monitor_policy_snapshot_t s_mock_safety_policy = {
+    .started = true,
+    .enabled_by_user = true,
+    .allowed_by_power_policy = true,
+    .should_run = true,
+    .runtime_running = true,
+    .block_reason = SAFETY_MONITOR_POLICY_BLOCK_NONE,
+    .blocked_by_runtime_coordinator = false,
+    .policy_state = POWER_POLICY_STATE_ACTIVE,
+    .policy_flags = POWER_POLICY_FLAG_NONE,
+};
+
+esp_err_t safety_monitor_session_init(void) { return ESP_OK; }
+esp_err_t safety_monitor_session_apply(bool should_run, const char *reason)
+{
+    (void)reason;
+    s_mock_safety_policy.runtime_running = should_run;
+    return ESP_OK;
+}
+safety_monitor_session_snapshot_t safety_monitor_session_get_snapshot(void)
+{
+    return (safety_monitor_session_snapshot_t){
+        .runtime_running = s_mock_safety_policy.runtime_running,
+        .last_error = ESP_OK,
+    };
+}
+
+esp_err_t safety_monitor_policy_init(void) { return ESP_OK; }
+esp_err_t safety_monitor_policy_start(void)
+{
+    s_mock_safety_policy.started = true;
+    return ESP_OK;
+}
+esp_err_t safety_monitor_policy_set_enabled(bool enabled)
+{
+    s_mock_safety_policy.enabled_by_user = enabled;
+    s_mock_safety_policy.should_run = enabled;
+    s_mock_safety_policy.runtime_running = enabled;
+    return ESP_OK;
+}
+esp_err_t safety_monitor_policy_set_foreground_audio_active(
+    bool active, const char *reason)
+{
+    (void)active;
+    (void)reason;
+    return ESP_OK;
+}
+esp_err_t safety_monitor_policy_notify_power_changed(void) { return ESP_OK; }
+safety_monitor_policy_snapshot_t safety_monitor_policy_get_snapshot(void)
+{
+    return s_mock_safety_policy;
+}
+
 static bool s_mock_danger_enabled = true;
 static danger_detection_sensitivity_mode_t s_mock_sensitivity_mode =
     DANGER_DETECTION_SENSITIVITY_STANDARD;
@@ -338,42 +392,6 @@ static audio_mic_test_snapshot_t s_mock_mic_test_snapshot = {
     .bits_per_sample = 16,
     .mic_channel_index = 0,
 };
-
-esp_err_t background_service_manager_set_danger_detection_enabled(bool enabled) {
-    s_mock_danger_enabled = enabled;
-    return ESP_OK;
-}
-
-background_service_manager_snapshot_t background_service_manager_get_snapshot(void) {
-    background_service_manager_snapshot_t snapshot = {
-        .started = true,
-        .danger_enabled_by_user = s_mock_danger_enabled,
-        .danger_allowed_by_policy = true,
-        .danger_should_run = s_mock_danger_enabled,
-        .danger_runtime_running = s_mock_danger_enabled,
-        .danger_block_reason = s_mock_danger_enabled
-                                   ? BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_NONE
-                                   : BACKGROUND_SERVICE_MANAGER_DANGER_BLOCK_USER_DISABLED,
-        .danger_blocked_by_foreground_audio = false,
-        .danger_blocked_by_foreground_runtime = false,
-        .policy_state = POWER_POLICY_STATE_ACTIVE,
-        .policy_flags = POWER_POLICY_FLAG_NONE,
-        .last_error = ESP_OK,
-    };
-    return snapshot;
-}
-
-esp_err_t background_service_manager_init(void) { return ESP_OK; }
-esp_err_t background_service_manager_notify_foreground_runtime_changed(void) { return ESP_OK; }
-
-#include "services/runtime/foreground_runtime_gate.h"
-esp_err_t foreground_runtime_gate_try_acquire(
-    foreground_runtime_owner_t owner) {
-    return ESP_OK;
-}
-esp_err_t foreground_runtime_gate_release(foreground_runtime_owner_t owner) {
-    return ESP_OK;
-}
 
 danger_detection_snapshot_t danger_detection_service_get_snapshot(void) {
     danger_detection_snapshot_t snapshot = {
@@ -390,9 +408,63 @@ danger_detection_snapshot_t danger_detection_service_get_snapshot(void) {
         .alert_sequence = 0,
         .last_error = ESP_OK,
         .danger_overlay_active = false,
-        .active_backend = DANGER_DETECTION_BACKEND_ESPDL,
     };
     return snapshot;
+}
+
+static ota_service_snapshot_t s_mock_ota_snapshot = {
+    .state = OTA_SERVICE_STATE_IDLE,
+    .source = OTA_UPDATE_SOURCE_ONENET,
+};
+
+esp_err_t ota_service_get_snapshot(ota_service_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_snapshot = s_mock_ota_snapshot;
+    return ESP_OK;
+}
+const char *ota_service_state_text(ota_service_state_t state)
+{
+    switch (state)
+    {
+    case OTA_SERVICE_STATE_READY:
+        return "READY";
+    case OTA_SERVICE_STATE_STAGED:
+        return "STAGED";
+    case OTA_SERVICE_STATE_FAILED:
+        return "FAILED";
+    case OTA_SERVICE_STATE_NO_UPDATE:
+        return "NO_UPDATE";
+    default:
+        return "IDLE";
+    }
+}
+esp_err_t ota_service_request_check(void)
+{
+    s_mock_ota_snapshot.state = OTA_SERVICE_STATE_READY;
+    s_mock_ota_snapshot.update_available = true;
+    strncpy(s_mock_ota_snapshot.target_version, "1.0.10",
+            sizeof(s_mock_ota_snapshot.target_version) - 1U);
+    return ESP_OK;
+}
+esp_err_t ota_service_request_download(void)
+{
+    s_mock_ota_snapshot.state = OTA_SERVICE_STATE_STAGED;
+    s_mock_ota_snapshot.progress_percent = 100U;
+    return ESP_OK;
+}
+esp_err_t ota_service_request_activate(void)
+{
+    s_mock_ota_snapshot.state = OTA_SERVICE_STATE_RESTARTING;
+    return ESP_OK;
+}
+esp_err_t ota_service_request_cancel(void)
+{
+    s_mock_ota_snapshot.state = OTA_SERVICE_STATE_IDLE;
+    return ESP_OK;
 }
 
 esp_err_t danger_detection_service_set_sensitivity_mode(

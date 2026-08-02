@@ -15,6 +15,13 @@ extern "C"
     esp_err_t ota_maintenance_view_init(void);
 
     /**
+     * @brief 在功能页懒加载完成后创建独立的 OTA 更新入口。
+     *
+     * 该函数只能由 LVGL owner 线程调用；重复调用不会重复创建按钮。
+     */
+    void ota_maintenance_view_bind_entry(void);
+
+    /**
      * @brief 打开 OTA 维护页面。
      *
      * 该函数只能由 LVGL 线程调用；它只切换页面，不执行 gate、网络或 Flash

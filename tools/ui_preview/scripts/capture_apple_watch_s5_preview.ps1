@@ -6,6 +6,8 @@ param(
     [switch]$OpenHermesDetail,
     [switch]$OpenAi,
     [switch]$OpenCalendar,
+    [switch]$OpenOta,
+    [switch]$OpenFunction,
     [switch]$OpenDanger,
     [switch]$OpenGames,
     [switch]$OpenGame2048,
@@ -40,9 +42,13 @@ if ($OpenHermes) {
     $captureArgs = @("--open-hermes-detail") + $captureArgs
 } elseif ($OpenAi) {
     $captureArgs = @("--open-ai") + $captureArgs
-} elseif ($OpenCalendar) {
-    $captureArgs = @("--open-calendar") + $captureArgs
-} elseif ($OpenDanger) {
+    } elseif ($OpenCalendar) {
+        $captureArgs = @("--open-calendar") + $captureArgs
+    } elseif ($OpenOta) {
+        $captureArgs = @("--open-ota") + $captureArgs
+    } elseif ($OpenFunction) {
+        $captureArgs = @("--open-function") + $captureArgs
+    } elseif ($OpenDanger) {
     $captureArgs = @("--open-danger") + $captureArgs
 } elseif ($OpenGames) {
     $captureArgs = @("--open-games") + $captureArgs
@@ -73,9 +79,13 @@ if ($OpenHermes) {
     $runArgs += "--open-hermes-detail"
 } elseif ($OpenAi) {
     $runArgs += "--open-ai"
-} elseif ($OpenCalendar) {
-    $runArgs += "--open-calendar"
-} elseif ($OpenDanger) {
+    } elseif ($OpenCalendar) {
+        $runArgs += "--open-calendar"
+    } elseif ($OpenOta) {
+        $runArgs += "--open-ota"
+    } elseif ($OpenFunction) {
+        $runArgs += "--open-function"
+    } elseif ($OpenDanger) {
     $runArgs += "--open-danger"
 } elseif ($OpenGames) {
     $runArgs += "--open-games"
