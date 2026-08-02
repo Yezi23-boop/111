@@ -5,7 +5,7 @@ title: AI Memory Watch 在线音乐播放需求决策
 summary: 记录 ESP32-S3 手表扬声器在线音乐播放的已确认产品、协议、安全和资源边界；实施以独立执行计划为准。
 memory_type: task
 scope: task
-owners: docs/context/plans/completed/2026-07-30-ai-memory-watch-online-music-streaming-discussion.md, docs/context/plans/active/2026-07-31-ai-memory-watch-online-music-streaming-execution-plan.md
+owners: docs/context/plans/completed/2026-07-30-ai-memory-watch-online-music-streaming-discussion.md, docs/context/plans/completed/2026-07-31-ai-memory-watch-online-music-streaming-execution-plan.md
 evidence_level: design
 status: archived
 last_reviewed: 2026-07-31
@@ -100,4 +100,4 @@ triggers: ai-memory-watch, online-music, music-streaming, netease-cloud-music, e
 - [x] 已修正旧讨论稿中 Hermes 点歌、搜索、封面、音量及双容器架构的冲突表述。
 - [x] 已创建独立实施计划；所有后续代码、部署、验证和提交以该计划为准。
 
-下一步：执行 [在线音乐播放执行计划](../active/2026-07-31-ai-memory-watch-online-music-streaming-execution-plan.md)。
+执行结果见已归档的 [在线音乐播放执行计划](2026-07-31-ai-memory-watch-online-music-streaming-execution-plan.md)。

@@ -40,7 +40,7 @@ queries:
       - docs/context/knowledge/project/project-profile.md
 
   - id: current-cloud-deployment-route
-    query: "当前服务器 生产入口 现网 watch.934000.xyz 香港"
+    query: "当前香港服务器 103.42.182.35 PANEL_HOST IP 白名单 watch.934000.xyz"
     scope: all
     expected_top1: docs/context/knowledge/project/current-cloud-deployment-route.md
     expected_top3:

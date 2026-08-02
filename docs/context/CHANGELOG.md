@@ -1,5 +1,9 @@
 # 上下文库变更记录
 
+- 2026-08-02：补齐当前云端部署路由卡的香港服务器公网 IPv4 `103.42.182.35`，并把 `PANEL_HOST` / `IP 白名单` 纳入触发词与黄金查询，避免当前服务器 IP 事实只藏在 active 计划里。
+
+- 2026-08-02：在线音乐首轮代码闭环完成：新增香港单容器 `music-service`、HTTPS 分块 MP3、单 FFmpeg/SQLite 播放会话、网易云私有 QR/来源适配、ESP32 PSRAM 流式播放器和独立音乐入口；服务端 Node 测试 9 项、ESP32 音乐 source tests 13 项、`idf.py build` 和 COM7 60 秒冷启动观察通过。香港远端部署、真实网易云扫码/播放、歌曲分页与 QR 位图 UI 仍待完成，不能视为 V1 全量验收。
+
 - 2026-08-02：完成香港 1Panel 网站条目切换复核。`hermes-dashboard` 与 `watch-endpoint` 使用统一 `934000.xyz` 通配证书；停用并备份重复手工 vhost，将 watch 私有路径门禁固化到 `server/deploy/1panel/watch-endpoint/proxy/root.conf`。公网 runtime/private exposure、HTTP mock Ogg 和 WSS smoke 均通过。
 
 - 2026-08-01：修复当前云端部署路由检索容易被旧 active plan / 历史 run 干扰的问题。新增 `current-cloud-deployment-route` 稳定知识卡，将 2026-07-13 香港中转记录标记为 `superseded`，`validate_context.py --level light --brief` 改为 all-scope brief，并为“当前/生产/现网/最新”查询增加稳定知识优先权与黄金查询回归。
@@ -787,3 +791,7 @@
 - 2026-07-29：完成 Watch Foreground Session Lifecycle 本轮冷启动回归。COM7 `app-flash-monitor` 45 秒刷写采集成功，`panic_log_seen=0`、`residual_count=0`，日志到达 `network_service_ready`；board test 观测 `internal_free=76971`、largest=55296`、psram_free=6803516`，未发现 panic/Guru/WDT/NO_MEM/assert/stack overflow。全量 source tests `438 passed`，ESP-IDF build `111.bin=0xabe680`、app free 0x341980`（23%）。真实 Wi-Fi 页面 BLE/SoftAP provisioning 交互仍未由脚本代替验收。日志：`board_logs/2026-07-29-19-22-03-foreground-session-lifecycle-final.log`。
 
 - 2026-07-29：复跑 Watch Foreground Session Lifecycle 文档闭环与 COM7 冷启动回归。context standard 校验错误 0、警告 0；聚焦 foreground/Hermes/official_chat/BLE/board source tests `53 passed`；`git diff --check` 无 whitespace error，仅 CRLF/LF 提示；ESP-IDF build 通过，`111.bin=0xabe680`、app free `0x341980`（23%）。COM7 `app-flash-monitor` 45 秒复跑成功，`panic_log_seen=0`、`residual_count=0`，启动到 `startup_sequence_done`、`ui_first_frame_ready` 和 `SERVICE_READY`；冷启动快照 `internal_free=61423`、`largest=53248`、`psram_free=6777484`。真实 Wi-Fi 页面 BLE/SoftAP provisioning 交互仍需单独人工覆盖。日志：`board_logs/2026-07-29-19-46-16-foreground-session-lifecycle-final-rerun.log`。
+- 2026-08-02：音乐服务已通过香港 1Panel 现有 Compose 部署到当前服务器 `103.42.182.35`；`ai-memory-watch-music-service` 使用回环 `127.0.0.1:18788`、非 root UID `10003`、独立数据目录 `/opt/ai-memory-watch/music-data`，OpenResty 仅开放鉴权 `/v1/music/*`。公网无凭据请求返回 `401`，`/health` 仍为 `404`。旧香港服务器 `156.233.234.206` 记录作废；真实网易云扫码与音频播放仍待固定流门禁后验证。
+- 2026-08-02：用同一生产镜像启动临时隔离测试容器完成固定流服务器 smoke：来源读取、会话创建和带 `device_id` 的 `audio/mpeg` 流读取通过，收到 `96429` 字节；测试容器、数据库和音频文件已清理，生产 `MUSIC_TEST_MODE` 未改变。ESP32 真机播放仍待测试源或真实网易云账号链路。
+- 2026-08-02：修复 music-service 暂停时 FFmpeg stdout 未完全收敛导致 HTTP 音频流长时间占用的问题；现在暂停会立即终止当前流，继续会生成新 stream，已通过本地 `10/10` Node 测试和香港临时 API 闭环验证。
+- 2026-08-02：完成音乐固定流真机闭环取证：COM7 专用测试镜像从香港 music-service 获取 MP3，ESP32 缓冲 `32768` 字节后取得 `music_player` 音频输出 owner 并通过播放测试，随后正常释放；测试镜像未发现 panic、Guru、栈溢出或 `ESP_ERR_NO_MEM`。已恢复生产 music-service 配置、删除测试音频，并刷回默认不开机自动播放的普通固件。
