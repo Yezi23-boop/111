@@ -90,6 +90,22 @@ EPISODIC_INTENT_TERMS = (
     "证据",
 )
 
+CURRENT_INTENT_TERMS = (
+    "current",
+    "latest",
+    "production",
+    "prod",
+    "live",
+    "当前",
+    "最新",
+    "生产",
+    "现网",
+    "现在",
+    "正式入口",
+    "当前服务器",
+    "当前部署",
+)
+
 
 def tokenize(text: str) -> list[str]:
     """分词：CJK 连续序列只保留 bigram（丢弃单字噪声），其余按原逻辑。
@@ -200,6 +216,13 @@ def has_history_intent(query: str, terms: list[str]) -> bool:
     )
 
 
+def has_current_intent(query: str, terms: list[str]) -> bool:
+    query_lower = query.lower()
+    return any(term in query_lower for term in CURRENT_INTENT_TERMS) or any(
+        term in CURRENT_INTENT_TERMS for term in terms
+    )
+
+
 def lifecycle_penalty(
     rel_path: str,
     title: str,
@@ -255,6 +278,38 @@ def episodic_mixed_penalty(rel_path: str, scope: str, query: str, terms: list[st
         return 0
 
     return -32
+
+
+def current_fact_bonus(
+    rel_path: str,
+    title: str,
+    summary: str,
+    triggers: str,
+    status: str,
+    query: str,
+    terms: list[str],
+) -> int:
+    if not has_current_intent(query, terms):
+        return 0
+
+    normalized = rel_path.replace("\\", "/")
+    text = f"{normalized}\n{title}\n{summary}\n{triggers}".lower()
+    score = 0
+
+    if normalized.startswith("docs/context/knowledge/project/"):
+        score += 22
+    if normalized == "docs/context/knowledge/project/project-profile.md":
+        score += 8
+    if normalized.startswith("docs/context/runs/"):
+        score -= 20
+    if normalized.startswith("docs/context/plans/active/"):
+        score -= 12
+    if str(status).strip().lower() == "completed":
+        score += 4
+    if any(term in text for term in ("current", "production", "deployment", "当前", "生产", "现网", "正式入口", "部署路由")):
+        score += 16
+
+    return score
 
 
 def best_snippet(body: str, terms: list[str]) -> tuple[int, str]:
@@ -392,6 +447,15 @@ def score_document(
         + path_bonus(rel_path)
         + lifecycle_score
         + episodic_mixed_penalty(rel_path, scope, query, terms)
+        + current_fact_bonus(
+            rel_path=rel_path,
+            title=title,
+            summary=summary,
+            triggers=triggers,
+            status=status,
+            query=query,
+            terms=terms,
+        )
     )
     if score <= 0:
         return None

@@ -1,0 +1,11 @@
+[Unit]
+Description=Observe AI Memory Watch Hermes migration every five minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=hermes-migration-observe.service
+
+[Install]
+WantedBy=timers.target

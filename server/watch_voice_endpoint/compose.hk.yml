@@ -1,0 +1,90 @@
+services:
+  watch-voice-endpoint:
+    image: ai-memory-watch-voice-endpoint:hk
+    build:
+      context: ${WATCH_ENDPOINT_SOURCE_ROOT:-.}
+    container_name: ai-memory-watch-voice-endpoint
+    restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 384m
+    pids_limit: 128
+    env_file:
+      - /opt/ai-memory-watch/secrets/watch-endpoint.env
+    environment:
+      HERMES_API_URL: http://hermes:8642
+      WATCH_RELAY_CONNECTOR_URL: http://watch-relay-connector:9080
+    volumes:
+      - /opt/ai-memory-watch/watch-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8787:8787"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ai-memory-watch
+      - watch-relay-private
+
+  watch-relay-connector:
+    image: ai-memory-watch-relay-connector:hk
+    build:
+      context: ${WATCH_RELAY_SOURCE_ROOT:-../watch_relay_connector}
+    container_name: ai-memory-watch-relay-connector
+    restart: unless-stopped
+    mem_limit: 64m
+    memswap_limit: 96m
+    pids_limit: 64
+    env_file:
+      - /opt/ai-memory-watch/secrets/relay-connector.env
+    volumes:
+      - /opt/ai-memory-watch/relay-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9080/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    networks:
+      - watch-relay-private
+
+networks:
+  ai-memory-watch:
+    external: true
+    name: ai-memory-watch
+  watch-relay-private:
+    external: true
+    name: watch-relay-private

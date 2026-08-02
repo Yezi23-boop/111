@@ -8,9 +8,13 @@ scope: project
 owners: server/watch_voice_endpoint/deploy/hk-relay, docs/context/runs
 triggers: 香港中转, WireGuard, no dev net tun, autossh latency, nginx upstream keepalive, watch-hk, DNS-01, acme.sh
 evidence_level: observed
+status: superseded
+superseded_by: docs/context/plans/completed/2026-08-02-hermes-external-mem0-hk-migration-plan.md
 ---
 
 # AI Memory Watch 香港中转验证
+
+> 生命周期：本记录是历史中转路线证据，已被香港 1Panel 生产迁移取代。除非排查历史 relay / autossh / 旧阿里云链路，不要把本文的“当前实现”当作现网部署事实。
 
 ## 环境
 

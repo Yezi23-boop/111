@@ -44,6 +44,7 @@ uv run python scripts/context/validate_context.py --level light --q "<task keywo
 - Do not bulk-open `docs/context/knowledge/**`.
 - Do not treat `CHANGELOG.md` as the primary memory; it is too long.
 - Use `validate_context.py --level light --brief` as the default entry.
+- For currentness queries such as `当前`, `最新`, `生产`, `现网`, or `现在`, do not rely on compressed summaries, previous turns, or memory alone. Run the light retrieval in the current turn and prefer stable knowledge cards plus explicit lifecycle status.
 - Treat `query.py` and `pack_context.py` as implementation details or advanced debugging tools, not the normal first step.
 - Open raw Markdown only when the brief output points to a file you truly need.
 - For planning/framework/route/architecture tasks, open matched planning or architecture Markdown before reading implementation code.

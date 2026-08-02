@@ -113,6 +113,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 首读只看 `docs/context/INDEX.agent.md` 与 `docs/context/knowledge/project/project-profile.md`；不要默认全量打开 `README.md`、`knowledge-map.md`、`repo-overview.md` 或 `knowledge/**`。
 - 遇到项目内不明确的问题，若可能由既有规划、稳定约束、owner 边界、历史决策或板端证据回答，先用上下文库索引按关键词检索，并只打开命中的相关文档；索引未提供充分证据时，再核对代码或官方资料。若仍存在会影响实现范围或行为的歧义，明确说明后向用户澄清，不得臆测。
+- 涉及“当前 / 最新 / 生产 / 现网 / 现在”的事实判断，禁止直接依赖压缩摘要、上轮对话或旧记忆；必须先运行本轮 `validate_context.py --level light --q "<当前性关键词>" --brief`，并以本轮检索结果中的稳定知识卡和明确生命周期状态为准。
 - 非简单任务默认用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词/文件/错误码>" --brief`，避免重复尝试并只生成低 token brief。（**降级策略**：如果 Python 脚本执行失败，必须立即改用 `grep_search` 工具直接搜索 `docs/context/` 目录，严禁因此放弃查阅上下文）。
 - 新增功能、跨模块改动、后台能力、低功耗、OTA、音频/网络/危险识别协作类任务，默认先按 `docs/context/knowledge/project/runtime-owner-contract.md` 判断启动阶段、资源 owner、调用方向和禁止加层边界。
 - 出现可复用知识、流程、决策、attempt 或跨会话接手状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层；`CHANGELOG.md` 只记录后续有检索价值的摘要，不记录普通执行流水。

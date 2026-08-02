@@ -1,0 +1,60 @@
+networks:
+  ai-memory-watch:
+    external: true
+    name: ai-memory-watch
+  watch-relay-private:
+    external: true
+    name: watch-relay-private
+
+services:
+  hermes-agent:
+    container_name: ${CONTAINER_NAME:-1Panel-hermes-agent}
+    image: ai-memory-watch-hermes:2026.7.20-mem0
+    labels:
+      createdBy: Apps
+    restart: unless-stopped
+    mem_limit: 1536m
+    memswap_limit: 2048m
+    pids_limit: 256
+    env_file:
+      - /opt/ai-memory-watch/secrets/hermes.env
+      - /opt/ai-memory-watch/secrets/dashboard.env
+    environment:
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9119"
+      HERMES_HOME: /opt/data
+      HOME: /opt/data/home
+      TERM: xterm-256color
+      # 固定外置 Mem0 身份，避免镜像升级时记忆分桶漂移。
+      MEM0_MODE: platform
+      MEM0_USER_ID: hermes-user
+    volumes:
+      - /opt/ai-memory-watch/hermes-data:/opt/data
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "127.0.0.1:8642:8642"
+      - "127.0.0.1:${PANEL_APP_PORT_HTTP:-9119}:9119"
+    command:
+      - gateway
+      - run
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      ai-memory-watch:
+        aliases:
+          - hermes
+      watch-relay-private: {}

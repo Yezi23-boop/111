@@ -39,6 +39,13 @@ queries:
     expected_top3:
       - docs/context/knowledge/project/project-profile.md
 
+  - id: current-cloud-deployment-route
+    query: "当前服务器 生产入口 现网 watch.934000.xyz 香港"
+    scope: all
+    expected_top1: docs/context/knowledge/project/current-cloud-deployment-route.md
+    expected_top3:
+      - docs/context/knowledge/project/current-cloud-deployment-route.md
+
   - id: layering-boundary-map
     query: "当前项目 分层 边界 App Service Manager Adapter Vendor"
     expected_top1: docs/context/knowledge/project/layering-boundary-map.md

@@ -14,7 +14,7 @@ configure_utf8_stdio()
 
 
 LEVEL_HELP = {
-    "light": "普通任务低 token 检索：query runs + query plans + query mixed，可选 brief pack。",
+    "light": "普通任务低 token 检索：query runs + query plans + query mixed，可选 all-scope brief pack。",
     "standard": "只改 context 文档：build_index + check。",
     "routing": "改入口或检索基准：build_index + check + eval_query。",
     "full": "改 scripts/context 或记忆机制：build_index + check + garden + eval_query。",
@@ -95,6 +95,8 @@ def build_commands(args: argparse.Namespace, project_root: Path) -> list[list[st
                     args.q,
                     "--top",
                     str(args.top),
+                    "--scope",
+                    "all",
                     "--mode",
                     "brief",
                     "--max-chars",

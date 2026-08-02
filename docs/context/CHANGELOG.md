@@ -1,5 +1,15 @@
 # 上下文库变更记录
 
+- 2026-08-02：完成香港 1Panel 网站条目切换复核。`hermes-dashboard` 与 `watch-endpoint` 使用统一 `934000.xyz` 通配证书；停用并备份重复手工 vhost，将 watch 私有路径门禁固化到 `server/deploy/1panel/watch-endpoint/proxy/root.conf`。公网 runtime/private exposure、HTTP mock Ogg 和 WSS smoke 均通过。
+
+- 2026-08-01：修复当前云端部署路由检索容易被旧 active plan / 历史 run 干扰的问题。新增 `current-cloud-deployment-route` 稳定知识卡，将 2026-07-13 香港中转记录标记为 `superseded`，`validate_context.py --level light --brief` 改为 all-scope brief，并为“当前/生产/现网/最新”查询增加稳定知识优先权与黄金查询回归。
+
+- 2026-08-02：按要求将香港 Hermes 唯一管理入口切换到 1Panel「AI -> 智能体」。`Hermes-Agent` 应用现在使用生产 Mem0 派生镜像、`/opt/ai-memory-watch/hermes-data` 和两个私有 Docker 网络；watch/Relay Compose 不再启动 Hermes。切换后 1Panel 容器 healthy，公网 HTTP/WSS smoke、私有暴露门禁通过，旧 `ai-memory-watch-hermes` 容器已删除。
+
+- 2026-08-02：收口 Hermes 外置 Mem0 香港迁移。用户取消 24 小时观察要求，香港三容器即时复测 healthy，公网 runtime/private exposure、HTTP mock Ogg 与 WSS smoke 通过；旧 Cloudflare Tunnel token 已轮换并停止旧 connector，阿里云旧应用容器已停止且取消自动重启，旧数据目录与迁移备份保留。香港生产仍固定 `MEM0_MODE=platform`、`MEM0_USER_ID=hermes-user` 与 `mem0ai==2.0.10`，未记录任何密钥或 token。
+
+- 2026-08-02：完成 Hermes 外置 Mem0 香港迁移的首次公网闭环。香港使用 `1panel/hermes-agent:2026.7.20` 构建派生镜像 `ai-memory-watch-hermes:2026.7.20-mem0`，固定 `mem0ai==2.0.10`；`ai-memory-watch` 已通过 1Panel“路径选择”导入为 1Panel 来源编排，显示 `3/3` healthy。Hermes `/opt/data`、watch/Relay 数据目录均为香港独立新目录，Mem0 Platform 历史身份保持不变。`hermes.934000.xyz` 与 `watch.934000.xyz` 已切换香港 DNS-only A 记录，1Panel OpenResty 提供 Let's Encrypt HTTPS/WSS；watch 只代理 `/v1/watch/*`，8642/8787/9119 仍仅回环监听。公网 runtime/private exposure、HTTP mock Ogg 和 WSS smoke 均通过。计划：`docs/context/plans/completed/2026-08-02-hermes-external-mem0-hk-migration-plan.md`。
+
 - 2026-07-31：完成 Runtime Coordinator 架构替换。注册式 FreeRTOS 控制面统一 Hermes、official chat、network provisioning、OTA 的 request/transition generation、deadline、ACK 与当前强前台事实；Safety Monitor 和普通 BLE presence 作为可抢占后台 participant，各业务 owner 仍独占真实资源生命周期。旧 `foreground_runtime_gate` 与旧 quiesce 协议已删除，`background_service_manager` 收敛为 `safety_monitor_policy`。聚焦 source tests `64 passed`；全量 pytest 为 `453 passed, 1 failed, 1 warning`，唯一失败是任务外已有 `danger_sample_recorder` reset-session 漂移；默认配置 `fullclean + build` 通过，`111.bin=0xab56b0`。COM7 模拟状态机及 Hermes/OTA 真实交接完成，默认固件冷启动到 `SERVICE_READY` 且无 panic/WDT。计划：`docs/context/plans/completed/2026-07-31-runtime-coordinator-plan.md`；证据：`docs/context/runs/2026-07-31-attempt-runtime-coordinator-board-handoffs.md`。
 
 - 2026-07-31：将跨 owner 的运行时编排文件收敛到 `main/services/runtime/`：`foreground_runtime_gate`、runtime gate board test、`background_service_manager` 和 `startup_readiness` 不再分散在 `runtime_gate`、`safety`、`startup` 目录。Safety Monitor、OTA、网络、Hermes 与电源 owner 保持各自目录，运行时目录不接管资源生命周期。同步更新 CMake、include、source-test 路径、框架卡与活跃资源 gate 计划；聚焦 source tests `78 passed`，ESP-IDF build 通过，`111.bin=0xab5020`、最小 app 分区余量 `0x14afe0`（11%）。

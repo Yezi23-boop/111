@@ -1,0 +1,8 @@
+[Unit]
+Description=AI Memory Watch Hermes migration observation
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ai-memory-watch/server/deploy/observation/hermes-migration-observe.sh
