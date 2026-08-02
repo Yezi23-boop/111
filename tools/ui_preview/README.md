@@ -55,6 +55,18 @@ D:\esp32S3\111\tools\ui_preview\artifacts\wifi-management-image-to-code.png
 & "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenAi
 ```
 
+打开音乐页面截图：
+
+```powershell
+& "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenMusic
+```
+
+展开主界面下拉栏截图：
+
+```powershell
+& "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenDropdown
+```
+
 打开危险识别页面截图：
 
 ```powershell

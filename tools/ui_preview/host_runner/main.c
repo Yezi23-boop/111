@@ -13,6 +13,7 @@
 #include "ai_ui_controller.h"
 #include "danger_detection_controller.h"
 #include "memory_watch_controller.h"
+#include "music_controller.h"
 #include "mini_games_controller.h"
 #include "ota_maintenance_view.h"
 #include "drivers/sdl/lv_sdl_keyboard.h"
@@ -37,6 +38,9 @@ typedef struct {
     bool open_hermes_inbox;
     bool open_hermes_detail;
     bool open_ai;
+    bool open_music;
+    bool open_music_catalog;
+    bool open_dropdown;
     bool open_calendar;
     bool open_ota;
     bool open_function;
@@ -144,6 +148,18 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         {
             args.open_ai = true;
         }
+        else if (strcmp(argv[i], "--open-music") == 0)
+        {
+            args.open_music = true;
+        }
+        else if (strcmp(argv[i], "--open-music-catalog") == 0)
+        {
+            args.open_music_catalog = true;
+        }
+        else if (strcmp(argv[i], "--open-dropdown") == 0)
+        {
+            args.open_dropdown = true;
+        }
         else if (strcmp(argv[i], "--open-calendar") == 0)
         {
             args.open_calendar = true;
@@ -193,6 +209,7 @@ static void preview_tick_once(uint32_t *last_tick)
     *last_tick = now;
     lv_timer_handler();
     memory_watch_controller_poll_ui();
+    music_controller_poll_ui();
     mini_games_controller_poll_ui();
     danger_detection_controller_poll_ui();
     watch_nc_poll(false, false);
@@ -284,6 +301,7 @@ int main(int argc, char **argv)
 
     setup_ui(&guider_ui);
     memory_watch_controller_init(&guider_ui);
+    music_controller_init(&guider_ui);
     events_init(&guider_ui);
     ai_ui_controller_init(&guider_ui);
     danger_detection_controller_init(&guider_ui);
@@ -291,6 +309,10 @@ int main(int argc, char **argv)
     preview_create_screen_mask();
     static const watch_nc_config_t kMockNcCfg = {0};
     watch_nc_init(&kMockNcCfg);
+    if (args.open_dropdown)
+    {
+        lv_obj_set_y(guider_ui.screen_main_Dropdown_menu, 0);
+    }
     if (args.open_hermes)
     {
         memory_watch_controller_open();
@@ -307,6 +329,14 @@ int main(int argc, char **argv)
     else if (args.open_ai)
     {
         ai_ui_open();
+    }
+    else if (args.open_music_catalog)
+    {
+        music_controller_preview_open_catalog();
+    }
+    else if (args.open_music)
+    {
+        music_controller_open();
     }
     else if (args.open_calendar)
     {

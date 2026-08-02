@@ -59,6 +59,8 @@ static const char *danger_detection_status_text(
                 return "资源占用，暂时等待";
             case SAFETY_MONITOR_POLICY_BLOCK_RUNTIME_COORDINATOR:
                 return "前台任务中，暂时等待";
+            case SAFETY_MONITOR_POLICY_BLOCK_MUSIC_PLAYBACK:
+                return "音乐播放中，安全告警关闭";
             case SAFETY_MONITOR_POLICY_BLOCK_POWER:
                 if ((manager_snapshot->policy_flags &
                      POWER_POLICY_FLAG_MAINTENANCE) != 0U) {

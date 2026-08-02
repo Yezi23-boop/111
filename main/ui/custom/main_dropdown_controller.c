@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "audio_codec.h"
 #include "esp_log.h"
 #include "network_manager.h"
 #include "wifi_management_controller.h"
@@ -11,10 +12,13 @@
 #include "features/danger_detection/danger_detection_service.h"
 #include "services/runtime/safety_monitor_policy.h"
 #include "services/network/network_service.h"
+#include "music_controller.h"
+#include "services/music/music_service.h"
 
 static const char *TAG = "main_dropdown";
 static const uint32_t kStatusSyncPeriodMs = 250U;
 static const uint32_t kToastDurationMs = 1800U;
+static const uint32_t kVolumeApplyIntervalMs = 50U;
 
 static lv_ui *s_ui = NULL;
 static lv_timer_t *s_status_sync_timer = NULL;
@@ -25,18 +29,149 @@ static bool s_last_wifi_checked_valid = false;
 static bool s_last_bluetooth_checked = false;
 static bool s_last_bluetooth_checked_valid = false;
 static uint32_t s_last_ble_result_generation = 0U;
+static bool s_music_long_press_handled = false;
+static bool s_volume_adjusting = false;
+static bool s_volume_syncing = false;
+static bool s_last_volume_apply_valid = false;
+static uint32_t s_last_volume_apply_tick = 0U;
 
 static lv_obj_t *main_dropdown_controller_get_wifi_button(void);
 static lv_obj_t *main_dropdown_controller_get_bluetooth_button(void);
+static lv_obj_t *main_dropdown_controller_get_music_button(void);
+static lv_obj_t *main_dropdown_controller_get_volume_slider(void);
 static bool main_dropdown_controller_is_main_screen_active(void);
 static bool main_dropdown_controller_get_network_status(
     network_manager_status_t *status);
 static void main_dropdown_controller_sync_wifi_button(void);
 static void main_dropdown_controller_sync_bluetooth_button(void);
+static void main_dropdown_controller_sync_music_button(void);
+static void main_dropdown_controller_sync_volume(void);
 static void main_dropdown_controller_status_sync_timer_cb(lv_timer_t *timer);
 static void main_dropdown_controller_toast_timer_cb(lv_timer_t *timer);
 static void main_dropdown_controller_hide_toast(void);
 static void main_dropdown_controller_show_toast(const char *text);
+
+/**
+ * @brief 按音量值同步扬声器图标。
+ *
+ * 0% 使用 generated 层已有的 checked 静音图，其余音量显示普通扬声器图。
+ */
+static void main_dropdown_controller_apply_volume_icon(int volume)
+{
+    if (s_ui == NULL || s_ui->screen_main_imgbtn_1 == NULL)
+    {
+        return;
+    }
+
+    if (volume == 0)
+    {
+        lv_obj_add_state(s_ui->screen_main_imgbtn_1, LV_STATE_CHECKED);
+    }
+    else
+    {
+        lv_obj_remove_state(s_ui->screen_main_imgbtn_1, LV_STATE_CHECKED);
+    }
+}
+
+/**
+ * @brief 处理下拉栏音量滑条事件。
+ *
+ * 拖动期间最多每 50 ms 下发一次 ES8311 音量，松手时再强制应用最终值并
+ * 写一次 NVS，避免触摸采样频率直接放大成 I2C 与 Flash 写入频率。
+ */
+static void main_dropdown_controller_volume_event(lv_event_t *event)
+{
+    lv_obj_t *slider = lv_event_get_target(event);
+    const lv_event_code_t code = lv_event_get_code(event);
+    if (slider == NULL || s_volume_syncing)
+    {
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        s_volume_adjusting = true;
+        return;
+    }
+
+    if (code == LV_EVENT_VALUE_CHANGED)
+    {
+        const int volume = lv_slider_get_value(slider);
+        const uint32_t now = lv_tick_get();
+        main_dropdown_controller_apply_volume_icon(volume);
+        if (!s_last_volume_apply_valid ||
+            (uint32_t)(now - s_last_volume_apply_tick) >=
+                kVolumeApplyIntervalMs)
+        {
+            const esp_err_t ret = audio_codec_set_volume(volume);
+            if (ret == ESP_OK)
+            {
+                s_last_volume_apply_tick = now;
+                s_last_volume_apply_valid = true;
+            }
+            else
+            {
+                ESP_LOGW(TAG, "volume apply failed: %s", esp_err_to_name(ret));
+            }
+        }
+        return;
+    }
+
+    if ((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) &&
+        s_volume_adjusting)
+    {
+        const int volume = lv_slider_get_value(slider);
+        const esp_err_t ret = audio_codec_set_volume_preference(volume);
+        s_volume_adjusting = false;
+        if (ret == ESP_OK)
+        {
+            s_last_volume_apply_tick = lv_tick_get();
+            s_last_volume_apply_valid = true;
+            ESP_LOGI(TAG, "speaker volume saved: %d%%", volume);
+        }
+        else
+        {
+            ESP_LOGW(TAG, "volume save failed: %s", esp_err_to_name(ret));
+            main_dropdown_controller_show_toast("音量保存失败");
+            main_dropdown_controller_sync_volume();
+        }
+    }
+}
+
+static void main_dropdown_controller_music_event(lv_event_t *event)
+{
+    const lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_LONG_PRESSED)
+    {
+        s_music_long_press_handled = true;
+        music_controller_open();
+        return;
+    }
+    if (code != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+    if (s_music_long_press_handled)
+    {
+        s_music_long_press_handled = false;
+        return;
+    }
+
+    music_service_snapshot_t snapshot = {0};
+    if (music_service_get_snapshot(&snapshot) != ESP_OK)
+    {
+        return;
+    }
+    if (snapshot.state == MUSIC_SERVICE_STATE_STOPPED ||
+        snapshot.state == MUSIC_SERVICE_STATE_ERROR)
+    {
+        (void)music_service_start_source("today");
+    }
+    else
+    {
+        (void)music_service_toggle_playback();
+    }
+}
 
 /**
  * @brief 获取主界面 Wi-Fi 图标按钮对象。
@@ -64,6 +199,24 @@ static lv_obj_t *main_dropdown_controller_get_bluetooth_button(void)
     }
 
     return s_ui->screen_main_Bluetooth;
+}
+
+/**
+ * @brief 获取主界面下拉栏音乐按钮。
+ * @return 返回音乐按钮；若 UI 尚未绑定则返回 `NULL`。
+ */
+static lv_obj_t *main_dropdown_controller_get_music_button(void)
+{
+    return s_ui != NULL ? s_ui->screen_main_music_button : NULL;
+}
+
+/**
+ * @brief 获取主界面下拉栏音量滑条。
+ * @return 返回 generated 音量滑条；UI 尚未绑定时返回 `NULL`。
+ */
+static lv_obj_t *main_dropdown_controller_get_volume_slider(void)
+{
+    return s_ui != NULL ? s_ui->screen_main_loudness : NULL;
 }
 
 /**
@@ -199,6 +352,53 @@ static void main_dropdown_controller_sync_bluetooth_button(void)
 }
 
 /**
+ * @brief 按音乐 owner 快照同步按钮播放状态。
+ */
+static void main_dropdown_controller_sync_music_button(void)
+{
+    lv_obj_t *button = main_dropdown_controller_get_music_button();
+    music_service_snapshot_t snapshot = {0};
+    if (button == NULL || music_service_get_snapshot(&snapshot) != ESP_OK)
+    {
+        return;
+    }
+
+    if (snapshot.state == MUSIC_SERVICE_STATE_PLAYING ||
+        snapshot.state == MUSIC_SERVICE_STATE_BUFFERING)
+    {
+        lv_obj_add_state(button, LV_STATE_CHECKED);
+    }
+    else
+    {
+        lv_obj_remove_state(button, LV_STATE_CHECKED);
+    }
+}
+
+/**
+ * @brief 从 audio codec 当前状态同步音量滑条与扬声器图标。
+ *
+ * 用户正在拖动时由调用方跳过该函数，避免 250 ms 状态刷新覆盖手指位置；
+ * 非拖动态则可反映 MCP 等其他入口修改的系统音量。
+ */
+static void main_dropdown_controller_sync_volume(void)
+{
+    lv_obj_t *slider = main_dropdown_controller_get_volume_slider();
+    int volume = 0;
+    if (slider == NULL || audio_codec_get_volume(&volume) != ESP_OK)
+    {
+        return;
+    }
+
+    if (lv_slider_get_value(slider) != volume)
+    {
+        s_volume_syncing = true;
+        lv_slider_set_value(slider, volume, LV_ANIM_OFF);
+        s_volume_syncing = false;
+    }
+    main_dropdown_controller_apply_volume_icon(volume);
+}
+
+/**
  * @brief 主界面状态同步定时器回调。
  *
  * 仅在主界面可见时刷新图标状态；离开主界面后不继续显示临时 toast，
@@ -216,6 +416,11 @@ static void main_dropdown_controller_status_sync_timer_cb(lv_timer_t *timer)
     {
         main_dropdown_controller_sync_wifi_button();
         main_dropdown_controller_sync_bluetooth_button();
+        main_dropdown_controller_sync_music_button();
+        if (!s_volume_adjusting)
+        {
+            main_dropdown_controller_sync_volume();
+        }
     }
 
     /* notification center 全局 poll（与 main screen 状态无关） */
@@ -376,6 +581,28 @@ void main_dropdown_controller_bind(lv_ui *ui)
 
     main_dropdown_controller_sync_wifi_button();
     main_dropdown_controller_sync_bluetooth_button();
+    main_dropdown_controller_sync_music_button();
+    main_dropdown_controller_sync_volume();
+
+    if (s_ui->screen_main_imgbtn_1 != NULL)
+    {
+        /* 图标覆盖在滑条底部，只做状态显示，不能截获设置 0% 的触摸。 */
+        lv_obj_clear_flag(s_ui->screen_main_imgbtn_1,
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_CHECKABLE);
+    }
+    if (s_ui->screen_main_loudness != NULL)
+    {
+        lv_obj_add_event_cb(s_ui->screen_main_loudness,
+                            main_dropdown_controller_volume_event,
+                            LV_EVENT_ALL, NULL);
+    }
+
+    if (s_ui->screen_main_music_button != NULL)
+    {
+        lv_obj_add_event_cb(s_ui->screen_main_music_button,
+                            main_dropdown_controller_music_event,
+                            LV_EVENT_ALL, NULL);
+    }
 
     /* notification center 初始化（幂等，只在首次 bind 时真正执行） */
     static bool s_nc_initialized = false;
@@ -429,12 +656,6 @@ void main_dropdown_controller_handle_bluetooth_click(void)
         target_enabled = retry_failed_transition
                              ? snapshot.ble_desired_enabled
                              : !snapshot.ble_desired_enabled;
-    }
-    else
-    {
-        main_dropdown_controller_show_toast("BLE switch update failed");
-        ESP_LOGW(TAG, "BLE owner snapshot unavailable");
-        return;
     }
 
     ESP_LOGI(TAG, "Bluetooth button clicked: ble_enabled=%d ble_active=%d",

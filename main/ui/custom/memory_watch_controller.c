@@ -12,6 +12,7 @@
 #include "lvgl.h"
 #include "memory_watch_view.h"
 #include "services/memory_watch/memory_watch_service.h"
+#include "services/music/music_service.h"
 #include "ui_chinese_fonts.h"
 
 static const char *TAG = "memory_watch_ui";
@@ -960,6 +961,8 @@ void memory_watch_controller_open(void)
         return;
     }
 
+    /* Hermes 需要独占扬声器和麦克风；音乐 owner 自行停流并释放输出。 */
+    (void)music_service_pause_for_hermes_page();
     s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
     (void)memory_watch_service_set_foreground(true);
     (void)memory_watch_service_check_health();
@@ -1030,6 +1033,7 @@ void memory_watch_controller_open_via_notification(watch_nc_nav_target_t target,
     /* 3. 设置页面渲染状态 */
     if (target == WATCH_NC_NAV_HERMES_VOICE)
     {
+        (void)music_service_pause_for_hermes_page();
         s_render_page = MEMORY_WATCH_VIEW_PAGE_VOICE;
         (void)memory_watch_service_set_foreground(true);
     }

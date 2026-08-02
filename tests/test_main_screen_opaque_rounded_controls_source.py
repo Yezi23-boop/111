@@ -35,13 +35,10 @@ class MainScreenOpaqueRoundedControlsSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "lv_obj_set_style_bg_opa(ui->screen_main_slider_1, 34, LV_PART_MAIN|LV_STATE_DEFAULT);",
+            "lv_obj_set_style_bg_opa(ui->screen_main_music_button, 230, LV_PART_MAIN|LV_STATE_DEFAULT);",
             source,
         )
-        self.assertIn(
-            "lv_obj_set_style_bg_opa(ui->screen_main_slider_1, 238, LV_PART_INDICATOR|LV_STATE_DEFAULT);",
-            source,
-        )
+        self.assertNotIn("screen_main_slider_1", source)
 
 
 if __name__ == "__main__":

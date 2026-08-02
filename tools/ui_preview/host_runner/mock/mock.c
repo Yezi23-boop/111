@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include "esp_err.h"
 #include "network_manager.h"
@@ -595,4 +596,169 @@ esp_err_t memory_watch_service_copy_inbox_summaries(
     (void)capacity;
     *out_count = 0;
     return ESP_OK;
+}
+
+#include "services/music/music_service.h"
+
+static int s_mock_speaker_volume = 60;
+
+esp_err_t audio_codec_set_volume(int volume)
+{
+    if (volume < 0 || volume > 100)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    s_mock_speaker_volume = volume;
+    return ESP_OK;
+}
+
+esp_err_t audio_codec_set_volume_preference(int volume)
+{
+    return audio_codec_set_volume(volume);
+}
+
+esp_err_t audio_codec_get_volume(int *volume)
+{
+    if (volume == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *volume = s_mock_speaker_volume;
+    return ESP_OK;
+}
+
+static music_service_snapshot_t s_mock_music_snapshot = {
+    .state = MUSIC_SERVICE_STATE_STOPPED,
+    .mode = MUSIC_SERVICE_MODE_REPEAT_ALL,
+    .endpoint_configured = true,
+};
+static music_service_catalog_snapshot_t s_mock_music_catalog;
+static music_service_account_snapshot_t s_mock_music_account = {
+    .state = MUSIC_SERVICE_ACCOUNT_LOGGED_OUT,
+};
+
+static void mock_music_load_catalog(const char *source_id, uint32_t offset)
+{
+    const uint32_t total = 42U;
+    memset(&s_mock_music_catalog, 0, sizeof(s_mock_music_catalog));
+    s_mock_music_catalog.valid = true;
+    s_mock_music_catalog.offset = offset;
+    s_mock_music_catalog.total = total;
+    if (source_id != NULL) {
+        strncpy(s_mock_music_catalog.source_id, source_id,
+                sizeof(s_mock_music_catalog.source_id) - 1U);
+    }
+    for (size_t i = 0;
+         i < MUSIC_SERVICE_CATALOG_PAGE_SIZE && offset + i < total; ++i) {
+        music_service_catalog_track_t *track =
+            &s_mock_music_catalog.tracks[s_mock_music_catalog.track_count++];
+        snprintf(track->track_id, sizeof(track->track_id), "preview-%u",
+                 (unsigned)(offset + i + 1U));
+        snprintf(track->title, sizeof(track->title), "Track %u",
+                 (unsigned)(offset + i + 1U));
+        strncpy(track->artist, "Preview Artist", sizeof(track->artist) - 1U);
+    }
+}
+
+esp_err_t music_service_init(void) { return ESP_OK; }
+esp_err_t music_service_start(const char *source_id, const char *track_id)
+{
+    s_mock_music_snapshot.state = MUSIC_SERVICE_STATE_PLAYING;
+    s_mock_music_snapshot.music_active = true;
+    if (source_id != NULL) {
+        strncpy(s_mock_music_snapshot.source_id, source_id,
+                sizeof(s_mock_music_snapshot.source_id) - 1U);
+    }
+    if (track_id != NULL) {
+        strncpy(s_mock_music_snapshot.track_id, track_id,
+                sizeof(s_mock_music_snapshot.track_id) - 1U);
+    }
+    return ESP_OK;
+}
+esp_err_t music_service_start_source(const char *source_id)
+{
+    return music_service_start(source_id, NULL);
+}
+esp_err_t music_service_load_source(const char *source_id)
+{
+    mock_music_load_catalog(source_id, 0U);
+    return ESP_OK;
+}
+esp_err_t music_service_load_source_page(const char *source_id, uint32_t offset)
+{
+    mock_music_load_catalog(source_id, offset);
+    return ESP_OK;
+}
+esp_err_t music_service_toggle_playback(void)
+{
+    if (s_mock_music_snapshot.state == MUSIC_SERVICE_STATE_PLAYING) {
+        return music_service_pause();
+    }
+    return music_service_resume();
+}
+esp_err_t music_service_pause(void)
+{
+    s_mock_music_snapshot.state = MUSIC_SERVICE_STATE_PAUSED;
+    s_mock_music_snapshot.music_active = false;
+    return ESP_OK;
+}
+esp_err_t music_service_resume(void)
+{
+    s_mock_music_snapshot.state = MUSIC_SERVICE_STATE_PLAYING;
+    s_mock_music_snapshot.music_active = true;
+    return ESP_OK;
+}
+esp_err_t music_service_previous(void) { return ESP_OK; }
+esp_err_t music_service_next(void) { return ESP_OK; }
+esp_err_t music_service_set_mode(music_service_mode_t mode)
+{
+    s_mock_music_snapshot.mode = mode;
+    return ESP_OK;
+}
+esp_err_t music_service_pause_for_hermes_page(void)
+{
+    return music_service_pause();
+}
+esp_err_t music_service_destroy(void)
+{
+    s_mock_music_snapshot.state = MUSIC_SERVICE_STATE_STOPPED;
+    s_mock_music_snapshot.music_active = false;
+    return ESP_OK;
+}
+esp_err_t music_service_get_snapshot(music_service_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == NULL) return ESP_ERR_INVALID_ARG;
+    *out_snapshot = s_mock_music_snapshot;
+    return ESP_OK;
+}
+esp_err_t music_service_get_catalog(music_service_catalog_snapshot_t *out_catalog)
+{
+    if (out_catalog == NULL) return ESP_ERR_INVALID_ARG;
+    *out_catalog = s_mock_music_catalog;
+    return ESP_OK;
+}
+esp_err_t music_service_start_qr_login(void)
+{
+    s_mock_music_account.state = MUSIC_SERVICE_ACCOUNT_QR_PENDING;
+    return ESP_OK;
+}
+esp_err_t music_service_cancel_qr_login(void)
+{
+    s_mock_music_account.state = MUSIC_SERVICE_ACCOUNT_LOGGED_OUT;
+    return ESP_OK;
+}
+esp_err_t music_service_get_account(music_service_account_snapshot_t *out_account)
+{
+    if (out_account == NULL) return ESP_ERR_INVALID_ARG;
+    *out_account = s_mock_music_account;
+    return ESP_OK;
+}
+esp_err_t music_service_copy_qr(uint8_t *out_data, size_t capacity,
+                                uint16_t *out_size, size_t *out_bytes)
+{
+    (void)out_data;
+    (void)capacity;
+    if (out_size != NULL) *out_size = 0U;
+    if (out_bytes != NULL) *out_bytes = 0U;
+    return ESP_ERR_INVALID_STATE;
 }

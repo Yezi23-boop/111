@@ -5,6 +5,9 @@ param(
     [switch]$OpenHermesInbox,
     [switch]$OpenHermesDetail,
     [switch]$OpenAi,
+    [switch]$OpenMusic,
+    [switch]$OpenMusicCatalog,
+    [switch]$OpenDropdown,
     [switch]$OpenCalendar,
     [switch]$OpenOta,
     [switch]$OpenFunction,
@@ -42,6 +45,12 @@ if ($OpenHermes) {
     $captureArgs = @("--open-hermes-detail") + $captureArgs
 } elseif ($OpenAi) {
     $captureArgs = @("--open-ai") + $captureArgs
+} elseif ($OpenMusicCatalog) {
+    $captureArgs = @("--open-music-catalog") + $captureArgs
+} elseif ($OpenMusic) {
+    $captureArgs = @("--open-music") + $captureArgs
+} elseif ($OpenDropdown) {
+    $captureArgs = @("--open-dropdown") + $captureArgs
     } elseif ($OpenCalendar) {
         $captureArgs = @("--open-calendar") + $captureArgs
     } elseif ($OpenOta) {
@@ -79,6 +88,12 @@ if ($OpenHermes) {
     $runArgs += "--open-hermes-detail"
 } elseif ($OpenAi) {
     $runArgs += "--open-ai"
+} elseif ($OpenMusicCatalog) {
+    $runArgs += "--open-music-catalog"
+} elseif ($OpenMusic) {
+    $runArgs += "--open-music"
+} elseif ($OpenDropdown) {
+    $runArgs += "--open-dropdown"
     } elseif ($OpenCalendar) {
         $runArgs += "--open-calendar"
     } elseif ($OpenOta) {

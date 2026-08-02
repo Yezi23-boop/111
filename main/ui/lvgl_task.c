@@ -21,6 +21,7 @@
 #include "ui/custom/custom.h"
 #include "ui/custom/danger_detection_controller.h"
 #include "ui/custom/memory_watch_controller.h"
+#include "ui/custom/music_controller.h"
 #include "ui/custom/mini_games_controller.h"
 #include "ui/custom/ota_maintenance_view.h"
 #include "ui/custom/wifi_management_controller.h"
@@ -94,6 +95,7 @@ void lvgl_task(void *pvParameter)
     ai_ui_controller_init(&guider_ui);
     danger_detection_controller_init(&guider_ui);
     memory_watch_controller_init(&guider_ui);
+    music_controller_init(&guider_ui);
     mini_games_controller_init(&guider_ui);
     wifi_management_controller_init(&guider_ui);
     (void)ota_maintenance_view_init();
@@ -117,6 +119,7 @@ void lvgl_task(void *pvParameter)
         display_alert_adapter_process_ui();
         danger_detection_controller_poll_ui();
         memory_watch_controller_poll_ui();
+        music_controller_poll_ui();
         mini_games_controller_poll_ui();
         ota_maintenance_view_poll();
 
