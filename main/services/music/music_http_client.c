@@ -1,6 +1,5 @@
 #include "music_http_client.h"
 
-#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -11,11 +10,6 @@
 #include "mbedtls/base64.h"
 static const size_t kResponseBytes = 4096U;
 static const size_t kQrResponseBytes = 8192U;
-
-struct music_http_stream
-{
-    esp_http_client_handle_t client;
-};
 
 static bool music_http_is_insecure_allowed(
     const music_http_client_config_t *config)
@@ -665,113 +659,21 @@ esp_err_t music_http_client_session_command(
     return ret;
 }
 
-esp_err_t music_http_client_open_stream(
+esp_err_t music_http_client_build_stream_url(
     const music_http_client_config_t *config, const char *stream_id,
-    music_http_stream_t **out_stream)
+    char *out_url, size_t out_url_size)
 {
     if (config == NULL || stream_id == NULL || stream_id[0] == '\0' ||
-        out_stream == NULL)
+        out_url == NULL || out_url_size == 0U)
     {
         return ESP_ERR_INVALID_ARG;
     }
-    *out_stream = NULL;
-    char path[320];
-    const int written = snprintf(path, sizeof(path),
-                                 "/v1/music/streams/%s?device_id=%s",
-                                 stream_id, config->device_id);
+    char path[192];
+    const int written = snprintf(path, sizeof(path), "/v1/music/streams/%s",
+                                 stream_id);
     if (written <= 0 || (size_t)written >= sizeof(path))
     {
         return ESP_ERR_INVALID_SIZE;
     }
-    char url[384];
-    esp_err_t ret = music_http_build_url(config, path, url, sizeof(url));
-    if (ret != ESP_OK)
-    {
-        return ret;
-    }
-    music_http_stream_t *stream = heap_caps_calloc(
-        1U, sizeof(*stream), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (stream == NULL)
-    {
-        return ESP_ERR_NO_MEM;
-    }
-    esp_http_client_config_t http_config = {
-        .url = url,
-        .method = HTTP_METHOD_GET,
-        .timeout_ms = config->timeout_ms > 0U ? (int)config->timeout_ms : 5000,
-        .buffer_size = 4096,
-        .keep_alive_enable = true,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
-    stream->client = esp_http_client_init(&http_config);
-    if (stream->client == NULL)
-    {
-        heap_caps_free(stream);
-        return ESP_ERR_NO_MEM;
-    }
-    ret = music_http_set_auth(stream->client, config->device_token);
-    if (ret == ESP_OK)
-    {
-        ret = esp_http_client_set_header(stream->client, "Accept", "audio/mpeg");
-    }
-    if (ret == ESP_OK)
-    {
-        ret = esp_http_client_open(stream->client, 0);
-    }
-    if (ret == ESP_OK)
-    {
-        (void)esp_http_client_fetch_headers(stream->client);
-        if (esp_http_client_get_status_code(stream->client) != 200)
-        {
-            ret = ESP_FAIL;
-        }
-    }
-    if (ret != ESP_OK)
-    {
-        music_http_client_close_stream(stream);
-        return ret;
-    }
-    *out_stream = stream;
-    return ESP_OK;
-}
-
-esp_err_t music_http_client_read_stream(music_http_stream_t *stream,
-                                         uint8_t *buffer, size_t capacity,
-                                         size_t *out_bytes)
-{
-    if (out_bytes != NULL)
-    {
-        *out_bytes = 0U;
-    }
-    if (stream == NULL || stream->client == NULL || buffer == NULL ||
-        capacity == 0U || out_bytes == NULL || capacity > (size_t)INT_MAX)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-    const int read = esp_http_client_read(stream->client, (char *)buffer,
-                                          (int)capacity);
-    if (read < 0)
-    {
-        return ESP_FAIL;
-    }
-    if (read == 0)
-    {
-        return ESP_ERR_NOT_FOUND;
-    }
-    *out_bytes = (size_t)read;
-    return ESP_OK;
-}
-
-void music_http_client_close_stream(music_http_stream_t *stream)
-{
-    if (stream == NULL)
-    {
-        return;
-    }
-    if (stream->client != NULL)
-    {
-        esp_http_client_close(stream->client);
-        esp_http_client_cleanup(stream->client);
-    }
-    heap_caps_free(stream);
+    return music_http_build_url(config, path, out_url, out_url_size);
 }

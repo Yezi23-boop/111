@@ -19,7 +19,6 @@ static const UBaseType_t kCommandQueueLength = 8U;
 static const UBaseType_t kPlayerEventQueueLength = 8U;
 /* QR HTTPS/TLS/JSON 同步执行于 owner task；16 KiB PSRAM 栈覆盖握手峰值。 */
 static const uint32_t kTaskStackBytes = 16384U;
-static const uint32_t kPlayerStopTimeoutMs = 6000U;
 static const uint32_t kQrPollIntervalMs = 2000U;
 
 typedef enum
@@ -209,8 +208,7 @@ static esp_err_t music_service_stop_player(void)
     {
         return ESP_OK;
     }
-    const esp_err_t ret = music_stream_player_stop(s_player,
-                                                   kPlayerStopTimeoutMs);
+    const esp_err_t ret = music_stream_player_stop(s_player);
     if (ret != ESP_OK)
     {
         return ret;
@@ -572,6 +570,11 @@ static void music_service_task(void *arg)
     (void)arg;
     while (true)
     {
+        if (s_player != NULL)
+        {
+            /* micro-decoder 的状态回调必须回到 service owner，而非 UI 或 decoder task。 */
+            music_stream_player_poll(s_player);
+        }
         music_service_process_player_events();
         music_service_poll_qr_if_due();
         music_service_command_t command;

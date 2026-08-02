@@ -40,8 +40,6 @@ extern "C"
         char error_code[MUSIC_SERVICE_ERROR_MAX_BYTES];
     } music_http_session_result_t;
 
-    typedef struct music_http_stream music_http_stream_t;
-
     /** 账户/二维码接口返回的窄状态；二维码位图由调用方提供缓冲区。 */
     typedef struct
     {
@@ -98,24 +96,14 @@ extern "C"
         music_http_session_result_t *out_result);
 
     /**
-     * @brief 打开一次音频流。
+     * @brief 构造只携带短时 stream_id capability 的媒体 URL。
      *
-     * 该接口只完成 HTTP headers；音频字节由 `read` 分块读取，不落盘整首歌曲。
+     * 控制请求仍在本模块中附带 Bearer 设备鉴权；媒体地址不含长期
+     * device_token，交给 micro-decoder 使用其原版 HTTPS reader 打开。
      */
-    esp_err_t music_http_client_open_stream(
+    esp_err_t music_http_client_build_stream_url(
         const music_http_client_config_t *config, const char *stream_id,
-        music_http_stream_t **out_stream);
-
-    /**
-     * @brief 从已打开的音频流读取一块 MP3 数据。
-     * @return ESP_OK 表示读取了数据；ESP_ERR_NOT_FOUND 表示正常流尾。
-     */
-    esp_err_t music_http_client_read_stream(music_http_stream_t *stream,
-                                             uint8_t *buffer, size_t capacity,
-                                             size_t *out_bytes);
-
-    /** @brief 关闭并释放音频流连接。 */
-    void music_http_client_close_stream(music_http_stream_t *stream);
+        char *out_url, size_t out_url_size);
 
 #ifdef __cplusplus
 }
