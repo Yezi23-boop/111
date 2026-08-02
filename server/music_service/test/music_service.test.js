@@ -104,7 +104,7 @@ test("session commands are idempotent and pause/resume preserves session", async
   }
 });
 
-test("stream endpoint returns chunked audio/mpeg without spawning duplicate stream", async () => {
+test("short-lived stream capability works without exposing the device token", async () => {
   const running = await runningApp();
   try {
     const create = await fetch(`${running.base}/v1/music/sessions?device_id=watch-001`, {
@@ -113,12 +113,15 @@ test("stream endpoint returns chunked audio/mpeg without spawning duplicate stre
       body: JSON.stringify({ source_id: "test", track_id: "test-track" }),
     });
     const session = await create.json();
+    const invalid = await fetch(
+      `${running.base}/v1/music/streams/stream-invalid?device_id=watch-001`,
+    );
+    assert.equal(invalid.status, 409);
     const stream = await fetch(
       `${running.base}/v1/music/streams/${session.stream_id}?device_id=watch-001`,
-      { headers: { Authorization: "Bearer test-token" } },
     );
     assert.equal(stream.status, 200);
-    assert.equal(stream.headers.get("content-type"), "audio/mpeg");
+    assert.equal(stream.headers.get("content-type"), "audio/ogg");
     const reader = stream.body.getReader();
     const first = await reader.read();
     assert.ok(first.value.byteLength > 0);
@@ -139,7 +142,6 @@ test("pausing an attached stream closes the HTTP response", async () => {
     const session = await create.json();
     const stream = await fetch(
       `${running.base}/v1/music/streams/${session.stream_id}?device_id=watch-001`,
-      { headers: { Authorization: "Bearer test-token" } },
     );
     const reader = stream.body.getReader();
     const first = await reader.read();

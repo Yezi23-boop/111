@@ -157,7 +157,8 @@ export class MusicEngine {
           "-hide_banner",
           "-loglevel",
           "error",
-          "-re",
+          // 手表端 256 KB ring 需要在正常播放前后保留余量；满时由 TCP 背压
+          // 约束发送速度，不能用 -re 把媒体流强制限制为实时到达。
           "-i",
           session.source_path,
           "-vn",
@@ -166,11 +167,11 @@ export class MusicEngine {
           "-ar",
           "24000",
           "-c:a",
-          "libmp3lame",
+          "libopus",
           "-b:a",
           "64k",
           "-f",
-          "mp3",
+          "ogg",
           "pipe:1",
         ],
         { stdio: ["ignore", "pipe", "pipe"] },

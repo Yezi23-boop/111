@@ -87,6 +87,25 @@ export function createApp(overrides = {}) {
     }
     if (!url.pathname.startsWith("/v1/music")) return json(response, 404, { error_code: "not_found" });
 
+    // stream_id 由已鉴权控制请求签发，只在短时间内绑定一个设备会话。
+    // 媒体请求以它作为 capability token，避免把长期 device token 放入 URL。
+    const streamMatch = url.pathname.match(/^\/v1\/music\/streams\/([^/]+)$/);
+    if (streamMatch && request.method === "GET") {
+      const deviceId = deviceIdFrom(url);
+      response.statusCode = 200;
+      response.setHeader("Content-Type", "audio/ogg");
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("Transfer-Encoding", "chunked");
+      const result = engine.attachStream(deviceId, streamMatch[1], response);
+      if (result.state === "error") {
+        response.removeHeader("Content-Type");
+        response.removeHeader("Cache-Control");
+        response.removeHeader("Transfer-Encoding");
+        return json(response, 409, result);
+      }
+      return;
+    }
+
     let body = {};
     if (["POST", "DELETE"].includes(request.method)) {
       try {
@@ -243,21 +262,6 @@ export function createApp(overrides = {}) {
       return json(response, result.state === "error" ? 409 : 200, result);
     }
 
-    const streamMatch = url.pathname.match(/^\/v1\/music\/streams\/([^/]+)$/);
-    if (streamMatch && request.method === "GET") {
-      response.statusCode = 200;
-      response.setHeader("Content-Type", "audio/mpeg");
-      response.setHeader("Cache-Control", "no-store");
-      response.setHeader("Transfer-Encoding", "chunked");
-      const result = engine.attachStream(deviceId, streamMatch[1], response);
-      if (result.state === "error") {
-        response.removeHeader("Content-Type");
-        response.removeHeader("Cache-Control");
-        response.removeHeader("Transfer-Encoding");
-        return json(response, 409, result);
-      }
-      return;
-    }
     return json(response, 404, { state: "error", error_code: "not_found" });
   };
 
