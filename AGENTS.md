@@ -87,6 +87,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 遇到底层代码、复杂问题或证据不足时，可以联网查阅 `ESP-IDF` 官方资料，优先使用官方文档与一手资料。
 - 默认直接在当前仓库内修改，不强制使用 `worktree`。
 - 写代码时要优先保证用户可读性；默认遵循下方“代码注释规范（默认生效）”。
+- 向用户讲解技术概念时，专业英文术语默认后跟中文注释，格式如 `ring buffer（环形缓冲区）`、`notification（任务通知）`、`jitter（抖动）`、`I2S underrun（下溢）`，帮助用户建立中英文对应；代码注释中已有中文说明的除外。
 - 新增/修改公开接口或非显然函数时补中文 Doxygen；关键变量、共享状态和魔法数字解释用途、单位或边界。
 - 内存分配应尽量使用外部 PSRAM（如使用 `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` 等 API），避免挤压 internal RAM；只把必须快速响应、DMA 传输或无法放在外部 RAM 的关键数据留给 internal RAM。
 
