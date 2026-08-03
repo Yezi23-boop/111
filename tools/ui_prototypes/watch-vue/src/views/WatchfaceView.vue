@@ -8,9 +8,10 @@ import { useSwipe } from '../composables/useSwipe'
 
 defineProps({
   time: { type: String, default: '10:09' },
-  date: { type: String, default: '周二 06/18' },
+  date: { type: String, default: '周四 06/18' },
   battery: { type: Number, default: 80 },
   weather: { type: Object, default: () => ({ temp: '24', text: '多云', range: '最高 28°C / 最低 19°C' }) },
+  wallpaper: { type: String, default: null },
 })
 const emit = defineEmits(['show-function', 'grab', 'tap'])
 
@@ -28,7 +29,12 @@ const { down, up } = useSwipe(
 </script>
 
 <template>
-  <div class="watchface panel" @pointerdown="down" @pointerup="up">
+  <div
+    class="watchface panel"
+    :style="wallpaper ? { backgroundImage: 'url(' + wallpaper + ')' } : undefined"
+    @pointerdown="down"
+    @pointerup="up"
+  >
     <!-- 真机顶部 70px 透明手势区(拖动呼出下拉) -->
     <div class="grab-area">
       <div class="grab-handle"></div>

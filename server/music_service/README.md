@@ -1,7 +1,7 @@
 # AI Memory Watch music-service
 
 这是香港 1Panel 主栈中的独立音乐服务。固定测试流用于验证设备鉴权、SQLite
-播放会话、单个 FFmpeg 和 `audio/ogg`（Opus）分块输出；生产模式通过进程内
+播放会话、单个 FFmpeg 和长度前缀裸 Opus 分块输出；生产模式通过进程内
 `api-enhanced` 私有适配访问个人网易云账号。
 
 生产接口只保留二维码登录与确认、账户退出二次确认、今日推荐、我喜欢、我的歌单、

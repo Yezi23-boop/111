@@ -57,6 +57,38 @@ static audio_codec_owner_t s_output_session_owner = AUDIO_CODEC_OWNER_SYSTEM; //
 static bool s_input_session_active = false;                              // true 表示 I2S RX/ES7210 已被某个运行时占用。
 static bool s_output_session_active = false;                             // true 表示 I2S TX/ES8311 已被某个播放者占用。
 
+/* 会话状态缓存：由资源 mutex 持有路径维护，供无锁低频策略读取，避免阻塞等待。 */
+static audio_codec_session_snapshot_t s_cached_session_snapshot = {0};
+static portMUX_TYPE s_cache_lock = portMUX_INITIALIZER_UNLOCKED;
+
+/* 会话变更回调：注册发生在 service 初始化阶段，运行期不变，因此无需额外加锁。 */
+static audio_codec_session_change_cb_t s_session_change_cb = NULL;
+static void *s_session_change_ctx = NULL;
+
+/**
+ * @brief 在资源 mutex 内刷新会话缓存并通知变更回调。
+ *
+ * 只在 acquire/release 成功路径调用，此时调用方持有资源 mutex；回调只允许
+ * 复制状态或发送通知，不允许阻塞。
+ */
+static void audio_codec_publish_session_change(void)
+{
+    audio_codec_session_snapshot_t snapshot = {
+        .input_active = s_input_session_active,
+        .input_owner = s_input_session_owner,
+        .output_active = s_output_session_active,
+        .output_owner = s_output_session_owner,
+    };
+    taskENTER_CRITICAL(&s_cache_lock);
+    s_cached_session_snapshot = snapshot;
+    taskEXIT_CRITICAL(&s_cache_lock);
+
+    if (s_session_change_cb != NULL)
+    {
+        s_session_change_cb(s_session_change_ctx);
+    }
+}
+
 #define ES8311_CODEC_ADDR 0x30
 #define ES7210_ADC_ADDR 0x80
 
@@ -857,6 +889,7 @@ static esp_err_t audio_codec_acquire_session(bool *active,
             *current_owner = owner;
             ESP_LOGI(TAG, "%s session acquired by %s",
                      session_name, audio_codec_owner_name(owner));
+            audio_codec_publish_session_change();
             audio_codec_unlock_resources();
             return ESP_OK;
         }
@@ -940,6 +973,7 @@ static esp_err_t audio_codec_release_session(bool *active,
     *current_owner = AUDIO_CODEC_OWNER_SYSTEM;
     ESP_LOGI(TAG, "%s session released by %s",
              session_name, audio_codec_owner_name(owner));
+    audio_codec_publish_session_change();
     audio_codec_unlock_resources();
     return ESP_OK;
 }
@@ -1020,6 +1054,34 @@ esp_err_t audio_codec_get_session_snapshot(
     snapshot->output_owner = s_output_session_owner;
 
     audio_codec_unlock_resources();
+    return ESP_OK;
+}
+
+esp_err_t audio_codec_get_cached_session_snapshot(
+    audio_codec_session_snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    taskENTER_CRITICAL(&s_cache_lock);
+    *snapshot = s_cached_session_snapshot;
+    taskEXIT_CRITICAL(&s_cache_lock);
+    return ESP_OK;
+}
+
+esp_err_t audio_codec_set_session_change_callback(
+    audio_codec_session_change_cb_t callback, void *user_ctx)
+{
+    if (s_session_change_cb != NULL && callback != s_session_change_cb)
+    {
+        /* 覆盖既有回调会让原注册方的会话变更通知静默失效；只打日志防呆，
+         * 不拒绝安装，避免破坏启动顺序。 */
+        ESP_LOGW(TAG, "session change callback replaced");
+    }
+    s_session_change_cb = callback;
+    s_session_change_ctx = user_ctx;
     return ESP_OK;
 }
 

@@ -10,6 +10,8 @@
 #include "freertos/task.h"
 #include "network_manager.h"
 #include "services/power/power_policy.h"
+#include "services/music/music_service.h"
+#include "services/official_chat_service.h"
 #include "services/runtime/runtime_coordinator.h"
 #include "services/time/system_time_service.h"
 #include "wifi_control.h"
@@ -1171,11 +1173,26 @@ static esp_err_t probe_network_services_ready(void)
 static void network_service_apply_power_budget(void)
 {
     const power_policy_budget_t budget = power_policy_get_budget();
+    music_service_snapshot_t music_snapshot = {0};
+    const bool music_stream_active =
+        music_service_get_snapshot(&music_snapshot) == ESP_OK &&
+        (music_snapshot.state == MUSIC_SERVICE_STATE_BUFFERING ||
+         music_snapshot.state == MUSIC_SERVICE_STATE_PLAYING);
+    official_chat_service_snapshot_t chat_snapshot = {0};
+    const bool official_chat_audio_active =
+        official_chat_service_get_snapshot(&chat_snapshot) == ESP_OK &&
+        (chat_snapshot.state == OFFICIAL_CHAT_SERVICE_STATE_CONNECTING ||
+         chat_snapshot.state == OFFICIAL_CHAT_SERVICE_STATE_LISTENING ||
+         chat_snapshot.state == OFFICIAL_CHAT_SERVICE_STATE_SPEAKING);
     /* maintenance 仍会暂停后台同步，但 OTA 等前台 HTTPS 传输必须保持 STA
      * 唤醒；否则 DTIM 省电会把长镜像下载误当成可延后的后台请求。 */
     const bool maintenance_keeps_wifi_awake =
         (budget.flags & POWER_POLICY_FLAG_MAINTENANCE) != 0U;
-    const bool power_save = !maintenance_keeps_wifi_awake &&
+    /* 音乐和 Hermes 下行都属于持续媒体传输，允许屏幕保持 STANDBY，但不能让
+     * modem sleep 延迟或重置音频连接；network owner 统一消费两个服务快照。 */
+    const bool power_save = !music_stream_active &&
+                            !official_chat_audio_active &&
+                            !maintenance_keeps_wifi_awake &&
                             (!budget.network_sync_allowed ||
                              budget.state == POWER_POLICY_STATE_STANDBY);
 
@@ -1199,8 +1216,12 @@ static void network_service_apply_power_budget(void)
     taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.power_save_applied = power_save;
     taskEXIT_CRITICAL(&s_snapshot_lock);
-    ESP_LOGI(TAG, "Wi-Fi power save %s by power budget",
-             power_save ? "enabled" : "disabled");
+    const char *active_reason =
+        music_stream_active ? " (music stream active)" :
+        (official_chat_audio_active ? " (official chat audio active)" : "");
+    ESP_LOGI(TAG, "Wi-Fi power save %s by power budget%s",
+             power_save ? "enabled" : "disabled",
+             active_reason);
 }
 
 /**

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
+import { OggOpusPacketTransform } from "./ogg_opus_packet_transform.js";
 
 function id(prefix) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -12,6 +13,7 @@ export class MusicEngine {
     this.config = config;
     this.child = null;
     this.response = null;
+    this.framer = null;
     this.activeDeviceId = null;
     this.disconnectTimer = null;
     this.startedAt = 0;
@@ -157,7 +159,7 @@ export class MusicEngine {
           "-hide_banner",
           "-loglevel",
           "error",
-          // 手表端 256 KB ring 需要在正常播放前后保留余量；满时由 TCP 背压
+          // 手表端 512 KB ring 需要在正常播放前后保留余量；满时由 TCP 背压
           // 约束发送速度，不能用 -re 把媒体流强制限制为实时到达。
           "-i",
           session.source_path,
@@ -165,11 +167,17 @@ export class MusicEngine {
           "-ac",
           "1",
           "-ar",
-          "24000",
+          "48000",
           "-c:a",
           "libopus",
           "-b:a",
-          "64k",
+          "128k",
+          "-frame_duration",
+          "20",
+          "-page_duration",
+          "200000",
+          "-flush_packets",
+          "1",
           "-f",
           "ogg",
           "pipe:1",
@@ -197,12 +205,18 @@ export class MusicEngine {
     setImmediate(() => {
       if (this.response === response && this.child && !response.destroyed) {
         this.child.stdout.unpipe();
-        this.child.stdout.pipe(response);
+        const framer = new OggOpusPacketTransform();
+        this.framer = framer;
+        framer.once("error", () => response.destroy());
+        this.child.stdout.pipe(framer).pipe(response);
       }
     });
     response.once("close", () => {
       if (this.response !== response) return;
-      this.child?.stdout.unpipe(response);
+      this.child?.stdout.unpipe(this.framer);
+      this.framer?.unpipe(response);
+      this.framer?.destroy();
+      this.framer = null;
       this.response = null;
       this.#scheduleDisconnectCleanup(deviceId);
     });
@@ -289,15 +303,19 @@ export class MusicEngine {
     this.#clearDisconnectTimer();
     const child = this.child;
     const response = this.response;
+    const framer = this.framer;
     this.child = null;
     this.response = null;
+    this.framer = null;
     this.activeDeviceId = null;
     if (child) {
       // 先销毁 stdout，避免 FFmpeg 已排队的数据继续占住暂停后的 HTTP 响应。
-      child.stdout.unpipe(response);
+      child.stdout.unpipe(framer);
       child.stdout.destroy();
       child.kill("SIGTERM");
     }
+    framer?.unpipe(response);
+    framer?.destroy();
     if (response && !response.destroyed) response.destroy();
   }
 

@@ -10,8 +10,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
-#include "services/runtime/safety_monitor_policy.h"
 #include "services/power/power_service.h"
+#include "services/runtime/runtime_coordinator.h"
 #include "ui_refresh_policy.h"
 
 static const char *TAG = "power_policy";
@@ -19,6 +19,21 @@ static const uint8_t k_low_battery_warn_percent = 20U; /* 低电量预警起点�
 static const uint32_t k_standby_sleep_interval_hint_ms = 8000U; /* dry-run 建议 Light Sleep 间隔。 */
 static const int64_t k_light_allowed_idle_time_ms = 5LL * 60LL * 1000LL; /* 屏幕无交互满 5 分钟后才允许发布 LIGHT_ALLOWED。 */
 static const TickType_t k_policy_task_period_ticks = pdMS_TO_TICKS(1000); /* 周期兜底重算，避免 notify 丢失后预算长时间陈旧。 */
+
+/* 省电参与者静态表：容量固定，不提供运行期卸载。
+ * 写入只发生在 policy task 启动前（service 初始化阶段），task 启动后只读，
+ * 因此遍历无需持锁；provider 回调在锁外执行，避免回调重入和锁反转。 */
+#define POWER_POLICY_MAX_PARTICIPANTS (8U)
+typedef struct
+{
+    power_policy_participant_config_t config;
+} power_policy_participant_t;
+static power_policy_participant_t s_participants[POWER_POLICY_MAX_PARTICIPANTS];
+static size_t s_participant_count = 0;
+
+/* 前向声明：注册写入发生在 policy task 启动前，定义在文件末尾的注册区。 */
+static esp_err_t power_policy_add_participant(
+    const power_policy_participant_config_t *config);
 
 static bool s_initialized = false;
 static bool s_started = false;
@@ -376,7 +391,9 @@ static void power_policy_store_budget(const power_policy_budget_t *budget)
 
     if (changed)
     {
-        (void)safety_monitor_policy_notify_power_changed();
+        /* 预算变化只广播给注册了 on_budget_changed 的参与者；Safety 等 consumer
+         * 通过同一张表收到唤醒，真实动作仍由其 owner task 执行。 */
+        (void)power_policy_budget_changed_notify();
 
         char blocker_text[160];
         power_policy_format_sleep_blockers(budget->sleep_blockers,
@@ -410,6 +427,108 @@ static void power_policy_store_budget(const power_policy_budget_t *budget)
     }
 }
 
+/**
+ * @brief runtime_coordinator 内置事实 provider。
+ *
+ * OTA / provisioning 是跨 owner 强前台交接，真实状态由 coordinator 单一快照
+ * 持有；这里只把 current/target/provisional owner 映射为 sleep blocker，
+ * 避免同一事实被 coordinator participant 和 power provider 重复上报。
+ * 该回调只读无锁快照，不做任何交接动作。
+ */
+static esp_err_t power_policy_coordinator_facts(
+    power_policy_provider_facts_t *facts, void *context)
+{
+    (void)context;
+    if (facts == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(facts, 0, sizeof(*facts));
+    const runtime_coordinator_snapshot_t snapshot =
+        runtime_coordinator_get_snapshot();
+    if (!snapshot.started)
+    {
+        return ESP_OK;
+    }
+
+    if (snapshot.current_owner == RUNTIME_COORDINATOR_PARTICIPANT_OTA ||
+        snapshot.target_owner == RUNTIME_COORDINATOR_PARTICIPANT_OTA ||
+        snapshot.provisional_owner == RUNTIME_COORDINATOR_PARTICIPANT_OTA)
+    {
+        facts->sleep_blockers |= POWER_POLICY_SLEEP_BLOCKER_OTA_ACTIVE;
+    }
+    if (snapshot.current_owner ==
+            RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING ||
+        snapshot.target_owner ==
+            RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING ||
+        snapshot.provisional_owner ==
+            RUNTIME_COORDINATOR_PARTICIPANT_NETWORK_PROVISIONING)
+    {
+        facts->sleep_blockers |= POWER_POLICY_SLEEP_BLOCKER_PROVISIONING_ACTIVE;
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief 遍历省电参与者表，把各 provider 快照聚合进预算。
+ *
+ * 在 policy task（或同步兜底）上下文中执行，且不在 policy 锁内；任一 provider
+ * 读取失败都返回 false，由调用方按 fail-closed 规则收紧睡眠许可，同时保留
+ * 已成功聚合的 blocker，避免错误来源悄悄清掉其他 blocker。
+ *
+ * 注意：blocker 位图随每次预算重建，失败 provider 的上一轮 blocker 不会被保留；
+ * 睡眠闸门由 fail-closed `sleep_permission=NONE` 兜底，不依赖 blocker 位图。
+ *
+ * @param[in,out] budget 当前待发布的资源预算。
+ * @return true 表示所有 provider 读取成功；false 表示至少一个 provider 失败。
+ */
+static bool power_policy_apply_provider_facts(power_policy_budget_t *budget)
+{
+    if (budget == NULL)
+    {
+        return true;
+    }
+
+    bool all_ok = true;
+    for (size_t i = 0; i < s_participant_count; i++)
+    {
+        const power_policy_participant_t *participant = &s_participants[i];
+        if (participant->config.get_facts == NULL)
+        {
+            continue;
+        }
+
+        power_policy_provider_facts_t facts = {0};
+        const esp_err_t ret = participant->config.get_facts(
+            &facts, participant->config.context);
+        if (ret != ESP_OK)
+        {
+            /* 记录来源和错误；失败不能静默清除 blocker。 */
+            ESP_LOGW(TAG, "provider facts failed: id=%d name=%s err=%s",
+                     participant->config.id,
+                     participant->config.name != NULL
+                         ? participant->config.name
+                         : "unknown",
+                     esp_err_to_name(ret));
+            all_ok = false;
+            continue;
+        }
+
+        if (facts.sleep_blockers != POWER_POLICY_SLEEP_BLOCKER_NONE)
+        {
+            budget->sleep_blockers |= facts.sleep_blockers;
+        }
+        if (facts.last_error != ESP_OK)
+        {
+            ESP_LOGW(TAG, "provider reported error: id=%d err=%s",
+                     participant->config.id,
+                     esp_err_to_name(facts.last_error));
+        }
+    }
+    return all_ok;
+}
+
 static void power_policy_recalculate(uint32_t notify_reasons)
 {
     board_power_state_t power_snapshot = {0};
@@ -422,6 +541,21 @@ static void power_policy_recalculate(uint32_t notify_reasons)
 
     power_policy_budget_t budget =
         power_policy_build_budget(power_state, notify_reasons);
+    const bool provider_ok = power_policy_apply_provider_facts(&budget);
+    if (!provider_ok)
+    {
+        /* fail-closed：任一 provider 事实读取失败时不允许发布 sleep 许可，
+         * 避免未知状态被静默放行；STANDBY 的 UI/Wi-Fi 基础节能不受影响。 */
+        budget.sleep_permission = POWER_POLICY_SLEEP_NONE;
+    }
+    /* provider blocker 聚合之后统一收紧：任何 blocker（音频、后台关键、OTA、
+     * provisioning、UI force active 等）存在时都不允许发布 LIGHT_ALLOWED，
+     * 与架构卡的“sleep_blockers=none”门槛保持一致。 */
+    if (budget.sleep_blockers != POWER_POLICY_SLEEP_BLOCKER_NONE &&
+        budget.sleep_permission == POWER_POLICY_SLEEP_LIGHT_ALLOWED)
+    {
+        budget.sleep_permission = POWER_POLICY_SLEEP_NONE;
+    }
     power_policy_store_budget(&budget);
 }
 
@@ -452,6 +586,22 @@ esp_err_t power_policy_init(void)
         return ESP_OK;
     }
 
+    /* 内置 coordinator 事实 provider：OTA/provisioning blocker 由单一交接快照
+     * 派生，不依赖任何业务模块反向注册。 */
+    const power_policy_participant_config_t coordinator = {
+        .id = POWER_POLICY_PROVIDER_RUNTIME_COORDINATOR,
+        .name = "runtime_coordinator",
+        .capabilities = POWER_POLICY_PARTICIPANT_FACTS_ONLY,
+        .get_facts = power_policy_coordinator_facts,
+        .on_budget_changed = NULL,
+        .context = NULL,
+    };
+    const esp_err_t ret = power_policy_add_participant(&coordinator);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
     s_initialized = true;
     return ESP_OK;
 }
@@ -479,7 +629,11 @@ esp_err_t power_policy_start(void)
         return ESP_ERR_NO_MEM;
     }
 
+    /* 与读取方一致持锁发布启动态：task 创建后立即运行并遍历参与者表，注册
+     * 检查 s_started 的 check-then-act 必须能看到同一个原子值。 */
+    taskENTER_CRITICAL(&s_lock);
     s_started = true;
+    taskEXIT_CRITICAL(&s_lock);
     power_policy_budget_t budget = power_policy_get_budget();
     ESP_LOGI(TAG, "policy task started: state=%s version=%u",
              power_policy_state_text(budget.state),
@@ -550,4 +704,114 @@ power_policy_budget_t power_policy_get_budget(void)
         power_policy_recalculate(POWER_POLICY_NOTIFY_MANUAL);
     }
     return power_policy_load_budget();
+}
+
+/**
+ * @brief 向静态参与者表写入一个登记项。
+ *
+ * 只在 service 初始化阶段（policy task 启动前）调用；不提供运行期卸载，
+ * 因此表写入完成后对 task 而言是只读的。
+ *
+ * @param[in] config 参与者配置。
+ * @return `ESP_OK` 表示写入或幂等成功；`ESP_ERR_INVALID_ARG` 表示参数非法或
+ *         同 id 冲突配置；`ESP_ERR_NO_MEM` 表示表已满。
+ */
+static esp_err_t power_policy_add_participant(
+    const power_policy_participant_config_t *config)
+{
+    if (config == NULL || config->id <= POWER_POLICY_PROVIDER_NONE ||
+        config->id >= POWER_POLICY_PROVIDER_COUNT)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (config->get_facts == NULL && config->on_budget_changed == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    taskENTER_CRITICAL(&s_lock);
+    const bool started = s_started;
+    taskEXIT_CRITICAL(&s_lock);
+    if (started)
+    {
+        ESP_LOGE(TAG, "register participant after policy task started: id=%d",
+                 config->id);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    for (size_t i = 0; i < s_participant_count; i++)
+    {
+        if (s_participants[i].config.id != config->id)
+        {
+            continue;
+        }
+        /* 幂等：同 id 且回调/上下文一致视为重复注册成功；冲突配置明确报错。 */
+        if (s_participants[i].config.get_facts != config->get_facts ||
+            s_participants[i].config.on_budget_changed !=
+                config->on_budget_changed ||
+            s_participants[i].config.context != config->context)
+        {
+            ESP_LOGE(TAG, "register participant conflict: id=%d", config->id);
+            return ESP_ERR_INVALID_ARG;
+        }
+        ESP_LOGI(TAG, "register participant idempotent: id=%d name=%s",
+                 config->id, config->name != NULL ? config->name : "unknown");
+        return ESP_OK;
+    }
+
+    if (s_participant_count >= POWER_POLICY_MAX_PARTICIPANTS)
+    {
+        ESP_LOGE(TAG, "register participant table full: count=%u",
+                 (unsigned)s_participant_count);
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_participants[s_participant_count].config = *config;
+    s_participant_count++;
+    ESP_LOGI(TAG, "register participant: id=%d name=%s facts=%d consumer=%d",
+             config->id, config->name != NULL ? config->name : "unknown",
+             config->get_facts != NULL ? 1 : 0,
+             config->on_budget_changed != NULL ? 1 : 0);
+    return ESP_OK;
+}
+
+esp_err_t power_policy_register_participant(
+    const power_policy_participant_config_t *config)
+{
+    if (config == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return power_policy_add_participant(config);
+}
+
+uint32_t power_policy_budget_version(void)
+{
+    uint32_t version = 0;
+    taskENTER_CRITICAL(&s_lock);
+    version = s_budget_version;
+    taskEXIT_CRITICAL(&s_lock);
+    return version;
+}
+
+esp_err_t power_policy_budget_changed_notify(void)
+{
+    const uint32_t version = power_policy_budget_version();
+    for (size_t i = 0; i < s_participant_count; i++)
+    {
+        const power_policy_participant_t *participant = &s_participants[i];
+        if (participant->config.on_budget_changed == NULL)
+        {
+            continue;
+        }
+        /* 回调不在 policy 锁内执行：只允许唤醒 owner task，不允许在此上下文
+         * 执行业务动作，避免回调重入和锁反转。 */
+        if (participant->config.on_budget_changed(
+                version, participant->config.context) != ESP_OK)
+        {
+            ESP_LOGW(TAG, "budget changed notify failed: id=%d",
+                     participant->config.id);
+        }
+    }
+    return ESP_OK;
 }

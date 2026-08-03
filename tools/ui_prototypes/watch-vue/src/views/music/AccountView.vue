@@ -1,11 +1,10 @@
 <script setup>
-// 扫码登录页:顶部栏 + 状态文案 + 伪二维码卡片
-// 坐标对齐板端:状态 40,82 330×32;二维码卡片 95,132 220 宽
+// 音乐账号页:扫码入口与账号说明
 import TopBar from '../../components/TopBar.vue'
 
 const emit = defineEmits(['back'])
 
-// 21×21 伪二维码格:白色定位角 + 随机黑格(纯占位,换真码时接 canvas)
+// 21×21 演示二维码格,后续接入真实登录码时只替换数据源。
 const QR_CELLS = Array.from({ length: 21 * 21 }, (_, i) => {
   const r = Math.floor(i / 21)
   const c = i % 21
@@ -16,17 +15,26 @@ const QR_CELLS = Array.from({ length: 21 * 21 }, (_, i) => {
 </script>
 
 <template>
-  <TopBar title="登录" :show-account="false" @back="emit('back')" />
+  <div class="music-page music-page--account">
+    <TopBar title="账号" :show-account="false" @back="emit('back')" />
 
-  <div class="account-status">扫码登录云端音乐账号</div>
-  <div class="qr-card">
-    <div class="qr">
-      <i
-        v-for="(black, i) in QR_CELLS"
-        :key="i"
-        :style="{ background: black ? '#111' : '#fff' }"
-      />
+    <div class="account-content">
+      <div class="section-kicker">CLOUD LIBRARY</div>
+      <h1>连接你的音乐</h1>
+      <p class="account-intro">扫码登录网易云音乐，收藏和歌单会在这里出现。</p>
     </div>
-    <div class="hint">打开手机 App<br />扫一扫完成登录</div>
+
+    <div class="qr-card">
+      <div class="qr-frame">
+        <i
+          v-for="(black, i) in QR_CELLS"
+          :key="i"
+          :style="{ background: black ? '#17241e' : '#edf4ee' }"
+        />
+      </div>
+      <div class="account-hint">打开手机 App 扫一扫</div>
+    </div>
+
+    <div class="account-footer">二维码仅用于登录，不保存账号密码</div>
   </div>
 </template>

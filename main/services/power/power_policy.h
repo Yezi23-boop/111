@@ -123,6 +123,7 @@ extern "C"
         POWER_POLICY_NOTIFY_MAINTENANCE = 1u << 2, /**< 维护窗口进入或退出。 */
         POWER_POLICY_NOTIFY_MANUAL = 1u << 3,      /**< 调试或启动阶段主动请求重算。 */
         POWER_POLICY_NOTIFY_PERIODIC = 1u << 4,    /**< task 周期兜底重算。 */
+        POWER_POLICY_NOTIFY_AUDIO = 1u << 5,       /**< 音频会话变化（power_policy_audio_bridge 上报）。 */
     } power_policy_notify_reason_t;
 
     /** power_policy 输出给后台服务和资源 owner 的只读预算。 */
@@ -153,6 +154,57 @@ extern "C"
         uint32_t budget_version;          /**< 预算快照版本；每次有效变化递增。 */
         uint32_t last_notify_reasons;     /**< 最近一次触发预算重算的原因位。 */
     } power_policy_budget_t;
+
+    /** 省电事实提供方标识；只用于注册表索引和日志，不表达生命周期 owner。 */
+    typedef enum
+    {
+        POWER_POLICY_PROVIDER_NONE = 0,
+        POWER_POLICY_PROVIDER_SAFETY_MONITOR,      /**< Safety Monitor 关键运行事实。 */
+        POWER_POLICY_PROVIDER_AUDIO,               /**< 音频会话事实（power_policy_audio_bridge 接入）。 */
+        POWER_POLICY_PROVIDER_RUNTIME_COORDINATOR, /**< runtime_coordinator 单一当前 owner 快照。 */
+        POWER_POLICY_PROVIDER_NETWORK_CRITICAL,    /**< 网络关键 blocker，预留。 */
+        POWER_POLICY_PROVIDER_ALERT_OWNER,         /**< P0 告警 blocker，预留。 */
+        POWER_POLICY_PROVIDER_DEBUG,               /**< 调试/测试专用登记项，预留。 */
+        POWER_POLICY_PROVIDER_COUNT,
+    } power_policy_provider_id_t;
+
+    /** 登记项能力位；facts 与 consumer 是两个独立能力，可同时具备。 */
+    typedef enum
+    {
+        POWER_POLICY_PARTICIPANT_FACTS_ONLY = 1u << 0,         /**< 只提供省电事实。 */
+        POWER_POLICY_PARTICIPANT_CONSUMER_ONLY = 1u << 1,      /**< 只接收预算变更并唤醒自己的 task。 */
+        POWER_POLICY_PARTICIPANT_FACTS_AND_CONSUMER =
+            (1u << 0) | (1u << 1),                             /**< 同时提供事实并消费预算。 */
+    } power_policy_participant_capability_t;
+
+    /** provider 上报的省电事实最小集合。 */
+    typedef struct
+    {
+        bool running;                /**< 当前是否运行中（关键或普通）。 */
+        bool must_keep_alive;        /**< 关键识别/不可中断阶段；只影响 blocker 聚合，不是新预算字段。 */
+        bool can_defer_work;         /**< 普通非关键工作是否可延后。 */
+        uint32_t sleep_blockers;     /**< power_policy_sleep_blocker_t 位图，由真实资源 owner 提供。 */
+        esp_err_t last_error;        /**< 最近一次自身错误，可选。 */
+    } power_policy_provider_facts_t;
+
+    /** provider 事实回调：只能快速复制 owner snapshot，不能做 I/O/网络/音频/Flash/模型或等待其他 task。 */
+    typedef esp_err_t (*power_policy_get_facts_cb_t)(
+        power_policy_provider_facts_t *facts, void *context);
+
+    /** 预算变更通知回调：只能向自己的 owner task 发 task notification 或 queue 消息，真实动作由 owner task 执行。 */
+    typedef esp_err_t (*power_policy_budget_changed_cb_t)(
+        uint32_t budget_version, void *context);
+
+    /** 省电参与者登记配置；注册事实和能力，不注册 task/resource 生命周期控制权。 */
+    typedef struct
+    {
+        power_policy_provider_id_t id; /**< 稳定 id，注册表索引。 */
+        const char *name;              /**< 日志友好名称。 */
+        uint32_t capabilities;         /**< power_policy_participant_capability_t 位图。 */
+        power_policy_get_facts_cb_t get_facts; /**< 可选；facts-only/facts+consumer 必须提供。 */
+        power_policy_budget_changed_cb_t on_budget_changed; /**< 可选；consumer-only/facts+consumer 必须提供。 */
+        void *context;                 /**< 回调上下文，可为 NULL。 */
+    } power_policy_participant_config_t;
 
     /**
      * @brief 初始化整机资源策略层。
@@ -226,6 +278,49 @@ extern "C"
      */
     void power_policy_format_sleep_blockers(uint32_t blockers, char *buffer,
                                             size_t buffer_size);
+
+    /**
+     * @brief 注册省电参与者（facts-only / consumer-only / facts+consumer）。
+     *
+     * 注册只发生在 service 初始化阶段：固定容量为 8，不提供运行期卸载；同一
+     * id 重复注册必须幂等，冲突配置返回 `ESP_ERR_INVALID_ARG`。power_policy
+     * 只保存静态配置和聚合结果，不保存业务 task handle，也不调用
+     * stop/start/deinit。
+     *
+     * @param[in] config 参与者配置，不能为 NULL。
+     * @return `ESP_OK` 表示注册成功或幂等成功；`ESP_ERR_INVALID_STATE` 表示
+     *         policy task 已启动后注册；`ESP_ERR_NO_MEM` 表示表已满。
+     */
+    esp_err_t power_policy_register_participant(
+        const power_policy_participant_config_t *config);
+
+    /**
+     * @brief 获取当前预算版本号。
+     * @return 最近一次发布的预算版本；每次有效预算变化递增。
+     */
+    uint32_t power_policy_budget_version(void);
+
+    /**
+     * @brief 向所有注册了 on_budget_changed 的参与者广播预算变更。
+     *
+     * 回调只在预算实际变化时被调用，且不在 power_policy 锁内执行；回调只允许
+     * 唤醒自己的 owner task，不允许在 policy task 上下文执行业务动作。
+     *
+     * @return `ESP_OK` 表示通知已广播。
+     */
+    esp_err_t power_policy_budget_changed_notify(void);
+
+    /**
+     * @brief 注册音频事实跨层桥接。
+     *
+     * 该接口属于 `power_policy_audio_bridge` 的注册入口：audio_codec 保持
+     * AUDIO_ACTIVE 事实 owner，bridge 只读取其非阻塞 cached session snapshot
+     * 并把 input/output active 映射为 `POWER_POLICY_SLEEP_BLOCKER_AUDIO_ACTIVE`。
+     * 调用时机要求 audio codec 已初始化且 power_policy task 尚未启动。
+     *
+     * @return `ESP_OK` 表示注册成功。
+     */
+    esp_err_t power_policy_audio_bridge_register(void);
 
 #ifdef __cplusplus
 }

@@ -26,7 +26,10 @@ class DangerDetectionControllerSourceTests(unittest.TestCase):
         source = DANGER_DETECTION_CONTROLLER_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("manager_snapshot->should_run", source)
-        self.assertIn("manager_snapshot->runtime_running", source)
+        # 运行态直接读 session 事实源，不再经 policy 镜像副本。
+        self.assertIn("!safety_monitor_session_get_snapshot().runtime_running",
+                      source)
+        self.assertNotIn("manager_snapshot->runtime_running", source)
         self.assertIn(
             "manager_snapshot->block_reason",
             source,

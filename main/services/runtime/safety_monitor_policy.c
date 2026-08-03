@@ -1,5 +1,7 @@
 #include "services/runtime/safety_monitor_policy.h"
 
+#include <string.h>
+
 #include "audio_codec.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -31,7 +33,6 @@ typedef struct
     bool enabled_by_user;
     bool allowed_by_power_policy;
     bool should_run;
-    bool runtime_running;
     safety_monitor_policy_block_reason_t block_reason;
     bool foreground_audio_active;
     bool music_playback_active;
@@ -223,7 +224,6 @@ static esp_err_t safety_monitor_policy_apply(const char *reason)
     taskENTER_CRITICAL(&s_policy.lock);
     s_policy.allowed_by_power_policy = budget.danger_detection_allowed;
     s_policy.should_run = should_run;
-    s_policy.runtime_running = session.runtime_running;
     s_policy.block_reason = block_reason;
     s_policy.policy_state = budget.state;
     s_policy.policy_flags = budget.flags;
@@ -262,14 +262,17 @@ static esp_err_t safety_monitor_policy_request_quiesce(
     uint32_t generation, void *user_ctx)
 {
     (void)user_ctx;
+    /* 运行态直接从 session 事实源读取，不经过 policy 镜像副本；在 policy 锁外
+     * 取 session 快照，避免跨模块锁序依赖。 */
+    const bool runtime_running =
+        safety_monitor_session_get_snapshot().runtime_running;
     taskENTER_CRITICAL(&s_policy.lock);
     s_policy.blocked_by_runtime_coordinator = true;
     s_policy.pending_quiesce_generation = generation;
     const bool started = s_policy.started;
-    const bool running = s_policy.runtime_running;
     taskEXIT_CRITICAL(&s_policy.lock);
 
-    if (!started && !running)
+    if (!started && !runtime_running)
     {
         const esp_err_t ret = runtime_coordinator_report_quiesce_result(
             RUNTIME_COORDINATOR_PARTICIPANT_SAFETY_MONITOR,
@@ -323,6 +326,63 @@ static void safety_monitor_policy_task(void *arg)
         (void)safety_monitor_policy_apply(
             safety_monitor_policy_notify_text(reasons));
     }
+}
+
+/**
+ * @brief 向 power_policy 提供 Safety Monitor 关键运行事实。
+ *
+ * 只读取自身 owner snapshot 的只读字段并快速复制，不做 I/O、不等待其他 task；
+ * must_keep_alive 表示关键识别期间保持运行，由 power_policy 映射为
+ * BACKGROUND_CRITICAL blocker，真实 start/stop 仍由 Safety session 执行。
+ */
+static esp_err_t safety_monitor_policy_power_facts(
+    power_policy_provider_facts_t *facts, void *context)
+{
+    (void)context;
+    if (facts == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(facts, 0, sizeof(*facts));
+    /* 运行态直接从 session 事实源读取，不经过 policy 镜像副本，消除滞后窗口。 */
+    const bool runtime_running =
+        safety_monitor_session_get_snapshot().runtime_running;
+    facts->running = runtime_running;
+    facts->must_keep_alive = runtime_running;
+    if (facts->must_keep_alive)
+    {
+        facts->sleep_blockers |= POWER_POLICY_SLEEP_BLOCKER_BACKGROUND_CRITICAL;
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief 预算变更回调：只唤醒 Safety policy task，不执行任何业务动作。
+ */
+static esp_err_t safety_monitor_policy_power_changed_cb(
+    uint32_t budget_version, void *context)
+{
+    (void)budget_version;
+    (void)context;
+    const esp_err_t ret = safety_monitor_policy_notify(
+        SAFETY_MONITOR_POLICY_NOTIFY_POWER);
+    return ret == ESP_ERR_INVALID_STATE ? ESP_OK : ret;
+}
+
+esp_err_t safety_monitor_policy_register_power_participant(void)
+{
+    /* 注册必须在 power_policy task 启动前完成；app_main 在 power_policy_start()
+     * 之前调用本接口，保证首次预算能聚合 Safety 关键运行事实。 */
+    const power_policy_participant_config_t power_participant = {
+        .id = POWER_POLICY_PROVIDER_SAFETY_MONITOR,
+        .name = "safety_monitor",
+        .capabilities = POWER_POLICY_PARTICIPANT_FACTS_AND_CONSUMER,
+        .get_facts = safety_monitor_policy_power_facts,
+        .on_budget_changed = safety_monitor_policy_power_changed_cb,
+        .context = NULL,
+    };
+    return power_policy_register_participant(&power_participant);
 }
 
 esp_err_t safety_monitor_policy_init(void)
@@ -452,13 +512,6 @@ esp_err_t safety_monitor_policy_set_music_active(bool active,
     return safety_monitor_policy_notify(SAFETY_MONITOR_POLICY_NOTIFY_MUSIC);
 }
 
-esp_err_t safety_monitor_policy_notify_power_changed(void)
-{
-    const esp_err_t ret =
-        safety_monitor_policy_notify(SAFETY_MONITOR_POLICY_NOTIFY_POWER);
-    return ret == ESP_ERR_INVALID_STATE ? ESP_OK : ret;
-}
-
 safety_monitor_policy_snapshot_t safety_monitor_policy_get_snapshot(void)
 {
     safety_monitor_policy_snapshot_t snapshot;
@@ -467,7 +520,6 @@ safety_monitor_policy_snapshot_t safety_monitor_policy_get_snapshot(void)
     snapshot.enabled_by_user = s_policy.enabled_by_user;
     snapshot.allowed_by_power_policy = s_policy.allowed_by_power_policy;
     snapshot.should_run = s_policy.should_run;
-    snapshot.runtime_running = s_policy.runtime_running;
     snapshot.block_reason = s_policy.block_reason;
     snapshot.music_playback_active = s_policy.music_playback_active;
     snapshot.blocked_by_runtime_coordinator =

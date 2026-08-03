@@ -101,6 +101,26 @@ class NetworkServiceWifiManagementSourceTests(unittest.TestCase):
             "static void network_service_apply_power_budget(void)", 1)[0]
         self.assertNotIn("network_manager_disconnect", probe_body)
 
+    def test_music_stream_keeps_wifi_awake_during_display_standby(self) -> None:
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include "services/music/music_service.h"', source)
+        self.assertIn("music_service_get_snapshot", source)
+        self.assertIn("MUSIC_SERVICE_STATE_BUFFERING", source)
+        self.assertIn("MUSIC_SERVICE_STATE_PLAYING", source)
+        self.assertIn("!music_stream_active", source)
+        self.assertIn("music stream active", source)
+
+    def test_official_chat_audio_also_keeps_wifi_awake(self) -> None:
+        source = NETWORK_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include "services/official_chat_service.h"', source)
+        self.assertIn("official_chat_service_get_snapshot", source)
+        self.assertIn("OFFICIAL_CHAT_SERVICE_STATE_LISTENING", source)
+        self.assertIn("OFFICIAL_CHAT_SERVICE_STATE_SPEAKING", source)
+        self.assertIn("!official_chat_audio_active", source)
+        self.assertIn("official chat audio active", source)
+
 
 if __name__ == "__main__":
     unittest.main()

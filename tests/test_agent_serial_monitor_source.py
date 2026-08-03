@@ -1,5 +1,8 @@
 import importlib.util
+import os
 import pathlib
+import shutil
+import tempfile
 import unittest
 
 
@@ -18,18 +21,30 @@ def load_monitor_module():
 
 
 class AgentSerialMonitorSourceTests(unittest.TestCase):
-    def test_python_monitor_wraps_idf_monitor_with_bounded_capture(self) -> None:
+    def test_python_monitor_flashes_then_captures_with_bounds(self) -> None:
         source = PY_MONITOR.read_text(encoding="utf-8")
 
-        self.assertIn("ESP_IDF_MONITOR_TEST", source)
-        self.assertIn("idf.py -p {args.port}", source)
-        self.assertIn("app-flash monitor", source)
+        # 新设计：pySerial 直读独占端口，flash 阶段只走 idf.py app-flash，
+        # 不再 spawn `idf.py monitor`，避免残留 monitor 抢占端口。
+        self.assertIn("import serial", source)
+        self.assertIn("exclusive=True", source)
+        self.assertIn("acquire_port_lock", source)
+        self.assertIn("idf.py -p {args.port} -b {args.flash_baud} app-flash", source)
+        self.assertIn("app-flash-monitor", source)
+
+        # 有界采集：观测窗口与 flash 超时分离，观测起点由日志特征触发。
         self.assertIn("duration_seconds", source)
         self.assertIn("flash_timeout_seconds", source)
         self.assertIn("observe_start_trigger", source)
         self.assertIn("timed_out_phase", source)
+
+        # flash 超时兜底：杀进程树。
         self.assertIn("kill_process_tree", source)
         self.assertIn("taskkill.exe", source)
+
+        # 旧实现痕迹（spawn idf.py monitor / 测试标记）必须不存在。
+        self.assertNotIn("app-flash monitor", source)
+        self.assertNotIn("ESP_IDF_MONITOR_TEST", source)
 
     def test_python_monitor_summary_is_capture_metadata_not_health_judgment(self) -> None:
         source = PY_MONITOR.read_text(encoding="utf-8")
@@ -81,35 +96,28 @@ class AgentSerialMonitorSourceTests(unittest.TestCase):
         )
         self.assertIsNone(module.observe_start_trigger("Writing at 0x123456... (79 %)"))
 
-    def test_python_monitor_residual_monitor_cleanup_is_retained(self) -> None:
+    def test_python_monitor_port_lock_rejects_live_and_reclaims_stale(self) -> None:
         module = load_monitor_module()
+        tmp_dir = pathlib.Path(tempfile.mkdtemp(prefix="asm-lock-"))
+        self.addCleanup(shutil.rmtree, tmp_dir, ignore_errors=True)
 
-        self.assertTrue(
-            module.is_residual_monitor_process(
-                {
-                    "ProcessId": 101,
-                    "CommandLine": "python D:/esp-idf/tools/idf_monitor.py -p COM3",
-                },
-                current_pid=999,
-            )
-        )
-        self.assertEqual(module.extract_monitor_port("idf.py -p COM7 app-flash monitor"), "COM7")
-        self.assertEqual(module.extract_monitor_port("idf_monitor.py --port COM12"), "COM12")
-        self.assertFalse(
-            module.is_residual_monitor_process(
-                {
-                    "ProcessId": 105,
-                    "CommandLine": "python scripts/board/agent_serial_monitor.py idf.py -p COM7 monitor",
-                },
-                current_pid=999,
-            )
-        )
+        # 活锁：owner 仍在运行，同一端口二次捕获必须失败（两个 capture 不能
+        # 抢同一 COM 口）。
+        live_lock = tmp_dir / "COM3.lock"
+        live_lock.write_text(str(os.getpid()), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "already captured"):
+            module.acquire_port_lock("COM3", tmp_dir)
 
-        kill_results = module.terminate_residual_monitor_processes(
-            [{"pid": "not-a-pid", "port": "COM7", "name": "idf_monitor.py"}]
-        )
-        self.assertEqual(kill_results[0]["error"], "invalid_pid")
-        self.assertFalse(kill_results[0]["terminated"])
+        # 死锁：owner 已退出，锁应被回收并由当前进程重新持有。
+        stale_lock = tmp_dir / "COM7.lock"
+        stale_lock.write_text("99999999", encoding="utf-8")
+        acquired = module.acquire_port_lock("COM7", tmp_dir)
+        self.assertEqual(acquired, stale_lock)
+        self.assertEqual(stale_lock.read_text(encoding="utf-8"), str(os.getpid()))
+
+        # 旧“清扫残留 idf_monitor 进程”机制已被 per-port lock 取代。
+        self.assertNotIn("is_residual_monitor_process", PY_MONITOR.read_text(encoding="utf-8"))
+        self.assertNotIn("terminate_residual_monitor_processes", PY_MONITOR.read_text(encoding="utf-8"))
 
     def test_powershell_wrapper_lists_ports_and_avoids_pattern_filters(self) -> None:
         source = PS_MONITOR.read_text(encoding="utf-8")

@@ -92,7 +92,7 @@ static const char *danger_detection_status_text(
     }
     if (manager_snapshot != NULL &&
         manager_snapshot->should_run &&
-        !manager_snapshot->runtime_running) {
+        !safety_monitor_session_get_snapshot().runtime_running) {
         return "正在启动";
     }
     if (state == DANGER_DETECTION_STATE_RUNNING) {

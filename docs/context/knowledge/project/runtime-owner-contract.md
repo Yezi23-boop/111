@@ -206,6 +206,21 @@ Safety Monitor 由独立 policy owner 管理，并作为可抢占后台 particip
 - `LocalAudioCodecAdapter` 绕过 `audio_codec` session 直接读写麦克风/喇叭。
 - GUI Guider generated 层承载产品状态机、资源生命周期、后台服务或跨任务同步。
 
+## Power Provider 边界（2026-08-03）
+
+`power_policy` 使用静态省电参与者登记表（facts-only / consumer-only / facts+consumer），
+**power provider 不拥有生命周期控制权**：
+
+- provider 只注册事实回调和预算变更唤醒，不注册 stop/start/deinit 回调。
+- `on_budget_changed()` 只向自己的 owner task 发送 task notification；真实资源动作
+  仍由 owner task 执行。
+- 注册必须在 `power_policy_start()` 之前完成（app_main 的 core policy 组装阶段，
+  与 audio bridge 同一时机），否则注册会被拒绝；Safety Monitor 的
+  `safety_monitor_policy_register_power_participant()` 即按此时机接入。
+- `runtime_coordinator` 的 OTA/provisioning blocker 由 `power_policy` 内置 provider
+  从单一交接快照派生，不允许 coordinator participant 再重复上报同一事实。
+- 普通后台能力（weather、inbox、普通 time sync）不强制注册，继续只消费预算。
+
 ## 允许新增抽象的门槛
 
 默认不新增 owner 或中间层。只有出现以下证据时才重新评估：

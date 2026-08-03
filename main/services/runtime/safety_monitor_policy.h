@@ -30,7 +30,6 @@ extern "C"
         bool enabled_by_user;
         bool allowed_by_power_policy;
         bool should_run;
-        bool runtime_running;
         safety_monitor_policy_block_reason_t block_reason;
         bool music_playback_active;
         bool blocked_by_runtime_coordinator;
@@ -55,7 +54,15 @@ extern "C"
      */
     esp_err_t safety_monitor_policy_set_music_active(bool active,
                                                       const char *reason);
-    esp_err_t safety_monitor_policy_notify_power_changed(void);
+    /**
+     * @brief 注册 Safety Monitor 为省电 facts+consumer 参与者。
+     *
+     * 必须在 `power_policy_start()` 之前调用（app_main 的 core policy 组装
+     * 阶段）；只登记事实回调和预算变更唤醒，不启动 Safety 运行。
+     *
+     * @return `ESP_OK` 表示注册成功。
+     */
+    esp_err_t safety_monitor_policy_register_power_participant(void);
     safety_monitor_policy_snapshot_t safety_monitor_policy_get_snapshot(void);
 
 #ifdef __cplusplus

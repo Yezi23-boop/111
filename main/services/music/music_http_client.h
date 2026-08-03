@@ -23,6 +23,18 @@ extern "C"
         bool allow_insecure_http;
     } music_http_client_config_t;
 
+    /**
+     * @brief 仅供 music_service owner 持有的控制面 HTTP/1.1 长连接。
+     *
+     * 媒体流由 music_stream_player reader 独占另一条 HTTP 连接，二者不共享 handle。
+     */
+    typedef struct
+    {
+        void *handle;
+        char base_url[MUSIC_SERVICE_URL_MAX_BYTES];
+        int64_t last_request_completed_us; /* 最近一次成功控制请求完成时间，单调时钟微秒。 */
+    } music_http_control_client_t;
+
     /** music-service 会话接口返回的最小公共字段。 */
     typedef struct
     {
@@ -61,12 +73,14 @@ extern "C"
      * 首版只要求服务端支持固定测试流；真实网易云来源仍由服务器决定。
      */
     esp_err_t music_http_client_create_session(
+        music_http_control_client_t *control,
         const music_http_client_config_t *config, const char *source_id,
         const char *track_id, const char *command_id,
         music_http_session_result_t *out_result);
 
     /** @brief 读取一个来源的分页歌曲摘要。 */
     esp_err_t music_http_client_fetch_tracks(
+        music_http_control_client_t *control,
         const music_http_client_config_t *config, const char *source_id,
         uint32_t offset, music_service_catalog_snapshot_t *out_catalog);
 
@@ -91,19 +105,38 @@ extern "C"
      * `action` 只接受服务器契约中的窄白名单，不把通用上游 API 暴露到手表。
      */
     esp_err_t music_http_client_session_command(
+        music_http_control_client_t *control,
         const music_http_client_config_t *config, const char *session_id,
         const char *action, const char *mode, const char *command_id,
         music_http_session_result_t *out_result);
 
+    /** @brief 关闭控制长连接，在销毁音乐会话时回收 TLS/socket 资源。 */
+    void music_http_client_control_reset(music_http_control_client_t *control);
+
+    typedef struct music_http_stream music_http_stream_t;
+
     /**
-     * @brief 构造只携带短时 stream_id capability 的媒体 URL。
+     * @brief 打开只携带短时 stream_id capability 的裸 Opus 媒体流。
      *
-     * 控制请求仍在本模块中附带 Bearer 设备鉴权；媒体地址不含长期
-     * device_token，交给 micro-decoder 使用其原版 HTTPS reader 打开。
+     * 媒体请求不发送长期 device_token；服务端仍以 device_id 和 capability
+     * 归属校验访问权限。
      */
-    esp_err_t music_http_client_build_stream_url(
+    esp_err_t music_http_client_open_stream(
         const music_http_client_config_t *config, const char *stream_id,
-        char *out_url, size_t out_url_size);
+        music_http_stream_t **out_stream);
+
+    /**
+     * @brief 读取媒体字节。
+     *
+     * ESP_ERR_NOT_FOUND 表示正常 EOF，ESP_ERR_HTTP_EAGAIN 表示本次媒体
+     * 读取在短超时内没有数据；reader 应继续等待而不是结束播放。
+     */
+    esp_err_t music_http_client_read_stream(music_http_stream_t *stream,
+                                            uint8_t *buffer, size_t capacity,
+                                            size_t *out_bytes);
+
+    /** @brief 关闭并释放仅由 reader task 拥有的 HTTPS 媒体连接。 */
+    void music_http_client_close_stream(music_http_stream_t *stream);
 
 #ifdef __cplusplus
 }

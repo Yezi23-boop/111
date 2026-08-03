@@ -10,6 +10,7 @@ AUDIO_PLATFORM_HEADER = REPO_ROOT / "components" / "audio_codec" / "include" / "
 AUDIO_CODEC_SOURCE = REPO_ROOT / "components" / "audio_codec" / "audio_codec.c"
 AUDIO_CODEC_BUS_SOURCE = REPO_ROOT / "components" / "audio_codec" / "audio_codec_bus.c"
 AUDIO_CODEC_CMAKE = REPO_ROOT / "components" / "audio_codec" / "CMakeLists.txt"
+AUDIO_ALERT_PCM = REPO_ROOT / "main" / "assets" / "tishiyinpin_pcm.h"
 ESPDL_AUDIO_RUNTIME_SOURCE = REPO_ROOT / "components" / "espdl_inference" / "espdl_audio_runtime.cpp"
 TRAFFIC_REALTIME_SOURCE = REPO_ROOT / "components" / "traffic_inference" / "traffic_inference_realtime.cc"
 MP3_PLAYER_SOURCE = REPO_ROOT / "components" / "mp3_player" / "mp3_player.c"
@@ -37,7 +38,7 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         cmake = AUDIO_CODEC_CMAKE.read_text(encoding="utf-8")
         self.assertIn('"audio_codec_bus.c"', cmake)
 
-    def test_audio_mic_test_uses_audio_codec_wrapper_and_24khz_header(self) -> None:
+    def test_audio_mic_test_uses_audio_codec_wrapper_and_hardware_rate(self) -> None:
         source = AUDIO_MIC_TEST_SERVICE_SOURCE.read_text(encoding="utf-8")
         self.assertIn('#include "audio_platform_config.h"', source)
         self.assertIn("audio_codec_read(", source)
@@ -65,6 +66,14 @@ class AudioCodecPortSourceTests(unittest.TestCase):
         self.assertNotIn("esp_codec_dev_read(", source)
         self.assertIn("AUDIO_PLATFORM_HW_SAMPLE_RATE", source)
         self.assertIn("AUDIO_PLATFORM_HW_INPUT_CHANNELS", source)
+
+    def test_audio_platform_and_alert_pcm_use_48khz(self) -> None:
+        platform = AUDIO_PLATFORM_HEADER.read_text(encoding="utf-8")
+        bus = AUDIO_CODEC_BUS_SOURCE.read_text(encoding="utf-8")
+        alert_pcm = AUDIO_ALERT_PCM.read_text(encoding="utf-8")
+        self.assertIn("#define AUDIO_PLATFORM_HW_SAMPLE_RATE 48000", platform)
+        self.assertEqual(bus.count(".sample_rate_hz = AUDIO_PLATFORM_HW_SAMPLE_RATE"), 2)
+        self.assertIn("kTishiyinpinPcmSampleRate = 48000U", alert_pcm)
 
     def test_mp3_player_uses_audio_codec_write_wrapper(self) -> None:
         source = MP3_PLAYER_SOURCE.read_text(encoding="utf-8")

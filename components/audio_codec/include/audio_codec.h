@@ -80,6 +80,35 @@ extern "C"
         audio_codec_session_snapshot_t *snapshot);
 
     /**
+     * @brief 获取会话状态的非阻塞缓存快照。
+     *
+     * 与 `audio_codec_get_session_snapshot()` 不同，本接口不获取资源 mutex，
+     * 只读取由会话变更路径维护的缓存副本，适合低频策略任务在无锁上下文读取。
+     *
+     * @param[out] snapshot 输出快照。
+     * @return `ESP_OK` 表示读取成功；`ESP_ERR_INVALID_ARG` 表示输出参数为空。
+     */
+    esp_err_t audio_codec_get_cached_session_snapshot(
+        audio_codec_session_snapshot_t *snapshot);
+
+    /** 会话变更回调；真实动作由注册方在自己的上下文执行，回调内不允许阻塞。 */
+    typedef void (*audio_codec_session_change_cb_t)(void *user_ctx);
+
+    /**
+     * @brief 安装会话变更通知回调。
+     *
+     * 该回调在会话 acquire/release 成功的资源 mutex 持有路径内被调用，只允许
+     * 复制状态或向其他任务发送通知，不允许执行音频/硬件/网络等阻塞操作。
+     * 重复安装会覆盖之前的回调，返回 `ESP_OK`。
+     *
+     * @param[in] callback 回调函数，可为 NULL 表示卸载。
+     * @param[in] user_ctx 回调上下文。
+     * @return `ESP_OK` 表示安装成功。
+     */
+    esp_err_t audio_codec_set_session_change_callback(
+        audio_codec_session_change_cb_t callback, void *user_ctx);
+
+    /**
      * @brief 初始化音频 codec 子系统。
      *
      * 初始化流程会依次准备 I2C、I2S 总线、ES8311 播放链路和 ES7210 录音链路。

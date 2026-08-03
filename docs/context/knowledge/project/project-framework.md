@@ -212,6 +212,17 @@ owner snapshot
 - 资源结束不是从外部删除或抢占，而是向 owner 发请求；owner 停止新工作、完成短收尾、释放 session/硬件并发布 released/inactive snapshot。
 - V1 不做 `runtime lease`、不做抢占、不做统一 TTL 租约账本；后续只有在 sleep blocker、防泄漏和多 owner 资源冲突变成真实问题时再重新评估。
 
+### 省电参与者登记表（2026-08-03）
+
+`power_policy` 的事实输入与预算变更唤醒收敛到一张静态参与者登记表
+（facts-only / consumer-only / facts+consumer），注册只发生在 `power_policy_start()`
+之前的 service 初始化阶段。`get_facts()` 只允许快速复制 owner 的非阻塞 snapshot，
+失败时按 fail-closed 收紧 `sleep_permission`；`on_budget_changed()` 只唤醒 owner task，
+真实资源动作仍由 owner 执行。已注册：Safety Monitor（facts+consumer）、Audio bridge
+（facts-only，读 audio_codec 非阻塞缓存）、runtime_coordinator（facts-only，派生
+OTA/provisioning blocker）。`runtime_coordinator` 独立负责跨 owner 前台资源交接，
+不复制成省电生命周期协议；普通后台能力不强制注册。
+
 ## 后台能力链路
 
 长期后台能力必须走“用户意图 -> service manager -> session owner -> domain/runtime”的链路。

@@ -58,15 +58,14 @@ class OfficialChatSourceTests(unittest.TestCase):
         self.assertIn("esp-sr", cmake)
         self.assertIn("espressif__esp_audio_codec", cmake)
 
-    def test_official_chat_runtime_uses_wifi_control_helpers(self) -> None:
+    def test_network_service_owns_wifi_power_policy(self) -> None:
         application_source = OFFICIAL_CHAT_APPLICATION.read_text(encoding="utf-8")
         mcp_source = OFFICIAL_CHAT_MCP.read_text(encoding="utf-8")
 
-        self.assertIn('#include "wifi_control.h"', application_source)
+        self.assertNotIn('#include "wifi_control.h"', application_source)
         self.assertNotIn('#include "wifi_provision.h"', application_source)
         self.assertNotIn('#include "hal_wifi.h"', application_source)
-        self.assertIn("wifi_control_set_power_save(false);", application_source)
-        self.assertIn("wifi_control_set_power_save(true);", application_source)
+        self.assertNotIn("wifi_control_set_power_save(", application_source)
         self.assertIn("wifi_control_is_connected()", mcp_source)
         self.assertIn("wifi_control_get_ip(", mcp_source)
         self.assertNotIn("wifi_provision_is_connected()", mcp_source)

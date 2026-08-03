@@ -101,6 +101,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 需要 ESP-IDF shell 时，当前机器优先确认 `D:\esp-idf\v5.5.3\esp-idf\export.ps1`；若不存在，先检查 `$env:IDF_PATH\export.ps1`，再搜索本机 `export.ps1`。
 - 不要假设仓库根目录 `D:\esp32S3\111\export.ps1` 或 `D:\esp32S3\esp-idf\export.ps1` 存在；只有确认实际 `export.ps1` 路径可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作；修改过 `sdkconfig` 时必须先 `idf.py fullclean` 再 `idf.py build`。
 - 常规 C/C++ 代码、UI 逻辑或业务 service 改动在 `idf.py build` 通过后，默认使用 `idf.py -p <PORT> app-flash`；不得把 `idf.py flash` 作为默认烧录命令，因为它会按 `build/flasher_args.json` 写入多个分区。
+- 当前板端烧录至少预留 2 分钟（120 秒）；不要在此时间预算耗尽前将烧录过程判定为超时，完整 `flash` 或大镜像流程需要留出更长余量。
 - 如需串口验证，优先 `app-flash` 后再限时采集 `monitor` / 串口日志，避免默认 `idf.py flash monitor``monitor` 窗口一分钟
 - 串口验证必须优先使用 `scripts/board/agent_serial_monitor.ps1` 或 `scripts/board/agent_serial_monitor.py`；除非该工具不可用或本轮已明确失败并记录原因，不得直接调用裸 `idf.py monitor`，也不得用 `Start-Process` 后台启动 monitor。
 - 修改 `GPIO` / `I2C` / `SPI` / `UART` / `I2S` / `LCD` / `Touch` / `Wi-Fi` / `BLE` 前，必须先确认引脚定义、初始化顺序、时钟或带宽约束，以及错误恢复路径。
@@ -111,6 +112,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## 当前仓库规则（默认生效）
 
 将 `docs/context` 作为项目长期上下文库，但默认低 token 使用：
+
+### 服务器代码部署闭环
+
+- 修改明确会部署到生产环境的 `server/**` 服务代码后，不能只完成本地测试或提交代码；测试通过后必须将对应代码上传到目标服务器。
+- 上传后使用目标服务对应的 Compose 配置执行 `docker compose up -d --build`，并检查服务健康状态或运行对应 smoke test。
+- 不要在规则、日志或提交中写入 SSH 地址、账号、密钥或其他部署凭据；如果缺少远程权限、凭据或部署目标不明确，必须明确报告“未完成部署”，不能把本地测试结果当作部署成功。
 
 - 首读只看 `docs/context/INDEX.agent.md` 与 `docs/context/knowledge/project/project-profile.md`；不要默认全量打开 `README.md`、`knowledge-map.md`、`repo-overview.md` 或 `knowledge/**`。
 - 遇到项目内不明确的问题，若可能由既有规划、稳定约束、owner 边界、历史决策或板端证据回答，先用上下文库索引按关键词检索，并只打开命中的相关文档；索引未提供充分证据时，再核对代码或官方资料。若仍存在会影响实现范围或行为的歧义，明确说明后向用户澄清，不得臆测。

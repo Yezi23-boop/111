@@ -1,5 +1,9 @@
 # 上下文库变更记录
 
+- 2026-08-03：完成 `power_policy` 省电事实 Provider 注册制改造（`docs/context/plans/completed/2026-08-03-power-policy-fact-provider-refactor-plan.md`）。`power_policy` 新增固定容量 8 的静态省电参与者登记表，支持 facts-only / consumer-only / facts+consumer 三种形态：Safety Monitor 以 facts+consumer 接入（`must_keep_alive` → `BACKGROUND_CRITICAL`，预算变更唤醒 Safety policy task），`power_policy_audio_bridge.c` 以 facts-only 接入 `AUDIO_ACTIVE`（audio_codec 新增非阻塞 cached session snapshot + 会话变更回调，原有阻塞 getter 不进 policy task），runtime_coordinator 以内置 facts-only 从单一交接快照派生 `OTA_ACTIVE / PROVISIONING_ACTIVE`。`power_policy -> safety_monitor_policy` 的直接通知链已删除，改为注册式 `power_policy_budget_changed_notify()`（回调只唤醒 owner task，不在 policy 锁内执行）；provider 失败 fail-closed 为 `sleep_permission=NONE`。`system_time_service` 开始消费预算（STANDBY 下延后 SNTP 最多 30 秒后兜底同步）。注册必须在 `power_policy_start()` 前完成，`safety_monitor_policy_register_power_participant()` 在 app_main core policy 阶段调用。聚焦 source tests `31 passed`、全量 `503 passed`（5 个失败均为既有环境/字体脚本预存问题，与本改动无关）、`idf.py build` 通过、COM7 冷启动到 `network_service_ready` 且无 panic/WDT，三个 provider 注册顺序正确。未启用真实 sleep，STANDBY/dry-run 语义不变。
+
+- 2026-08-03：新增并明确 `docs/context/plans/active/2026-08-03-power-policy-fact-provider-refactor-plan.md`：`power_policy` 使用一张 participant registry，同时支持事实提供和消费者 task 唤醒，不新增第二张唤醒表。Safety 以 facts+consumer 双角色接入；`audio_codec` 保持 AUDIO_ACTIVE 事实 owner，由窄 bridge 做映射，且必须先提供非阻塞 session snapshot；生命周期控制权、强前台交接、STANDBY 与 sleep dry-run 语义不变。
+
 - 2026-08-02：补齐当前云端部署路由卡的香港服务器公网 IPv4 `103.42.182.35`，并把 `PANEL_HOST` / `IP 白名单` 纳入触发词与黄金查询，避免当前服务器 IP 事实只藏在 active 计划里。
 
 - 2026-08-02：在线音乐首轮代码闭环完成：新增香港单容器 `music-service`、HTTPS 分块 MP3、单 FFmpeg/SQLite 播放会话、网易云私有 QR/来源适配、ESP32 PSRAM 流式播放器和独立音乐入口；服务端 Node 测试 9 项、ESP32 音乐 source tests 13 项、`idf.py build` 和 COM7 60 秒冷启动观察通过。香港远端部署、真实网易云扫码/播放、歌曲分页与 QR 位图 UI 仍待完成，不能视为 V1 全量验收。

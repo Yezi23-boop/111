@@ -68,7 +68,6 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         header = SAFETY_MONITOR_POLICY_HEADER.read_text(encoding="utf-8")
         source = SAFETY_MONITOR_POLICY_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("safety_monitor_policy_notify_power_changed", header)
         self.assertIn("SAFETY_MONITOR_POLICY_NOTIFY_USER", source)
         self.assertIn("SAFETY_MONITOR_POLICY_NOTIFY_AUDIO", source)
         self.assertIn("SAFETY_MONITOR_POLICY_NOTIFY_POWER", source)
@@ -78,15 +77,39 @@ class SafetyMonitorSessionSourceTests(unittest.TestCase):
         self.assertIn("SAFETY_MONITOR_POLICY_NOTIFY_PERIODIC", source)
         self.assertIn("safety_monitor_policy_apply(\"startup\")", source)
 
-    def test_power_policy_only_notifies_safety_policy_on_budget_change(self) -> None:
+    def test_safety_policy_registers_facts_and_consumer_participant(self) -> None:
+        header = SAFETY_MONITOR_POLICY_HEADER.read_text(encoding="utf-8")
+        source = SAFETY_MONITOR_POLICY_SOURCE.read_text(encoding="utf-8")
+
+        self.assertNotIn("safety_monitor_policy_notify_power_changed", header)
+        self.assertIn("safety_monitor_policy_register_power_participant",
+                      header)
+        self.assertIn("POWER_POLICY_PROVIDER_SAFETY_MONITOR", source)
+        self.assertIn("POWER_POLICY_PARTICIPANT_FACTS_AND_CONSUMER", source)
+        self.assertIn("power_policy_register_participant", source)
+        self.assertIn("safety_monitor_policy_power_facts", source)
+        self.assertIn("safety_monitor_policy_power_changed_cb", source)
+        # 事实回调直读 session 事实源（不经过 policy 镜像副本），
+        # 并把关键运行期映射为 BACKGROUND_CRITICAL。
+        self.assertIn("safety_monitor_session_get_snapshot().runtime_running",
+                      source)
+        self.assertIn("POWER_POLICY_SLEEP_BLOCKER_BACKGROUND_CRITICAL", source)
+        # 预算变更回调只唤醒自己的 task，不执行 Safety start/stop。
+        self.assertIn("safety_monitor_policy_notify(", source)
+
+    def test_power_policy_uses_registry_notify_instead_of_direct_safety_coupling(
+        self,
+    ) -> None:
         source = (
             REPO_ROOT / "main" / "services" / "power" / "power_policy.c"
         ).read_text(
             encoding="utf-8"
         )
 
-        self.assertIn('#include "services/runtime/safety_monitor_policy.h"', source)
-        self.assertIn("safety_monitor_policy_notify_power_changed()", source)
+        self.assertNotIn('#include "services/runtime/safety_monitor_policy.h"',
+                         source)
+        self.assertNotIn("safety_monitor_policy_notify_power_changed", source)
+        self.assertIn("power_policy_budget_changed_notify", source)
         self.assertNotIn("safety_monitor_policy_set_enabled", source)
         self.assertNotIn("safety_monitor_session_apply", source)
 

@@ -141,6 +141,48 @@ safety_monitor_policy_get_snapshot()
 - 不做动态 `runtime lease` 表或 TTL 租约账本。
 - 不允许多个模块写同一个 fact。
 
+### 省电参与者注册表（Provider Registry）
+
+2026-08-03 起，`power_policy` 用一张**静态省电参与者登记表**收敛“事实输入 + 预算变更唤醒”
+两类耦合，不新增第二张消费者唤醒表，也不升级为生命周期管理器：
+
+```text
+facts-only       只提供省电事实（get_facts）
+consumer-only    只接收预算变更并唤醒自己的 task（on_budget_changed）
+facts+consumer   同时提供事实并消费预算
+```
+
+合同要点：
+
+- 注册只发生在 service 初始化阶段（policy task 启动前），固定容量 8，不提供运行期卸载；
+  同一 id 重复注册幂等，冲突配置返回明确错误。
+- `get_facts()` 只能快速复制 owner snapshot，不能做 I/O、网络、音频、Flash、模型操作或
+  等待其他 task；现有阻塞式 getter（如会等待资源 mutex 的 `audio_codec_get_session_snapshot`）
+  不能直接作为 provider 回调，必须由 owner 提供非阻塞 cached snapshot 或 try-read API。
+- **provider 不维护中间缓存副本**：`get_facts()` 直接读 owner 的非阻塞缓存快照，不要在
+  provider/bridge 里再存一份本地缓存，避免“缓存套缓存”（owner 缓存 → provider 副本 →
+  事实回调）。bridge 只做跨层映射。
+- Safety 的 `power_facts` 直接读 `safety_monitor_session_get_snapshot()` 的运行态，
+  不再经 `safety_monitor_policy` 镜像（已删除 `runtime_running` 镜像字段），
+  `danger_detection_controller` 的“正在启动”文案同样直读 session 事实源。
+- provider 回调不在 `power_policy` 锁内执行，避免回调重入和锁反转。
+- `on_budget_changed()` 只能向自己的 owner task 发送 task notification 或 queue 消息，
+  真实动作由 owner task 执行；power_policy 不保存业务 task handle。
+- provider 失败不能静默清除 blocker：策略记录来源和错误，并按 fail-closed 规则处理
+  睡眠许可（任一 provider 读取失败即 `sleep_permission = NONE`）。
+- 普通后台能力不强制注册；只有真实影响功耗、睡眠或关键资源交接的 owner 才接入。
+
+当前已注册：
+
+| Provider id | 形态 | 事实/唤醒 |
+|---|---|---|
+| Safety Monitor | facts+consumer | must_keep_alive -> BACKGROUND_CRITICAL；预算变更唤醒 Safety policy task |
+| Audio（power_policy_audio_bridge） | facts-only | AUDIO_ACTIVE（读取 audio_codec 非阻塞缓存快照） |
+| runtime_coordinator（内置） | facts-only | OTA_ACTIVE / PROVISIONING_ACTIVE（从单一交接快照派生） |
+
+`must_keep_alive` 是 provider 事实输入（表示关键识别/不可中断阶段），**不是新预算字段**，
+只影响 blocker 聚合，用来解释“普通后台可以延后而关键服务不能暂停”。
+
 ## power_policy 职责
 
 `power_policy` 是预算聚合与发布者，不是硬件执行者。

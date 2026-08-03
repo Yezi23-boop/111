@@ -4,6 +4,7 @@
 
 #include "audio_codec.h"
 #include "esp_log.h"
+#include "ui_chinese_fonts.h"
 #include "network_manager.h"
 #include "wifi_management_controller.h"
 #include "watch_notification_center.h"
@@ -496,6 +497,10 @@ static void main_dropdown_controller_show_toast(const char *text)
         s_toast_label = lv_label_create(lv_layer_top());
         lv_obj_set_width(s_toast_label, 280);
         lv_label_set_long_mode(s_toast_label, LV_LABEL_LONG_WRAP);
+        /* toast 提示含中文，必须绑定中文 UI 字体，否则中文渲染为方框。 */
+        lv_obj_set_style_text_font(s_toast_label,
+                                   &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+                                   LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_radius(s_toast_label, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_opa(s_toast_label, LV_OPA_90, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_color(s_toast_label, lv_color_hex(0x20242b),

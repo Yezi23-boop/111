@@ -145,8 +145,6 @@ idf_component_register(
 
         espressif__esp_audio_codec
 
-        esphome__micro-decoder
-
         nvs_flash
 
         esp_wifi

@@ -18,7 +18,6 @@ dependencies:
   lvgl/lvgl: 9.3.0   # 升级到9.3.x以兼容新的GUI Guider导出层与运行时字体链
   espressif/esp_codec_dev: ^1.5.2
   espressif/esp_audio_codec: ~2.4.1
-  esphome/micro-decoder: ^0.3.0
   espressif/esp_audio_effects: ~1.2.1
   espressif/esp-sr: ^2.3.1
   chmorgan/esp-audio-player: ^1.0.7

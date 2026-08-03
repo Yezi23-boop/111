@@ -7,9 +7,13 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "services/power/power_policy.h"
 
 static const char *TAG = "system_time_srv";
 static const uint32_t kNetworkReadySntpTimeoutMs = 15000U;
+/* STANDBY 延后窗口：普通时间同步是可延后消费，最多等待预算恢复；超时后仍执行一次。 */
+static const int kDeferredSyncMaxWaitLoops = 15;
+static const TickType_t kDeferredSyncPollTicks = pdMS_TO_TICKS(2000);
 
 static TaskHandle_t s_sync_task_handle = NULL;
 static bool s_started = false;
@@ -48,6 +52,24 @@ static void system_time_service_log_boot_summary(const char *reason)
 static void system_time_service_sync_task(void *arg)
 {
     (void)arg;
+
+    /* STANDBY 下 `network_sync_allowed=false`：普通时间同步是可延后消费，这里
+     * 最多等待预算恢复再执行；超时兜底仍同步一次，保证时间最终可用。 */
+    bool deferred = false;
+    for (int i = 0; i < kDeferredSyncMaxWaitLoops; i++)
+    {
+        const power_policy_budget_t budget = power_policy_get_budget();
+        if (budget.network_sync_allowed)
+        {
+            break;
+        }
+        deferred = true;
+        vTaskDelay(kDeferredSyncPollTicks);
+    }
+    if (deferred)
+    {
+        ESP_LOGI(TAG, "network time sync deferred by power budget");
+    }
 
     const esp_err_t ret =
         system_time_sync_sntp_and_write_rtc(kNetworkReadySntpTimeoutMs);

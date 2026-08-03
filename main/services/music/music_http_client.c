@@ -1,15 +1,46 @@
 #include "music_http_client.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 #include "cJSON.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
+#include "esp_log.h"
+#include "esp_timer.h"
 #include "mbedtls/base64.h"
 static const size_t kResponseBytes = 4096U;
 static const size_t kQrResponseBytes = 8192U;
+/* 失效的长连接只重试一次，避免控制路径无限重试挤占媒体流。 */
+static const uint8_t kControlRequestAttempts = 2U;
+/* OpenResty 当前控制面 keepalive_timeout 为 60 秒，提前 15 秒轮换空闲连接。 */
+static const int64_t kControlIdleRefreshUs = 45LL * 1000LL * 1000LL;
+/* 媒体流读超时短于默认控制超时；超时只让 reader 让出调度，不终止流。 */
+static const int kMediaReadTimeoutMs = 250;
+
+struct music_http_stream
+{
+    esp_http_client_handle_t client;
+    char content_type[40];
+};
+
+static esp_err_t music_http_stream_event_handler(esp_http_client_event_t *event)
+{
+    if (event == NULL || event->user_data == NULL ||
+        event->event_id != HTTP_EVENT_ON_HEADER || event->header_key == NULL ||
+        event->header_value == NULL ||
+        strcasecmp(event->header_key, "Content-Type") != 0)
+    {
+        return ESP_OK;
+    }
+    music_http_stream_t *stream = (music_http_stream_t *)event->user_data;
+    snprintf(stream->content_type, sizeof(stream->content_type), "%s",
+             event->header_value);
+    return ESP_OK;
+}
 
 static bool music_http_is_insecure_allowed(
     const music_http_client_config_t *config)
@@ -42,11 +73,11 @@ static esp_err_t music_http_build_url(const music_http_client_config_t *config,
                                  path[0] == '/' ? path + 1 : path,
                                  query_separator, config->device_id);
     return written > 0 && (size_t)written < url_size ? ESP_OK
-                                                       : ESP_ERR_INVALID_SIZE;
+                                                     : ESP_ERR_INVALID_SIZE;
 }
 
 static esp_err_t music_http_set_auth(esp_http_client_handle_t client,
-                                      const char *token)
+                                     const char *token)
 {
     char authorization[MUSIC_SERVICE_DEVICE_TOKEN_MAX_BYTES + 8U];
     const int written = snprintf(authorization, sizeof(authorization),
@@ -97,7 +128,7 @@ static esp_err_t music_http_read_json_response(esp_http_client_handle_t client,
 }
 
 static void music_http_copy_json_string(const cJSON *root, const char *key,
-                                         char *output, size_t output_size)
+                                        char *output, size_t output_size)
 {
     if (output == NULL || output_size == 0U)
     {
@@ -185,7 +216,175 @@ static esp_err_t music_http_parse_session(const char *payload, int status,
                : ESP_FAIL;
 }
 
+void music_http_client_control_reset(music_http_control_client_t *control)
+{
+    if (control == NULL)
+    {
+        return;
+    }
+    if (control->handle != NULL)
+    {
+        esp_http_client_handle_t client =
+            (esp_http_client_handle_t)control->handle;
+        (void)esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+    }
+    control->handle = NULL;
+    control->base_url[0] = '\0';
+    control->last_request_completed_us = 0;
+}
+
+static esp_err_t music_http_control_prepare(
+    music_http_control_client_t *control,
+    const music_http_client_config_t *config, const char *url,
+    esp_http_client_method_t method, esp_http_client_handle_t *out_client)
+{
+    if (control == NULL || config == NULL || url == NULL || out_client == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_http_client_handle_t client =
+        (esp_http_client_handle_t)control->handle;
+    if (client != NULL && strcmp(control->base_url, config->base_url) != 0)
+    {
+        music_http_client_control_reset(control);
+        client = NULL;
+    }
+    if (client != NULL && control->last_request_completed_us > 0 &&
+        esp_timer_get_time() - control->last_request_completed_us >=
+            kControlIdleRefreshUs)
+    {
+        ESP_LOGI("music_http",
+                 "refreshing idle control connection before server keepalive expiry");
+        music_http_client_control_reset(control);
+        client = NULL;
+    }
+    if (client == NULL)
+    {
+        esp_http_client_config_t http_config = {
+            .url = url,
+            .method = method,
+            .timeout_ms = config->timeout_ms > 0U ? (int)config->timeout_ms : 10000,
+            .buffer_size = 4096,
+            .buffer_size_tx = 2048,
+            .keep_alive_enable = true,
+            .crt_bundle_attach = esp_crt_bundle_attach,
+        };
+        client = esp_http_client_init(&http_config);
+        if (client == NULL)
+        {
+            return ESP_ERR_NO_MEM;
+        }
+        control->handle = client;
+        snprintf(control->base_url, sizeof(control->base_url), "%s",
+                 config->base_url);
+        ESP_LOGI("music_http", "opening control HTTP/1.1 connection");
+    }
+    esp_err_t ret = esp_http_client_set_url(client, url);
+    if (ret == ESP_OK)
+    {
+        ret = esp_http_client_set_method(client, method);
+    }
+    if (ret == ESP_OK)
+    {
+        ret = music_http_set_auth(client, config->device_token);
+    }
+    if (ret != ESP_OK)
+    {
+        music_http_client_control_reset(control);
+        return ret;
+    }
+    *out_client = client;
+    return ESP_OK;
+}
+
+static esp_err_t music_http_control_request(
+    music_http_control_client_t *control,
+    const music_http_client_config_t *config, const char *url,
+    esp_http_client_method_t method, const char *body, const char *command_id,
+    char *response, size_t response_capacity, int *out_status)
+{
+    if (control == NULL || response == NULL || out_status == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t body_len = body == NULL ? 0U : strlen(body);
+    esp_err_t last_error = ESP_FAIL;
+    for (uint8_t attempt = 0U; attempt < kControlRequestAttempts; ++attempt)
+    {
+        esp_http_client_handle_t client = NULL;
+        *out_status = 0;
+        memset(response, 0, response_capacity);
+        esp_err_t ret = music_http_control_prepare(control, config, url, method,
+                                                   &client);
+        if (ret == ESP_OK)
+        {
+            if (body_len > 0U)
+            {
+                ret = esp_http_client_set_header(client, "Content-Type",
+                                                 "application/json");
+            }
+            else
+            {
+                ret = esp_http_client_delete_header(client, "Content-Type");
+                if (ret == ESP_ERR_NOT_FOUND)
+                {
+                    ret = ESP_OK;
+                }
+            }
+        }
+        if (ret == ESP_OK)
+        {
+            if (command_id != NULL && command_id[0] != '\0')
+            {
+                ret = esp_http_client_set_header(client, "X-Command-Id",
+                                                 command_id);
+            }
+            else
+            {
+                ret = esp_http_client_delete_header(client, "X-Command-Id");
+                if (ret == ESP_ERR_NOT_FOUND)
+                {
+                    ret = ESP_OK;
+                }
+            }
+        }
+        if (ret == ESP_OK)
+        {
+            ret = esp_http_client_open(client, body_len);
+        }
+        if (ret == ESP_OK && body_len > 0U)
+        {
+            ret = esp_http_client_write(client, body, (int)body_len) ==
+                          (int)body_len
+                      ? ESP_OK
+                      : ESP_FAIL;
+        }
+        if (ret == ESP_OK)
+        {
+            (void)esp_http_client_fetch_headers(client);
+            *out_status = esp_http_client_get_status_code(client);
+            ret = music_http_read_json_response(client, response,
+                                                response_capacity, NULL);
+        }
+        if (ret == ESP_OK)
+        {
+            control->last_request_completed_us = esp_timer_get_time();
+            return ESP_OK;
+        }
+        last_error = ret;
+        music_http_client_control_reset(control);
+        if (attempt + 1U < kControlRequestAttempts)
+        {
+            ESP_LOGW("music_http", "control request failed; reconnecting once: %s",
+                     esp_err_to_name(ret));
+        }
+    }
+    return last_error;
+}
+
 static esp_err_t music_http_perform_json(
+    music_http_control_client_t *control,
     const music_http_client_config_t *config, const char *path,
     esp_http_client_method_t method, const char *body, const char *command_id,
     music_http_session_result_t *out_result)
@@ -203,65 +402,21 @@ static esp_err_t music_http_perform_json(
     {
         return ESP_ERR_NO_MEM;
     }
-    esp_http_client_config_t http_config = {
-        .url = url,
-        .method = method,
-        .timeout_ms = config->timeout_ms > 0U ? (int)config->timeout_ms : 10000,
-        .buffer_size = 4096,
-        .buffer_size_tx = 2048,
-        .keep_alive_enable = true,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
-    esp_http_client_handle_t client = esp_http_client_init(&http_config);
-    if (client == NULL)
-    {
-        heap_caps_free(response);
-        return ESP_ERR_NO_MEM;
-    }
-    ret = music_http_set_auth(client, config->device_token);
-    if (ret == ESP_OK)
-    {
-        ret = esp_http_client_set_header(client, "Content-Type",
-                                         "application/json");
-    }
-    if (ret == ESP_OK && command_id != NULL && command_id[0] != '\0')
-    {
-        ret = esp_http_client_set_header(client, "X-Command-Id", command_id);
-    }
-    const size_t body_len = body == NULL ? 0U : strlen(body);
-    if (ret == ESP_OK)
-    {
-        ret = esp_http_client_open(client, body_len);
-    }
-    if (ret == ESP_OK && body_len > 0U)
-    {
-        ret = esp_http_client_write(client, body, (int)body_len) ==
-                      (int)body_len
-                  ? ESP_OK
-                  : ESP_FAIL;
-    }
     int status = 0;
-    if (ret == ESP_OK)
+    ret = music_http_control_request(control, config, url, method, body,
+                                     command_id, response, kResponseBytes,
+                                     &status);
+    if (ret == ESP_OK && out_result != NULL)
     {
-        (void)esp_http_client_fetch_headers(client);
-        status = esp_http_client_get_status_code(client);
-        size_t response_len = 0U;
-        ret = music_http_read_json_response(client, response,
-                                             kResponseBytes, &response_len);
-        if (ret == ESP_OK && out_result != NULL)
-        {
-            memset(out_result, 0, sizeof(*out_result));
-            out_result->transport_error = ESP_OK;
-            ret = music_http_parse_session(response, status, out_result);
-        }
+        memset(out_result, 0, sizeof(*out_result));
+        out_result->transport_error = ESP_OK;
+        ret = music_http_parse_session(response, status, out_result);
     }
     if (out_result != NULL)
     {
         out_result->http_status = status;
         out_result->transport_error = ret;
     }
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
     heap_caps_free(response);
     return ret;
 }
@@ -308,8 +463,8 @@ static esp_err_t music_http_parse_account(const char *payload, int status,
                                 sizeof(result->error_code));
     const cJSON *qr = cJSON_GetObjectItemCaseSensitive(root, "qr");
     const cJSON *size = cJSON_IsObject(qr)
-                           ? cJSON_GetObjectItemCaseSensitive(qr, "size")
-                           : NULL;
+                            ? cJSON_GetObjectItemCaseSensitive(qr, "size")
+                            : NULL;
     const cJSON *data = cJSON_IsObject(qr)
                             ? cJSON_GetObjectItemCaseSensitive(qr, "data")
                             : NULL;
@@ -403,7 +558,7 @@ static esp_err_t music_http_request_account(
         (void)esp_http_client_fetch_headers(client);
         status = esp_http_client_get_status_code(client);
         ret = music_http_read_json_response(client, response,
-                                             kQrResponseBytes, NULL);
+                                            kQrResponseBytes, NULL);
     }
     if (ret == ESP_OK)
     {
@@ -523,11 +678,12 @@ static esp_err_t music_http_build_session_body(
 }
 
 esp_err_t music_http_client_create_session(
+    music_http_control_client_t *control,
     const music_http_client_config_t *config, const char *source_id,
     const char *track_id, const char *command_id,
     music_http_session_result_t *out_result)
 {
-    if (config == NULL || out_result == NULL)
+    if (control == NULL || config == NULL || out_result == NULL)
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -536,7 +692,7 @@ esp_err_t music_http_client_create_session(
                                                   NULL, &body);
     if (ret == ESP_OK)
     {
-        ret = music_http_perform_json(config, "/v1/music/sessions",
+        ret = music_http_perform_json(control, config, "/v1/music/sessions",
                                       HTTP_METHOD_POST, body, command_id,
                                       out_result);
     }
@@ -545,10 +701,11 @@ esp_err_t music_http_client_create_session(
 }
 
 esp_err_t music_http_client_fetch_tracks(
+    music_http_control_client_t *control,
     const music_http_client_config_t *config, const char *source_id,
     uint32_t offset, music_service_catalog_snapshot_t *out_catalog)
 {
-    if (config == NULL || source_id == NULL || source_id[0] == '\0' ||
+    if (control == NULL || config == NULL || source_id == NULL || source_id[0] == '\0' ||
         out_catalog == NULL)
     {
         return ESP_ERR_INVALID_ARG;
@@ -574,55 +731,26 @@ esp_err_t music_http_client_fetch_tracks(
     {
         return ESP_ERR_NO_MEM;
     }
-    esp_http_client_config_t http_config = {
-        .url = url,
-        .method = HTTP_METHOD_GET,
-        .timeout_ms = config->timeout_ms > 0U ? (int)config->timeout_ms : 10000,
-        .buffer_size = 4096,
-        .keep_alive_enable = true,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
-    esp_http_client_handle_t client = esp_http_client_init(&http_config);
-    if (client == NULL)
-    {
-        heap_caps_free(response);
-        return ESP_ERR_NO_MEM;
-    }
-    ret = music_http_set_auth(client, config->device_token);
-    if (ret == ESP_OK)
-    {
-        ret = esp_http_client_set_header(client, "Accept", "application/json");
-    }
-    if (ret == ESP_OK)
-    {
-        ret = esp_http_client_open(client, 0);
-    }
     int status = 0;
-    size_t response_len = 0U;
-    if (ret == ESP_OK)
-    {
-        (void)esp_http_client_fetch_headers(client);
-        status = esp_http_client_get_status_code(client);
-        ret = music_http_read_json_response(client, response, kResponseBytes,
-                                            &response_len);
-    }
+    ret = music_http_control_request(control, config, url, HTTP_METHOD_GET,
+                                     NULL, NULL, response, kResponseBytes,
+                                     &status);
     if (ret == ESP_OK)
     {
         ret = music_http_parse_catalog(response, status, source_id, offset,
                                        out_catalog);
     }
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
     heap_caps_free(response);
     return ret;
 }
 
 esp_err_t music_http_client_session_command(
+    music_http_control_client_t *control,
     const music_http_client_config_t *config, const char *session_id,
     const char *action, const char *mode, const char *command_id,
     music_http_session_result_t *out_result)
 {
-    if (config == NULL || session_id == NULL || session_id[0] == '\0' ||
+    if (control == NULL || config == NULL || session_id == NULL || session_id[0] == '\0' ||
         action == NULL || action[0] == '\0' || out_result == NULL)
     {
         return ESP_ERR_INVALID_ARG;
@@ -651,23 +779,25 @@ esp_err_t music_http_client_session_command(
     if (ret == ESP_OK)
     {
         ret = music_http_perform_json(
-            config, path, strcmp(action, "destroy") == 0 ? HTTP_METHOD_DELETE
-                                                          : HTTP_METHOD_POST,
+            control, config, path,
+            strcmp(action, "destroy") == 0 ? HTTP_METHOD_DELETE
+                                           : HTTP_METHOD_POST,
             body, command_id, out_result);
     }
     cJSON_free(body);
     return ret;
 }
 
-esp_err_t music_http_client_build_stream_url(
+esp_err_t music_http_client_open_stream(
     const music_http_client_config_t *config, const char *stream_id,
-    char *out_url, size_t out_url_size)
+    music_http_stream_t **out_stream)
 {
     if (config == NULL || stream_id == NULL || stream_id[0] == '\0' ||
-        out_url == NULL || out_url_size == 0U)
+        out_stream == NULL)
     {
         return ESP_ERR_INVALID_ARG;
     }
+    *out_stream = NULL;
     char path[192];
     const int written = snprintf(path, sizeof(path), "/v1/music/streams/%s",
                                  stream_id);
@@ -675,5 +805,106 @@ esp_err_t music_http_client_build_stream_url(
     {
         return ESP_ERR_INVALID_SIZE;
     }
-    return music_http_build_url(config, path, out_url, out_url_size);
+    char url[480];
+    esp_err_t ret = music_http_build_url(config, path, url, sizeof(url));
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+    music_http_stream_t *stream = heap_caps_calloc(
+        1U, sizeof(*stream), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (stream == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    const esp_http_client_config_t http_config = {
+        .url = url,
+        .method = HTTP_METHOD_GET,
+        .timeout_ms = (int)config->timeout_ms,
+        .buffer_size = 1024,
+        .keep_alive_enable = false,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .event_handler = music_http_stream_event_handler,
+        .user_data = stream,
+    };
+    stream->client = esp_http_client_init(&http_config);
+    if (stream->client == NULL)
+    {
+        heap_caps_free(stream);
+        return ESP_ERR_NO_MEM;
+    }
+    ret = esp_http_client_set_header(stream->client, "Accept",
+                                     "application/x-watch-opus");
+    if (ret == ESP_OK)
+    {
+        ret = esp_http_client_open(stream->client, 0);
+    }
+    if (ret == ESP_OK)
+    {
+        (void)esp_http_client_fetch_headers(stream->client);
+        const int status = esp_http_client_get_status_code(stream->client);
+        if (status != 200 ||
+            strcmp(stream->content_type, "application/x-watch-opus") != 0)
+        {
+            ESP_LOGW("music_http", "media response rejected: status=%d type=%s",
+                     status, stream->content_type[0] == '\0'
+                                 ? "(missing)"
+                                 : stream->content_type);
+            ret = ESP_ERR_INVALID_RESPONSE;
+        }
+        else
+        {
+            ret = esp_http_client_set_timeout_ms(stream->client,
+                                                 kMediaReadTimeoutMs);
+        }
+    }
+    if (ret != ESP_OK)
+    {
+        music_http_client_close_stream(stream);
+        return ret;
+    }
+    *out_stream = stream;
+    return ESP_OK;
+}
+
+esp_err_t music_http_client_read_stream(music_http_stream_t *stream,
+                                        uint8_t *buffer, size_t capacity,
+                                        size_t *out_bytes)
+{
+    if (stream == NULL || stream->client == NULL || buffer == NULL ||
+        capacity == 0U || out_bytes == NULL || capacity > INT_MAX)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_bytes = 0U;
+    const int read = esp_http_client_read(stream->client, (char *)buffer,
+                                          (int)capacity);
+    if (read > 0)
+    {
+        *out_bytes = (size_t)read;
+        return ESP_OK;
+    }
+    if (read == 0 && esp_http_client_is_complete_data_received(stream->client))
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (read == -ESP_ERR_HTTP_EAGAIN || read == 0)
+    {
+        return ESP_ERR_HTTP_EAGAIN;
+    }
+    return ESP_FAIL;
+}
+
+void music_http_client_close_stream(music_http_stream_t *stream)
+{
+    if (stream == NULL)
+    {
+        return;
+    }
+    if (stream->client != NULL)
+    {
+        (void)esp_http_client_close(stream->client);
+        esp_http_client_cleanup(stream->client);
+    }
+    heap_caps_free(stream);
 }

@@ -53,7 +53,10 @@ static StaticQueue_t s_player_event_queue_buffer;
 static uint8_t *s_command_queue_storage = NULL;
 static uint8_t *s_player_event_queue_storage = NULL;
 static music_stream_player_t *s_player = NULL;
+/* 控制 JSON 与媒体流分别占用独立 HTTP 连接。 */
+static music_http_control_client_t s_control_client = {0};
 static music_service_catalog_snapshot_t *s_catalog = NULL;
+static const uint32_t kPlayerStopTimeoutMs = 6000U;
 static music_service_account_snapshot_t *s_account = NULL;
 static uint8_t *s_qr_data = NULL;
 static bool s_qr_polling = false;
@@ -208,7 +211,8 @@ static esp_err_t music_service_stop_player(void)
     {
         return ESP_OK;
     }
-    const esp_err_t ret = music_stream_player_stop(s_player);
+    const esp_err_t ret =
+        music_stream_player_stop(s_player, kPlayerStopTimeoutMs);
     if (ret != ESP_OK)
     {
         return ret;
@@ -313,7 +317,7 @@ static esp_err_t music_service_server_command(
     char command_id[64];
     music_service_make_command_id(command_id, sizeof(command_id));
     return music_http_client_session_command(
-        &config, session_id, action,
+        &s_control_client, &config, session_id, action,
         strcmp(action, "mode") == 0 ? music_service_mode_text(mode) : NULL,
         command_id, out_result);
 }
@@ -337,7 +341,8 @@ static void music_service_handle_start(const music_service_command_t *command)
     music_service_make_command_id(command_id, sizeof(command_id));
     music_http_session_result_t result = {0};
     ret = music_http_client_create_session(
-        &config, command->source_id, command->track_id, command_id, &result);
+        &s_control_client, &config, command->source_id, command->track_id,
+        command_id, &result);
     if (ret != ESP_OK)
     {
         music_service_set_error(result.error_code[0] != '\0'
@@ -461,8 +466,9 @@ static void music_service_handle_load_source(
     esp_err_t ret = music_service_copy_http_config(&config);
     if (ret == ESP_OK)
     {
-        ret = music_http_client_fetch_tracks(&config, command->source_id,
-                                             command->offset, &result);
+        ret = music_http_client_fetch_tracks(
+            &s_control_client, &config, command->source_id, command->offset,
+            &result);
     }
     taskENTER_CRITICAL(&s_snapshot_lock);
     if (s_catalog != NULL)
@@ -563,6 +569,7 @@ static void music_service_handle_destroy(void)
     s_snapshot.state = MUSIC_SERVICE_STATE_STOPPED;
     s_snapshot.mode = MUSIC_SERVICE_MODE_REPEAT_ALL;
     taskEXIT_CRITICAL(&s_snapshot_lock);
+    music_http_client_control_reset(&s_control_client);
 }
 
 static void music_service_task(void *arg)
@@ -570,11 +577,6 @@ static void music_service_task(void *arg)
     (void)arg;
     while (true)
     {
-        if (s_player != NULL)
-        {
-            /* micro-decoder 的状态回调必须回到 service owner，而非 UI 或 decoder task。 */
-            music_stream_player_poll(s_player);
-        }
         music_service_process_player_events();
         music_service_poll_qr_if_due();
         music_service_command_t command;

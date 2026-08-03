@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { createApp } from "../src/app.js";
+import { OggOpusPacketTransform } from "../src/ogg_opus_packet_transform.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = path.resolve(
@@ -121,7 +122,7 @@ test("short-lived stream capability works without exposing the device token", as
       `${running.base}/v1/music/streams/${session.stream_id}?device_id=watch-001`,
     );
     assert.equal(stream.status, 200);
-    assert.equal(stream.headers.get("content-type"), "audio/ogg");
+    assert.equal(stream.headers.get("content-type"), "application/x-watch-opus");
     const reader = stream.body.getReader();
     const first = await reader.read();
     assert.ok(first.value.byteLength > 0);
@@ -129,6 +130,36 @@ test("short-lived stream capability works without exposing the device token", as
   } finally {
     await running.close();
   }
+});
+
+function oggPage(segments, body, headerType = 0) {
+  const header = Buffer.alloc(27 + segments.length);
+  header.write("OggS");
+  header[4] = 0;
+  header[5] = headerType;
+  header[26] = segments.length;
+  Buffer.from(segments).copy(header, 27);
+  return Buffer.concat([header, body]);
+}
+
+test("Ogg Opus transform skips headers and frames packets across chunks/pages", async () => {
+  const transform = new OggOpusPacketTransform();
+  const output = [];
+  transform.on("data", (chunk) => output.push(chunk));
+  const head = Buffer.from("OpusHead\x01\x01");
+  const tags = Buffer.from("OpusTags\x00");
+  const audio = Buffer.alloc(258, 0x5a);
+  const first = Buffer.concat([
+    oggPage([head.length, tags.length, 255], Buffer.concat([head, tags, audio.subarray(0, 255)])),
+    oggPage([3], audio.subarray(255), 0x01),
+  ]);
+  transform.write(first.subarray(0, 31));
+  transform.end(first.subarray(31));
+  await new Promise((resolve, reject) => transform.once("end", resolve).once("error", reject));
+  const framed = Buffer.concat(output);
+  assert.equal(framed.readUInt16BE(0), audio.length);
+  assert.deepEqual(framed.subarray(2), audio);
+  assert.equal(output.length, 1);
 });
 
 test("pausing an attached stream closes the HTTP response", async () => {

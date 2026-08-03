@@ -80,6 +80,8 @@ body {
 /* ===== 表盘页(cont_1) ===== */
 .watchface {
   background: var(--watchface-bg);
+  background-position: center;
+  background-size: cover;
 }
 .watchface .date {
   position: absolute;
@@ -325,15 +327,17 @@ body {
 }
 .function-list {
   position: absolute;
-  left: 40px;
-  top: 12px;
-  bottom: 12px;
-  width: 330px;
+  inset: 0;
+  width: 410px;
   overflow-y: auto;
+  overflow-x: hidden;
+  scroll-snap-type: y mandatory;
   scrollbar-width: none;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  align-items: flex-start;
+  gap: 20px;
+  padding-bottom: 264px;
 }
 /* 入口卡:256×90 紫 #947cb6 圆角18,阴影 8,8 宽6 spread4 #7c73af */
 .fn-card {
@@ -345,11 +349,14 @@ body {
   box-shadow: 8px 8px 10px 4px var(--fn-shadow);
   position: relative;
   cursor: pointer;
-  transition: transform 0.12s;
+  margin-left: 0;
+  transition: opacity 0.08s linear;
   flex-shrink: 0;
+  will-change: transform, opacity;
+  scroll-snap-align: center;
 }
 .fn-card:active {
-  transform: scale(0.97);
+  filter: brightness(1.08);
 }
 .fn-card img {
   position: absolute;
@@ -358,6 +365,20 @@ body {
   width: 70px;
   height: 70px;
   display: block;
+  pointer-events: none;
+}
+.fn-icon-text {
+  position: absolute;
+  left: 13px;
+  top: 4px;
+  width: 70px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f3f1ff;
+  font-size: 48px;
+  line-height: 1;
   pointer-events: none;
 }
 
@@ -481,11 +502,13 @@ body {
 }
 .hermes-msg.user {
   width: 262px;
+  min-height: 70px;
   margin-left: auto;
   background: #f7f6f3;
 }
 .hermes-msg.other {
   width: 306px;
+  min-height: 88px;
   background: #ffffff;
 }
 .hermes-voice-btn {
@@ -500,6 +523,12 @@ body {
   color: #ffffff;
   font-size: 16px;
   cursor: pointer;
+}
+.hermes-voice-btn.pressing {
+  background: #b3261e;
+}
+.hermes-voice-btn.pressing.cancel {
+  background: #6e6e6e;
 }
 .hermes-subtitle {
   position: absolute;
@@ -751,9 +780,9 @@ body {
   height: 56px;
   border: none;
   border-radius: 8px;
-  background: #f3f4f6;
+  background: transparent;
   color: #111827;
-  font-size: 15px;
+  font-size: 27px;
   cursor: pointer;
 }
 .danger-status {
@@ -776,10 +805,13 @@ body {
 }
 .danger-result {
   position: absolute;
-  top: 104px;
+  top: 204px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 16px;
+  font-size: 58px;
+  letter-spacing: 3px;
+  line-height: 70px;
+  font-weight: 500;
   color: #111827;
 }
 .danger-sens-title {
@@ -948,7 +980,7 @@ body {
   height: 56px;
   border: none;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
   color: #d7dce8;
   font-size: 20px;
   cursor: pointer;
@@ -957,9 +989,11 @@ body {
   position: absolute;
   left: 40px;
   top: 42px;
+  width: 330px;
   font-size: 20px;
   font-weight: 600;
   color: #d7dce8;
+  text-align: center;
 }
 .ota-status {
   position: absolute;
@@ -969,6 +1003,7 @@ body {
   height: 44px;
   font-size: 16px;
   color: #d7dce8;
+  text-align: center;
 }
 .ota-bar {
   position: absolute;
@@ -1003,7 +1038,7 @@ body {
   height: 54px;
   border: none;
   border-radius: 12px;
-  background: #8a6dff;
+  background: #2196f3;
   color: #ffffff;
   font-size: 16px;
   cursor: pointer;
@@ -1014,10 +1049,10 @@ body {
   top: 320px;
   width: 160px;
   height: 54px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: none;
   border-radius: 12px;
-  background: transparent;
-  color: #d7dce8;
+  background: #2196f3;
+  color: #ffffff;
   font-size: 16px;
   cursor: pointer;
 }
@@ -1026,33 +1061,32 @@ body {
 .cal {
   background: linear-gradient(180deg, #f8fbff, #f7fbf2);
 }
-.cal-back {
+.cal::before {
+  content: '';
   position: absolute;
   left: 40px;
-  top: 18px;
-  width: 52px;
-  height: 44px;
-  border: none;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #1f1d23;
-  font-size: 20px;
-  cursor: pointer;
+  top: 38px;
+  width: 330px;
+  height: 426px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 46px;
+  background: linear-gradient(180deg, #fff2f8, #fafff4);
+  box-shadow: 0 8px 16px rgba(216, 207, 218, 0.2);
 }
 .cal-title {
   position: absolute;
   left: 50%;
-  top: 24px;
+  top: 60px;
   transform: translateX(-50%);
-  font-size: 20px;
+  font-size: 27px;
   font-weight: 600;
   color: #1f1d23;
 }
 .cal-nav {
   position: absolute;
-  top: 18px;
-  left: 0;
-  right: 0;
+  top: 56px;
+  left: 40px;
+  right: 40px;
   height: 42px;
   pointer-events: none;
 }
@@ -1069,24 +1103,50 @@ body {
   pointer-events: auto;
 }
 .cal-arrow.left {
-  left: 100px;
+  left: 14px;
 }
 .cal-arrow.right {
-  right: 100px;
+  right: 14px;
 }
-/* 网格:center_x0=27, col_step=46, row 42px 圆 dot */
-.cal-grid {
+/* 网格对应日历卡片内 center_x0=27、col_step=46。 */
+.cal-weekdays {
   position: absolute;
-  left: 0;
-  top: 96px;
-  right: 0;
-  bottom: 0;
+  left: 46px;
+  top: 116px;
+  width: 322px;
+  height: 24px;
   display: grid;
   grid-template-columns: repeat(7, 46px);
-  grid-template-rows: repeat(6, 58px);
-  justify-content: center;
-  align-content: flex-start;
+  color: #86868b;
+  font-size: 16px;
+  text-align: center;
+  z-index: 1;
+}
+.cal-weekdays::after {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 32px;
+  width: 286px;
+  height: 1px;
+  background: rgba(233, 220, 229, 0.6);
+}
+.cal-grid {
+  position: absolute;
+  left: 44px;
+  top: 167px;
+  width: 322px;
+  display: grid;
+  grid-template-columns: repeat(7, 46px);
+  align-content: start;
   gap: 0;
+  z-index: 1;
+}
+.cal-grid.rows-5 {
+  grid-auto-rows: 58px;
+}
+.cal-grid.rows-6 {
+  grid-auto-rows: 50px;
 }
 .cal-cell {
   width: 42px;
@@ -1097,19 +1157,162 @@ body {
   justify-content: center;
   font-size: 16px;
   color: #1f1d23;
-  margin: auto;
+  margin: 0 auto;
 }
 .cal-cell.blank {
   visibility: hidden;
 }
-.cal-cell.today {
+.cal-cell.selected {
   background: #cfe0ff;
   color: #007aff;
   font-weight: 600;
 }
-.cal-cell.marked {
-  background: #d7ebd8;
-  color: #18b957;
+
+/* ===== 小游戏菜单(mini_games_controller.c) ===== */
+.games {
+  background: #f8fbff;
+  color: #1f2937;
+}
+.games-title {
+  position: absolute;
+  left: 40px;
+  top: 40px;
+  font-size: 22px;
+  font-weight: 600;
+}
+.games-subtitle {
+  position: absolute;
+  left: 40px;
+  top: 84px;
+  color: #6b7280;
+  font-size: 14px;
+}
+.games-list {
+  position: absolute;
+  left: 40px;
+  top: 130px;
+  width: 330px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.game-entry,
+.games-back {
+  width: 330px;
+  height: 52px;
+  border: 1px solid #e5e7eb;
+  border-radius: 17px;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 16px;
+  text-align: center;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.game-entry:active,
+.games-back:active {
+  filter: brightness(0.96);
+}
+.game-entry.selected {
+  border-color: #9bb9e8;
+}
+.game-entry .game-name {
+  display: inline-block;
+}
+.game-icon {
+  font-size: 17px;
+  font-weight: 700;
+}
+.game-icon.blue {
+  color: #3482e2;
+}
+.game-icon.sky {
+  color: #0ea5e9;
+}
+.game-icon.amber {
+  color: #f59e0b;
+}
+.games-back {
+  position: absolute;
+  left: 40px;
+  top: 410px;
+  border: none;
+  border-radius: 16px;
+  background: #374151;
+  color: #ffffff;
+  gap: 6px;
+}
+.games-back span {
+  color: #ef4444;
+  font-size: 28px;
+  line-height: 1;
+}
+.games-stage {
+  position: absolute;
+  left: 40px;
+  top: 210px;
+  width: 330px;
+  color: #d6d6d6;
+  text-align: center;
+  font-size: 14px;
+}
+
+/* ===== 壁纸页(screen_wallpaper) ===== */
+.wallpaper {
+  background: #111111;
+  color: #ffffff;
+}
+.wallpaper-title {
+  position: absolute;
+  left: 40px;
+  top: 28px;
+  font-size: 24px;
+  font-weight: 600;
+}
+.wallpaper-strip {
+  position: absolute;
+  left: 40px;
+  top: 92px;
+  width: 330px;
+  height: 190px;
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+.wallpaper-option {
+  flex: 0 0 170px;
+  height: 170px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 18px;
+  background: #272727;
+  overflow: hidden;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+.wallpaper-option:active {
+  border-color: #ffffff;
+}
+.wallpaper-option img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.wallpaper-hint {
+  position: absolute;
+  left: 40px;
+  top: 318px;
+  width: 330px;
+  color: #a9a9a9;
+  font-size: 14px;
+  text-align: center;
 }
 
 /* ===== 通知中心(watch_notification_center.c) ===== */
@@ -1346,28 +1549,6 @@ body {
   color: #8290ab;
   font-size: 15px;
   cursor: pointer;
-}
-
-/* ===== 原型演示导航 ===== */
-.demo-nav {
-  position: absolute;
-  top: 14px;
-  right: 40px;
-  z-index: 30;
-  display: flex;
-  gap: 6px;
-}
-.demo-nav button {
-  border: none;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: rgba(27, 48, 36, 0.1);
-  color: #1B3024;
-  font-size: 12px;
-  cursor: pointer;
-}
-.demo-nav button:hover {
-  background: rgba(27, 48, 36, 0.18);
 }
 
 /* ===== 侧边说明 ===== */

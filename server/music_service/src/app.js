@@ -93,7 +93,7 @@ export function createApp(overrides = {}) {
     if (streamMatch && request.method === "GET") {
       const deviceId = deviceIdFrom(url);
       response.statusCode = 200;
-      response.setHeader("Content-Type", "audio/ogg");
+      response.setHeader("Content-Type", "application/x-watch-opus");
       response.setHeader("Cache-Control", "no-store");
       response.setHeader("Transfer-Encoding", "chunked");
       const result = engine.attachStream(deviceId, streamMatch[1], response);
@@ -103,6 +103,8 @@ export function createApp(overrides = {}) {
         response.removeHeader("Transfer-Encoding");
         return json(response, 409, result);
       }
+      response.socket?.setNoDelay?.(true);
+      response.flushHeaders?.();
       return;
     }
 

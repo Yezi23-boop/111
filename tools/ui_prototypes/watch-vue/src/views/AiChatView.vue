@@ -46,13 +46,14 @@ const MESSAGES = [
       @pointerdown="pressing = true"
       @pointerup="pressing = false"
       @pointerleave="pressing = false"
+      @pointercancel="pressing = false"
     >
       {{ pressing ? '松开发送' : '按住说话' }}
     </button>
 
     <!-- footer 副按钮(由 controller 控制显隐) -->
     <div class="ai-footer">
-      <button class="ai-secondary">退出</button>
+      <button class="ai-secondary" @click="emit('back')">返回主页</button>
     </div>
   </div>
 </template>

@@ -157,6 +157,20 @@ static void start_core_policy(void)
         ESP_LOGW(TAG, "Power service start failed");
     }
 
+    /* audio bridge 在 policy task 启动前注册：要求 audio codec 已初始化
+     * （board_foundation 阶段完成），保证首次预算能读到初始音频事实。 */
+    if (power_policy_audio_bridge_register() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Power policy audio bridge register failed");
+    }
+
+    /* Safety 的省电参与者注册同样必须在 power_policy task 启动前完成，
+     * 与 audio bridge 同一时机；真实 Safety 运行仍由 start_service_managers 启动。 */
+    if (safety_monitor_policy_register_power_participant() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Safety monitor power participant register failed");
+    }
+
     if (power_policy_start() != ESP_OK)
     {
         ESP_LOGW(TAG, "Power policy start failed");

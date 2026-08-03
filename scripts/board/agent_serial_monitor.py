@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-"""Agent-friendly ESP-IDF serial monitor wrapper.
+"""Agent-friendly ESP32 serial capture tool (pySerial direct-read).
 
-This tool keeps `idf.py monitor` as the low-level transport, but adds the parts
-agents repeatedly need: bounded capture windows, stable log file names, process
-cleanup, and a small JSON summary with capture facts.
+Owns the serial port directly via pySerial instead of spawning
+`idf.py monitor` / PowerShell / export.ps1.  This removes the three failure
+modes of the previous design:
+
+1. Long captures no longer depend on the caller's Bash window: agent starts
+   a capture with `--action start`, gets a PID back, then polls the log file.
+   The capture process self-terminates at `--duration-seconds`.
+2. A stale monitor can no longer steal the port: the capture process opens the
+   COM port exclusively (`exclusive=True`), and a per-port lock file detects a
+   still-running capture before trying to open it.  Two capture instances on
+   the same port fail fast instead of fighting over the handle.
+3. `export.ps1`/MSYSTEM issues are gone: no ESP-IDF environment is needed to
+   read the console output, only pySerial (ships with the IDF venv).
 """
 
 from __future__ import annotations
@@ -12,17 +22,28 @@ import argparse
 import datetime as dt
 import json
 import os
-import queue
 import re
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
+try:
+    import serial
+    import serial.tools.list_ports
+except ImportError as exc:  # pragma: no cover - environment check
+    print(
+        "ERROR: pySerial is required. Run with the ESP-IDF venv python, e.g.:\n"
+        "  D:\\esp-idf\\5.3\\tools.espressif\\python_env\\idf5.5_py3.11_env\\Scripts\\python.exe "
+        "scripts/board/agent_serial_monitor.py ...",
+        file=sys.stderr,
+    )
+    raise SystemExit(2) from exc
 
-DEFAULT_IDF_EXPORT_PS1 = r"D:\esp-idf\v5.5.3\esp-idf\export.ps1"
+
 DEFAULT_BAUD = 115200
+DEFAULT_FLASH_BAUD = 921600
+DEFAULT_IDF_EXPORT_PS1 = r"D:\esp-idf\v5.5.3\esp-idf\export.ps1"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 OBSERVE_START_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("boot_rom_seen", re.compile(r"ESP-ROM:esp32s3")),
@@ -39,15 +60,12 @@ PANIC_CONFIRM_RE = re.compile(
 )
 PANIC_CAPTURE_GRACE_SECONDS = 1.0
 
-RESIDUAL_MONITOR_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bidf_monitor\.py\b", re.IGNORECASE),
-    re.compile(r"\bidf\.py\b.*\bmonitor\b", re.IGNORECASE),
-    re.compile(r"\bESP_IDF_MONITOR_TEST\b", re.IGNORECASE),
-)
-MONITOR_PORT_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(?:^|\s)(?:-p|--port)\s+(COM\d+)\b", re.IGNORECASE),
-    re.compile(r"\bport\s*=\s*(COM\d+)\b", re.IGNORECASE),
-)
+# USB-Serial/JTAG keeps the COM handle busy briefly after a process exit;
+# keep retrying for a while before giving up on the exclusive open.
+PORT_OPEN_ATTEMPTS = 30
+PORT_OPEN_RETRY_SECONDS = 2.0
+STATE_POLL_SECONDS = 0.2
+SERIAL_READ_TIMEOUT_SECONDS = 0.2
 
 
 def repo_root_from_script() -> Path:
@@ -70,20 +88,18 @@ def safe_console_write(text: str) -> None:
     sys.stdout.flush()
 
 
-def build_idf_command(args: argparse.Namespace, repo_root: Path) -> list[str]:
-    action = {
-        "monitor": "monitor",
-        "app-flash-monitor": "app-flash monitor",
-    }[args.action]
+def build_flash_command(args: argparse.Namespace, repo_root: Path) -> list[str]:
+    """Build the `idf.py app-flash` invocation, flashed at the fast baud."""
     monitor_options = " --no-reset" if args.no_reset else ""
-
     powershell = (
         "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
         "$OutputEncoding=[System.Text.Encoding]::UTF8; "
+        # Git Bash injects MSYSTEM into child processes; idf_tools.py rejects
+        # MSYS/Mingw environments, so drop it before sourcing export.ps1.
+        "Remove-Item Env:MSYSTEM -ErrorAction SilentlyContinue; "
         f"& '{args.idf_export_ps1}'; "
         f"Set-Location '{repo_root}'; "
-        f"$env:ESP_IDF_MONITOR_TEST='1'; "
-        f"idf.py -p {args.port} -b {args.baud} {action}{monitor_options}"
+        f"idf.py -p {args.port} -b {args.flash_baud} app-flash{monitor_options}"
     )
     return [
         "powershell",
@@ -93,14 +109,6 @@ def build_idf_command(args: argparse.Namespace, repo_root: Path) -> list[str]:
         "-Command",
         powershell,
     ]
-
-
-def reader_thread(stream, output: queue.Queue[str]) -> None:
-    try:
-        for line in iter(stream.readline, ""):
-            output.put(line)
-    finally:
-        output.put("")
 
 
 def kill_process_tree(process: subprocess.Popen[str]) -> None:
@@ -117,185 +125,103 @@ def kill_process_tree(process: subprocess.Popen[str]) -> None:
         process.kill()
 
 
-def compact_command_line(command_line: object, limit: int = 400) -> str:
-    text = "" if command_line is None else str(command_line)
-    text = " ".join(text.split())
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3] + "..."
+def acquire_port_lock(port: str, log_dir: Path) -> Path:
+    """Create a per-port lock file so two captures never open the same COM port.
+
+    The lock records the PID of the capture that owns it; a lock whose owner is
+    no longer alive is stale and is reclaimed.  A live lock means a capture is
+    already running on this port and we fail fast.
+    """
+    log_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = log_dir / f"{port}.lock"
+    for _ in range(PORT_OPEN_ATTEMPTS):
+        if lock_path.exists():
+            try:
+                owner = int(lock_path.read_text(encoding="utf-8").strip() or "0")
+            except (OSError, ValueError):
+                owner = 0
+            if owner > 0 and process_alive(owner):
+                raise RuntimeError(
+                    f"port {port} is already captured by pid {owner}; "
+                    f"lock file: {lock_path}"
+                )
+            # Stale lock (owner gone) or unreadable content: remove and retry.
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
+        try:
+            lock_path.write_text(str(os.getpid()), encoding="utf-8")
+            return lock_path
+        except OSError:
+            time.sleep(PORT_OPEN_RETRY_SECONDS)
+    raise RuntimeError(f"could not acquire port lock: {lock_path}")
 
 
-def process_field(process: dict[str, object], *names: str) -> object:
-    for name in names:
-        if name in process:
-            return process[name]
-    return None
-
-
-def process_id(process: dict[str, object]) -> int | None:
-    value = process_field(process, "ProcessId", "pid")
-    try:
-        return int(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def is_residual_monitor_process(process: dict[str, object], current_pid: int) -> bool:
-    pid = process_id(process)
-    if pid is None or pid == current_pid:
-        return False
-    command_line = compact_command_line(process_field(process, "CommandLine", "command_line"), 4000)
-    if not command_line:
-        return False
-    if re.search(r"\bagent_serial_monitor\.py\b", command_line, re.IGNORECASE):
-        return False
-    return any(pattern.search(command_line) for pattern in RESIDUAL_MONITOR_PATTERNS)
-
-
-def extract_monitor_port(command_line: object) -> str | None:
-    text = compact_command_line(command_line, 4000)
-    for pattern in MONITOR_PORT_PATTERNS:
-        match = pattern.search(text)
-        if match:
-            return match.group(1).upper()
-    return None
-
-
-def residual_process_summary(process: dict[str, object]) -> dict[str, object]:
-    command_line = process_field(process, "CommandLine", "command_line")
-    return {
-        "pid": process_id(process),
-        "parent_pid": process_field(process, "ParentProcessId", "ppid"),
-        "name": process_field(process, "Name", "name"),
-        "port": extract_monitor_port(command_line),
-        "command_line": compact_command_line(command_line),
-    }
-
-
-def scan_residual_monitor_processes(current_pid: int) -> dict[str, object]:
-    """Find monitor-like host processes after capture."""
+def process_alive(pid: int) -> bool:
     if os.name == "nt":
-        command = [
-            "powershell",
-            "-NoProfile",
-            "-Command",
-            (
-                "Get-CimInstance Win32_Process | "
-                "Select-Object ProcessId,ParentProcessId,Name,CommandLine | "
-                "ConvertTo-Json -Compress"
-            ),
-        ]
-    else:
-        command = [
-            "ps",
-            "-eo",
-            "pid=,ppid=,comm=,args=",
-        ]
-
-    try:
-        result = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=5,
-            check=False,
-        )
-    except Exception as exc:  # noqa: BLE001 - diagnostics must not break capture.
-        return {"error": str(exc), "processes": []}
-
-    if result.returncode != 0:
-        return {"error": result.stderr.strip() or f"exit_code={result.returncode}", "processes": []}
-
-    try:
-        if os.name == "nt":
-            raw = result.stdout.strip()
-            if not raw:
-                process_rows: list[dict[str, object]] = []
-            else:
-                parsed = json.loads(raw)
-                if isinstance(parsed, dict):
-                    process_rows = [parsed]
-                else:
-                    process_rows = [row for row in parsed if isinstance(row, dict)]
-        else:
-            process_rows = []
-            for line in result.stdout.splitlines():
-                parts = line.strip().split(maxsplit=3)
-                if len(parts) < 4:
-                    continue
-                pid, ppid, name, command_line = parts
-                process_rows.append(
-                    {
-                        "pid": pid,
-                        "ppid": ppid,
-                        "name": name,
-                        "command_line": command_line,
-                    }
-                )
-    except Exception as exc:  # noqa: BLE001 - diagnostics must not break capture.
-        return {"error": str(exc), "processes": []}
-
-    processes = [
-        residual_process_summary(row)
-        for row in process_rows
-        if is_residual_monitor_process(row, current_pid)
-    ]
-    return {"error": None, "processes": processes}
-
-
-def terminate_residual_monitor_processes(processes: list[dict[str, object]]) -> list[dict[str, object]]:
-    results: list[dict[str, object]] = []
-    for process in processes:
-        pid = process.get("pid")
-        result = {
-            "pid": pid,
-            "port": process.get("port"),
-            "name": process.get("name"),
-            "terminated": False,
-            "exit_code": None,
-            "error": None,
-        }
         try:
-            pid_text = str(int(pid))
-        except (TypeError, ValueError):
-            result["error"] = "invalid_pid"
-            results.append(result)
-            continue
+            result = subprocess.run(
+                ["tasklist.exe", "/FI", f"PID eq {pid}", "/NH"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=3,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return True  # 无法验证时保守视为存活。
+        # 匹配行形如 "explorer.exe  8128 Console ..."；无匹配时 tasklist 输出
+        # "没有运行的任务..." 之类提示且不含该 PID（中英文系统均如此），且
+        # 返回码恒为 0，不能用 returncode 区分。用非数字边界避免 9999999
+        # 误匹配 99999999。
+        output = result.stdout.decode(errors="replace")
+        return re.search(rf"(?<!\d){pid}(?!\d)", output) is not None
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
+
+def read_serial_lines(ser: serial.Serial) -> list[bytes]:
+    """Drain whatever is buffered on the serial port right now."""
+    lines: list[bytes] = []
+    try:
+        while True:
+            line = ser.readline()
+            if not line:
+                break
+            lines.append(line)
+    except serial.SerialException:
+        pass
+    return lines
+
+
+def serial_open_retry(args: argparse.Namespace, opened_at: float) -> serial.Serial:
+    """Open the COM port exclusively, retrying until the deadline.
+
+    Returns the open handle; raises if the port stays unavailable until
+    `opened_at + duration` (flash runs first when action is app-flash-monitor,
+    so the port is expected to be busy for the flashing phase).
+    """
+    last_error: Exception | None = None
+    while True:
+        if time.monotonic() >= opened_at + args.duration_seconds:
+            break
         try:
-            if os.name == "nt":
-                completed = subprocess.run(
-                    ["taskkill.exe", "/T", "/F", "/PID", pid_text],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=5,
-                    check=False,
-                )
-            else:
-                completed = subprocess.run(
-                    ["kill", "-TERM", pid_text],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=5,
-                    check=False,
-                )
-            result["exit_code"] = completed.returncode
-            result["terminated"] = completed.returncode == 0
-            if completed.returncode != 0:
-                result["error"] = completed.stderr.strip() or completed.stdout.strip()
-        except Exception as exc:  # noqa: BLE001 - cleanup diagnostics must not break summary.
-            result["error"] = str(exc)
-        results.append(result)
-    return results
+            return serial.Serial(
+                args.port,
+                baudrate=args.baud,
+                timeout=SERIAL_READ_TIMEOUT_SECONDS,
+                exclusive=True,
+            )
+        except serial.SerialException as exc:
+            last_error = exc
+        time.sleep(PORT_OPEN_RETRY_SECONDS)
+    raise RuntimeError(
+        f"could not open {args.port} exclusively after "
+        f"{args.duration_seconds}s: {last_error}"
+    )
 
 
 def observe_start_trigger(line: str) -> str | None:
@@ -312,8 +238,38 @@ def update_panic_detector(line: str, panic_start_seen: bool) -> tuple[bool, bool
     return panic_start_seen, panic_confirmed
 
 
-def run_capture(command: list[str], log_path: Path, args: argparse.Namespace) -> dict[str, object]:
-    started_at = dt.datetime.now(dt.timezone.utc)
+def find_pending_capture(log_dir: Path) -> tuple[Path, dict[str, object]] | None:
+    """Return (state file, state) of a started-but-still-running capture."""
+    for state_path in sorted(log_dir.glob("*-capture.state.json")):
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        pid = int(state.get("pid") or 0)
+        if pid > 0 and process_alive(pid):
+            return state_path, state
+    return None
+
+
+def print_capture_status(state_path: Path, state: dict[str, object]) -> int:
+    log_path = state.get("log_path")
+    summary_path = state.get("summary_path")
+    print(f"AGENT_SERIAL_MONITOR_STATUS=running")
+    print(f"AGENT_SERIAL_MONITOR_PID={state.get('pid')}")
+    print(f"AGENT_SERIAL_MONITOR_STATE={state_path}")
+    print(f"AGENT_SERIAL_MONITOR_LOG={log_path}")
+    print(f"AGENT_SERIAL_MONITOR_SUMMARY={summary_path}")
+    return 0
+
+
+def run_capture(
+    ser: serial.Serial,
+    log_path: Path,
+    args: argparse.Namespace,
+    started_at: dt.datetime,
+    lock_path: Path,
+) -> dict[str, object]:
+    """Capture serial output until deadline/panic, returning capture facts."""
     observe_started = args.action != "app-flash-monitor"
     observe_trigger = "command_start" if observe_started else None
     observe_started_at = started_at if observe_started else None
@@ -326,76 +282,56 @@ def run_capture(command: list[str], log_path: Path, args: argparse.Namespace) ->
     panic_start_seen = False
     panic_log_seen = False
     panic_stop_deadline = None
-    stop_kill_sent = False
     lines: list[str] = []
 
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
-    )
-    assert process.stdout is not None
-
-    output: queue.Queue[str] = queue.Queue()
-    thread = threading.Thread(target=reader_thread, args=(process.stdout, output), daemon=True)
-    thread.start()
-
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("w", encoding="utf-8", newline="\n") as log_file:
-        while True:
-            if process.poll() is not None and output.empty():
-                break
-            now = time.monotonic()
-            if panic_stop_deadline is not None and now >= panic_stop_deadline:
-                capture_stop_reason = "panic_log_seen"
-                if not stop_kill_sent:
-                    kill_process_tree(process)
-                    stop_kill_sent = True
-            elif now >= deadline:
-                timed_out = True
-                timed_out_phase = "observe" if observe_started else "pre_observe"
-                capture_stop_reason = (
-                    "duration_elapsed" if observe_started else "pre_observe_timeout"
-                )
-                if not stop_kill_sent:
-                    kill_process_tree(process)
-                    stop_kill_sent = True
-            try:
-                line = output.get(timeout=0.2)
-            except queue.Empty:
-                continue
-            if line == "":
-                continue
-            clean_line = strip_ansi(line)
-            log_file.write(clean_line)
-            log_file.flush()
-            clean_text = clean_line.rstrip("\r\n")
-            lines.append(clean_text)
-            if not observe_started:
-                trigger = observe_start_trigger(clean_text)
-                if trigger is not None:
-                    observe_started = True
-                    observe_trigger = trigger
-                    observe_started_at = dt.datetime.now(dt.timezone.utc)
-                    deadline = time.monotonic() + args.duration_seconds
-            if not panic_log_seen:
-                panic_start_seen, panic_confirmed = update_panic_detector(
-                    clean_text, panic_start_seen
-                )
-                if panic_confirmed:
-                    panic_log_seen = True
+    try:
+        with log_path.open("w", encoding="utf-8", newline="\n") as log_file:
+            while True:
+                now = time.monotonic()
+                if panic_stop_deadline is not None and now >= panic_stop_deadline:
                     capture_stop_reason = "panic_log_seen"
-                    panic_stop_deadline = time.monotonic() + PANIC_CAPTURE_GRACE_SECONDS
-            if not timed_out and not args.quiet_console:
-                safe_console_write(clean_line)
+                    break
+                if now >= deadline:
+                    timed_out = True
+                    timed_out_phase = "observe" if observe_started else "pre_observe"
+                    capture_stop_reason = (
+                        "duration_elapsed" if observe_started else "pre_observe_timeout"
+                    )
+                    break
+                for raw_line in read_serial_lines(ser):
+                    clean_line = strip_ansi(
+                        raw_line.decode("utf-8", errors="replace")
+                    )
+                    log_file.write(clean_line)
+                    log_file.flush()
+                    clean_text = clean_line.rstrip("\r\n")
+                    lines.append(clean_text)
+                    if not observe_started:
+                        trigger = observe_start_trigger(clean_text)
+                        if trigger is not None:
+                            observe_started = True
+                            observe_trigger = trigger
+                            observe_started_at = dt.datetime.now(dt.timezone.utc)
+                            deadline = time.monotonic() + args.duration_seconds
+                    if not panic_log_seen:
+                        panic_start_seen, panic_confirmed = update_panic_detector(
+                            clean_text, panic_start_seen
+                        )
+                        if panic_confirmed:
+                            panic_log_seen = True
+                            capture_stop_reason = "panic_log_seen"
+                            panic_stop_deadline = (
+                                time.monotonic() + PANIC_CAPTURE_GRACE_SECONDS
+                            )
+                    if not timed_out and not args.quiet_console:
+                        safe_console_write(clean_line)
+    finally:
+        lock_path.unlink(missing_ok=True)
 
     ended_at = dt.datetime.now(dt.timezone.utc)
     if capture_stop_reason is None:
-        capture_stop_reason = "process_exited"
+        capture_stop_reason = "port_closed"
     return {
         "started_at": started_at.isoformat(),
         "ended_at": ended_at.isoformat(),
@@ -403,7 +339,6 @@ def run_capture(command: list[str], log_path: Path, args: argparse.Namespace) ->
         "timed_out_phase": timed_out_phase,
         "capture_stop_reason": capture_stop_reason,
         "panic_log_seen": panic_log_seen,
-        "exit_code": process.poll(),
         "observe_started": observe_started,
         "observe_trigger": observe_trigger,
         "observe_started_at": observe_started_at.isoformat() if observe_started_at else None,
@@ -427,24 +362,19 @@ def observation_complete(capture: dict[str, object]) -> bool:
 
 def write_summary(
     args: argparse.Namespace,
-    command: list[str],
+    flash_command: list[str] | None,
     log_path: Path,
     capture: dict[str, object],
     summary_path: Path,
-    residual_scan: dict[str, object],
-    residual_kill_results: list[dict[str, object]],
-    residual_final_scan: dict[str, object],
 ) -> dict[str, object]:
     lines = list(capture["lines"])
-    residual_processes = list(residual_scan.get("processes", []))
-    residual_remaining = list(residual_final_scan.get("processes", []))
-    residual_killed_count = sum(1 for item in residual_kill_results if item.get("terminated"))
     summary = {
         "tool": "agent_serial_monitor",
         "status": "captured",
         "action": args.action,
         "port": args.port,
         "baud": args.baud,
+        "flash_baud": args.flash_baud,
         "duration_seconds": args.duration_seconds,
         "flash_timeout_seconds": args.flash_timeout_seconds,
         "quiet_console": args.quiet_console,
@@ -453,24 +383,15 @@ def write_summary(
         "timed_out_phase": capture["timed_out_phase"],
         "capture_stop_reason": capture["capture_stop_reason"],
         "panic_log_seen": capture["panic_log_seen"],
-        "exit_code": capture["exit_code"],
         "observe_started": capture["observe_started"],
         "observe_trigger": capture["observe_trigger"],
         "observe_started_at": capture["observe_started_at"],
         "flash_completed": flash_completed(lines),
         "observation_complete": observation_complete(capture),
         "line_count": len(lines),
-        "residual_monitor_count": len(residual_processes),
-        "residual_monitor_processes": residual_processes,
-        "residual_monitor_scan_error": residual_scan.get("error"),
-        "residual_monitor_kill_results": residual_kill_results,
-        "residual_monitor_killed_count": residual_killed_count,
-        "residual_monitor_remaining_count": len(residual_remaining),
-        "residual_monitor_remaining_processes": residual_remaining,
-        "residual_monitor_final_scan_error": residual_final_scan.get("error"),
         "started_at": capture["started_at"],
         "ended_at": capture["ended_at"],
-        "command": command,
+        "flash_command": flash_command,
         "log_path": str(log_path),
         "summary_path": str(summary_path),
     }
@@ -483,32 +404,52 @@ def write_summary(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Bounded ESP-IDF serial monitor capture for agents.",
+        description=(
+            "Bounded ESP32 serial capture for agents (pySerial direct-read). "
+            "Runs `idf.py app-flash` first when action is app-flash-monitor, "
+            "then opens the port exclusively and captures until the duration "
+            "elapses or a panic is detected."
+        ),
     )
-    parser.add_argument("--port", required=True, help="Serial port, for example COM3.")
+    parser.add_argument("--port", required=True, help="Serial port, for example COM7.")
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD)
     parser.add_argument(
+        "--flash-baud",
+        type=int,
+        default=DEFAULT_FLASH_BAUD,
+        help=(
+            "Baud rate for the app-flash stage. ESP32-S3 USB-Serial/JTAG "
+            "reliably supports 921600, which keeps a 10+ MB app image well "
+            "inside the flash timeout."
+        ),
+    )
+    parser.add_argument(
         "--action",
-        choices=("monitor", "app-flash-monitor"),
+        choices=("monitor", "app-flash-monitor", "start", "capture"),
         default="monitor",
-        help="Use monitor only, or app-flash then monitor.",
+        help=(
+            "Capture only, flash the app first and then capture, or query the "
+            "running capture (start/capture report state without opening the port)."
+        ),
     )
     parser.add_argument(
         "--duration-seconds",
         type=int,
         default=60,
         help=(
-            "Observation window in seconds. For app-flash-monitor this starts "
-            "after boot evidence is observed, so flashing time is not counted."
+            "Maximum capture time. For app-flash-monitor this is also the "
+            "total flash+wait budget, so keep it comfortably above the flash "
+            "time (a 10+ MB image takes ~80 s at 921600 baud)."
         ),
     )
     parser.add_argument(
         "--flash-timeout-seconds",
         type=int,
-        default=180,
+        default=300,
         help=(
-            "Maximum time to allow app-flash-monitor to finish flashing and reach "
-            "boot evidence before starting the observation window."
+            "Maximum time allowed for the app-flash stage to finish before "
+            "capture starts. The observe window itself is capped by "
+            "--duration-seconds."
         ),
     )
     parser.add_argument("--tag", default="serial", help="File-name tag for logs.")
@@ -517,7 +458,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-reset",
         action="store_true",
-        help="Pass --no-reset to idf.py monitor when observing an already-running board.",
+        help="Do not touch DTR/RTS on the port (idf.py app-flash still resets "
+        "the board at the end of flashing).",
     )
     parser.add_argument(
         "--quiet-console",
@@ -551,25 +493,83 @@ def main() -> int:
     safe_tag = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.tag).strip("-") or "serial"
     log_path = log_dir / f"{stamp}-{safe_tag}.log"
     summary_path = log_dir / f"{stamp}-{safe_tag}.summary.json"
+    state_path = log_dir / f"{stamp}-{safe_tag}.capture.state.json"
 
-    command = build_idf_command(args, repo_root)
-    capture = run_capture(command, log_path, args)
-    residual_scan = scan_residual_monitor_processes(os.getpid())
-    residual_processes = list(residual_scan.get("processes", []))
-    residual_kill_results = terminate_residual_monitor_processes(residual_processes)
-    if residual_processes:
-        time.sleep(0.5)
-    residual_final_scan = scan_residual_monitor_processes(os.getpid())
-    summary = write_summary(
-        args,
-        command,
-        log_path,
-        capture,
-        summary_path,
-        residual_scan,
-        residual_kill_results,
-        residual_final_scan,
-    )
+    if args.action == "start":
+        pending = find_pending_capture(log_dir)
+        if pending is None:
+            print("AGENT_SERIAL_MONITOR_STATUS=not_running")
+            print("AGENT_SERIAL_MONITOR_NOTE=no capture is running; use --action capture to start one")
+            return 0
+        state_path, state = pending
+        return print_capture_status(state_path, state)
+
+    if args.action == "capture":
+        pending = find_pending_capture(log_dir)
+        if pending is not None:
+            existing, state = pending
+            print(f"AGENT_SERIAL_MONITOR_STATUS=already_running")
+            print(f"AGENT_SERIAL_MONITOR_PID={state.get('pid')}")
+            print(f"AGENT_SERIAL_MONITOR_LOG={state.get('log_path')}")
+            return 0
+        print("AGENT_SERIAL_MONITOR_STATUS=not_running")
+        print("AGENT_SERIAL_MONITOR_NOTE=no capture is running; use --action start to start one")
+        return 0
+
+    # Build the port lock first so a second capture on the same port fails
+    # before the flash (which would otherwise already be taking place).
+    try:
+        lock_path = acquire_port_lock(args.port, log_dir)
+    except RuntimeError as exc:
+        print("AGENT_SERIAL_MONITOR_STATUS=busy")
+        print(f"AGENT_SERIAL_MONITOR_NOTE={exc}")
+        return 1
+
+    started_at = dt.datetime.now(dt.timezone.utc)
+
+    flash_process: subprocess.Popen[str] | None = None
+    flash_command: list[str] | None = None
+    if args.action == "app-flash-monitor":
+        flash_command = build_flash_command(args, repo_root)
+        flash_process = subprocess.Popen(
+            flash_command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        flash_deadline = time.monotonic() + args.flash_timeout_seconds
+        while flash_process.poll() is None and time.monotonic() < flash_deadline:
+            time.sleep(STATE_POLL_SECONDS)
+        if flash_process.poll() is None:
+            kill_process_tree(flash_process)
+            lock_path.unlink(missing_ok=True)
+            print("AGENT_SERIAL_MONITOR_STATUS=flash_timeout")
+            print(
+                f"AGENT_SERIAL_MONITOR_NOTE=app-flash did not finish within "
+                f"{args.flash_timeout_seconds}s; killed"
+            )
+            return 1
+
+    try:
+        ser = serial_open_retry(args, time.monotonic())
+    except RuntimeError as exc:
+        if flash_process is not None and flash_process.poll() is not None:
+            exit_code = flash_process.returncode
+            print("AGENT_SERIAL_MONITOR_STATUS=flash_failed")
+            print(f"AGENT_SERIAL_MONITOR_FLASH_EXIT_CODE={exit_code}")
+            print(f"AGENT_SERIAL_MONITOR_NOTE={exc}")
+        else:
+            print("AGENT_SERIAL_MONITOR_STATUS=port_open_failed")
+            print(f"AGENT_SERIAL_MONITOR_NOTE={exc}")
+        lock_path.unlink(missing_ok=True)
+        return 1
+
+    capture = run_capture(ser, log_path, args, started_at, lock_path)
+    ser.close()
+
+    summary = write_summary(args, flash_command, log_path, capture, summary_path)
 
     print()
     print(f"AGENT_SERIAL_MONITOR_STATUS={summary['status']}")
@@ -577,27 +577,9 @@ def main() -> int:
     print(f"AGENT_SERIAL_MONITOR_SUMMARY={summary_path}")
     print(f"AGENT_SERIAL_MONITOR_CAPTURE_STOP_REASON={summary['capture_stop_reason']}")
     print(f"AGENT_SERIAL_MONITOR_PANIC_LOG_SEEN={int(bool(summary['panic_log_seen']))}")
-    print(f"AGENT_SERIAL_MONITOR_RESIDUAL_COUNT={summary['residual_monitor_count']}")
-    print(f"AGENT_SERIAL_MONITOR_RESIDUAL_KILLED_COUNT={summary['residual_monitor_killed_count']}")
-    print(f"AGENT_SERIAL_MONITOR_RESIDUAL_REMAINING_COUNT={summary['residual_monitor_remaining_count']}")
-    if summary["residual_monitor_scan_error"]:
-        print(f"AGENT_SERIAL_MONITOR_RESIDUAL_SCAN_ERROR={summary['residual_monitor_scan_error']}")
-    for process in summary["residual_monitor_processes"]:
-        print(
-            "AGENT_SERIAL_MONITOR_RESIDUAL="
-            f"pid={process['pid']} port={process['port'] or 'unknown'} name={process['name']}"
-        )
-    for result in summary["residual_monitor_kill_results"]:
-        print(
-            "AGENT_SERIAL_MONITOR_RESIDUAL_KILL="
-            f"pid={result['pid']} port={result['port'] or 'unknown'} "
-            f"terminated={int(bool(result['terminated']))}"
-        )
-    for process in summary["residual_monitor_remaining_processes"]:
-        print(
-            "AGENT_SERIAL_MONITOR_RESIDUAL_REMAINING="
-            f"pid={process['pid']} port={process['port'] or 'unknown'} name={process['name']}"
-        )
+    if summary["flash_completed"] is not None:
+        print(f"AGENT_SERIAL_MONITOR_FLASH_COMPLETED={int(bool(summary['flash_completed']))}")
+    print(f"AGENT_SERIAL_MONITOR_OBSERVATION_COMPLETE={int(bool(summary['observation_complete']))}")
     return 0
 
 
