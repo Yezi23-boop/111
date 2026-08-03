@@ -66,3 +66,6 @@ docs/context/index/
 
 # 前端原型工程的第三方依赖(不提交)
 node_modules/
+
+# Playwright 浏览器自动化缓存(每次运行重新生成,不入库)
+.playwright-cli/
