@@ -63,3 +63,6 @@ docs/context/index/
 *.exe
 *.out
 .cache\clangd\index
+
+# 前端原型工程的第三方依赖(不提交)
+node_modules/
