@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from tests.main_paths import (
@@ -31,10 +32,11 @@ class ApPortalOfficialClientSourceTests(unittest.TestCase):
 
     def test_ap_portal_app_uses_provisioning_client_entrypoint(self) -> None:
         raw_source = AP_PORTAL_WEB_JS.read_text(encoding="utf-8")
-        try:
-            source = raw_source.encode("utf-8").decode("unicode-escape")
-        except Exception:
-            source = raw_source
+        source = re.sub(
+            r"\\u([0-9a-fA-F]{4})",
+            lambda match: chr(int(match.group(1), 16)),
+            raw_source,
+        )
 
         self.assertIn(
             'import { createProvisioningClient } from "./prov_client.js";',
