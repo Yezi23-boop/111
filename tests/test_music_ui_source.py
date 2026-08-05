@@ -8,16 +8,23 @@ def test_music_view_is_ui_only_and_uses_safe_zone():
     source = (ROOT / "main/ui/custom/music_view.c").read_text(encoding="utf-8")
     assert "music_service_start" not in source
     assert "music_service_toggle_playback" not in source
-    assert "lv_obj_set_pos(view->track_panel, 40, 76);" in source
-    assert 'music_view_button(view->screen, "<", 40, 196' in source
-    assert 'music_view_button(view->screen, ">", 306, 196' in source
+    assert "lv_obj_set_pos(view->track_panel, 40, 78);" in source
+    assert "music_view_set_track_layout(view, true);" in source
     assert "lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER" in source
     assert "lv_obj_get_child(view->track_buttons[i], 0)," in source
+    assert "lv_obj_get_child(view->track_buttons[i], 1)," in source
+    assert "lv_obj_get_child(view->track_buttons[i], 2)," in source
     assert "LV_TEXT_ALIGN_LEFT" in source
-    assert "lv_obj_set_pos(view->catalog_list, 40, 326);" in source
-    assert "lv_obj_set_size(view->catalog_list, 330, 146);" in source
-    assert "lv_color_hex(0x0b0d12)" in source
-    assert "lv_color_hex(0x5de2a5)" in source
+    assert "name_label, &lv_font_montserrat_lxgw_common_5500_16_4" in source
+    assert "view->track_label, &lv_font_montserrat_lxgw_common_5500_22_4" in source
+    assert "&lv_font_montserrat_lxgw_common_5500_16_4);" in source
+    assert "&lv_font_montserrat_lxgw_music_ui_13_4" not in source
+    assert "lv_obj_set_pos(view->catalog_list, 40, 280);" in source
+    assert "lv_obj_set_size(view->catalog_list, 330, 202);" in source
+    assert 'lv_label_set_text(view->section_kicker, "COLLECTION");' in source
+    assert "music_view_source_label(source_id)" in source
+    assert "catalog_back_button" not in source
+    assert "view->catalog_visible && view->config.catalog_back_cb != NULL" in source
 
 
 def test_music_controller_routes_commands_to_service_owner():

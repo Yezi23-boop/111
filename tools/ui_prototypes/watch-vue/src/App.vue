@@ -62,6 +62,27 @@ const MUSIC_TRACKS = [
   ['平凡之路', '朴树'],
   ['七里香', '周杰伦'],
   ['南山南', '马頔'],
+  ['起风了', '买辣椒也用券'],
+  ['海阔天空', 'Beyond'],
+  ['夜空中最亮的星', '逃跑计划'],
+  ['如愿', '王菲'],
+  ['花海', '周杰伦'],
+  ['孤勇者', '陈奕迅'],
+  ['贝加尔湖畔', '李健'],
+  ['理想', '赵雷'],
+  ['安河桥', '宋冬野'],
+  ['消愁', '毛不易'],
+  ['漠河舞厅', '柳爽'],
+  ['水星记', '郭顶'],
+  ['岁月神偷', '金玟岐'],
+  ['大鱼', '周深'],
+  ['向云端', '小霞'],
+  ['阿刁', '张韶涵'],
+  ['鸿雁', '呼斯楞'],
+  ['红色高跟鞋', '蔡健雅'],
+  ['晚婚', '江蕙'],
+  ['如果可以', '韦礼安'],
+  ['一路生花', '温奕心'],
 ]
 const musicModeText = () => MODES[musicModeIdx.value]
 const musicTrack = () => musicStarted.value ? MUSIC_TRACKS[musicTrackIndex.value] : ['未选择歌曲', '']
@@ -204,7 +225,6 @@ function stepMusicTrack(step) {
         @prev="stepMusicTrack(-1)"
         @next="stepMusicTrack(1)"
         @open-track="selectMusicTrack"
-        @exit="backHome"
       />
     </template>
     <template v-else-if="screen === 'music-account'">

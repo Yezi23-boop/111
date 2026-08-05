@@ -185,20 +185,16 @@ void mini_game_2048_init(void) {}
 void board_button_clear_events(void) {}
 board_button_event_t board_button_consume_event(void) { return BOARD_BUTTON_EVENT_NONE; }
 
-uint8_t _binary_font_puhui_common_20_4_bin_start[1] = {0};
-uint8_t _binary_font_puhui_common_20_4_bin_end[1] = {0};
-
-/* Mock ui_font_assets.h to return correct LXGW and Montserrat fonts */
+/* Mock ui_font_assets.h with the host's existing Chinese preview fonts. */
 #include "ui_font_assets.h"
-extern const lv_font_t lv_font_montserrat_lxgw_tghz_level1_3500_22_4;
-extern const lv_font_t lv_font_montserrat_lxgw_tghz_level1_3500_16_4;
+extern const lv_font_t lv_font_montserrat_lxgw_common_5500_22_4;
+extern const lv_font_t lv_font_montserrat_lxgw_common_5500_16_4;
 extern const lv_font_t lv_font_montserratMedium_16;
 
 esp_err_t ui_font_assets_init(void) { return ESP_OK; }
 bool ui_font_assets_ready(void) { return true; }
-const lv_font_t *ui_font_assets_title(void) { return &lv_font_montserrat_lxgw_tghz_level1_3500_22_4; }
-const lv_font_t *ui_font_assets_body(void) { return &lv_font_montserrat_lxgw_tghz_level1_3500_16_4; }
-const lv_font_t *ui_font_assets_meta(void) { return &lv_font_montserrat_lxgw_tghz_level1_3500_16_4; }
+const lv_font_t *ui_font_assets_text(void) { return &lv_font_montserrat_lxgw_common_5500_22_4; }
+const lv_font_t *ui_font_assets_hermes(void) { return &lv_font_montserrat_lxgw_common_5500_16_4; }
 const lv_font_t *ui_font_assets_icon(void) { return &lv_font_montserratMedium_16; }
 
 /* Mock official_chat_service.h with a small interactive conversation state. */
@@ -332,24 +328,24 @@ static safety_monitor_policy_snapshot_t s_mock_safety_policy = {
     .enabled_by_user = true,
     .allowed_by_power_policy = true,
     .should_run = true,
-    .runtime_running = true,
     .block_reason = SAFETY_MONITOR_POLICY_BLOCK_NONE,
     .blocked_by_runtime_coordinator = false,
     .policy_state = POWER_POLICY_STATE_ACTIVE,
     .policy_flags = POWER_POLICY_FLAG_NONE,
 };
+static bool s_mock_safety_runtime_running = true;
 
 esp_err_t safety_monitor_session_init(void) { return ESP_OK; }
 esp_err_t safety_monitor_session_apply(bool should_run, const char *reason)
 {
     (void)reason;
-    s_mock_safety_policy.runtime_running = should_run;
+    s_mock_safety_runtime_running = should_run;
     return ESP_OK;
 }
 safety_monitor_session_snapshot_t safety_monitor_session_get_snapshot(void)
 {
     return (safety_monitor_session_snapshot_t){
-        .runtime_running = s_mock_safety_policy.runtime_running,
+        .runtime_running = s_mock_safety_runtime_running,
         .last_error = ESP_OK,
     };
 }
@@ -364,7 +360,7 @@ esp_err_t safety_monitor_policy_set_enabled(bool enabled)
 {
     s_mock_safety_policy.enabled_by_user = enabled;
     s_mock_safety_policy.should_run = enabled;
-    s_mock_safety_policy.runtime_running = enabled;
+    s_mock_safety_runtime_running = enabled;
     return ESP_OK;
 }
 esp_err_t safety_monitor_policy_set_foreground_audio_active(
@@ -628,18 +624,58 @@ esp_err_t audio_codec_get_volume(int *volume)
 }
 
 static music_service_snapshot_t s_mock_music_snapshot = {
-    .state = MUSIC_SERVICE_STATE_STOPPED,
+    .state = MUSIC_SERVICE_STATE_PLAYING,
     .mode = MUSIC_SERVICE_MODE_REPEAT_ALL,
     .endpoint_configured = true,
+    .music_active = true,
+    .title = "星辰大海",
+    .artist = "黄霄雲",
 };
 static music_service_catalog_snapshot_t s_mock_music_catalog;
 static music_service_account_snapshot_t s_mock_music_account = {
     .state = MUSIC_SERVICE_ACCOUNT_LOGGED_OUT,
 };
 
+static const char *const kPreviewMusicTitles[4][8] = {
+    {"星辰大海", "富士山下", "光年之外", "成都", "起风了", "海阔天空",
+     "夜空中最亮的星", "平凡之路"},
+    {"晴天", "平凡之路", "七里香", "南山南", "如愿", "花海", "光年之外",
+     "孤勇者"},
+    {"贝加尔湖畔", "理想", "安河桥", "消愁", "漠河舞厅", "水星记", "岁月神偷",
+     "大鱼"},
+    {"孤勇者", "向云端", "阿刁", "鸿雁", "红色高跟鞋", "晚婚", "如果可以",
+     "一路生花"},
+};
+
+static const char *const kPreviewMusicArtists[4][8] = {
+    {"黄霄雲", "陈奕迅", "邓紫棋", "赵雷", "买辣椒也用券", "Beyond",
+     "逃跑计划", "朴树"},
+    {"周杰伦", "朴树", "周杰伦", "马頔", "王菲", "周杰伦", "邓紫棋",
+     "陈奕迅"},
+    {"李健", "赵雷", "宋冬野", "毛不易", "柳爽", "郭顶", "金玟岐", "周深"},
+    {"陈奕迅", "小霞", "张韶涵", "呼斯楞", "蔡健雅", "江蕙", "韦礼安",
+     "温奕心"},
+};
+
+static size_t preview_music_source_index(const char *source_id)
+{
+    static const char *const source_ids[4] = {
+        "today", "liked", "playlists", "recent",
+    };
+    for (size_t i = 0U; i < 4U; ++i)
+    {
+        if (source_id != NULL && strcmp(source_id, source_ids[i]) == 0)
+        {
+            return i;
+        }
+    }
+    return 0U;
+}
+
 static void mock_music_load_catalog(const char *source_id, uint32_t offset)
 {
-    const uint32_t total = 42U;
+    const uint32_t total = 8U;
+    const size_t source_index = preview_music_source_index(source_id);
     memset(&s_mock_music_catalog, 0, sizeof(s_mock_music_catalog));
     s_mock_music_catalog.valid = true;
     s_mock_music_catalog.offset = offset;
@@ -654,9 +690,10 @@ static void mock_music_load_catalog(const char *source_id, uint32_t offset)
             &s_mock_music_catalog.tracks[s_mock_music_catalog.track_count++];
         snprintf(track->track_id, sizeof(track->track_id), "preview-%u",
                  (unsigned)(offset + i + 1U));
-        snprintf(track->title, sizeof(track->title), "Track %u",
-                 (unsigned)(offset + i + 1U));
-        strncpy(track->artist, "Preview Artist", sizeof(track->artist) - 1U);
+        strncpy(track->title, kPreviewMusicTitles[source_index][offset + i],
+                sizeof(track->title) - 1U);
+        strncpy(track->artist, kPreviewMusicArtists[source_index][offset + i],
+                sizeof(track->artist) - 1U);
     }
 }
 

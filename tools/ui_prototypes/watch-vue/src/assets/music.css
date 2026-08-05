@@ -66,7 +66,6 @@ body {
 .music-account-button,
 .mode-button,
 .source-tile,
-.collection-back,
 .song-row,
 .control-button {
   font: inherit;
@@ -101,8 +100,7 @@ body {
 
 .music-nav-button:hover,
 .music-account-button:hover,
-.mode-button:hover,
-.collection-back:hover {
+.mode-button:hover {
   border-color: var(--music-line-strong);
   background: var(--music-surface-strong);
   color: var(--music-text);
@@ -112,7 +110,6 @@ body {
 .music-account-button:active,
 .mode-button:active,
 .source-tile:active,
-.collection-back:active,
 .song-row:active,
 .control-button:active {
   transform: scale(0.96);
@@ -122,7 +119,6 @@ body {
 .music-account-button:focus-visible,
 .mode-button:focus-visible,
 .source-tile:focus-visible,
-.collection-back:focus-visible,
 .song-row:focus-visible,
 .control-button:focus-visible {
   outline: 2px solid var(--music-accent);
@@ -444,8 +440,7 @@ body {
   line-height: 1;
 }
 
-.mode-button,
-.collection-back {
+.mode-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -616,25 +611,12 @@ body {
   height: 54px;
 }
 
-.music-page--catalog .collection-back {
-  position: absolute;
-  left: 40px;
-  top: 280px;
-  width: 96px;
-}
-
-.collection-back .back-glyph {
-  width: 7px;
-  height: 7px;
-  transform: rotate(45deg) translate(1px, -1px);
-}
-
 .catalog-list {
   position: absolute;
   left: 40px;
-  top: 326px;
+  top: 280px;
   width: 330px;
-  height: 146px;
+  height: 202px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -644,7 +626,7 @@ body {
 }
 
 .song-row {
-  flex: 0 0 46px;
+  flex: 0 0 44px;
   width: 318px;
   padding: 0 14px;
   display: flex;

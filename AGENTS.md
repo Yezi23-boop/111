@@ -127,6 +127,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 出现可复用知识、流程、决策、attempt 或跨会话接手状态时，按 `docs/context/procedures/context-garden-policy.md` 写入对应层；`CHANGELOG.md` 只记录后续有检索价值的摘要，不记录普通执行流水。
 - `docs/context/handoffs/` 已退场，不再作为当前任务接力层。跨会话接手状态优先写到对应 `plans/active/` 的 Progress/Next Step；失败路线、特殊证据和可复用排查结论写入 `runs/`；稳定事实进入 `knowledge/`。
 - `docs/context/runs/` 是反重复踩坑证据库，不是每次任务记录本。只有出现大问题错误、路线取舍、被证伪尝试、板端特殊证据、跨 owner 决策或高成本验证结论，并且这些信息未来可能防止重复误判/重复排查时，才写入 `docs/context/runs/`；大问题错误使用 `error-signature`，路线选择/放弃使用 `route-choice`，必要时补 `evidence`。普通成功改动、常规 build 通过、小修小补和没有复用价值的过程不写 `runs/`。
+- 如果一个问题经历了长时间排查、多次失败路线、非显然关键发现、远端/板端/高成本验证，或未来 agent 很可能重复踩坑，结案前必须固化一条经验记录。记录应包含：症状/上下文 -> 失败路线 -> 关键发现 -> 最小解法 -> 验证证据 -> 后续不要重复的做法。普通小修、单次 build 失败、显然拼写/参数调整不写。
 - 上下文验证按影响范围分级执行：普通任务只用 `uv run python scripts/context/validate_context.py --level light --q "<任务关键词>" --brief`；只改 context 文档用 `--level standard`；改入口或检索基准用 `--level routing`；改 `scripts/context` 或记忆/晋升/归档机制才用 `--level full`。
 - 涉及 `FreeRTOS`、RAM/PSRAM、硬件驱动初始化、分区表或 `sdkconfig` 的改动，不因为触碰底层就默认新建 run；按上面的反重复踩坑标准判断。若任务属于 active plan，优先更新对应计划的 Progress/Validation/Next Step；只有 context 文档实际变更时，才按影响范围运行对应级别的 `validate_context.py`。
 
@@ -170,6 +171,15 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 模拟器预览与截图交付原则（默认生效）
 
+### Vue → LVGL → 真机 UI 开发门禁
+
+- 新页面、明显视觉重构、参考图复刻，或用户明确要求“像素级复刻”时，必须使用仓库 Skill `vue-lvgl-pixel-ui`；窄范围逻辑修复、纯文案修改和不影响布局的 Bugfix 不强制重走完整流程。
+- Vue 是视觉基准。用户确认 Vue 设计定稿前，不得进入正式 LVGL 复刻；定稿后不得为了迁就当前 LVGL 实现而静默修改 Vue 基准。
+- Vue 与 LVGL 截图必须使用相同的 `410×502` 画布、测试数据、页面状态、裁剪区域和缩放比例。
+- LVGL 复刻必须按背景、布局、素材、文字、控件状态和交互状态分层截图对比，不能只凭整页肉眼判断。
+- Agent 应在每个层级内自主执行“截图 → 对比 → 调整 → 再截图”，直到达到 Skill 规定的验收阈值；只在设计定稿、层级验收、host 整页验收和真机验收门禁请求用户确认。
+- LVGL host 未达到验收标准且未经用户确认前，不得进入上板阶段；host 仅作为中间验证环境，最终交付以真实手表验收为准。
+
 - Host 预览工具统一位于 `tools/ui_preview/`；板端正式 UI 仍位于 `main/ui/generated` 与 `main/ui/custom`，不要把 host mock 或构建产物放回 `main/ui`。
 - 当执行了修改 UI 布局、样式或交互的任务，并在后台重新编译运行了 host 模拟器（如 `agent_preview_host.exe`）时，**必须强制**额外执行一次截图脚本（如 `capture_apple_watch_s5_preview.ps1`），并将生成的截图作为绝对路径图片（`![预览图](/绝对路径/截图.png)`）附带在当次对话的回答中。
 - 严禁仅在后台静默启动模拟器进程而不提供截图。因为后台进程唤起的 GUI 窗口极易失去焦点、被编辑器遮挡，或因对话上下文截断而意外闪退。必须用稳定可见的截图作为 UI 修改的闭环交付证据。
@@ -212,6 +222,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   - 例外：全屏背景图（410×502）、全宽居中文本（width=410 + text_align=center）、游戏引擎内相对于 stage 容器的局部坐标，不受此约束。
   - 两列并排卡片标准布局：每列宽 160px，左列 x=40，右列 x=210，右边缘恰好 370。
   - 详细实测数据见 `docs/context/knowledge/project/co5300-screen-layout-safe-zone.md`。
+
+- **LVGL 中文字体规则（项目级）**：当任务涉及 `lv_font_*`、`ui_chinese_fonts`、`main/ui/custom/fonts`、中文 UI 文案或动态中文文本时，必须使用项目级 Skill `D:\esp32S3\111\.agents\skills\lvgl-chinese-ui-fonts\SKILL.md`；不得修改或依赖用户级同名 Skill。
+  - 动态歌名、歌手名、通知正文和其他运行时中文文本必须使用通用 `common_5500` 字符集及项目已有 16px/22px 字号；缺字时必须扩充通用字符集并重新生成，禁止用页面小子集掩盖缺字。
+  - 固定文案的大字号字体必须按实际使用点生成页面子集，禁止无证据恢复整套 3500 字全库。
+  - 普通 LVGL UI 不得新增字体 fallback 链；`xiaozhi` 和 Hermes 的专用运行时字库按各自 owner 维护。
 
 - 命中 hearing-assist / danger reminder / ESP-DL 危险提醒任务时，产品边界、状态机、参数口径和当前固件归属统一以这 4 张卡为准：
   - `docs/context/knowledge/project/hearing-assist-danger-alert-system-architecture.md`
