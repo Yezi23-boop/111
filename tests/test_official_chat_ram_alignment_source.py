@@ -8,6 +8,8 @@ OFFICIAL_CHAT_DIR = REPO_ROOT / "components" / "official_chat"
 AUDIO_SERVICE_HEADER = OFFICIAL_CHAT_DIR / "audio" / "audio_service.h"
 AFE_AUDIO_PROCESSOR = OFFICIAL_CHAT_DIR / "audio" / "processors" / "afe_audio_processor.cc"
 AFE_WAKE_WORD = OFFICIAL_CHAT_DIR / "audio" / "wake_words" / "afe_wake_word.cc"
+ESP_SSL_SOURCE = OFFICIAL_CHAT_DIR / "net" / "esp_ssl.cc"
+OFFICIAL_CHAT_SERVICE_SOURCE = REPO_ROOT / "main" / "services" / "official_chat_service.c"
 
 
 class OfficialChatRamAlignmentSourceTests(unittest.TestCase):
@@ -45,6 +47,24 @@ class OfficialChatRamAlignmentSourceTests(unittest.TestCase):
         self.assertIn(
             "constexpr size_t kWakeWordEncodeTaskStackBytes = 4096 * 6;", source
         )
+
+    def test_ssl_receive_stack_uses_psram_and_reports_heap_pressure(self) -> None:
+        source = ESP_SSL_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('#include <freertos/idf_additions.h>', source)
+        self.assertIn("xTaskCreateWithCaps(", source)
+        self.assertIn("MALLOC_CAP_SPIRAM)", source)
+        self.assertIn("vTaskDeleteWithCaps(nullptr)", source)
+        self.assertIn("internal_largest", source)
+        self.assertIn("spiram_largest", source)
+
+    def test_chat_text_history_uses_explicit_psram_storage(self) -> None:
+        source = OFFICIAL_CHAT_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("official_chat_service_alloc_text_caches", source)
+        self.assertIn("kMessageHistoryCapacity, sizeof(*s_message_history)", source)
+        self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
+        self.assertNotIn("static official_chat_service_message_t s_message_history[8]", source)
 
 
 if __name__ == "__main__":

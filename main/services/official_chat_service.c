@@ -64,9 +64,10 @@ static official_chat_service_snapshot_t s_snapshot = {
 };
 static StaticSemaphore_t s_text_mutex_buffer;                      /* 静态互斥锁存储，避免初始化时额外堆分配。 */
 static SemaphoreHandle_t s_text_mutex = NULL;                      /* 文本缓存保护锁，事件回调与 UI 查询共用。 */
-static char s_last_user_text[192] = {0};                           /* 最近用户文本快照，由事件回调更新。 */
-static char s_last_assistant_text[256] = {0};                      /* 最近助手文本快照，由事件回调更新。 */
-static official_chat_service_message_t s_message_history[8] = {0}; /* 固定容量历史消息快照，仅在持锁下访问。 */
+/* 文本只在普通任务/事件回调中访问，不参与 DMA、ISR 或 flash cache 冻结，可常驻 PSRAM。 */
+static char *s_last_user_text = NULL;                              /* 最近用户文本快照，由事件回调更新。 */
+static char *s_last_assistant_text = NULL;                         /* 最近助手文本快照，由事件回调更新。 */
+static official_chat_service_message_t *s_message_history = NULL; /* 固定容量历史消息快照，仅在持锁下访问。 */
 static size_t s_message_count = 0;                                 /* 当前有效历史条目数，仅在持锁下读写。 */
 
 /**
@@ -100,6 +101,48 @@ static void official_chat_service_unlock(void)
     {
         xSemaphoreGive(s_text_mutex);
     }
+}
+
+/**
+ * @brief 为仅供 UI 快照读取的长期文本缓存分配 PSRAM。
+ *
+ * 这些对象不在 `esp_partition_mmap()` 的 cache-freeze 临界路径中使用；保留
+ * service task 与 FreeRTOS 控制块在 internal RAM，给 TLS AES DMA 临时块留连续空间。
+ */
+static esp_err_t official_chat_service_alloc_text_caches(void)
+{
+    if (s_last_user_text == NULL)
+    {
+        s_last_user_text = heap_caps_calloc(
+            kLastUserTextMaxBytes, sizeof(*s_last_user_text),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_last_assistant_text == NULL)
+    {
+        s_last_assistant_text = heap_caps_calloc(
+            kLastAssistantTextMaxBytes, sizeof(*s_last_assistant_text),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_message_history == NULL)
+    {
+        s_message_history = heap_caps_calloc(
+            kMessageHistoryCapacity, sizeof(*s_message_history),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+
+    if (s_last_user_text != NULL && s_last_assistant_text != NULL &&
+        s_message_history != NULL)
+    {
+        return ESP_OK;
+    }
+
+    heap_caps_free(s_last_user_text);
+    heap_caps_free(s_last_assistant_text);
+    heap_caps_free(s_message_history);
+    s_last_user_text = NULL;
+    s_last_assistant_text = NULL;
+    s_message_history = NULL;
+    return ESP_ERR_NO_MEM;
 }
 
 /**
@@ -199,9 +242,10 @@ static void official_chat_service_set_foreground_audio_active(bool active,
  */
 static void official_chat_service_clear_cached_text_locked(void)
 {
-    memset(s_last_user_text, 0, sizeof(s_last_user_text));
-    memset(s_last_assistant_text, 0, sizeof(s_last_assistant_text));
-    memset(s_message_history, 0, sizeof(s_message_history));
+    memset(s_last_user_text, 0, kLastUserTextMaxBytes);
+    memset(s_last_assistant_text, 0, kLastAssistantTextMaxBytes);
+    memset(s_message_history, 0,
+           kMessageHistoryCapacity * sizeof(*s_message_history));
     s_message_count = 0;
 }
 
@@ -1005,6 +1049,14 @@ esp_err_t official_chat_service_init(void)
     if (s_text_mutex == NULL)
     {
         s_text_mutex = xSemaphoreCreateMutexStatic(&s_text_mutex_buffer);
+    }
+
+    const esp_err_t text_cache_err = official_chat_service_alloc_text_caches();
+    if (text_cache_err != ESP_OK)
+    {
+        official_chat_service_set_state(OFFICIAL_CHAT_SERVICE_STATE_ERROR);
+        official_chat_service_set_last_error(text_cache_err);
+        return text_cache_err;
     }
 
     if (s_command_queue == NULL)

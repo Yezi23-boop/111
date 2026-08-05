@@ -103,8 +103,9 @@ class OfficialChatServiceSourceTests(unittest.TestCase):
         self.assertIn("memmove(", source)
         self.assertIn("s_last_user_text", source)
         self.assertIn("s_last_assistant_text", source)
-        self.assertIn("memset(s_message_history, 0, sizeof(s_message_history));",
-                      source)
+        self.assertIn(
+            "kMessageHistoryCapacity * sizeof(*s_message_history)", source
+        )
         self.assertIn("s_message_count = 0;", source)
         self.assertIn("official_chat_service_set_last_error(ESP_OK);",
                       source)

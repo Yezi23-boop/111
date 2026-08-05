@@ -95,6 +95,15 @@ class MemoryWatchServiceSourceTests(unittest.TestCase):
         self.assertIn("memory_watch_service_make_request_id(", source)
         self.assertIn("before.request_active", source)
 
+    def test_long_lived_worker_scratch_uses_psram(self) -> None:
+        source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("s_service_task_command = (memory_watch_service_cmd_t *)heap_caps_calloc", source)
+        self.assertIn("s_upload_worker_result =", source)
+        self.assertIn("s_pending_read = (char (*)[64])heap_caps_calloc", source)
+        self.assertIn("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", source)
+        self.assertNotIn("static memory_watch_service_cmd_t s_service_task_command;", source)
+
     def test_service_partial_init_failure_is_retryable(self) -> None:
         source = MEMORY_WATCH_SERVICE_SOURCE.read_text(encoding="utf-8")
         init_section = source.split("esp_err_t memory_watch_service_init(void)")[1]

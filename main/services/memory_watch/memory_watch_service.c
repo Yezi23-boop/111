@@ -209,10 +209,11 @@ static uint8_t *s_cancel_worker_queue_storage = NULL;
 static uint8_t *s_health_worker_queue_storage = NULL;
 static uint8_t *s_conversation_worker_queue_storage = NULL;
 static uint8_t *s_ws_event_queue_storage = NULL;
-static memory_watch_service_cmd_t s_service_task_command;
-static memory_watch_service_upload_job_t s_upload_worker_job;
-static memory_watch_service_worker_result_t s_upload_worker_result;
-static memory_watch_service_conversation_job_t s_conversation_worker_job;
+/* owner/worker scratch 只由普通任务访问，不参与 DMA、ISR 或 cache-freeze，常驻 PSRAM。 */
+static memory_watch_service_cmd_t *s_service_task_command = NULL;
+static memory_watch_service_upload_job_t *s_upload_worker_job = NULL;
+static memory_watch_service_worker_result_t *s_upload_worker_result = NULL;
+static memory_watch_service_conversation_job_t *s_conversation_worker_job = NULL;
 static memory_watch_service_conversation_item_t *s_conversation_items = NULL;
 static size_t s_conversation_item_count = 0;
 static uint32_t s_conversation_generation = 0;
@@ -2706,15 +2707,15 @@ static void memory_watch_service_upload_worker_task(void *arg)
 
     while (1)
     {
-        if (xQueueReceive(s_upload_worker_queue, &s_upload_worker_job,
+        if (xQueueReceive(s_upload_worker_queue, s_upload_worker_job,
                           portMAX_DELAY) != pdTRUE)
         {
             continue;
         }
 
-        memory_watch_service_upload_job_t *job = &s_upload_worker_job;
+        memory_watch_service_upload_job_t *job = s_upload_worker_job;
         memory_watch_service_worker_result_t *result =
-            &s_upload_worker_result;
+            s_upload_worker_result;
         memory_watch_service_rebind_client_config(&job->client_config);
         memset(result, 0, sizeof(*result));
         memory_watch_service_copy_text(result->request_id,
@@ -2820,33 +2821,33 @@ static void memory_watch_service_conversation_worker_task(void *arg)
     while (1)
     {
         if (xQueueReceive(s_conversation_worker_queue,
-                          &s_conversation_worker_job,
+                          s_conversation_worker_job,
                           portMAX_DELAY) != pdTRUE)
         {
             continue;
         }
 
         memory_watch_service_rebind_client_config(
-            &s_conversation_worker_job.client_config);
+            &s_conversation_worker_job->client_config);
         s_conversation_staging_count = 0;
         s_conversation_staging_error = ESP_FAIL;
         memset(&s_conversation_sync_result, 0,
                sizeof(s_conversation_sync_result));
 
         const memory_watch_voice_client_sync_cursor_t cursor = {
-            .mode = s_conversation_worker_job.sync_mode,
+            .mode = s_conversation_worker_job->sync_mode,
             .pending_request_id =
-                s_conversation_worker_job.pending_request_id[0] != '\0'
-                    ? s_conversation_worker_job.pending_request_id
+                s_conversation_worker_job->pending_request_id[0] != '\0'
+                    ? s_conversation_worker_job->pending_request_id
                     : NULL,
             .after_message_id =
-                s_conversation_worker_job.after_message_id[0] != '\0'
-                    ? s_conversation_worker_job.after_message_id
+                s_conversation_worker_job->after_message_id[0] != '\0'
+                    ? s_conversation_worker_job->after_message_id
                     : NULL,
             .max_messages = MEMORY_WATCH_SYNC_DEFAULT_MAX_MESSAGES,
         };
         const esp_err_t err = memory_watch_voice_client_sync(
-            &s_conversation_worker_job.client_config.client_config,
+            &s_conversation_worker_job->client_config.client_config,
             &cursor,
             s_conversation_staging,
             MEMORY_WATCH_CONVERSATION_MAX_MESSAGES,
@@ -2947,10 +2948,10 @@ static void memory_watch_service_task(void *arg)
         {
             wait_ticks = inbox_check_ticks;
         }
-        if (xQueueReceive(s_command_queue, &s_service_task_command,
+        if (xQueueReceive(s_command_queue, s_service_task_command,
                           wait_ticks) == pdTRUE)
         {
-            memory_watch_service_handle_command(&s_service_task_command);
+            memory_watch_service_handle_command(s_service_task_command);
         }
 
         if (memory_watch_service_reconcile_foreground())
@@ -3151,6 +3152,33 @@ static void memory_watch_service_delete_partial_task(TaskHandle_t *task_handle)
  */
 static esp_err_t memory_watch_service_alloc_psram_caches(void)
 {
+    if (s_service_task_command == NULL)
+    {
+        s_service_task_command = (memory_watch_service_cmd_t *)heap_caps_calloc(
+            1U, sizeof(*s_service_task_command),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_upload_worker_job == NULL)
+    {
+        s_upload_worker_job =
+            (memory_watch_service_upload_job_t *)heap_caps_calloc(
+                1U, sizeof(*s_upload_worker_job),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_upload_worker_result == NULL)
+    {
+        s_upload_worker_result =
+            (memory_watch_service_worker_result_t *)heap_caps_calloc(
+                1U, sizeof(*s_upload_worker_result),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_conversation_worker_job == NULL)
+    {
+        s_conversation_worker_job =
+            (memory_watch_service_conversation_job_t *)heap_caps_calloc(
+                1U, sizeof(*s_conversation_worker_job),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
     if (s_command_queue_storage == NULL)
     {
         s_command_queue_storage = (uint8_t *)heap_caps_calloc(
@@ -3197,7 +3225,9 @@ static esp_err_t memory_watch_service_alloc_psram_caches(void)
                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
 
-    if (s_command_queue_storage == NULL ||
+    if (s_service_task_command == NULL || s_upload_worker_job == NULL ||
+        s_upload_worker_result == NULL || s_conversation_worker_job == NULL ||
+        s_command_queue_storage == NULL ||
         s_upload_worker_queue_storage == NULL ||
         s_cancel_worker_queue_storage == NULL ||
         s_health_worker_queue_storage == NULL ||
@@ -3264,6 +3294,14 @@ static void memory_watch_service_cleanup_partial_init(void)
     s_conversation_staging = NULL;
     s_conversation_staging_count = 0;
     s_conversation_staging_error = ESP_OK;
+    memory_watch_service_free(s_service_task_command);
+    s_service_task_command = NULL;
+    memory_watch_service_free(s_upload_worker_job);
+    s_upload_worker_job = NULL;
+    memory_watch_service_free(s_upload_worker_result);
+    s_upload_worker_result = NULL;
+    memory_watch_service_free(s_conversation_worker_job);
+    s_conversation_worker_job = NULL;
     memory_watch_service_free(s_command_queue_storage);
     s_command_queue_storage = NULL;
     memory_watch_service_free(s_upload_worker_queue_storage);
@@ -3849,8 +3887,8 @@ static size_t s_inbox_store_count = 0;
 static SemaphoreHandle_t s_inbox_store_mutex = NULL;
 static StaticSemaphore_t s_inbox_store_mutex_buffer;
 
-/* ── pending-read notification_ids（已读但 HTTP 尚未成功） ── */
-static char s_pending_read[INBOX_PENDING_READ_MAX][64];
+/* ── pending-read notification_ids（已读但 HTTP 尚未成功；仅 owner task 使用，放 PSRAM） ── */
+static char (*s_pending_read)[64] = NULL;
 static size_t s_pending_read_count = 0;
 
 /* ── inbox meta（owner task 写，getter 在 critical section 读）── */
@@ -4411,6 +4449,17 @@ esp_err_t memory_watch_service_inbox_init(void)
     if (s_inbox_store_mutex == NULL)
     {
         s_inbox_store_mutex = xSemaphoreCreateMutexStatic(&s_inbox_store_mutex_buffer);
+    }
+
+    if (s_pending_read == NULL)
+    {
+        s_pending_read = (char (*)[64])heap_caps_calloc(
+            INBOX_PENDING_READ_MAX, sizeof(*s_pending_read),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (s_pending_read == NULL)
+    {
+        return ESP_ERR_NO_MEM;
     }
 
     /* store / staging 按需分配在 PSRAM，inbox 未使用时不占内存 */
