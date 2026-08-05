@@ -20,7 +20,7 @@ DEFAULT_CHARSET = (
     / "tools"
     / "lvgl_fonts"
     / "charsets"
-    / "charset_tghz_level1_3500.txt"
+    / "charset_tghz_common_5500.txt"
 )
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "resources" / "fonts"
 DEFAULT_BPP = 4
@@ -43,8 +43,8 @@ def read_charset(path: Path) -> str:
 def read_font_symbols(path: Path) -> str:
     """返回 charset 汉字与预设标点的去重拼接串。
 
-    标点不写入 charset 文件（该文件语义是「一级 3500 字」不变量，且有
-    source 测试断言其恰好 3500 字），改为在构建期合并，保持源文件纯净。
+    标点不写入 charset 文件，改为在构建期合并，保持字符集源文件只表达
+    中文字符覆盖范围。
     """
     return "".join(dict.fromkeys(read_charset(path) + DEFAULT_PUNCTUATION))
 
@@ -105,7 +105,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成 LVGL 原生 .bin 字体")
     parser.add_argument("--size", type=int, required=True, help="字号，例如 24")
     parser.add_argument("--bpp", type=int, default=DEFAULT_BPP, help="位深，默认 4")
-    parser.add_argument("--name", default="tghz_level1_3500", help="输出文件名中的字符集标签")
+    parser.add_argument("--name", default="common_5500", help="输出文件名中的字符集标签")
     parser.add_argument("--latin-font", default=DEFAULT_LATIN_FONT, help="拉丁字体 TTF")
     parser.add_argument("--chinese-font", default=DEFAULT_CHINESE_FONT, help="中文字体 TTF")
     parser.add_argument("--charset", default=DEFAULT_CHARSET, help="中文字符集文本")

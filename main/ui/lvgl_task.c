@@ -24,6 +24,7 @@
 #include "ui/custom/music_controller.h"
 #include "ui/custom/mini_games_controller.h"
 #include "ui/custom/ota_maintenance_view.h"
+#include "ui/custom/ui_font_assets.h"
 #include "ui/custom/wifi_management_controller.h"
 #include "ui_refresh_policy.h"
 
@@ -88,6 +89,12 @@ void lvgl_task(void *pvParameter)
     ESP_LOGI(TAG, "Starting application");
     lv_port_init_small();
     ESP_LOGI(TAG, "boot_stage: display_foundation_done");
+    /* AI/Hermes 共用一次 raw Noto mmap，启动期校验可在首次进入页面前暴露资源问题。 */
+    const esp_err_t font_assets_ret = ui_font_assets_init();
+    if (font_assets_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Noto font assets unavailable: %s",
+                 esp_err_to_name(font_assets_ret));
+    }
     // lv_demo_benchmark();
     // lv_demo_stress();
 

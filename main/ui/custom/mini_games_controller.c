@@ -520,7 +520,7 @@ static lv_obj_t *mini_games_controller_create_icon_button(
     lv_obj_t *text_lbl = lv_label_create(content);
     lv_label_set_text(text_lbl, text);
     lv_obj_set_style_text_color(text_lbl, text_color, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(text_lbl, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(text_lbl, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align_to(text_lbl, icon_lbl, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
 
@@ -578,7 +578,7 @@ static void mini_games_controller_create_2048_win_overlay(void)
     lv_obj_set_style_text_color(title, lv_color_hex(0x3482e2),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(
-        title, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
+        title, &lv_font_montserrat_lxgw_common_5500_22_4,
         LV_PART_MAIN | LV_STATE_DEFAULT);
 
     lv_obj_t *message = lv_label_create(s_2048_win_overlay);
@@ -590,7 +590,7 @@ static void mini_games_controller_create_2048_win_overlay(void)
     lv_obj_set_style_text_color(message, lv_color_hex(0x475569),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(
-        message, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+        message, &lv_font_montserrat_lxgw_common_5500_16_4,
         LV_PART_MAIN | LV_STATE_DEFAULT);
 
     lv_obj_t *continue_btn = mini_games_controller_create_icon_button(
@@ -626,7 +626,7 @@ static void mini_games_controller_setup_menu(void)
     lv_obj_t *title = lv_label_create(s_menu_cont);
     lv_label_set_text(title, "精选小游戏");
     lv_obj_set_style_text_color(title, lv_color_hex(0x1f2937), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_lxgw_common_5500_22_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_pos(title, 40, 40);
 
@@ -634,7 +634,7 @@ static void mini_games_controller_setup_menu(void)
     lv_obj_t *sub = lv_label_create(s_menu_cont);
     lv_label_set_text(sub, "请选择一款小游戏开始游玩:");
     lv_obj_set_style_text_color(sub, lv_color_hex(0x6b7280), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(sub, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(sub, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_pos(sub, 40, 84);
 
@@ -792,7 +792,7 @@ static void mini_games_controller_setup_2048(void)
     lv_label_set_text(score_hdr, "得分");
     lv_obj_set_style_text_color(score_hdr, lv_color_hex(0x9ca3af),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(score_hdr, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(score_hdr, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align(score_hdr, LV_ALIGN_TOP_MID, 0, 6);
 
@@ -825,7 +825,7 @@ static void mini_games_controller_setup_2048(void)
     lv_label_set_text(best_hdr, "最高");
     lv_obj_set_style_text_color(best_hdr, lv_color_hex(0x9ca3af),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(best_hdr, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(best_hdr, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align(best_hdr, LV_ALIGN_TOP_MID, 0, 6);
 
@@ -864,7 +864,7 @@ static void mini_games_controller_setup_2048(void)
     lv_label_set_long_mode(s_state_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_color(s_state_label, lv_color_hex(0x6b7280),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_state_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(s_state_label, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
 
     /* ── 底部安全区悬浮控制栏：返回 / 新游戏 / 暂停 ── */
@@ -1064,7 +1064,7 @@ static void mini_games_controller_setup_flappy(void)
     s_flappy_score_label = lv_label_create(score_card);
     lv_label_set_text(s_flappy_score_label, "分数: 0");
     lv_obj_set_style_text_color(s_flappy_score_label, lv_color_hex(0x1f2937), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_flappy_score_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(s_flappy_score_label, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_center(s_flappy_score_label);
 
@@ -1101,7 +1101,7 @@ static void mini_games_controller_setup_flappy(void)
     lv_label_set_text(s_flappy_state_label, "轻触屏幕开始飞翔");
     lv_obj_set_size(s_flappy_state_label, FLAPPY_PLAY_AREA_W - 24, 56);
     lv_obj_set_style_text_color(s_flappy_state_label, lv_color_hex(0x0369a1), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_flappy_state_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(s_flappy_state_label, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(s_flappy_state_label, LV_TEXT_ALIGN_CENTER,
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -1406,7 +1406,7 @@ static void mini_games_controller_setup_dino(void)
     s_dino_score_label = lv_label_create(score_card);
     lv_label_set_text(s_dino_score_label, "分数: 0");
     lv_obj_set_style_text_color(s_dino_score_label, lv_color_hex(0x1f2937), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_dino_score_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(s_dino_score_label, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_center(s_dino_score_label);
 
@@ -1447,7 +1447,7 @@ static void mini_games_controller_setup_dino(void)
     lv_label_set_text(s_dino_state_label, "右屏轻触开始\n左屏按住下蹲");
     lv_obj_set_size(s_dino_state_label, DINO_PLAY_AREA_W - 24, 56);
     lv_obj_set_style_text_color(s_dino_state_label, lv_color_hex(0xa16207), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_dino_state_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4,
+    lv_obj_set_style_text_font(s_dino_state_label, &lv_font_montserrat_lxgw_common_5500_16_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(s_dino_state_label, LV_TEXT_ALIGN_CENTER,
                                 LV_PART_MAIN | LV_STATE_DEFAULT);

@@ -99,7 +99,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成编译进固件的 LVGL C 字体")
     parser.add_argument("--size", type=int, required=True, help="字号，例如 24")
     parser.add_argument("--bpp", type=int, default=DEFAULT_BPP, help="位深，默认 4")
-    parser.add_argument("--name", default="tghz_level1_3500", help="输出文件名中的字符集标签")
+    parser.add_argument("--name", default="common_5500", help="输出文件名中的字符集标签")
     parser.add_argument("--latin-font", default=DEFAULT_LATIN_FONT, help="拉丁字体 TTF")
     parser.add_argument("--chinese-font", default=DEFAULT_CHINESE_FONT, help="中文字体 TTF")
     parser.add_argument("--charset", default=DEFAULT_CHARSET, help="中文字符集文本")

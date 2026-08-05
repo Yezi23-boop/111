@@ -144,6 +144,50 @@ class MemoryWatchUiSourceTests(unittest.TestCase):
         self.assertNotIn("user_bubble", source)
         self.assertNotIn("reply_bubble", source)
 
+    def test_view_uses_mmap_hermes_font_without_fallback(self) -> None:
+        source = UI_MEMORY_WATCH_VIEW_SOURCE.read_text(encoding="utf-8")
+        header = UI_MEMORY_WATCH_VIEW_HEADER.read_text(encoding="utf-8")
+        fixed_font = "&lv_font_montserrat_lxgw_common_5500_16_4"
+
+        conversation_section = source.split(
+            "static void memory_watch_view_rebuild_conversation", 1
+        )[1].split("static void memory_watch_view_update_inbox_badge", 1)[0]
+        self.assertEqual(conversation_section.count("memory_watch_view_text_font()"), 1)
+        self.assertEqual(source.count("memory_watch_view_text_font()"), 1)
+        self.assertIn('#include "ui_font_assets.h"', source)
+        self.assertIn("return ui_font_assets_hermes();", source)
+        self.assertIn("font_assets_error", source)
+        self.assertIn('"FONT ASSET ERROR"', source)
+        self.assertNotIn("A:/fonts/", source)
+        self.assertNotIn("lv_binfont_create", source)
+        self.assertNotIn("common5500", source.split("memory_watch_view_text_font", 1)[1].split("static void memory_watch_view_call", 1)[0])
+        self.assertIn("MEMORY_WATCH_VIEW_CONVERSATION_USER", header)
+        self.assertIn("MEMORY_WATCH_VIEW_CONVERSATION_HERMES", header)
+        self.assertIn("MEMORY_WATCH_VIEW_CONVERSATION_SYSTEM", header)
+
+        for function_name, next_function in (
+            ("memory_watch_view_style_badge", "memory_watch_view_point_inside"),
+            (
+                "memory_watch_view_create_text_button",
+                "memory_watch_view_connection_color",
+            ),
+            (
+                "memory_watch_view_rebuild_inbox_list",
+                "memory_watch_view_update_detail",
+            ),
+            (
+                "memory_watch_view_create_inbox_page",
+                "memory_watch_view_create_detail_page",
+            ),
+            (
+                "memory_watch_view_create_detail_page",
+                "\nmemory_watch_view_t *memory_watch_view_create(",
+            ),
+        ):
+            section = source.split(function_name, 1)[1].split(next_function, 1)[0]
+            self.assertNotIn("memory_watch_view_text_font()", section)
+            self.assertIn(fixed_font, section)
+
     def test_controller_keeps_inbox_preview_host_only(self) -> None:
         source = UI_MEMORY_WATCH_CONTROLLER_SOURCE.read_text(encoding="utf-8")
         host_cmake = (

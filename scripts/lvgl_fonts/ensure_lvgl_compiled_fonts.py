@@ -12,8 +12,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = Path(__file__).with_name("build_lvgl_cfont.py")
 COMPILED_FONTS_DIR = REPO_ROOT / "main" / "ui" / "custom" / "fonts"
-PRESET_SIZES = (16, 22, 24, 27)
-PRESET_NAME = "tghz_level1_3500"
+# 27px 页面文案按实际使用点生成，避免默认任务重新生成完整大字库。
+PRESET_SIZES = (16, 22)
+PRESET_NAME = "common_5500"
 PRESET_BPP = 4
 
 

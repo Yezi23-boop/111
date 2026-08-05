@@ -82,7 +82,7 @@ class OtaServiceSourceTests(unittest.TestCase):
         self.assertIn("guider_ui.screen_main_Function_main", source)
         self.assertIn("ota_maintenance_view_bind_entry", source)
         self.assertIn("ui_chinese_fonts.h", source)
-        self.assertIn("lv_font_montserrat_lxgw_tghz_level1_3500_22_4", source)
+        self.assertIn("lv_font_montserrat_lxgw_common_5500_22_4", source)
         self.assertIn("ota_cloud_download_icon.h", source)
         self.assertIn("lv_image_set_src(icon, &ota_cloud_download_icon)", source)
         self.assertIn("s_entry = lv_obj_create", source)

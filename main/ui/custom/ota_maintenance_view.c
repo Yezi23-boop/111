@@ -192,7 +192,7 @@ esp_err_t ota_maintenance_view_init(void)
     lv_obj_set_size(title, 330, 40);
     lv_label_set_text(title, "系统维护");
     lv_obj_set_style_text_font(title,
-                               &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
+                               &lv_font_montserrat_lxgw_common_5500_22_4,
                                LV_PART_MAIN);
     lv_obj_set_style_text_color(title, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -216,7 +216,7 @@ esp_err_t ota_maintenance_view_init(void)
     lv_obj_set_size(s_status_label, 330, 44);
     lv_label_set_text(s_status_label, "等待操作");
     lv_obj_set_style_text_font(
-        s_status_label, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
+        s_status_label, &lv_font_montserrat_lxgw_common_5500_22_4,
         LV_PART_MAIN);
     lv_obj_set_style_text_color(s_status_label, lv_color_hex(0xD7DCE8),
                                 LV_PART_MAIN);
@@ -245,7 +245,7 @@ esp_err_t ota_maintenance_view_init(void)
                         NULL);
     s_primary_label = lv_label_create(prepare);
     lv_obj_set_style_text_font(
-        s_primary_label, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
+        s_primary_label, &lv_font_montserrat_lxgw_common_5500_22_4,
         LV_PART_MAIN);
     lv_label_set_text(s_primary_label, "检查更新");
     lv_obj_center(s_primary_label);
@@ -257,7 +257,7 @@ esp_err_t ota_maintenance_view_init(void)
                         NULL);
     lv_obj_t *cancel_label = lv_label_create(cancel);
     lv_obj_set_style_text_font(
-        cancel_label, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4,
+        cancel_label, &lv_font_montserrat_lxgw_common_5500_22_4,
         LV_PART_MAIN);
     lv_label_set_text(cancel_label, "取消");
     lv_obj_center(cancel_label);

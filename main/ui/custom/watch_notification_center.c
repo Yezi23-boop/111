@@ -374,7 +374,7 @@ void watch_nc_init(const watch_nc_config_t *config)
     lv_obj_set_style_text_color(s_bubble_title_label, lv_color_hex(0x111111), 0);
     lv_label_set_long_mode(s_bubble_title_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(s_bubble_title_label,
-                               &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, 0);
+                               &lv_font_montserrat_lxgw_common_5500_16_4, 0);
     lv_obj_align(s_bubble_title_label, LV_ALIGN_TOP_LEFT, 32, 12);
 
     /* preview：深灰炭黑内容简述（支持两行显示，超出截断省略） */
@@ -383,7 +383,7 @@ void watch_nc_init(const watch_nc_config_t *config)
     lv_obj_set_style_text_color(s_bubble_preview_label, lv_color_hex(0x333333), 0);
     lv_label_set_long_mode(s_bubble_preview_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(s_bubble_preview_label,
-                               &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, 0);
+                               &lv_font_montserrat_lxgw_common_5500_16_4, 0);
     lv_obj_align(s_bubble_preview_label, LV_ALIGN_TOP_LEFT, 32, 34);
 
     /* 手势事件 */

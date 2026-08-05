@@ -609,7 +609,7 @@ void setup_scr_screen_main(lv_ui *ui)
     ui->screen_main_music_button_label = lv_label_create(ui->screen_main_music_button);
     lv_label_set_text(ui->screen_main_music_button_label, "音乐");
     lv_obj_set_style_text_color(ui->screen_main_music_button_label, lv_color_hex(0x17372a), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->screen_main_music_button_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_music_button_label, &lv_font_montserrat_lxgw_common_5500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_center(ui->screen_main_music_button_label);
 
     //Write codes screen_main_img_1
@@ -672,7 +672,7 @@ void setup_scr_screen_main(lv_ui *ui)
     ui->screen_main_date_label = lv_label_create(ui->screen_main_cont_1);
     lv_obj_set_pos(ui->screen_main_date_label, 42, 24);
     lv_obj_set_style_text_color(ui->screen_main_date_label, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->screen_main_date_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_date_label, &lv_font_montserrat_lxgw_common_5500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_label_set_text(ui->screen_main_date_label, "周二 06/18");
 
     // 3. Create battery percentage label and battery progress bar (top-right)
@@ -680,7 +680,7 @@ void setup_scr_screen_main(lv_ui *ui)
     ui->screen_main_battery_label = lv_label_create(ui->screen_main_cont_1);
     lv_obj_set_pos(ui->screen_main_battery_label, 314, 24);
     lv_obj_set_style_text_color(ui->screen_main_battery_label, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->screen_main_battery_label, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_battery_label, &lv_font_montserrat_lxgw_common_5500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_label_set_text(ui->screen_main_battery_label, "80%");
 
     // Battery Bar container: x: 298, y: 27, size: 28x14, border: 1, radius: 3
@@ -748,7 +748,7 @@ void setup_scr_screen_main(lv_ui *ui)
     // Weather Unit "°C": (Right-side: Chinese 16px, aligned to top-right of temp label)
     lv_obj_t *weather_unit = lv_label_create(ui->screen_main_weather_card);
     lv_obj_set_style_text_color(weather_unit, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(weather_unit, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(weather_unit, &lv_font_montserrat_lxgw_common_5500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_label_set_text(weather_unit, "°C");
     lv_obj_align_to(weather_unit, ui->screen_main_weather_temp, LV_ALIGN_OUT_RIGHT_TOP, 2, 4);
 
@@ -756,14 +756,14 @@ void setup_scr_screen_main(lv_ui *ui)
     ui->screen_main_weather_text = lv_label_create(ui->screen_main_weather_card);
     lv_obj_set_pos(ui->screen_main_weather_text, 172, 94);
     lv_obj_set_style_text_color(ui->screen_main_weather_text, lv_color_hex(0x1B3024), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->screen_main_weather_text, &lv_font_montserrat_lxgw_tghz_level1_3500_22_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_weather_text, &lv_font_montserrat_lxgw_common_5500_22_4, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_label_set_text(ui->screen_main_weather_text, "多云");
 
     // High/Low Temperature range: (Right-side: Chinese 16px, pos: 172, 128)
     ui->screen_main_weather_range = lv_label_create(ui->screen_main_weather_card);
     lv_obj_set_pos(ui->screen_main_weather_range, 172, 128);
     lv_obj_set_style_text_color(ui->screen_main_weather_range, lv_color_hex(0x4E6557), LV_PART_MAIN|LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui->screen_main_weather_range, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui->screen_main_weather_range, &lv_font_montserrat_lxgw_common_5500_16_4, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_label_set_text(ui->screen_main_weather_range, "最高 28°C / 最低 19°C");
 
     // Invoke clock timer once to update date/time and battery stats immediately

@@ -4,8 +4,8 @@
 
 - 拉丁字体：`fonts/montserratMedium.ttf`
 - 中文字体：`fonts/LXGWWenKai-Regular.ttf`
-- 默认字符集：`charsets/charset_tghz_level1_3500.txt`
-- 字号预置：`16 / 22 / 24 / 27`
+- 默认字符集：`charsets/charset_tghz_common_5500.txt`
+- 通用字号预置：`16 / 22`；27px 及以上大字号按页面使用点生成子集
 - 默认编译期字体脚本：`scripts/lvgl_fonts/ensure_lvgl_compiled_fonts.py`
 - 可选 binfont 脚本：`scripts/lvgl_fonts/ensure_lvgl_chinese_fonts.py`
 

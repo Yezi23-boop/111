@@ -1,7 +1,16 @@
-# AI Fonts Assets
+# AI/Hermes Noto raw 字体资产
 
-- 本目录用于生成与 `xiaozhi-esp32` 兼容的 `assets` 分区字体资源。
-- 第一版只先内置 AI 页面需要的中文文本字体，`index.json` 里保留 `version` 与 `text_font`。
-- `icon_font` 目前仍允许走运行时回退，不强制要求当前资源包提供。
-- 字体二进制文件直接复用 `xiaozhi-esp32` 的 `cbin` 资源格式，不再经过 GUI Guider 生成链。
-- `build_ai_font_assets.py` 会按 `esp_mmap_assets` 的 header/table/data 格式生成 `assets.bin`。
+本目录只保存 raw assets 的索引，不保存字体 `.bin` 副本。字体由已解析的
+`managed_components/78__xiaozhi-fonts` 提供，构建脚本会校验官方 manifest、
+DeepSeek-V4-Flash common 字符集和两个字号 profile 后确定性打包：
+
+- `font_noto_sans_common_20_4.bin`：AI `text_font`，20px / 4bpp。
+- `font_noto_sans_common_16_4.bin`：Hermes `hermes_text_font`，16px / 4bpp。
+
+`assets/ai-fonts/index.json` 显式记录 `noto-v1` bundle、`common` charset、
+字号和 BPP。根构建流程生成的镜像写入 `assets` raw 分区；固件通过一次
+`esp_partition_mmap()` 映射，CBin 位图留在 Flash，两个字体对象只保留解析元数据。
+
+AI/Hermes 不从 LittleFS 加载字体，也不使用字体 fallback、glyph push 或内置
+Noto basic20。资源缺失、损坏或元数据不匹配时，页面显示固定 ASCII
+`FONT ASSET ERROR`。

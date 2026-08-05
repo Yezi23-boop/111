@@ -9,7 +9,7 @@
 
 LV_FONT_DECLARE(lv_font_montserrat_lxgw_lv_font_wifi_subset_16_16_4);
 LV_FONT_DECLARE(lv_font_montserrat_lxgw_lv_font_wifi_subset_24_24_4);
-LV_FONT_DECLARE(lv_font_montserrat_lxgw_tghz_level1_3500_16_4);
+LV_FONT_DECLARE(lv_font_montserrat_lxgw_common_5500_16_4);
 
 static const char *TAG = "wifi_mgmt_ui";
 static const uint32_t kStatusRefreshMs = 300U;
@@ -716,7 +716,7 @@ static void wifi_management_controller_ensure_screen_created(void)
     lv_obj_t *status_lbl = lv_label_create(s_status_panel);
     lv_label_set_text(status_lbl, "状态");
     lv_obj_set_style_text_color(status_lbl, lv_color_hex(0x8D9099), LV_PART_MAIN);
-    lv_obj_set_style_text_font(status_lbl, &lv_font_montserrat_lxgw_tghz_level1_3500_16_4, LV_PART_MAIN);
+    lv_obj_set_style_text_font(status_lbl, &lv_font_montserrat_lxgw_common_5500_16_4, LV_PART_MAIN);
     lv_obj_align(status_lbl, LV_ALIGN_TOP_LEFT, 20, 16);
 
     // 状态呼吸灯

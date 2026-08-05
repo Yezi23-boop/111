@@ -74,35 +74,11 @@ set(include_dirs
 
 )
 
-set(BUILTIN_TEXT_FONT font_puhui_common_20_4 CACHE STRING "内置到固件的 xiaozhi cbin 文本字体")
-set_property(CACHE BUILTIN_TEXT_FONT PROPERTY STRINGS
-    font_puhui_common_14_1
-    font_puhui_common_16_4
-    font_puhui_common_20_4
-    font_puhui_common_30_4
-    font_noto_qwen_14_1
-    font_noto_qwen_16_4
-    font_noto_qwen_20_4
-    font_noto_qwen_30_4
-)
-string(REGEX REPLACE "\\.bin$" "" BUILTIN_TEXT_FONT_ID "${BUILTIN_TEXT_FONT}")
-set(BUILTIN_TEXT_FONT_FILE
-    ${CMAKE_CURRENT_LIST_DIR}/../managed_components/78__xiaozhi-fonts/cbin/${BUILTIN_TEXT_FONT_ID}.bin
-)
-if(NOT EXISTS ${BUILTIN_TEXT_FONT_FILE})
-    message(FATAL_ERROR "BUILTIN_TEXT_FONT not found: ${BUILTIN_TEXT_FONT_FILE}")
-endif()
-message(STATUS "Builtin text font: ${BUILTIN_TEXT_FONT_ID}.bin")
-
-
-
 idf_component_register(
 
     SRCS ${srcs}
 
     INCLUDE_DIRS ${include_dirs}
-
-    EMBED_FILES ${BUILTIN_TEXT_FONT_FILE}
 
     REQUIRES
 
@@ -174,12 +150,6 @@ idf_component_register(
 
         joltwallet__littlefs
 
-)
-
-target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    "UI_FONT_ASSETS_BUILTIN_TEXT_NAME=\"${BUILTIN_TEXT_FONT_ID}.bin\""
-    "UI_FONT_ASSETS_BUILTIN_TEXT_START_SYMBOL=\"_binary_${BUILTIN_TEXT_FONT_ID}_bin_start\""
-    "UI_FONT_ASSETS_BUILTIN_TEXT_END_SYMBOL=\"_binary_${BUILTIN_TEXT_FONT_ID}_bin_end\""
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Os)

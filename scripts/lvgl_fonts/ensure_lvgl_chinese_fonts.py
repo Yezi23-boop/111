@@ -12,10 +12,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = Path(__file__).with_name("build_lvgl_binfont.py")
 RESOURCES_FONTS_DIR = REPO_ROOT / "resources" / "fonts"
-PRESET_SIZES = (16, 22, 24, 27)
-PRESET_NAME = "tghz_level1_3500"
+PRESET_SIZES = (16, 22)
+PRESET_NAME = "common_5500"
 PRESET_BPP = 4
-RESOURCES_PARTITION_BUDGET_BYTES = 4 * 1024 * 1024
+RESOURCES_PARTITION_BUDGET_BYTES = 3 * 1024 * 1024
 
 
 def preset_path(size: int) -> Path:

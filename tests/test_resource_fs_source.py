@@ -23,8 +23,8 @@ class ResourceFsSourceTests(unittest.TestCase):
 
         self.assertIn("ota_0,    app,  ota_0,    0x20000, 12M", source)
         self.assertIn("ota_1,    app,  ota_1,    ,       12M", source)
-        self.assertIn("assets,   data, spiffs,   ,       2M", source)
-        self.assertIn("resources,data, littlefs, ,       4M", source)
+        self.assertIn("assets,   data, spiffs,   ,       3M", source)
+        self.assertIn("resources,data, littlefs, ,       3M", source)
         self.assertNotIn("factory,", source)
         self.assertNotIn("audio,", source)
         self.assertLess(source.index("assets,"), source.index("resources,"))
@@ -80,7 +80,7 @@ class ResourceFsSourceTests(unittest.TestCase):
         text = (RESOURCES_DIR / "fonts" / "README.md").read_text(encoding="utf-8")
 
         self.assertIn(
-            'lv_binfont_create("A:/fonts/lvgl_montserrat_lxgw_tghz_level1_3500_24_4.bin")',
+            'lv_binfont_create("A:/fonts/lvgl_montserrat_lxgw_common_5500_22_4.bin")',
             text,
         )
 
