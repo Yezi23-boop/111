@@ -1,12 +1,13 @@
 # ESP-IDF 构建输出
 build/
 build_onenet_*/
+build-font-migration/
 sdkconfig.old
 .agents
+.codegraph/
 board_logs/
 # 组件管理器下载的依赖项（不应提交到版本控制）
 managed_components/
-dependencies.lock
 # IDE 和编辑器文件
 .vscode/
 .idea/
@@ -47,6 +48,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.venv/
 
 # 本地 HTTPS OTA 测试 CA 私钥与发布工件
 tools/ota_host/.local/

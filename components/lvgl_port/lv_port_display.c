@@ -149,7 +149,7 @@ void lv_port_disp_init_single(void)
     co5300_panel_register_color_done_callback(&cbs, s_display);
 
     ESP_LOGI(LV_PORT_TAG,
-             "LVGL 9.3 单缓存显示驱动初始化完成 (PARTIAL/%d行, RGB565格式%s字节交换)",
+             "LVGL 9.5 单缓存显示驱动初始化完成 (PARTIAL/%d行, RGB565格式%s字节交换)",
              LV_PORT_FIXED_CHUNK_LINES2,
              LV_PORT_BYTE_SWAP_ENABLE ? "启用" : "禁用");
 }
