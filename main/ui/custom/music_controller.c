@@ -136,6 +136,14 @@ static void music_controller_mode(music_service_mode_t ignored_mode,
     {
         next = MUSIC_SERVICE_MODE_SHUFFLE;
     }
+    else if (snapshot.mode == MUSIC_SERVICE_MODE_SHUFFLE)
+    {
+        next = MUSIC_SERVICE_MODE_ORDER;
+    }
+    else if (snapshot.mode == MUSIC_SERVICE_MODE_ORDER)
+    {
+        next = MUSIC_SERVICE_MODE_SMART;
+    }
     (void)music_service_set_mode(next);
 }
 

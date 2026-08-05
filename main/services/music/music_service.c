@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio_codec.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -11,6 +12,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "services/memory_watch/memory_watch_service.h"
+#include "services/network/network_service.h"
 #include "music_http_client.h"
 #include "music_stream_player.h"
 
@@ -20,6 +22,8 @@ static const UBaseType_t kPlayerEventQueueLength = 8U;
 /* QR HTTPS/TLS/JSON 同步执行于 owner task；16 KiB PSRAM 栈覆盖握手峰值。 */
 static const uint32_t kTaskStackBytes = 16384U;
 static const uint32_t kQrPollIntervalMs = 2000U;
+/* 远程命令是低频控制面轮询，不能与音乐媒体 reader 争抢连接。 */
+static const uint32_t kRemotePollIntervalMs = 1000U;
 
 typedef enum
 {
@@ -34,6 +38,7 @@ typedef enum
     MUSIC_SERVICE_CMD_LOAD_SOURCE,
     MUSIC_SERVICE_CMD_QR_START,
     MUSIC_SERVICE_CMD_QR_CANCEL,
+    MUSIC_SERVICE_CMD_REMOTE,
 } music_service_command_type_t;
 
 typedef struct
@@ -41,8 +46,13 @@ typedef struct
     music_service_command_type_t type;
     music_service_mode_t mode;
     uint32_t offset;
+    int volume;
+    bool has_volume;
+    bool has_remote_mode;
     char source_id[MUSIC_SERVICE_SOURCE_ID_MAX_BYTES];
     char track_id[MUSIC_SERVICE_TRACK_ID_MAX_BYTES];
+    char remote_command_id[MUSIC_SERVICE_REMOTE_COMMAND_ID_MAX_BYTES];
+    char remote_action[MUSIC_SERVICE_REMOTE_ACTION_MAX_BYTES];
 } music_service_command_t;
 
 static TaskHandle_t s_task_handle = NULL;
@@ -61,14 +71,18 @@ static music_service_account_snapshot_t *s_account = NULL;
 static uint8_t *s_qr_data = NULL;
 static bool s_qr_polling = false;
 static TickType_t s_qr_next_poll = 0;
+static TickType_t s_remote_next_poll = 0;
+static bool s_remote_command_inflight = false;
 static uint32_t s_command_sequence = 0U;
 static portMUX_TYPE s_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 static music_service_snapshot_t s_snapshot = {
     .state = MUSIC_SERVICE_STATE_STOPPED,
     .mode = MUSIC_SERVICE_MODE_REPEAT_ALL,
+    .volume = 60,
 };
 
 static void music_service_handle_track_action(const char *action);
+static void music_service_handle_destroy(void);
 
 static void music_service_set_account_error(const char *error_code)
 {
@@ -118,6 +132,10 @@ static const char *music_service_mode_text(music_service_mode_t mode)
         return "repeat_one";
     case MUSIC_SERVICE_MODE_SHUFFLE:
         return "shuffle";
+    case MUSIC_SERVICE_MODE_ORDER:
+        return "order";
+    case MUSIC_SERVICE_MODE_SMART:
+        return "smart";
     case MUSIC_SERVICE_MODE_REPEAT_ALL:
     default:
         return "repeat_all";
@@ -129,8 +147,24 @@ static void music_service_set_error(const char *error_code)
     taskENTER_CRITICAL(&s_snapshot_lock);
     s_snapshot.state = MUSIC_SERVICE_STATE_ERROR;
     s_snapshot.music_active = false;
+    if (s_snapshot.volume < 0 || s_snapshot.volume > 100)
+    {
+        s_snapshot.volume = 60;
+    }
     snprintf(s_snapshot.error_code, sizeof(s_snapshot.error_code), "%s",
              error_code != NULL ? error_code : "music_request_failed");
+    taskEXIT_CRITICAL(&s_snapshot_lock);
+}
+
+static void music_service_refresh_volume_snapshot(void)
+{
+    int volume = 0;
+    if (audio_codec_get_volume(&volume) != ESP_OK || volume < 0 || volume > 100)
+    {
+        return;
+    }
+    taskENTER_CRITICAL(&s_snapshot_lock);
+    s_snapshot.volume = volume;
     taskEXIT_CRITICAL(&s_snapshot_lock);
 }
 
@@ -340,9 +374,9 @@ static void music_service_handle_start(const music_service_command_t *command)
     char command_id[64];
     music_service_make_command_id(command_id, sizeof(command_id));
     music_http_session_result_t result = {0};
-    ret = music_http_client_create_session(
+    ret = music_http_client_create_session_mode(
         &s_control_client, &config, command->source_id, command->track_id,
-        command_id, &result);
+        music_service_mode_text(command->mode), command_id, &result);
     if (ret != ESP_OK)
     {
         music_service_set_error(result.error_code[0] != '\0'
@@ -357,6 +391,12 @@ static void music_service_handle_start(const music_service_command_t *command)
     snprintf(s_snapshot.track_id, sizeof(s_snapshot.track_id), "%s",
              command->track_id);
     taskEXIT_CRITICAL(&s_snapshot_lock);
+    if (result.state == MUSIC_SERVICE_STATE_STOPPED ||
+        result.stream_id[0] == '\0')
+    {
+        /* order 模式末曲会返回 stopped；不要为无媒体能力的结果启动 reader。 */
+        return;
+    }
     ret = music_service_start_player(&config, &result);
     if (ret != ESP_OK)
     {
@@ -408,6 +448,11 @@ static void music_service_handle_resume(void)
         return;
     }
     music_service_copy_result(&result);
+    if (result.state == MUSIC_SERVICE_STATE_STOPPED ||
+        result.stream_id[0] == '\0')
+    {
+        return;
+    }
     ret = music_service_start_player(&config, &result);
     if (ret != ESP_OK)
     {
@@ -439,6 +484,12 @@ static void music_service_handle_track_action(const char *action)
         return;
     }
     music_service_copy_result(&result);
+    if (result.state == MUSIC_SERVICE_STATE_STOPPED ||
+        result.stream_id[0] == '\0')
+    {
+        /* order 模式到达末曲时服务端已停止会话，不应再次创建媒体 reader。 */
+        return;
+    }
     ret = music_service_start_player(&config, &result);
     if (ret != ESP_OK)
     {
@@ -555,6 +606,171 @@ static void music_service_poll_qr_if_due(void)
     s_qr_next_poll = xTaskGetTickCount() + pdMS_TO_TICKS(kQrPollIntervalMs);
 }
 
+static void music_service_ack_remote_command(
+    const music_service_command_t *command, const char *state,
+    const char *error_code)
+{
+    if (command == NULL || command->remote_command_id[0] == '\0')
+    {
+        return;
+    }
+    music_http_client_config_t config;
+    if (music_service_copy_http_config(&config) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "remote command ACK skipped: endpoint unavailable");
+        return;
+    }
+    music_service_refresh_volume_snapshot();
+    music_service_snapshot_t snapshot = {0};
+    (void)music_service_get_snapshot(&snapshot);
+    const esp_err_t ret = music_http_client_ack_remote_command(
+        &s_control_client, &config, command->remote_command_id, state,
+        error_code, &snapshot);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "remote command ACK failed: %s ret=%s",
+                 command->remote_command_id, esp_err_to_name(ret));
+    }
+}
+
+static void music_service_handle_remote_command(
+    const music_service_command_t *command)
+{
+    if (command == NULL)
+    {
+        return;
+    }
+    const char *error_code = NULL;
+    if (strcmp(command->remote_action, "play") == 0)
+    {
+        if (command->source_id[0] == '\0')
+        {
+            error_code = "music_source_required";
+        }
+        else
+        {
+            music_service_handle_start(command);
+        }
+    }
+    else if (strcmp(command->remote_action, "pause") == 0)
+    {
+        music_service_handle_pause();
+    }
+    else if (strcmp(command->remote_action, "resume") == 0)
+    {
+        music_service_handle_resume();
+    }
+    else if (strcmp(command->remote_action, "previous") == 0 ||
+             strcmp(command->remote_action, "next") == 0)
+    {
+        music_service_handle_track_action(command->remote_action);
+    }
+    else if (strcmp(command->remote_action, "mode") == 0)
+    {
+        if (!command->has_remote_mode)
+        {
+            error_code = "invalid_mode";
+        }
+        else
+        {
+            music_service_handle_mode(command->mode);
+        }
+    }
+    else if (strcmp(command->remote_action, "volume") == 0)
+    {
+        if (!command->has_volume || command->volume < 0 || command->volume > 100)
+        {
+            error_code = "invalid_volume";
+        }
+        else if (audio_codec_set_volume_preference(command->volume) != ESP_OK)
+        {
+            error_code = "music_volume_failed";
+        }
+        else
+        {
+            taskENTER_CRITICAL(&s_snapshot_lock);
+            s_snapshot.volume = command->volume;
+            taskEXIT_CRITICAL(&s_snapshot_lock);
+        }
+    }
+    else if (strcmp(command->remote_action, "stop") == 0)
+    {
+        music_service_handle_destroy();
+    }
+    else
+    {
+        error_code = "unsupported_remote_action";
+    }
+
+    music_service_snapshot_t snapshot = {0};
+    (void)music_service_get_snapshot(&snapshot);
+    if (error_code == NULL && snapshot.state == MUSIC_SERVICE_STATE_ERROR)
+    {
+        error_code = snapshot.error_code[0] != '\0' ? snapshot.error_code
+                                                     : "music_remote_failed";
+    }
+    music_service_ack_remote_command(command, error_code == NULL ? "executed"
+                                                                  : "error",
+                                     error_code);
+    s_remote_command_inflight = false;
+}
+
+static void music_service_poll_remote_if_due(void)
+{
+    const TickType_t now = xTaskGetTickCount();
+    if (s_remote_command_inflight || now < s_remote_next_poll)
+    {
+        return;
+    }
+    s_remote_next_poll = now + pdMS_TO_TICKS(kRemotePollIntervalMs);
+
+    /* Wi-Fi/IP/DNS 未就绪时不创建 TLS socket；SERVICE_READY 后再开始控制面轮询。 */
+    if (!network_service_is_service_ready())
+    {
+        return;
+    }
+
+    music_http_client_config_t config;
+    if (music_service_copy_http_config(&config) != ESP_OK)
+    {
+        return;
+    }
+    music_service_remote_command_t remote = {0};
+    const esp_err_t ret = music_http_client_poll_remote_command(
+        &s_control_client, &config, &remote);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "remote command poll failed: %s", esp_err_to_name(ret));
+        return;
+    }
+    if (!remote.available)
+    {
+        return;
+    }
+
+    music_service_command_t command = {
+        .type = MUSIC_SERVICE_CMD_REMOTE,
+        .mode = remote.has_mode ? remote.mode : MUSIC_SERVICE_MODE_REPEAT_ALL,
+        .volume = remote.volume,
+        .has_volume = remote.has_volume,
+        .has_remote_mode = remote.has_mode,
+    };
+    snprintf(command.remote_command_id, sizeof(command.remote_command_id), "%s",
+             remote.command_id);
+    snprintf(command.remote_action, sizeof(command.remote_action), "%s",
+             remote.action);
+    snprintf(command.source_id, sizeof(command.source_id), "%s", remote.source_id);
+    snprintf(command.track_id, sizeof(command.track_id), "%s", remote.track_id);
+    if (xQueueSend(s_command_queue, &command, 0U) == pdTRUE)
+    {
+        s_remote_command_inflight = true;
+    }
+    else
+    {
+        music_service_ack_remote_command(&command, "error", "music_queue_full");
+    }
+}
+
 static void music_service_handle_destroy(void)
 {
     (void)music_service_stop_player();
@@ -564,10 +780,13 @@ static void music_service_handle_destroy(void)
     {
         ESP_LOGW(TAG, "destroy request failed; local playback was stopped");
     }
+    int volume = 60;
     taskENTER_CRITICAL(&s_snapshot_lock);
+    volume = s_snapshot.volume;
     memset(&s_snapshot, 0, sizeof(s_snapshot));
     s_snapshot.state = MUSIC_SERVICE_STATE_STOPPED;
     s_snapshot.mode = MUSIC_SERVICE_MODE_REPEAT_ALL;
+    s_snapshot.volume = volume >= 0 && volume <= 100 ? volume : 60;
     taskEXIT_CRITICAL(&s_snapshot_lock);
     music_http_client_control_reset(&s_control_client);
 }
@@ -579,6 +798,7 @@ static void music_service_task(void *arg)
     {
         music_service_process_player_events();
         music_service_poll_qr_if_due();
+        music_service_poll_remote_if_due();
         music_service_command_t command;
         if (xQueueReceive(s_command_queue, &command, pdMS_TO_TICKS(100)) ==
             pdTRUE)
@@ -625,6 +845,9 @@ static void music_service_task(void *arg)
                 break;
             case MUSIC_SERVICE_CMD_QR_CANCEL:
                 music_service_handle_qr_cancel();
+                break;
+            case MUSIC_SERVICE_CMD_REMOTE:
+                music_service_handle_remote_command(&command);
                 break;
             default:
                 break;
@@ -689,6 +912,9 @@ esp_err_t music_service_init(void)
     {
         return ESP_ERR_NO_MEM;
     }
+    music_service_refresh_volume_snapshot();
+    s_remote_next_poll = xTaskGetTickCount();
+    s_remote_command_inflight = false;
     const BaseType_t created = xTaskCreateWithCaps(
         music_service_task, "music_service", kTaskStackBytes, NULL, 4,
         &s_task_handle, MALLOC_CAP_SPIRAM);
@@ -772,7 +998,8 @@ esp_err_t music_service_next(void)
 
 esp_err_t music_service_set_mode(music_service_mode_t mode)
 {
-    if (mode < MUSIC_SERVICE_MODE_REPEAT_ONE || mode > MUSIC_SERVICE_MODE_SHUFFLE)
+    if (mode < MUSIC_SERVICE_MODE_REPEAT_ONE ||
+        mode > MUSIC_SERVICE_MODE_SMART)
     {
         return ESP_ERR_INVALID_ARG;
     }

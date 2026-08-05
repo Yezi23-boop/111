@@ -100,6 +100,25 @@ export class NeteaseProvider {
     return { uid: String(uid), nickname: profile.nickname || "网易云用户" };
   }
 
+  async search(query, account, limit = 5) {
+    const cookie = this.readCookie();
+    if (!cookie || !account?.uid) throw new Error("music_auth_required");
+    const boundedLimit = Math.min(5, Math.max(1, Number(limit) || 5));
+    const result = bodyOf(await this.client.search({
+      keywords: query,
+      type: 1,
+      limit: boundedLimit,
+      offset: 0,
+      cookie,
+      timestamp: Date.now(),
+    }));
+    const songs = result?.result?.songs || result?.songs || [];
+    return songs
+      .map(trackOf)
+      .filter((track) => track.track_id !== "undefined")
+      .slice(0, boundedLimit);
+  }
+
   async sources(account) {
     const cookie = this.readCookie();
     if (!cookie || !account?.uid) throw new Error("music_auth_required");
@@ -171,17 +190,23 @@ export class NeteaseProvider {
     return url;
   }
 
-  async playback(sourceId, trackId, account) {
+  async playback(sourceId, trackId, account, options = {}) {
+    const selectedTrack = options.selectedTrack || null;
     if (sourceId === "playlists") {
       const available = await this.sources(account);
       const firstPlaylist = available.playlists?.[0];
       if (!firstPlaylist) throw new Error("music_source_empty");
       sourceId = firstPlaylist.source_id;
     }
-    const page = await this.tracks(sourceId, account, 0, 100);
-    let track = trackId
+    let page = { tracks: [], total: 0 };
+    // Smart mode already has an explicit seed. Avoid loading an entire source
+    // page before calling the provider's dynamic queue endpoint.
+    if (sourceId !== "search" && !(options.mode === "smart" && trackId)) {
+      page = await this.tracks(sourceId, account, 0, 100);
+    }
+    let track = selectedTrack || (trackId
       ? page.tracks.find((item) => item.track_id === String(trackId))
-      : page.tracks[0];
+      : page.tracks[0]);
     if (!track && trackId) {
       const cookie = this.readCookie();
       const songs = bodyOf(await this.client.song_detail({
@@ -190,11 +215,55 @@ export class NeteaseProvider {
       track = songs.length ? trackOf(songs[0]) : null;
     }
     if (!track || track.track_id === "undefined") throw new Error("track_unplayable");
+    if (options.mode === "smart") {
+      const smart = await this.smartQueue(sourceId, track.track_id, account);
+      sourceId = smart.sourceId;
+      page = { tracks: smart.queue, total: smart.queue.length };
+      track = page.tracks.find((item) => item.track_id === String(trackId)) || page.tracks[0];
+    }
     return {
       sourceId,
       track,
       queue: page.tracks,
+      mode: options.mode || "repeat_all",
       input: await this.resolveTrack(track.track_id),
     };
+  }
+
+  async smartQueue(sourceId, seedTrackId, account) {
+    const cookie = this.readCookie();
+    if (!cookie || !account?.uid) throw new Error("music_auth_required");
+    const playlistId = await this.#playlistIdForSmart(sourceId, account);
+    if (!playlistId || !seedTrackId) throw new Error("smart_mode_requires_playlist");
+    const result = bodyOf(await this.client.playmode_intelligence_list({
+      id: String(seedTrackId),
+      pid: String(playlistId),
+      sid: String(seedTrackId),
+      count: 100,
+      cookie,
+      timestamp: Date.now(),
+    }));
+    const data = result?.data || result?.result?.songs || result?.songs || [];
+    const songs = Array.isArray(data) ? data : data?.songs || data?.list || [];
+    const queue = songs
+      .map((item) => trackOf(item?.song || item))
+      .filter((item) => item.track_id !== "undefined");
+    if (!queue.length) throw new Error("smart_mode_unavailable");
+    return { sourceId: `playlist:${playlistId}`, queue };
+  }
+
+  async #playlistIdForSmart(sourceId, account) {
+    if (typeof sourceId === "string" && sourceId.startsWith("playlist:")) {
+      const playlistId = sourceId.slice("playlist:".length).trim();
+      return playlistId || null;
+    }
+    if (sourceId !== "liked") return null;
+    const cookie = this.readCookie();
+    const playlists = bodyOf(await this.client.user_playlist({
+      uid: account.uid, cookie, limit: 100, timestamp: Date.now(),
+    }))?.playlist || [];
+    const liked = playlists.find((playlist) => Number(playlist.specialType) === 5)
+      || playlists.find((playlist) => String(playlist.name || "").includes("我喜欢"));
+    return liked?.id ? String(liked.id) : null;
   }
 }

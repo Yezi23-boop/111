@@ -168,6 +168,11 @@ static music_service_mode_t music_http_parse_mode(const cJSON *item)
             return MUSIC_SERVICE_MODE_REPEAT_ONE;
         if (strcmp(item->valuestring, "shuffle") == 0)
             return MUSIC_SERVICE_MODE_SHUFFLE;
+        if (strcmp(item->valuestring, "order") == 0 ||
+            strcmp(item->valuestring, "single_stop") == 0)
+            return MUSIC_SERVICE_MODE_ORDER;
+        if (strcmp(item->valuestring, "smart") == 0)
+            return MUSIC_SERVICE_MODE_SMART;
     }
     return MUSIC_SERVICE_MODE_REPEAT_ALL;
 }
@@ -418,6 +423,249 @@ static esp_err_t music_http_perform_json(
         out_result->transport_error = ret;
     }
     heap_caps_free(response);
+    return ret;
+}
+
+static esp_err_t music_http_perform_raw(
+    music_http_control_client_t *control,
+    const music_http_client_config_t *config, const char *path,
+    esp_http_client_method_t method, const char *body, const char *command_id,
+    char *response, size_t response_capacity, int *out_status)
+{
+    if (response == NULL || response_capacity == 0U || out_status == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char url[480];
+    esp_err_t ret = music_http_build_url(config, path, url, sizeof(url));
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+    return music_http_control_request(control, config, url, method, body,
+                                      command_id, response, response_capacity,
+                                      out_status);
+}
+
+static const char *music_http_mode_text(music_service_mode_t mode)
+{
+    switch (mode)
+    {
+    case MUSIC_SERVICE_MODE_REPEAT_ONE:
+        return "repeat_one";
+    case MUSIC_SERVICE_MODE_SHUFFLE:
+        return "shuffle";
+    case MUSIC_SERVICE_MODE_ORDER:
+        return "order";
+    case MUSIC_SERVICE_MODE_SMART:
+        return "smart";
+    case MUSIC_SERVICE_MODE_REPEAT_ALL:
+    default:
+        return "repeat_all";
+    }
+}
+
+static const char *music_http_state_text(music_service_state_t state)
+{
+    switch (state)
+    {
+    case MUSIC_SERVICE_STATE_BUFFERING:
+        return "buffering";
+    case MUSIC_SERVICE_STATE_PLAYING:
+        return "playing";
+    case MUSIC_SERVICE_STATE_PAUSED:
+        return "paused";
+    case MUSIC_SERVICE_STATE_ERROR:
+        return "error";
+    case MUSIC_SERVICE_STATE_STOPPED:
+    default:
+        return "stopped";
+    }
+}
+
+esp_err_t music_http_client_poll_remote_command(
+    music_http_control_client_t *control,
+    const music_http_client_config_t *config,
+    music_service_remote_command_t *out_command)
+{
+    if (control == NULL || config == NULL || out_command == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out_command, 0, sizeof(*out_command));
+    char *response = heap_caps_calloc(1U, kResponseBytes,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (response == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    int status = 0;
+    esp_err_t ret = music_http_perform_raw(
+        control, config, "/v1/music/remote-commands/next", HTTP_METHOD_GET,
+        NULL, NULL, response, kResponseBytes, &status);
+    if (ret == ESP_OK)
+    {
+        cJSON *root = cJSON_Parse(response);
+        if (root == NULL)
+        {
+            ret = ESP_ERR_INVALID_RESPONSE;
+        }
+        else
+        {
+            const cJSON *state = cJSON_GetObjectItemCaseSensitive(root, "state");
+            const bool claimed = cJSON_IsString(state) &&
+                                 strcmp(state->valuestring, "claimed") == 0;
+            if (claimed)
+            {
+                music_http_copy_json_string(
+                    root, "command_id", out_command->command_id,
+                    sizeof(out_command->command_id));
+                music_http_copy_json_string(root, "action", out_command->action,
+                                            sizeof(out_command->action));
+                const cJSON *expires =
+                    cJSON_GetObjectItemCaseSensitive(root, "expires_at");
+                if (cJSON_IsNumber(expires) && expires->valuedouble >= 0.0)
+                {
+                    out_command->expires_at_ms = (uint64_t)expires->valuedouble;
+                }
+                const cJSON *payload =
+                    cJSON_GetObjectItemCaseSensitive(root, "payload");
+                if (cJSON_IsObject(payload))
+                {
+                    music_http_copy_json_string(
+                        payload, "source_id", out_command->source_id,
+                        sizeof(out_command->source_id));
+                    music_http_copy_json_string(
+                        payload, "track_id", out_command->track_id,
+                        sizeof(out_command->track_id));
+                    const cJSON *mode =
+                        cJSON_GetObjectItemCaseSensitive(payload, "mode");
+                    if (cJSON_IsString(mode) && mode->valuestring != NULL)
+                    {
+                        out_command->mode = music_http_parse_mode(mode);
+                        out_command->has_mode = true;
+                    }
+                    const cJSON *volume =
+                        cJSON_GetObjectItemCaseSensitive(payload, "volume");
+                    if (cJSON_IsNumber(volume) && volume->valuedouble >= 0.0 &&
+                        volume->valuedouble <= 100.0 &&
+                        volume->valuedouble == (double)(int)volume->valuedouble)
+                    {
+                        out_command->volume = (int)volume->valuedouble;
+                        out_command->has_volume = true;
+                    }
+                }
+                if (out_command->command_id[0] == '\0' ||
+                    out_command->action[0] == '\0')
+                {
+                    ret = ESP_ERR_INVALID_RESPONSE;
+                }
+                else
+                {
+                    out_command->available = true;
+                }
+            }
+            else if (!cJSON_IsString(state) ||
+                     strcmp(state->valuestring, "idle") != 0)
+            {
+                ret = ESP_ERR_INVALID_RESPONSE;
+            }
+            cJSON_Delete(root);
+        }
+    }
+    heap_caps_free(response);
+    return ret;
+}
+
+esp_err_t music_http_client_ack_remote_command(
+    music_http_control_client_t *control,
+    const music_http_client_config_t *config, const char *command_id,
+    const char *state, const char *error_code,
+    const music_service_snapshot_t *snapshot)
+{
+    if (control == NULL || config == NULL || command_id == NULL ||
+        command_id[0] == '\0')
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON *result = cJSON_CreateObject();
+    cJSON *snapshot_json = cJSON_CreateObject();
+    if (root == NULL || result == NULL || snapshot_json == NULL)
+    {
+        cJSON_Delete(root);
+        cJSON_Delete(result);
+        cJSON_Delete(snapshot_json);
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddStringToObject(result, "state",
+                            state != NULL && state[0] != '\0' ? state
+                                                               : "executed");
+    if (error_code != NULL && error_code[0] != '\0')
+    {
+        cJSON_AddStringToObject(result, "error_code", error_code);
+    }
+    cJSON_AddItemToObject(root, "result", result);
+    if (snapshot != NULL)
+    {
+        cJSON_AddStringToObject(snapshot_json, "state",
+                                music_http_state_text(snapshot->state));
+        cJSON_AddStringToObject(snapshot_json, "mode",
+                                music_http_mode_text(snapshot->mode));
+        cJSON_AddNumberToObject(snapshot_json, "position_ms",
+                                snapshot->position_ms);
+        cJSON_AddNumberToObject(snapshot_json, "volume", snapshot->volume);
+        if (snapshot->music_session_id[0] != '\0')
+            cJSON_AddStringToObject(snapshot_json, "music_session_id",
+                                    snapshot->music_session_id);
+        if (snapshot->source_id[0] != '\0')
+            cJSON_AddStringToObject(snapshot_json, "source_id",
+                                    snapshot->source_id);
+        if (snapshot->track_id[0] != '\0')
+            cJSON_AddStringToObject(snapshot_json, "track_id",
+                                    snapshot->track_id);
+        if (snapshot->title[0] != '\0')
+            cJSON_AddStringToObject(snapshot_json, "title", snapshot->title);
+        if (snapshot->artist[0] != '\0')
+            cJSON_AddStringToObject(snapshot_json, "artist", snapshot->artist);
+    }
+    cJSON_AddItemToObject(root, "snapshot", snapshot_json);
+    char *body = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (body == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    char path[256];
+    const int written = snprintf(
+        path, sizeof(path), "/v1/music/remote-commands/%s/ack", command_id);
+    if (written <= 0 || (size_t)written >= sizeof(path))
+    {
+        cJSON_free(body);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    char *response = heap_caps_calloc(1U, kResponseBytes,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (response == NULL)
+    {
+        cJSON_free(body);
+        return ESP_ERR_NO_MEM;
+    }
+    int status = 0;
+    esp_err_t ret = music_http_perform_raw(
+        control, config, path, HTTP_METHOD_POST, body, NULL, response,
+        kResponseBytes, &status);
+    if (ret == ESP_OK && status >= 200 && status < 300)
+    {
+        cJSON *ack = cJSON_Parse(response);
+        const cJSON *ack_state = ack != NULL
+                                     ? cJSON_GetObjectItemCaseSensitive(ack, "state")
+                                     : NULL;
+        ret = cJSON_IsString(ack_state) ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
+        cJSON_Delete(ack);
+    }
+    heap_caps_free(response);
+    cJSON_free(body);
     return ret;
 }
 
@@ -683,13 +931,23 @@ esp_err_t music_http_client_create_session(
     const char *track_id, const char *command_id,
     music_http_session_result_t *out_result)
 {
+    return music_http_client_create_session_mode(
+        control, config, source_id, track_id, NULL, command_id, out_result);
+}
+
+esp_err_t music_http_client_create_session_mode(
+    music_http_control_client_t *control,
+    const music_http_client_config_t *config, const char *source_id,
+    const char *track_id, const char *mode, const char *command_id,
+    music_http_session_result_t *out_result)
+{
     if (control == NULL || config == NULL || out_result == NULL)
     {
         return ESP_ERR_INVALID_ARG;
     }
     char *body = NULL;
     esp_err_t ret = music_http_build_session_body(config, source_id, track_id,
-                                                  NULL, &body);
+                                                  mode, &body);
     if (ret == ESP_OK)
     {
         ret = music_http_perform_json(control, config, "/v1/music/sessions",

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 export class MusicStore {
@@ -43,6 +44,27 @@ export class MusicStore {
         qr_key TEXT NOT NULL,
         expires_at INTEGER NOT NULL,
         created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS music_remote_commands (
+        device_id TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        state TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        claimed_at INTEGER,
+        acked_at INTEGER,
+        result_json TEXT,
+        PRIMARY KEY (device_id, command_id)
+      );
+      CREATE INDEX IF NOT EXISTS music_remote_commands_pending
+        ON music_remote_commands(device_id, state, created_at);
+      CREATE TABLE IF NOT EXISTS music_device_snapshots (
+        device_id TEXT PRIMARY KEY,
+        command_id TEXT,
+        snapshot_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
       );
     `);
   }
@@ -139,6 +161,128 @@ export class MusicStore {
       .run(deviceId, commandId, JSON.stringify(result), Date.now());
   }
 
+  createRemoteCommand(deviceId, action, payload, ttlMs) {
+    const commandId = `music-command-${crypto.randomUUID()}`;
+    const now = Date.now();
+    const expiresAt = now + Math.max(1000, Number(ttlMs) || 30000);
+    const insert = this.db.prepare(`
+      INSERT INTO music_remote_commands (
+        device_id, command_id, action, payload_json, state, created_at, expires_at
+      ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+    `);
+    const supersede = this.db.prepare(`
+      UPDATE music_remote_commands
+      SET state = 'superseded', acked_at = ?, result_json = ?
+      WHERE device_id = ? AND state = 'pending'
+    `);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      supersede.run(
+        now,
+        JSON.stringify({ state: "superseded", error_code: "superseded" }),
+        deviceId,
+      );
+      insert.run(deviceId, commandId, action, JSON.stringify(payload || {}), now, expiresAt);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getRemoteCommand(deviceId, commandId);
+  }
+
+  getRemoteCommand(deviceId, commandId) {
+    const row = this.db.prepare(`
+      SELECT * FROM music_remote_commands WHERE device_id = ? AND command_id = ?
+    `).get(deviceId, commandId);
+    return row ? this.#decodeRemoteCommand(row) : null;
+  }
+
+  claimRemoteCommand(deviceId) {
+    const now = Date.now();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare(`
+        UPDATE music_remote_commands
+        SET state = 'expired', acked_at = ?,
+            result_json = COALESCE(result_json, ?)
+        WHERE device_id = ? AND state = 'pending' AND expires_at <= ?
+      `).run(now, JSON.stringify({ state: "expired", error_code: "expired" }), deviceId, now);
+      const row = this.db.prepare(`
+        SELECT * FROM music_remote_commands
+        WHERE device_id = ? AND state = 'pending' AND expires_at > ?
+        ORDER BY created_at ASC LIMIT 1
+      `).get(deviceId, now);
+      if (!row) {
+        this.db.exec("COMMIT");
+        return null;
+      }
+      this.db.prepare(`
+        UPDATE music_remote_commands SET state = 'claimed', claimed_at = ?
+        WHERE device_id = ? AND command_id = ? AND state = 'pending'
+      `).run(now, deviceId, row.command_id);
+      this.db.exec("COMMIT");
+      row.state = "claimed";
+      row.claimed_at = now;
+      return this.#decodeRemoteCommand(row);
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  acknowledgeRemoteCommand(deviceId, commandId, result, snapshot) {
+    const now = Date.now();
+    const existing = this.getRemoteCommand(deviceId, commandId);
+    if (!existing) return null;
+    if (existing.state === "executed" || existing.state === "expired" ||
+        existing.state === "superseded") {
+      return existing;
+    }
+    const normalizedResult = result && typeof result === "object" ? result : {
+      state: "executed",
+    };
+    this.db.prepare(`
+      UPDATE music_remote_commands
+      SET state = 'executed', acked_at = ?, result_json = ?
+      WHERE device_id = ? AND command_id = ? AND state IN ('pending', 'claimed', 'accepted')
+    `).run(now, JSON.stringify(normalizedResult), deviceId, commandId);
+    if (snapshot && typeof snapshot === "object") {
+      this.db.prepare(`
+        INSERT INTO music_device_snapshots(device_id, command_id, snapshot_json, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(device_id) DO UPDATE SET
+          command_id = excluded.command_id,
+          snapshot_json = excluded.snapshot_json,
+          updated_at = excluded.updated_at
+      `).run(deviceId, commandId, JSON.stringify(snapshot), now);
+    }
+    return this.getRemoteCommand(deviceId, commandId);
+  }
+
+  markRemoteAccepted(deviceId, commandId) {
+    const now = Date.now();
+    this.db.prepare(`
+      UPDATE music_remote_commands
+      SET state = 'accepted', result_json = ?
+      WHERE device_id = ? AND command_id = ? AND state IN ('pending', 'claimed')
+    `).run(JSON.stringify({ state: "accepted", command_id: commandId }), deviceId, commandId);
+    return this.getRemoteCommand(deviceId, commandId);
+  }
+
+  getDeviceSnapshot(deviceId) {
+    const row = this.db.prepare(`
+      SELECT command_id, snapshot_json, updated_at
+      FROM music_device_snapshots WHERE device_id = ?
+    `).get(deviceId);
+    if (!row) return null;
+    return {
+      command_id: row.command_id,
+      snapshot: JSON.parse(row.snapshot_json),
+      updated_at: Number(row.updated_at),
+    };
+  }
+
   close() {
     this.db.close();
   }
@@ -160,6 +304,21 @@ export class MusicStore {
       stream_issued_at: row.stream_issued_at == null ? null : Number(row.stream_issued_at),
       created_at: Number(row.created_at),
       updated_at: Number(row.updated_at),
+    };
+  }
+
+  #decodeRemoteCommand(row) {
+    return {
+      device_id: row.device_id,
+      command_id: row.command_id,
+      action: row.action,
+      payload: JSON.parse(row.payload_json),
+      state: row.state,
+      created_at: Number(row.created_at),
+      expires_at: Number(row.expires_at),
+      claimed_at: row.claimed_at == null ? null : Number(row.claimed_at),
+      acked_at: row.acked_at == null ? null : Number(row.acked_at),
+      result: row.result_json ? JSON.parse(row.result_json) : null,
     };
   }
 }

@@ -7,7 +7,9 @@ import { createServer } from "node:http";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { createApp } from "../src/app.js";
+import { NeteaseProvider } from "../src/netease_provider.js";
 import { OggOpusPacketTransform } from "../src/ogg_opus_packet_transform.js";
+import { MockWatchClient } from "./mock_watch_client.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = path.resolve(
@@ -416,5 +418,163 @@ test("a persisted cookie can rehydrate the account summary after SQLite metadata
     assert.equal(running.app.store.getAccount().uid, "42");
   } finally {
     await running.close();
+  }
+});
+
+test("MCP requires its own token and exposes the fixed tool set", async () => {
+  const running = await runningApp({ mcpToken: "mcp-test" });
+  try {
+    const missing = await fetch(`${running.base}/v1/music/mcp`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    });
+    assert.equal(missing.status, 401);
+    const wrong = await fetch(`${running.base}/v1/music/mcp`, {
+      method: "POST",
+      headers: { Authorization: "Bearer wrong", "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    });
+    assert.equal(wrong.status, 403);
+
+    const initialized = await fetch(`${running.base}/v1/music/mcp`, {
+      method: "POST",
+      headers: { Authorization: "Bearer mcp-test", "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    });
+    assert.equal(initialized.status, 200);
+    assert.ok(initialized.headers.get("mcp-session-id"));
+    const listed = await fetch(`${running.base}/v1/music/mcp`, {
+      method: "POST",
+      headers: { Authorization: "Bearer mcp-test", "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+    });
+    const tools = (await listed.json()).result.tools;
+    assert.deepEqual(tools.map((tool) => tool.name), [
+      "music_search", "music_status", "music_play", "music_pause", "music_resume",
+      "music_previous", "music_next", "music_stop", "music_set_mode", "music_set_volume",
+    ]);
+  } finally {
+    await running.close();
+  }
+});
+
+test("MCP write reaches a mock watch and returns executed without leaking its input URL", async () => {
+  const provider = {
+    hasCookie: () => true,
+    search: async () => [{ track_id: "song-1", title: "晴天", artist: "周杰伦" }],
+    playback: async (_sourceId, trackId, _account, options) => ({
+      sourceId: "search",
+      track: { track_id: trackId || "song-1", title: "晴天", artist: "周杰伦" },
+      queue: [{ track_id: trackId || "song-1", title: "晴天", artist: "周杰伦" }],
+      mode: options.mode,
+      input: "https://private-upstream.invalid/should-not-leak",
+    }),
+  };
+  const running = await runningApp({
+    testMode: false,
+    provider,
+    mcpToken: "mcp-test",
+    mcpAckWaitMs: 1000,
+  });
+  running.app.store.saveAccount({ uid: "42", nickname: "测试用户" });
+  try {
+    const mockWatch = new MockWatchClient(running.base);
+    const request = fetch(`${running.base}/v1/music/mcp`, {
+      method: "POST",
+      headers: { Authorization: "Bearer mcp-test", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 3, method: "tools/call",
+        params: { name: "music_play", arguments: { query: "周杰伦 晴天" } },
+      }),
+    });
+    let command;
+    for (let attempt = 0; attempt < 20 && !command; attempt += 1) {
+      const poll = await fetch(`${running.base}/v1/music/remote-commands/next?device_id=watch-001`, {
+        headers: { Authorization: "Bearer test-token" },
+      });
+      const value = await poll.json();
+      if (value.state === "claimed") command = value;
+      else await delay(20);
+    }
+    assert.ok(command);
+    assert.equal(command.action, "play");
+    assert.equal(command.payload.track.title, "晴天");
+    assert.equal(JSON.stringify(command).includes("private-upstream"), false);
+    const ack = await mockWatch.ack(
+      command.command_id,
+      { state: "executed" },
+      { state: "playing", track_id: "song-1", mode: "repeat_all" },
+    );
+    assert.equal(ack.state, "executed");
+    const response = await request;
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    const result = JSON.parse(payload.result.content[0].text);
+    assert.equal(result.state, "executed");
+    assert.equal(result.action, "play");
+    assert.equal(JSON.stringify(payload).includes("private-upstream"), false);
+  } finally {
+    await running.close();
+  }
+});
+
+test("remote command pending state is latest-wins and expired commands are not claimable", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "watch-music-store-"));
+  const app = createApp({
+    dataDir,
+    dbPath: path.join(dataDir, "music.db"),
+    testMode: true,
+    remoteCommandTtlMs: 10,
+  });
+  try {
+    const first = app.store.createRemoteCommand("watch-001", "pause", {}, 1000);
+    const second = app.store.createRemoteCommand("watch-001", "stop", {}, 10);
+    assert.equal(app.store.getRemoteCommand("watch-001", first.command_id).state, "superseded");
+    assert.equal(app.store.claimRemoteCommand("watch-001").command_id, second.command_id);
+    const third = app.store.createRemoteCommand("watch-001", "next", {}, 1);
+    assert.equal(third.state, "pending");
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 2000;
+    try {
+      assert.equal(app.store.claimRemoteCommand("watch-001"), null);
+      assert.equal(app.store.getRemoteCommand("watch-001", third.command_id).state, "expired");
+    } finally {
+      Date.now = originalNow;
+    }
+  } finally {
+    app.closeMusic();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("Netease adapter searches five tracks and asks the smart endpoint for a dynamic queue", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "watch-music-provider-"));
+  const cookiePath = path.join(dataDir, "cookie.txt");
+  fs.writeFileSync(cookiePath, "MUSIC_COOKIE");
+  const calls = [];
+  const provider = new NeteaseProvider({ neteaseCookiePath: cookiePath }, {
+    search: async (params) => {
+      calls.push(["search", params]);
+      return { body: { result: { songs: [{ id: 1, name: "晴天", ar: [{ name: "周杰伦" }] }] } } };
+    },
+    user_playlist: async () => ({ body: { playlist: [{ id: 99, specialType: 5, name: "我喜欢的音乐" }] } }),
+    song_detail: async () => ({ body: { songs: [{ id: 1, name: "晴天", ar: [{ name: "周杰伦" }] }] } }),
+    playmode_intelligence_list: async (params) => {
+      calls.push(["smart", params]);
+      return { body: { data: [{ id: 1, name: "晴天", ar: [{ name: "周杰伦" }] }] } };
+    },
+    song_url: async () => ({ body: { data: [{ url: "https://private.invalid/song" }] } }),
+  });
+  try {
+    const account = { uid: "42", nickname: "测试用户" };
+    assert.equal((await provider.search("晴天", account, 5))[0].track_id, "1");
+    const definition = await provider.playback("liked", "1", account, { mode: "smart" });
+    assert.equal(definition.mode, "smart");
+    assert.equal(definition.sourceId, "playlist:99");
+    assert.equal(calls[0][0], "search");
+    assert.equal(calls[1][0], "smart");
+    assert.equal(calls[1][1].pid, "99");
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });

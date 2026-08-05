@@ -20,6 +20,23 @@ class MusicServiceSourceTests(unittest.TestCase):
         self.assertIn("music_service_get_catalog", header)
         self.assertIn("music_service_start_qr_login", header)
         self.assertIn("music_service_copy_qr", header)
+        protocol = (MUSIC_DIR / "music_protocol.h").read_text(encoding="utf-8")
+        self.assertIn("MUSIC_SERVICE_MODE_ORDER", protocol)
+        self.assertIn("MUSIC_SERVICE_MODE_SMART", protocol)
+        self.assertIn("music_http_client_poll_remote_command", source)
+        self.assertIn("music_http_client_ack_remote_command", source)
+        self.assertIn("MUSIC_SERVICE_CMD_REMOTE", source)
+        self.assertIn("music_service_handle_remote_command", source)
+        self.assertIn("music_service_poll_remote_if_due", source)
+        self.assertIn("#include \"services/network/network_service.h\"", source)
+        self.assertIn("network_service_is_service_ready()", source)
+        self.assertIn("music_service_set_mode", source)
+        self.assertIn("audio_codec_set_volume_preference", source)
+        track_action = source.split(
+            "static void music_service_handle_track_action", 1
+        )[1].split("static void music_service_handle_mode", 1)[0]
+        self.assertIn("result.state == MUSIC_SERVICE_STATE_STOPPED", track_action)
+        self.assertIn("result.stream_id[0] == '\\0'", track_action)
         self.assertIn("kTaskStackBytes = 16384U", source)
         self.assertNotIn("lvgl.h", source)
         self.assertNotIn("esp_http_client", source)
@@ -131,6 +148,9 @@ class MusicServiceSourceTests(unittest.TestCase):
         self.assertIn("refreshing idle control connection", http_source)
         self.assertIn("esp_timer_get_time()", http_source)
         self.assertIn("control request failed; reconnecting once", http_source)
+        self.assertIn("/v1/music/remote-commands/next", http_source)
+        self.assertIn("/v1/music/remote-commands/%s/ack", http_source)
+        self.assertIn('"application/x-watch-opus"', http_source)
         self.assertIn("esp_http_client_delete_header", http_source)
         self.assertIn("music_http_client_control_reset(&s_control_client)", service_source)
 

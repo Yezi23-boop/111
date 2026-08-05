@@ -33,3 +33,15 @@ npm test
 
 不要把 `WATCH_DEVICE_TOKENS`、网易云 Cookie、播放 URL 或 API key 写入仓库、镜像
 或日志。音频流不写入 `/data`。
+
+## Hermes-only MCP canary
+
+服务端提供独立的 Streamable HTTP MCP 入口：`POST /v1/music/mcp`。Hermes 使用
+`MUSIC_MCP_TOKEN`，手表仍只使用 `WATCH_DEVICE_TOKENS` 访问远程命令
+`/v1/music/remote-commands/next` 和 `/ack`；两个 token 不互换。临时配置样例见
+`hermes-mcp.canary.example.yaml`，其中 `host.docker.internal` 只适用于 Hermes 与
+music-service 位于同一 Docker 主机的本机闭环。
+
+启动服务后，可用 `server/music_service/test/mock_watch_client.js` 对
+`watch-001` 轮询并 ACK。MCP 的播放结果只返回歌曲元数据、命令状态和窄快照，不返回
+Cookie、设备 token、媒体 capability 或网易云播放 URL。

@@ -20,6 +20,8 @@ extern "C"
 #define MUSIC_SERVICE_TITLE_MAX_BYTES 128U
 #define MUSIC_SERVICE_ARTIST_MAX_BYTES 96U
 #define MUSIC_SERVICE_ERROR_MAX_BYTES 64U
+#define MUSIC_SERVICE_REMOTE_COMMAND_ID_MAX_BYTES 96U
+#define MUSIC_SERVICE_REMOTE_ACTION_MAX_BYTES 32U
 #define MUSIC_SERVICE_RING_BYTES (512U * 1024U)
 /* 128 kbps 压缩音频约 32 秒缓存；4 KB 起播门槛保持快速响应。 */
 #define MUSIC_SERVICE_START_BUFFER_BYTES (4U * 1024U)
@@ -43,7 +45,29 @@ extern "C"
         MUSIC_SERVICE_MODE_REPEAT_ONE = 0,
         MUSIC_SERVICE_MODE_REPEAT_ALL,
         MUSIC_SERVICE_MODE_SHUFFLE,
+        MUSIC_SERVICE_MODE_ORDER,
+        MUSIC_SERVICE_MODE_SMART,
     } music_service_mode_t;
+
+    /**
+     * @brief 服务端下发给 music_service owner 的窄命令。
+     *
+     * 字段只覆盖现有播放控制所需的元数据；媒体 URL、Cookie 和 MCP token
+     * 永远不会进入设备命令。`has_volume`/`has_mode` 区分缺省值与显式设置。
+     */
+    typedef struct
+    {
+        bool available;
+        bool has_mode;
+        bool has_volume;
+        int volume;
+        uint64_t expires_at_ms;
+        music_service_mode_t mode;
+        char command_id[MUSIC_SERVICE_REMOTE_COMMAND_ID_MAX_BYTES];
+        char action[MUSIC_SERVICE_REMOTE_ACTION_MAX_BYTES];
+        char source_id[MUSIC_SERVICE_SOURCE_ID_MAX_BYTES];
+        char track_id[MUSIC_SERVICE_TRACK_ID_MAX_BYTES];
+    } music_service_remote_command_t;
 
     /** 音乐 service 对 UI 发布的只读快照。 */
     typedef struct
@@ -52,6 +76,7 @@ extern "C"
         music_service_mode_t mode;
         bool music_active;
         bool endpoint_configured;
+        int volume; /**< 当前系统扬声器音量，0~100；由 audio_codec owner 维护。 */
         uint32_t position_ms;
         size_t buffered_bytes;
         char music_session_id[MUSIC_SERVICE_SESSION_ID_MAX_BYTES];

@@ -35,6 +35,14 @@ export function loadConfig(overrides = {}) {
       overrides.streamDisconnectCleanupMs ||
         process.env.MUSIC_STREAM_DISCONNECT_CLEANUP_MS || 15000,
     ),
+    mcpToken: overrides.mcpToken || process.env.MUSIC_MCP_TOKEN || "",
+    mcpDeviceId: overrides.mcpDeviceId || process.env.MUSIC_MCP_DEVICE_ID || "watch-001",
+    remoteCommandTtlMs: Number(
+      overrides.remoteCommandTtlMs || process.env.MUSIC_REMOTE_COMMAND_TTL_MS || 30000,
+    ),
+    mcpAckWaitMs: Number(
+      overrides.mcpAckWaitMs || process.env.MUSIC_MCP_ACK_WAIT_MS || 5000,
+    ),
     deviceTokens: overrides.deviceTokens || parseDeviceTokens(process.env.WATCH_DEVICE_TOKENS),
   };
 }

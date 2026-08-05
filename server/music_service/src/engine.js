@@ -31,6 +31,10 @@ export class MusicEngine {
     if (!definition?.sourceId || !definition?.track?.track_id || !definition.input) {
       return this.error("track_unplayable");
     }
+    const mode = definition.mode || "repeat_all";
+    if (!["order", "repeat_all", "repeat_one", "shuffle", "smart"].includes(mode)) {
+      return this.error("invalid_mode");
+    }
     return this.#idempotent(deviceId, commandId, () => {
       this.#stopProcess();
       const now = Date.now();
@@ -46,7 +50,7 @@ export class MusicEngine {
         // local fixture or a private upstream URL and must never be returned.
         source_path: definition.input,
         queue: definition.queue?.length ? definition.queue : [definition.track],
-        mode: definition.mode || "repeat_all",
+        mode,
         position_ms: 0,
         stream_id: id("stream"),
         stream_issued_at: now,
@@ -100,17 +104,28 @@ export class MusicEngine {
     return result;
   }
 
-  setMode(deviceId, commandId, mode) {
-    return this.#idempotent(deviceId, commandId, () => {
-      if (!["repeat_one", "repeat_all", "shuffle"].includes(mode)) {
-        return this.error("invalid_mode");
+  async setMode(deviceId, commandId, mode, resolveSmartQueue) {
+    const previous = this.getCommand(deviceId, commandId);
+    if (previous) return previous;
+    if (!["order", "repeat_all", "repeat_one", "shuffle", "smart"].includes(mode)) {
+      return this.#saveResult(deviceId, commandId, this.error("invalid_mode"));
+    }
+    const session = this.store.getSession(deviceId);
+    if (!session) return this.#saveResult(deviceId, commandId, this.error("music_session_not_found"));
+    if (mode === "smart") {
+      if (typeof resolveSmartQueue !== "function") {
+        return this.#saveResult(deviceId, commandId, this.error("smart_mode_requires_playlist"));
       }
-      const session = this.store.getSession(deviceId);
-      if (!session) return this.error("music_session_not_found");
-      session.mode = mode;
-      session.updated_at = Date.now();
-      return this.publicSession(this.store.saveSession(session));
-    });
+      const smart = await resolveSmartQueue(session);
+      if (!smart?.queue?.length) {
+        return this.#saveResult(deviceId, commandId, this.error("smart_mode_unavailable"));
+      }
+      session.queue = smart.queue;
+      if (smart.sourceId) session.source_id = smart.sourceId;
+    }
+    session.mode = mode;
+    session.updated_at = Date.now();
+    return this.#saveResult(deviceId, commandId, this.publicSession(this.store.saveSession(session)));
   }
 
   async next(deviceId, commandId, resolveInput) {
@@ -262,6 +277,13 @@ export class MusicEngine {
       index = currentIndex;
     } else if (session.mode === "shuffle") {
       index = queue.length > 1 ? (currentIndex + 1 + Math.floor(Math.random() * (queue.length - 1))) % queue.length : currentIndex;
+    } else if (session.mode === "order") {
+      if (delta > 0 && currentIndex >= queue.length - 1) {
+        const result = this.#stopSession(session);
+        if (commandId) this.store.saveCommand(deviceId, commandId, result);
+        return result;
+      }
+      index = Math.max(0, Math.min(queue.length - 1, currentIndex + delta));
     } else {
       index = (currentIndex + delta + queue.length) % queue.length;
     }
@@ -284,6 +306,22 @@ export class MusicEngine {
     session.stream_issued_at = Date.now();
     session.updated_at = Date.now();
     return this.publicSession(this.store.saveSession(session));
+  }
+
+  #stopSession(session) {
+    const elapsedMs = this.#elapsedMs(session);
+    this.#stopProcess();
+    session.position_ms += elapsedMs;
+    session.state = "stopped";
+    session.stream_id = null;
+    session.stream_issued_at = null;
+    session.updated_at = Date.now();
+    return this.publicSession(this.store.saveSession(session));
+  }
+
+  #saveResult(deviceId, commandId, result) {
+    if (commandId) this.store.saveCommand(deviceId, commandId, result);
+    return result;
   }
 
   #idempotent(deviceId, commandId, operation) {

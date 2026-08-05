@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { URL } from "node:url";
-import { authorize } from "./auth.js";
+import { authorize, authorizeMcp } from "./auth.js";
 import { MusicEngine } from "./engine.js";
 import { loadConfig } from "./config.js";
 import { MusicStore } from "./store.js";
 import { NeteaseProvider } from "./netease_provider.js";
+import { MusicMcpServer } from "./mcp_server.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -80,12 +81,36 @@ export function createApp(overrides = {}) {
     return account;
   }
 
+  const mcpServer = new MusicMcpServer({
+    store,
+    engine,
+    provider,
+    config,
+    ensureAccount,
+  });
+
   const server = async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     if (url.pathname === "/health" && request.method === "GET") {
       return json(response, 200, { status: "ok", service: "music-service" });
     }
     if (!url.pathname.startsWith("/v1/music")) return json(response, 404, { error_code: "not_found" });
+
+    if (url.pathname === "/v1/music/mcp") {
+      if (request.method !== "POST") {
+        response.setHeader("Allow", "POST");
+        return json(response, 405, { state: "error", error_code: "method_not_allowed" });
+      }
+      const auth = authorizeMcp(request, config);
+      if (!auth.ok) return json(response, auth.status, { state: "error", error_code: auth.errorCode });
+      let mcpBody;
+      try {
+        mcpBody = await readJson(request);
+      } catch {
+        return json(response, 400, { state: "error", error_code: "invalid_json" });
+      }
+      return mcpServer.handleHttp(request, response, mcpBody);
+    }
 
     // stream_id 由已鉴权控制请求签发，只在短时间内绑定一个设备会话。
     // 媒体请求以它作为 capability token，避免把长期 device token 放入 URL。
@@ -118,6 +143,35 @@ export function createApp(overrides = {}) {
     }
     const deviceId = deviceIdFrom(url, body);
     if (!requireAuth(request, deviceId, config, response)) return;
+
+    if (url.pathname === "/v1/music/remote-commands/next" && request.method === "GET") {
+      const command = store.claimRemoteCommand(deviceId);
+      if (!command) return json(response, 200, { state: "idle", device_id: deviceId });
+      return json(response, 200, {
+        state: command.state,
+        device_id: command.device_id,
+        command_id: command.command_id,
+        action: command.action,
+        payload: command.payload,
+        expires_at: command.expires_at,
+      });
+    }
+    const remoteAckMatch = url.pathname.match(/^\/v1\/music\/remote-commands\/([^/]+)\/ack$/);
+    if (remoteAckMatch && request.method === "POST") {
+      const remoteCommandId = decodeURIComponent(remoteAckMatch[1]);
+      const result = store.acknowledgeRemoteCommand(
+        deviceId,
+        remoteCommandId,
+        body.result || { state: "executed" },
+        body.snapshot || null,
+      );
+      if (!result) return json(response, 404, { state: "error", error_code: "remote_command_not_found" });
+      return json(response, 200, {
+        state: result.state,
+        command_id: result.command_id,
+        result: result.result,
+      });
+    }
 
     if (url.pathname === "/v1/music/account" && request.method === "GET") {
       if (config.testMode) return json(response, 200, { state: "logged_out" });
@@ -231,7 +285,14 @@ export function createApp(overrides = {}) {
       const duplicate = engine.getCommand(deviceId, currentCommand);
       if (duplicate) return json(response, duplicate.state === "error" ? 409 : 200, duplicate);
       try {
-        const definition = await provider.playback(body.source_id, body.track_id || null, account);
+        const requestedMode = body.mode || "repeat_all";
+        const definition = await provider.playback(
+          body.source_id,
+          body.track_id || null,
+          account,
+          { mode: requestedMode },
+        );
+        if (!definition.mode) definition.mode = requestedMode;
         const result = engine.createSession(deviceId, currentCommand, definition);
         return json(response, result.state === "error" ? 409 : 200, result);
       } catch (error) {
@@ -254,12 +315,30 @@ export function createApp(overrides = {}) {
       const action = sessionMatch[2];
       let result;
       const resolveTrack = config.testMode ? null : provider.resolveTrack?.bind(provider);
+      const resolveSmartQueue = !config.testMode && typeof provider.smartQueue === "function"
+        ? async (current) => {
+          const account = await ensureAccount();
+          if (!account) throw new Error("music_auth_required");
+          return provider.smartQueue(current.source_id, current.track_id, account);
+        }
+        : null;
       if (request.method === "DELETE" && !action) result = engine.destroy(deviceId, commandId(request, body));
       else if (request.method === "POST" && action === "pause") result = engine.pause(deviceId, commandId(request, body));
       else if (request.method === "POST" && action === "resume") result = await engine.resume(deviceId, commandId(request, body), resolveTrack);
       else if (request.method === "POST" && action === "previous") result = await engine.previous(deviceId, commandId(request, body), resolveTrack);
       else if (request.method === "POST" && action === "next") result = await engine.next(deviceId, commandId(request, body), resolveTrack);
-      else if (request.method === "POST" && action === "mode") result = engine.setMode(deviceId, commandId(request, body), body.mode);
+      else if (request.method === "POST" && action === "mode") {
+        try {
+          result = await engine.setMode(
+            deviceId,
+            commandId(request, body),
+            body.mode,
+            resolveSmartQueue,
+          );
+        } catch (error) {
+          result = { state: "error", error_code: errorCode(error) };
+        }
+      }
       else return json(response, 405, { state: "error", error_code: "method_not_allowed" });
       return json(response, result.state === "error" ? 409 : 200, result);
     }
@@ -275,5 +354,6 @@ export function createApp(overrides = {}) {
   server.store = store;
   server.engine = engine;
   server.provider = provider;
+  server.mcpServer = mcpServer;
   return server;
 }

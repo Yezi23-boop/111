@@ -78,6 +78,13 @@ extern "C"
         const char *track_id, const char *command_id,
         music_http_session_result_t *out_result);
 
+    /** @brief 创建会话并向服务端声明指定的选曲模式。 */
+    esp_err_t music_http_client_create_session_mode(
+        music_http_control_client_t *control,
+        const music_http_client_config_t *config, const char *source_id,
+        const char *track_id, const char *mode, const char *command_id,
+        music_http_session_result_t *out_result);
+
     /** @brief 读取一个来源的分页歌曲摘要。 */
     esp_err_t music_http_client_fetch_tracks(
         music_http_control_client_t *control,
@@ -109,6 +116,29 @@ extern "C"
         const music_http_client_config_t *config, const char *session_id,
         const char *action, const char *mode, const char *command_id,
         music_http_session_result_t *out_result);
+
+    /**
+     * @brief 领取一个等待中的 Hermes/远程音乐命令。
+     *
+     * 该接口只由 `music_service` owner task 调用；没有命令时返回 `ESP_OK`
+     * 且 `out_command->available` 为 false。
+     */
+    esp_err_t music_http_client_poll_remote_command(
+        music_http_control_client_t *control,
+        const music_http_client_config_t *config,
+        music_service_remote_command_t *out_command);
+
+    /**
+     * @brief 回传远程命令执行结果和窄音乐快照。
+     *
+     * `state` 通常为 `executed` 或 `error`；长期设备 token 只放在已有
+     * Authorization 头，快照不包含 stream URL 或上游播放地址。
+     */
+    esp_err_t music_http_client_ack_remote_command(
+        music_http_control_client_t *control,
+        const music_http_client_config_t *config, const char *command_id,
+        const char *state, const char *error_code,
+        const music_service_snapshot_t *snapshot);
 
     /** @brief 关闭控制长连接，在销毁音乐会话时回收 TLS/socket 资源。 */
     void music_http_client_control_reset(music_http_control_client_t *control);
