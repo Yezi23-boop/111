@@ -60,7 +60,7 @@ route_area: "Display and touch"
 
 - `components/lvgl_port/lv_port.c`
   - `lv_display_create(LCD_WIDTH, LCD_HEIGHT)`
-  - `lv_display_set_color_format(..., LV_COLOR_FORMAT_RGB565)`
+  - `lv_display_set_color_format(..., LV_COLOR_FORMAT_RGB565_SWAPPED)`
   - `lv_display_set_buffers(..., buf1, buf2, buf_size, 0)`
 - `managed_components/lvgl__lvgl/src/display/lv_display.h` 显示：
   - `lv_display_render_mode_t` 中 `LV_DISPLAY_RENDER_MODE_PARTIAL` 枚举值排在第一位
@@ -125,21 +125,22 @@ route_area: "Display and touch"
 - `lv_port_disp_flush()`
   - 根据区域高度选择整块传输或分块传输
 - `lv_port_flush_area_with_sync()`
-  - 对当前 chunk 准备 bounce buffer，并在需要时执行 `lv_draw_sw_rgb565_swap()`
+  - 对当前 chunk 准备 bounce buffer（路线 B 下不再执行 `lv_draw_sw_rgb565_swap()`）
   - 然后调用 `esp_lcd_panel_draw_bitmap()`
 
-### 4. 当前字节序处理
+### 4. 当前字节序处理（路线 B）
 
-- `LVGL` display color format 仍配置为 `LV_COLOR_FORMAT_RGB565`
-- `flush` 阶段手动调用 `lv_draw_sw_rgb565_swap()`
-- 按 `LVGL` 官方文档，这是一条合法路径：
-  - 显示格式用 `RGB565`
-  - 如屏幕要求交换高低字节，则在 `flush_cb` 中做 `lv_draw_sw_rgb565_swap`
+- `LVGL` display color format 配置为 `LV_COLOR_FORMAT_RGB565_SWAPPED`
+- `flush` 阶段**不再**手动调用 `lv_draw_sw_rgb565_swap()`（`LV_PORT_BYTE_SWAP_ENABLE = 0`）
+- 依赖编译开关 `CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y`（`sdkconfig`）
 
-本轮排查中已验证：
+历史上曾尝试过这条路线，但当时记录为“现象更糟”并维持 `RGB565 + flush swap`。2026-08-05 在 LVGL 9.5 正常基线上重做 A/B/C 三组真机对照后已切换回路线 B：
 
-- 把 display format 改成 `RGB565_SWAPPED` 并移除 flush swap 后，现象更糟
-- 因此当前仓库不应把“颜色格式切到 `RGB565_SWAPPED`”当作默认修复方向
+- A 组（`RGB565` + swap）：基线正常
+- B 组（`RGB565_SWAPPED` + 不 swap）：真机显示一切正常（含颜色、圆角、透明混合、条纹）
+- C 组（`RGB565_SWAPPED` + 仍 swap，双重交换）：花屏 → 证明 B 的差异来自配置生效，而非未生效
+- 结论：历史“SWAPPED 更差”是 LVGL 9.3 期间“换格式 + 删 swap”双变量叠加的观察，不能单独归咎于 `RGB565_SWAPPED`
+- 详细证据见 `docs/context/runs/2026-08-05-attempt-rgb565-swapped-route-b.md`
 
 ## 四、触摸输入链
 
@@ -230,7 +231,7 @@ route_area: "Display and touch"
 
 ### 1. 已采用的方向
 
-- 保持 `RGB565 + flush 时 swap`
+- 保持 `RGB565_SWAPPED`（路线 B，flush 不再 swap；真机对照已验证，见上文“当前字节序处理”）
 - 保持小 chunk，例如 `10` 行
 - 不关闭 chunk
 - 每发一个 chunk，都等待 `on_color_trans_done` 后再发下一个 chunk
@@ -310,7 +311,7 @@ route_area: "Display and touch"
   - 静止控件也出现异常
 - 当前仓库更稳的方式是在 `lv_port` 里增加片内 `DMA bounce buffer`：
   - 先把 chunk 从 `px_map` 拷到 bounce buffer
-  - 再在 bounce buffer 上做 `lv_draw_sw_rgb565_swap()`
+  - 路线 B 下不再需要在 bounce buffer 上做 `lv_draw_sw_rgb565_swap()`（格式已由 `LVGL` 按 `RGB565_SWAPPED` 直接渲染）
   - 最后把 bounce buffer 交给 `esp_lcd_panel_draw_bitmap()`
 - 这样做的好处：
   - 不污染 `LVGL` 原始渲染缓冲
@@ -343,10 +344,9 @@ route_area: "Display and touch"
 ### 8.2 真机仍有撕裂时先看 bounce buffer 是否真的分配成功
 
 - 当前仓库 `lv_port` 的更稳路径是：
-  1. `LVGL` 在 `PSRAM` 渲染
+  1. `LVGL` 以 `RGB565_SWAPPED` 在 `PSRAM` 渲染
   2. flush 时拷到 `Internal + DMA` 的 `bounce buffer`
-  3. 在 bounce buffer 上做 `rgb565 swap`
-  4. 再交给 `esp_lcd_panel_draw_bitmap()`
+  3. 交给 `esp_lcd_panel_draw_bitmap()`（路线 B 下已无 `rgb565 swap` 步骤）
 - 如果启动日志出现：
   - `LCD bounce buffer[0] 分配失败，回退到直接发送渲染缓冲`
 - 那就意味着：

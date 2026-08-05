@@ -44,6 +44,7 @@ evidence_level: observed
 - 结论：
   - 当前仓库不应直接把问题归咎到 `RGB565 swap` 配置
   - 该方向不是本轮主线
+- 后续更正（2026-08-05）：该实验是 LVGL 9.3 期间“换格式 + 删 swap”双变量叠加的观察，且当时画面本身有圆角/绿条纹异常。已在 LVGL 9.5 正常基线上重做 A/B/C 三组真机对照：路线 B（`RGB565_SWAPPED` + 不 swap）显示一切正常，仓库已正式切换。详见 `runs/2026-08-05-attempt-rgb565-swapped-route-b.md`。
 
 ### 2. 关闭上层二次分块传输
 
