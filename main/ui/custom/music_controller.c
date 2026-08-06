@@ -211,6 +211,29 @@ void music_controller_preview_open_catalog(void)
     s_preview_catalog_pending = true;
     music_controller_open();
 }
+
+void music_controller_preview_open_source_picker(void)
+{
+    music_controller_open();
+    if (s_view != NULL)
+    {
+        music_view_preview_open_source_picker(s_view);
+    }
+}
+
+void music_controller_preview_open_account(void)
+{
+    music_controller_open();
+    if (s_view != NULL)
+    {
+        music_view_show_account_loading(s_view);
+    }
+}
+
+void music_controller_preview_freeze_orbit(void)
+{
+    music_view_preview_freeze_orbit(s_view);
+}
 #endif
 
 void music_controller_poll_ui(void)

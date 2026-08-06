@@ -21,6 +21,7 @@
 #include "drivers/sdl/lv_sdl_mousewheel.h"
 #include "drivers/sdl/lv_sdl_window.h"
 #include "watch_notification_center.h"
+#include "wifi_management_controller.h"
 #include "lvgl.h"
 #include "libs/lodepng/lodepng.h"
 
@@ -39,14 +40,23 @@ typedef struct {
     bool open_hermes_detail;
     bool open_ai;
     bool open_music;
+    bool open_music_picker;
     bool open_music_catalog;
+    bool open_music_account;
     bool open_dropdown;
+    bool open_wifi;
     bool open_calendar;
+    bool open_wallpaper;
     bool open_ota;
     bool open_function;
+    bool open_function_initial;
     bool open_danger;
     bool open_games;
     uint8_t open_game_index;
+    bool open_notification_bubble;
+    bool dump_wallpaper_layout;
+    bool dump_function_layout;
+    bool freeze_animations;
     const char *capture_path;
 } preview_args_t;
 
@@ -152,17 +162,33 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         {
             args.open_music = true;
         }
+        else if (strcmp(argv[i], "--open-music-picker") == 0)
+        {
+            args.open_music_picker = true;
+        }
         else if (strcmp(argv[i], "--open-music-catalog") == 0)
         {
             args.open_music_catalog = true;
+        }
+        else if (strcmp(argv[i], "--open-music-account") == 0)
+        {
+            args.open_music_account = true;
         }
         else if (strcmp(argv[i], "--open-dropdown") == 0)
         {
             args.open_dropdown = true;
         }
+        else if (strcmp(argv[i], "--open-wifi") == 0)
+        {
+            args.open_wifi = true;
+        }
         else if (strcmp(argv[i], "--open-calendar") == 0)
         {
             args.open_calendar = true;
+        }
+        else if (strcmp(argv[i], "--open-wallpaper") == 0)
+        {
+            args.open_wallpaper = true;
         }
         else if (strcmp(argv[i], "--open-ota") == 0)
         {
@@ -171,6 +197,10 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         else if (strcmp(argv[i], "--open-function") == 0)
         {
             args.open_function = true;
+        }
+        else if (strcmp(argv[i], "--open-function-initial") == 0)
+        {
+            args.open_function_initial = true;
         }
         else if (strcmp(argv[i], "--open-danger") == 0)
         {
@@ -191,6 +221,22 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         else if (strcmp(argv[i], "--open-game-dino") == 0)
         {
             args.open_game_index = 3;
+        }
+        else if (strcmp(argv[i], "--open-notification-bubble") == 0)
+        {
+            args.open_notification_bubble = true;
+        }
+        else if (strcmp(argv[i], "--dump-wallpaper-layout") == 0)
+        {
+            args.dump_wallpaper_layout = true;
+        }
+        else if (strcmp(argv[i], "--freeze-animations") == 0)
+        {
+            args.freeze_animations = true;
+        }
+        else if (strcmp(argv[i], "--dump-function-layout") == 0)
+        {
+            args.dump_function_layout = true;
         }
         else if (strcmp(argv[i], "--capture") == 0 && i + 1 < argc)
         {
@@ -309,6 +355,10 @@ int main(int argc, char **argv)
     preview_create_screen_mask();
     static const watch_nc_config_t kMockNcCfg = {0};
     watch_nc_init(&kMockNcCfg);
+    if (args.open_notification_bubble)
+    {
+        watch_nc_notify_hermes_reply("preview-notification");
+    }
     if (args.open_dropdown)
     {
         lv_obj_set_y(guider_ui.screen_main_Dropdown_menu, 0);
@@ -330,13 +380,25 @@ int main(int argc, char **argv)
     {
         ai_ui_open();
     }
+    else if (args.open_music_picker)
+    {
+        music_controller_preview_open_source_picker();
+    }
     else if (args.open_music_catalog)
     {
         music_controller_preview_open_catalog();
     }
+    else if (args.open_music_account)
+    {
+        music_controller_preview_open_account();
+    }
     else if (args.open_music)
     {
         music_controller_open();
+    }
+    else if (args.open_wifi)
+    {
+        wifi_management_controller_open();
     }
     else if (args.open_calendar)
     {
@@ -344,21 +406,29 @@ int main(int argc, char **argv)
         lv_label_set_text(guider_ui.screen_time_datetext_1, "2026/09/09");
         lv_screen_load(guider_ui.screen_time);
     }
+    else if (args.open_wallpaper)
+    {
+        setup_scr_screen_wallpaper(&guider_ui);
+        lv_screen_load(guider_ui.screen_wallpaper);
+    }
     else if (args.open_ota)
     {
         (void)ota_maintenance_view_init();
         (void)ota_maintenance_view_open();
     }
-    else if (args.open_function)
+    else if (args.open_function_initial || args.open_function)
     {
         setup_scr_screen_main_function_page(&guider_ui);
         ota_maintenance_view_bind_entry();
         lv_obj_set_x(guider_ui.screen_main_tileview_1_main, -PREVIEW_W);
         lv_obj_set_x(guider_ui.screen_main_tileview_1_Function, 0);
-        lv_obj_t *entry = lv_obj_get_child(
-            guider_ui.screen_main_Function_main,
-            lv_obj_get_child_cnt(guider_ui.screen_main_Function_main) - 1);
-        lv_obj_scroll_to_view(entry, LV_ANIM_OFF);
+        if (args.open_function)
+        {
+            lv_obj_t *entry = lv_obj_get_child(
+                guider_ui.screen_main_Function_main,
+                lv_obj_get_child_cnt(guider_ui.screen_main_Function_main) - 1);
+            lv_obj_scroll_to_view(entry, LV_ANIM_OFF);
+        }
     }
     else if (args.open_danger)
     {
@@ -373,12 +443,65 @@ int main(int argc, char **argv)
         mini_games_controller_open_preview_game(args.open_game_index);
     }
 
+    if (args.freeze_animations && args.open_music)
+    {
+        music_controller_preview_freeze_orbit();
+    }
+
     uint32_t last_tick = SDL_GetTicks();
     if (args.capture_path != NULL)
     {
         for (int i = 0; i < 240; ++i)
         {
             preview_tick_once(&last_tick);
+        }
+
+        if (args.dump_wallpaper_layout && args.open_wallpaper)
+        {
+            const lv_obj_t *images[] = {
+                guider_ui.screen_wallpaper_img_1,
+                guider_ui.screen_wallpaper_img_2,
+                guider_ui.screen_wallpaper_img_3,
+                guider_ui.screen_wallpaper_img_4,
+            };
+            for (size_t i = 0; i < sizeof(images) / sizeof(images[0]); ++i)
+            {
+                lv_area_t area;
+                lv_obj_get_coords(images[i], &area);
+                printf("wallpaper_img_%zu coords=%d,%d,%d,%d opa=%u translate_y=%d\n",
+                       i + 1, area.x1, area.y1, area.x2, area.y2,
+                       (unsigned)lv_obj_get_style_opa(images[i], LV_PART_MAIN),
+                       (int)lv_obj_get_style_translate_y(images[i], LV_PART_MAIN));
+            }
+            lv_area_t label_area;
+            lv_obj_get_coords(guider_ui.screen_wallpaper_label_1, &label_area);
+            printf("wallpaper_label coords=%d,%d,%d,%d text=%s\n",
+                   label_area.x1, label_area.y1, label_area.x2, label_area.y2,
+                   lv_label_get_text(guider_ui.screen_wallpaper_label_1));
+        }
+
+        if (args.dump_function_layout &&
+            (args.open_function || args.open_function_initial) &&
+            guider_ui.screen_main_Function_main != NULL)
+        {
+            printf("function_pages main_x=%d function_x=%d child_count=%u\n",
+                   (int)lv_obj_get_x(guider_ui.screen_main_tileview_1_main),
+                   (int)lv_obj_get_x(guider_ui.screen_main_tileview_1_Function),
+                   (unsigned)lv_obj_get_child_cnt(
+                       guider_ui.screen_main_Function_main));
+            for (uint32_t i = 0;
+                 i < lv_obj_get_child_cnt(guider_ui.screen_main_Function_main);
+                 ++i)
+            {
+                const lv_obj_t *child = lv_obj_get_child(
+                    guider_ui.screen_main_Function_main, (int32_t)i);
+                lv_area_t area;
+                lv_obj_get_coords(child, &area);
+                printf("function_item_%u coords=%d,%d,%d,%d opa=%u translate_x=%d\n",
+                       (unsigned)i, area.x1, area.y1, area.x2, area.y2,
+                       (unsigned)lv_obj_get_style_opa(child, LV_PART_MAIN),
+                       (int)lv_obj_get_style_translate_x(child, LV_PART_MAIN));
+            }
         }
 
         bool captured = preview_capture_png(display, args.capture_path);

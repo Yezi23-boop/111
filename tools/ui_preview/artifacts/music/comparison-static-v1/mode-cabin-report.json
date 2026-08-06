@@ -1,0 +1,21 @@
+{
+  "layer": "mode-cabin",
+  "passed": true,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\vue-static-orbit-v2.png",
+  "actual": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\lvgl-static-orbit-v1.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 149,
+    "y": 438,
+    "width": 112,
+    "height": 34
+  },
+  "channel_tolerance": 8,
+  "max_mismatch_ratio": 0.99,
+  "mismatch_pixels": 734,
+  "compared_pixels": 3808,
+  "mismatch_ratio": 0.19275210084033614,
+  "mean_absolute_error": 13.366158963585434,
+  "max_channel_difference": 174,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\comparison-static-v1\\mode-cabin-diff.png"
+}

@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$OutputPath,
     [string]$SetupScriptPath,
+    [switch]$PreserveAnimations,
     [ValidatePattern("^[A-Za-z0-9_-]+$")]
     [string]$SessionName = "vue-lvgl-capture"
 )
@@ -53,13 +54,18 @@ try {
     }
 
     $selectorJson = ConvertTo-Json $Selector -Compress
+    $preserveAnimationsLiteral = $PreserveAnimations.IsPresent.ToString().ToLowerInvariant()
     $prepareCode = @"
 async page => {
   const selector = $selectorJson;
   await page.locator(selector).waitFor({ state: 'visible' });
   await page.evaluate(async () => {
     if (document.fonts) await document.fonts.ready;
-    for (const animation of document.getAnimations()) animation.finish();
+    if ($preserveAnimationsLiteral) {
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    } else {
+      for (const animation of document.getAnimations()) animation.finish();
+    }
   });
 }
 "@

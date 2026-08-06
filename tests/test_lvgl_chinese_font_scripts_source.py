@@ -44,7 +44,7 @@ class LvglChineseFontScriptsSourceTests(unittest.TestCase):
         chars = [char for char in charset if not char.isspace()]
 
         self.assertEqual(5500, len(chars))
-        self.assertEqual(5499, len(set(chars)))
+        self.assertEqual(5500, len(set(chars)))
 
     def test_build_script_pins_lv_font_conv_and_repo_local_defaults(self) -> None:
         source = (SCRIPTS_FONT_DIR / "build_lvgl_binfont.py").read_text(

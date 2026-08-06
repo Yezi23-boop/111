@@ -283,6 +283,9 @@ Firmware：
 - `[ ]` 阶段 4：服务端、固件、部署和短时真机闭环（Hermes-only 云端闭环已完成，真实手表与音频流待完成）。
 - `[x]` 2026-08-05：定向审计并迁移 Hermes/WSS 发送期可安全外置的长期业务缓存；internal `.bss` 从 `48,984 B` 降至 `42,176 B`，COM7 实测 `internal_free=9027B`、`largest=8704B`，WSS 语音上传完成且无 `esp-aes` 分配失败；未迁移 DMA、ISR、Wi-Fi/NimBLE、ESP-DL 或 cache-freeze 路径对象。
 - `[x]` 2026-08-05：音乐来源目录页已按 Vue 定稿推进到 LVGL host；歌单首屏、动态歌名/歌手、滚动容器和顶部返回来源路径完成验证，未宣称真机通过。
+- `[x]` 2026-08-05：Vue 音乐原型新增 `?fx=1` 视觉演示态；已捕获全屏实时模糊弹层与滚动歌单多层阴影两张 410×502 截图，仅用于确认效果与性能代价，未作为正式 LVGL 设计基准。
+- `[x]` 2026-08-05：Vue `?polish=1` 展示候选正式层级：播放中卡片轻投影、主播放键薄荷光晕、Orbit Playback（轨道播放）与来源区局部磨砂播放模式弹层；歌单行维持无投影，等待用户确认作为 Vue 基准。
+- `[x]` 2026-08-05：Vue 音乐主页候选方案已收敛为 Pulse Dial（脉冲唱盘）+ Sonic Rail（声波轨道）；删除常驻模式弹层并完成 410×502 截图，等待用户确认是否冻结为 Vue 基准。
 - `[x]` 2026-08-05：27px 固定中文使用点已改为按需子集，删除旧 3500 全库 27px 字体；固件 build 通过，最小应用分区余量恢复到 12%。
 - `[x]` 2026-08-05：开放动态中文的 16/22px 已统一迁移到仓库内 5500 通用字库，移除无当前使用点的 24px 全库；最终固件 build 通过，最小应用分区余量为 7%。
 - `[x]` 2026-08-05：LVGL 中文字体规则已固化为项目级 Skill；`AGENTS.md` 仅保留触发条件与 MUST，生成命令和验证闭环集中在 `.agents/skills/lvgl-chinese-ui-fonts/SKILL.md`。
@@ -291,6 +294,10 @@ Firmware：
 - `[x]` 2026-08-05：完成官方 `xiaozhi-fonts 2.0.0` / LVGL 9.5 双字号 Noto raw-assets 迁移；AI common20 与 Hermes common16 共用一次 assets mmap，移除 AI 内置 basic20、Hermes LittleFS 字体和动态 fallback；独立全量构建通过。
 - `[x]` 2026-08-05：已对 COM7 执行完整 `idf.py flash`，重写分区表、应用、assets 和 resources；随后 `app-flash-monitor` 冷启动验证 `LVGL 9.5`、`Noto font assets ready: bundle=noto-v1 text=common20 hermes=common16 image=2173924 pages=34`，启动到首帧且 `panic_log_seen=0`，未见旧 `A:/fonts` Hermes 路径（证据：`build-font-migration/board_logs/2026-08-05-06-26-06-noto-assets-lvgl95.log`）。
 - `[ ]` 2026-08-05：仍待在真实 AI/Hermes 页面输入长中文动态文本，并用未同步 assets 的专用测试镜像验证 `FONT ASSET ERROR` 状态。
+- `[x]` 2026-08-05：音乐动态歌手通用字库补入 `雲`，重新生成 common_5500 16/22px；保持 5500 个唯一字符，音乐 host 中 `黄霄雲` 不再显示方框，中文字体测试 16 项通过。
+- `[x]` 2026-08-05：音乐主页按 Vue Orbit 基准迁移到 LVGL：播放控制下移、模式控制舱居中、双 `lv_arc` 与轨道点静态结构完成；完成同一 410×502 数据的 Vue/LVGL 截图及分层差异报告，未宣称整页自动像素阈值通过。
+- `[x]` 2026-08-05：Orbit 两条轨道已加入 `lv_anim_t` 反向旋转；当前播放卡增加 host/LVGL 点击入口，弹出四来源歌单选择层并复用原来源回调，host 合成点击与截图验证通过，未上板。
+- `[x]` 2026-08-05：修正音乐选择歌单层的 Vue/LVGL 交互结构：移除 Vue 遗留关闭叉号，顶部返回统一关闭选择层；LVGL 歌单按钮装饰线、箭头位置与 Vue 基准对齐。Vue build、LVGL host build、ESP-IDF build 和聚焦测试通过，未上板；浏览器/LVGL 中文栅格差异仍未宣称自动像素阈值通过。
 
 ### 2026-08-04 实施证据
 

@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 
-const emit = defineEmits(['back'])
+const emit = defineEmits(['back', 'open'])
 const selected = ref('')
 
 const GAMES = [
@@ -22,7 +22,7 @@ const GAMES = [
         :key="game.id"
         class="game-entry"
         :class="{ selected: selected === game.id }"
-        @click="selected = game.id"
+        @click="selected = game.id; emit('open', game.id)"
       >
         <span class="game-icon" :class="game.tone" aria-hidden="true">{{ game.icon }}</span>
         <span class="game-name">{{ game.label }}</span>

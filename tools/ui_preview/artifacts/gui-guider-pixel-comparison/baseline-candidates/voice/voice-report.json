@@ -1,0 +1,21 @@
+{
+  "layer": "voice",
+  "passed": false,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\hermes-font-scope.png",
+  "actual": "D:\\esp32S3\\111\\main\\ui\\ai-memory-watch-guider\\preview-screen_memory-hermes-v3.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 0,
+    "y": 0,
+    "width": 410,
+    "height": 502
+  },
+  "channel_tolerance": 8,
+  "max_mismatch_ratio": 0.005,
+  "mismatch_pixels": 59911,
+  "compared_pixels": 205820,
+  "mismatch_ratio": 0.2910844427169371,
+  "mean_absolute_error": 39.354936352152365,
+  "max_channel_difference": 255,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\gui-guider-pixel-comparison\\baseline-candidates\\voice\\voice-diff.png"
+}

@@ -4,8 +4,14 @@
 //   三个子视图:voice 主页面 / inbox 收件箱 / detail 详情
 import { ref, computed } from 'vue'
 
-const view = ref('voice') // voice | inbox | detail
-const selected = ref({ time: '', text: '' })
+const props = defineProps({
+  initialView: { type: String, default: 'voice' },
+})
+const view = ref(['voice', 'inbox', 'detail'].includes(props.initialView) ? props.initialView : 'voice')
+const selected = ref({
+  time: '今天 16:20',
+  text: 'Hermes 已把下午三点取快递整理成提醒. 到点前我会把这件事带回手表.\n\n这是 host 预览里的完整正文区域. 打开详情会本地标记已读, 但不会回复、删除或调用真实服务器.',
+})
 const voicePressing = ref(false)
 const voiceInside = ref(true)
 
@@ -19,13 +25,17 @@ const conversation = ref([
   { role: 'other', text: '已记录: 下午三点取快递, 需要时我会提醒你' },
 ])
 const inbox = ref([
-  { read: false, time: '今天 14:20', text: 'Hermes: 下午三点的会议, 记得提前准备议题' },
-  { read: true, time: '昨天 09:05', text: 'Hermes: 上次你说要买的东西已加入购物清单' },
+  { read: false, time: '今天 16:20', text: 'Hermes 已把下午三点取快递整理成提醒. 到点前我会把这件事带回手表.' },
+  { read: false, time: '今天 11:42', text: '电池日志可以晚饭后再看. Hermes 建议先确认待机电流和屏幕亮度曲线.' },
+  { read: true, time: '昨天 22:08', text: '已经记录 UI 优化方向: 米白画布, 浅边框卡片, 低饱和状态色.' },
 ])
 
 function openDetail(item) {
   item.read = true
-  selected.value = { ...item }
+  selected.value = {
+    ...item,
+    text: `${item.text}\n\n这是 host 预览里的完整正文区域. 打开详情会本地标记已读, 但不会回复、删除或调用真实服务器.`,
+  }
   view.value = 'detail'
 }
 
@@ -100,9 +110,11 @@ function goBack() {
     <div class="hermes-title">
       {{ view === 'voice' ? 'Hermes' : view === 'inbox' ? '收件箱' : '消息' }}
     </div>
-    <div class="hermes-status-badge">{{ stateText }}</div>
-    <button class="hermes-inbox-btn" @click="view = 'inbox'">收件箱</button>
-    <div class="hermes-dot"></div>
+    <div v-if="view === 'voice'" class="hermes-status-badge">{{ stateText }}</div>
+    <button v-if="view === 'voice'" class="hermes-inbox-btn" @click="view = 'inbox'">
+      收件箱{{ inbox.filter((item) => !item.read).length ? ` ${inbox.filter((item) => !item.read).length}` : '' }}
+    </button>
+    <div v-if="view === 'voice'" class="hermes-dot"></div>
 
     <!-- ===== Voice 主页面 ===== -->
     <div

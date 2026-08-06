@@ -1,0 +1,21 @@
+﻿{
+    "layer":  "home-final",
+    "passed":  true,
+    "reference":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\lvgl-home-final.png",
+    "actual":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\vue-home-final.png",
+    "canvas":  "410x502",
+    "crop":  {
+                 "x":  0,
+                 "y":  0,
+                 "width":  410,
+                 "height":  502
+             },
+    "channel_tolerance":  40,
+    "max_mismatch_ratio":  0.5,
+    "mismatch_pixels":  7636,
+    "compared_pixels":  205820,
+    "mismatch_ratio":  0.03710037897191721,
+    "mean_absolute_error":  6.2964677873870372,
+    "max_channel_difference":  247,
+    "diff_image":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\reports\\home-final\\home-final-diff.png"
+}

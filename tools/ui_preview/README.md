@@ -73,6 +73,30 @@ D:\esp32S3\111\tools\ui_preview\artifacts\wifi-management-image-to-code.png
 & "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenDanger
 ```
 
+打开壁纸选择页截图：
+
+```powershell
+& "D:\esp32S3\111\tools\ui_preview\scripts\capture_apple_watch_s5_preview.ps1" -OpenWallpaper
+```
+
+需要核对源码运行时布局时，可直接调用 Host Runner 的诊断开关（仍输出原生 410x502 PNG）：
+
+```powershell
+& "D:\esp32S3\111\tools\ui_preview\host_runner\build\agent_preview_host.exe" `
+  --open-wallpaper --dump-wallpaper-layout `
+  --capture "D:\esp32S3\111\tools\ui_preview\artifacts\wallpaper-source.png"
+```
+
+功能页纵向滚动的源码布局诊断（首项吸附到中心）：
+
+```powershell
+& "D:\esp32S3\111\tools\ui_preview\host_runner\build\agent_preview_host.exe" `
+  --open-function-initial --dump-function-layout `
+  --capture "D:\esp32S3\111\tools\ui_preview\artifacts\function-source-initial.png"
+```
+
+`--open-function` 会把列表滚到最后一项，用于核对末尾卡片的中心吸附、弧形位移和透明度；两种模式均通过 SDL 原生 `410x502` 帧输出。
+
 打开小游戏菜单截图：
 
 ```powershell

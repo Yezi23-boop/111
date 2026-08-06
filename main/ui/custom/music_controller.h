@@ -19,6 +19,15 @@ void music_controller_poll_ui(void);
 #ifdef AGENT_PREVIEW_HOST
 /** @brief Host 预览专用：直接打开今日推荐滚动目录。 */
 void music_controller_preview_open_catalog(void);
+
+/** @brief Host 预览专用：打开音乐主页的歌单选择层。 */
+void music_controller_preview_open_source_picker(void);
+
+/** @brief Host 预览专用：打开账号二维码加载页。 */
+void music_controller_preview_open_account(void);
+
+/** @brief Host 预览专用：冻结音乐主页 Orbit 轨道。 */
+void music_controller_preview_freeze_orbit(void);
 #endif
 
 #ifdef __cplusplus

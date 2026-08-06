@@ -5,7 +5,8 @@ import { ref, computed } from 'vue'
 
 const emit = defineEmits(['back'])
 const month = ref(6)
-const year = ref(2025)
+// 与 LVGL host 的固定预览时钟一致：2026/06/18。
+const year = ref(2026)
 const selectedDay = ref(18)
 
 const NAMES = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月']

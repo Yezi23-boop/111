@@ -1,0 +1,21 @@
+﻿{
+    "layer":  "ota",
+    "passed":  true,
+    "reference":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\lvgl-ota-v2.png",
+    "actual":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\vue-ota-final.png",
+    "canvas":  "410x502",
+    "crop":  {
+                 "x":  0,
+                 "y":  0,
+                 "width":  410,
+                 "height":  502
+             },
+    "channel_tolerance":  40,
+    "max_mismatch_ratio":  0.5,
+    "mismatch_pixels":  5583,
+    "compared_pixels":  205820,
+    "mismatch_ratio":  0.027125643766397825,
+    "mean_absolute_error":  3.61466491756551,
+    "max_channel_difference":  239,
+    "diff_image":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\reports\\all-final\\ota\\ota-diff.png"
+}

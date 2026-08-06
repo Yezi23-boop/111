@@ -1,0 +1,21 @@
+﻿{
+    "layer":  "music-final",
+    "passed":  true,
+    "reference":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\lvgl-music-static-final.png",
+    "actual":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\vue-music-static-final.png",
+    "canvas":  "410x502",
+    "crop":  {
+                 "x":  0,
+                 "y":  0,
+                 "width":  410,
+                 "height":  502
+             },
+    "channel_tolerance":  40,
+    "max_mismatch_ratio":  0.5,
+    "mismatch_pixels":  8555,
+    "compared_pixels":  205820,
+    "mismatch_ratio":  0.041565445534933437,
+    "mean_absolute_error":  7.2573348880899164,
+    "max_channel_difference":  219,
+    "diff_image":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\reports\\music-final\\music-final-diff.png"
+}

@@ -16,7 +16,10 @@ import OtaView from './views/OtaView.vue'
 import CalendarView from './views/CalendarView.vue'
 import WifiView from './views/WifiView.vue'
 import GamesView from './views/GamesView.vue'
+import GameView from './views/GameView.vue'
 import WallpaperView from './views/WallpaperView.vue'
+import NotificationView from './views/NotificationView.vue'
+import NotificationBubbleView from './views/NotificationBubbleView.vue'
 import SourcesView from './views/music/SourcesView.vue'
 import CatalogView from './views/music/CatalogView.vue'
 import AccountView from './views/music/AccountView.vue'
@@ -43,11 +46,42 @@ const FUNC_META = {
   ota: { icon: '⇩', name: '系统维护' },
 }
 
-const screen = ref('home') // home | hermes | ai | danger | games | calendar | wallpaper | ota | wifi | music...
-const showFunction = ref(false) // 主屏 tileview:表盘页 <-> 功能页
-const dropdownOpen = ref(false)
-const musicPlaying = ref(false)
-const musicStarted = ref(false)
+// `?fx=1` 仅用于演示全屏模糊与多层列表阴影，不改变正常音乐原型。
+const query = new URLSearchParams(window.location.search)
+// 聊天中复制链接时，末尾的中英文标点可能被带进 query 参数。
+const routeScreen = (query.get('screen') || '').replace(/[，,。；;！？!?]+$/, '')
+const visualFxDemo = query.get('fx') === '1'
+const freezeAnimations = query.get('freeze') === '1'
+const visualFxCatalogDemo = visualFxDemo && query.get('screen') === 'catalog'
+const visualPolishDemo = query.get('polish') === '1'
+const visualPolishCatalogDemo = visualPolishDemo && query.get('screen') === 'catalog'
+const previewScreens = new Set([
+  'hermes', 'ai', 'danger', 'games', 'calendar', 'wallpaper', 'ota', 'wifi',
+  'music', 'music-picker', 'music-catalog', 'music-account', 'notifications',
+  'hermes-inbox', 'hermes-detail',
+  'game-2048', 'game-flappy', 'game-dino',
+  'notification-bubble',
+])
+const musicPickerPreview = routeScreen === 'music-picker' || query.get('picker') === '1'
+// 显式 screen 是交互/截图入口，优先于 polish；polish 只决定音乐页的视觉方案。
+const screen = ref(
+  visualFxCatalogDemo || visualPolishCatalogDemo
+    ? 'music-catalog'
+    : routeScreen === 'function' || routeScreen === 'dropdown'
+      ? 'home'
+      : routeScreen === 'music-picker'
+        ? 'music'
+        : previewScreens.has(routeScreen)
+          ? routeScreen
+          : visualFxDemo || visualPolishDemo
+            ? 'music'
+            : 'home',
+) // home | hermes | ai | danger | games | calendar | wallpaper | ota | wifi | music...
+const showFunction = ref(routeScreen === 'function') // 主屏 tileview:表盘页 <-> 功能页
+const dropdownOpen = ref(routeScreen === 'dropdown')
+// Host 基准固定为 LVGL 模拟器的已播放首曲状态，避免 Vue 首帧落到“未选择歌曲”。
+const musicPlaying = ref(true)
+const musicStarted = ref(true)
 const musicModeIdx = ref(0)
 const musicSource = ref('今日推荐')
 const wallpaper = ref(null)
@@ -171,7 +205,11 @@ function stepMusicTrack(step) {
     />
 
     <!-- ===== Hermes 记忆手表页(演示入口) ===== -->
-    <HermesView v-else-if="screen === 'hermes'" @back="backHome" />
+    <HermesView
+      v-else-if="screen === 'hermes' || screen === 'hermes-inbox' || screen === 'hermes-detail'"
+      :initial-view="screen === 'hermes-inbox' ? 'inbox' : screen === 'hermes-detail' ? 'detail' : 'voice'"
+      @back="backHome"
+    />
 
     <!-- ===== 小智 AI 聊天页 ===== -->
     <AiChatView v-else-if="screen === 'ai'" @back="backHome" />
@@ -186,7 +224,18 @@ function stepMusicTrack(step) {
     <CalendarView v-else-if="screen === 'calendar'" @back="backHome" />
 
     <!-- ===== 小游戏菜单 ===== -->
-    <GamesView v-else-if="screen === 'games'" @back="backHome" />
+    <GamesView
+      v-else-if="screen === 'games'"
+      @back="backHome"
+      @open="(game) => { screen = 'game-' + game }"
+    />
+
+    <!-- ===== 小游戏运行页：对应 mini_games_controller 的三个子画布 ===== -->
+    <GameView
+      v-else-if="screen === 'game-2048' || screen === 'game-flappy' || screen === 'game-dino'"
+      :game="screen.slice(5)"
+      @back="screen = 'games'"
+    />
 
     <!-- ===== 壁纸页 ===== -->
     <WallpaperView
@@ -197,9 +246,26 @@ function stepMusicTrack(step) {
     <!-- ===== Wi-Fi 管理页(演示) ===== -->
     <WifiView v-else-if="screen === 'wifi'" @back="backHome" />
 
+    <!-- ===== 通知中心 ===== -->
+    <NotificationView
+      v-else-if="screen === 'notifications'"
+      @back="backHome"
+      @open-detail="screen = 'hermes-detail'"
+    />
+
+    <!-- ===== 全局 layer_top 通知气泡：对应 watch_notification_center.c ===== -->
+    <NotificationBubbleView
+      v-else-if="screen === 'notification-bubble'"
+      @open="screen = 'hermes'"
+    />
+
     <!-- ===== 功能全屏页:音乐(已 Vue 化) ===== -->
     <template v-else-if="screen === 'music'">
       <SourcesView
+        :visual-fx-demo="visualFxDemo"
+        :visual-polish-demo="visualPolishDemo || screen === 'music'"
+        :freeze-animations="freezeAnimations"
+        :initial-picker-open="musicPickerPreview"
         :playing="musicPlaying"
         :mode-text="musicModeText()"
         :track-name="musicTrack()[0]"
@@ -215,6 +281,8 @@ function stepMusicTrack(step) {
     </template>
     <template v-else-if="screen === 'music-catalog'">
       <CatalogView
+        :visual-fx-demo="visualFxDemo"
+        :visual-polish-demo="visualPolishDemo"
         :source="musicSource"
         :playing="musicPlaying"
         :track-name="musicTrack()[0]"
@@ -239,13 +307,4 @@ function stepMusicTrack(step) {
       @back="backHome"
     />
   </WatchScreen>
-
-  <div class="note-box">
-    <b>工具/ui_prototypes/watch-vue</b> — 模拟器整体 UI 的 Vue 版<br />
-    · 主屏 tileview:表盘页 ↔ 功能页(切换见代码,原型里点击顶部手柄/功能入口)<br />
-    · 下拉控制:表盘顶部下滑手柄(亮度/音量/Wi-Fi/蓝牙/音乐)<br />
-    · 功能入口对应:AI / 游戏 / 时钟日历 / 危险识别 / 壁纸 / Hermes / OTA;<br />
-    &nbsp;&nbsp;心率入口保留为当前 LVGL 的无回调状态<br />
-    · 起服务:<code>npm install</code> 后 <code>npm run dev</code> → <code>http://localhost:8767</code>
-  </div>
 </template>

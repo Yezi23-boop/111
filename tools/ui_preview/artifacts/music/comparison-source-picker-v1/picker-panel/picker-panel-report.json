@@ -1,0 +1,21 @@
+{
+  "layer": "picker-panel",
+  "passed": false,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\vue-source-picker-parity-v1.png",
+  "actual": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\lvgl-source-picker-final-v2.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 40,
+    "y": 224,
+    "width": 330,
+    "height": 236
+  },
+  "channel_tolerance": 8,
+  "max_mismatch_ratio": 0.005,
+  "mismatch_pixels": 9164,
+  "compared_pixels": 77880,
+  "mismatch_ratio": 0.11766820749871597,
+  "mean_absolute_error": 10.27238058551618,
+  "max_channel_difference": 220,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\comparison-source-picker-v1\\picker-panel\\picker-panel-diff.png"
+}

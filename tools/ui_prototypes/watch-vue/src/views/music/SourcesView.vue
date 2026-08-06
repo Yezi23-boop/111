@@ -1,5 +1,6 @@
 <script setup>
 // 音乐主页:当前曲目 + 播放控制 + 来源浏览
+import { ref } from 'vue'
 import TopBar from '../../components/TopBar.vue'
 import TrackCard from '../../components/TrackCard.vue'
 import TransportControls from '../../components/TransportControls.vue'
@@ -18,13 +19,34 @@ const SOURCES = [
   { label: '我的歌单' },
   { label: '最近播放' },
 ]
+const sourcePickerOpen = ref(false)
+
+function handleBack() {
+  if (sourcePickerOpen.value) {
+    sourcePickerOpen.value = false
+    return
+  }
+  emit('back')
+}
 </script>
 
 <template>
-  <div class="music-page music-page--sources">
-    <TopBar title="音乐" @back="emit('back')" @account="emit('account')" />
+  <div
+    class="music-page music-page--sources"
+  >
+    <TopBar title="音乐" @back="handleBack" @account="emit('account')" />
 
-    <TrackCard :track-name="trackName" :artist="artist" :state="playing ? 'play' : 'idle'" />
+    <TrackCard
+      :track-name="trackName"
+      :artist="artist"
+      :state="playing ? 'play' : 'idle'"
+      role="button"
+      tabindex="0"
+      aria-label="当前播放曲目，点击进入选择歌单"
+      @click="sourcePickerOpen = true"
+      @keydown.enter="sourcePickerOpen = true"
+      @keydown.space.prevent="sourcePickerOpen = true"
+    />
 
     <TransportControls
       :playing="playing"
@@ -53,6 +75,23 @@ const SOURCES = [
           @click="emit('open-source', s.label)"
         >
           <span class="source-name">{{ s.label }}</span>
+          <span class="source-arrow" aria-hidden="true"></span>
+        </button>
+      </div>
+    </section>
+
+    <section v-if="sourcePickerOpen" class="source-picker" aria-label="选择歌单">
+      <div class="source-picker__header">
+        <h2>选择歌单</h2>
+      </div>
+      <div class="source-picker__grid">
+        <button
+          v-for="s in SOURCES"
+          :key="s.label"
+          class="source-picker__tile"
+          @click="emit('open-source', s.label)"
+        >
+          <span>{{ s.label }}</span>
           <span class="source-arrow" aria-hidden="true"></span>
         </button>
       </div>

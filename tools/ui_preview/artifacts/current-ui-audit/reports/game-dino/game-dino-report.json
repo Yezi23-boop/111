@@ -1,0 +1,21 @@
+﻿{
+    "layer":  "game-dino",
+    "passed":  true,
+    "reference":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\lvgl-game-dino-current.png",
+    "actual":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\vue-game-dino-current.png",
+    "canvas":  "410x502",
+    "crop":  {
+                 "x":  0,
+                 "y":  0,
+                 "width":  410,
+                 "height":  502
+             },
+    "channel_tolerance":  40,
+    "max_mismatch_ratio":  0.5,
+    "mismatch_pixels":  4907,
+    "compared_pixels":  205820,
+    "mismatch_ratio":  0.023841220483917985,
+    "mean_absolute_error":  3.1238379814077026,
+    "max_channel_difference":  254,
+    "diff_image":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\reports\\game-dino\\game-dino-diff.png"
+}

@@ -1,0 +1,21 @@
+{
+  "layer": "wallpaper-label",
+  "passed": true,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\vue-wallpaper-current.png",
+  "actual": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\lvgl-wallpaper-final.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 128,
+    "y": 427,
+    "width": 155,
+    "height": 55
+  },
+  "channel_tolerance": 40,
+  "max_mismatch_ratio": 0.5,
+  "mismatch_pixels": 523,
+  "compared_pixels": 8525,
+  "mismatch_ratio": 0.06134897360703812,
+  "mean_absolute_error": 5.54475073313783,
+  "max_channel_difference": 246,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\compare-wallpaper-final\\wallpaper-label-diff.png"
+}

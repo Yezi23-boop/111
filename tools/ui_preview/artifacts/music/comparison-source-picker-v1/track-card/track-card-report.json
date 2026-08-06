@@ -1,0 +1,21 @@
+{
+  "layer": "track-card",
+  "passed": false,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\vue-source-picker-parity-v1.png",
+  "actual": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\lvgl-source-picker-final-v2.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 40,
+    "y": 78,
+    "width": 330,
+    "height": 132
+  },
+  "channel_tolerance": 8,
+  "max_mismatch_ratio": 0.005,
+  "mismatch_pixels": 7865,
+  "compared_pixels": 43560,
+  "mismatch_ratio": 0.18055555555555555,
+  "mean_absolute_error": 12.292408937863483,
+  "max_channel_difference": 217,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\comparison-source-picker-v1\\track-card\\track-card-diff.png"
+}

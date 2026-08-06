@@ -1,0 +1,21 @@
+{
+  "layer": "screen-wallpaper",
+  "passed": true,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\wallpaper-source-20260806-final.png",
+  "actual": "D:\\esp32S3\\111\\main\\ui\\ai-memory-watch-guider\\source-screen_wallpaper-20260806-opa.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 0,
+    "y": 0,
+    "width": 410,
+    "height": 502
+  },
+  "channel_tolerance": 8,
+  "max_mismatch_ratio": 0.005,
+  "mismatch_pixels": 887,
+  "compared_pixels": 205820,
+  "mismatch_ratio": 0.004309590904673987,
+  "mean_absolute_error": 0.4508470184303437,
+  "max_channel_difference": 246,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\gui-guider-pixel-comparison\\wallpaper-20260806\\screen-wallpaper-diff.png"
+}

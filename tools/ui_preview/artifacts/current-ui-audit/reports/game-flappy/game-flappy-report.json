@@ -1,0 +1,21 @@
+﻿{
+    "layer":  "game-flappy",
+    "passed":  true,
+    "reference":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\lvgl-game-flappy-current.png",
+    "actual":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\vue-game-flappy-current.png",
+    "canvas":  "410x502",
+    "crop":  {
+                 "x":  0,
+                 "y":  0,
+                 "width":  410,
+                 "height":  502
+             },
+    "channel_tolerance":  40,
+    "max_mismatch_ratio":  0.5,
+    "mismatch_pixels":  5129,
+    "compared_pixels":  205820,
+    "mismatch_ratio":  0.024919832863667283,
+    "mean_absolute_error":  3.4964661678489293,
+    "max_channel_difference":  254,
+    "diff_image":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\reports\\game-flappy\\game-flappy-diff.png"
+}

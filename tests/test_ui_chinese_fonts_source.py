@@ -57,7 +57,7 @@ class UiChineseFontsSourceTests(unittest.TestCase):
         charset = (
             REPO_ROOT / "tools/lvgl_fonts/charsets/charset_tghz_common_5500.txt"
         ).read_text(encoding="utf-8")
-        self.assertEqual(len({char for char in charset if not char.isspace()}), 5499)
+        self.assertEqual(len({char for char in charset if not char.isspace()}), 5500)
         self.assertFalse(
             (COMPILED_FONTS_DIR / "lv_font_montserrat_lxgw_tghz_level1_3500_24_4.c").exists()
         )

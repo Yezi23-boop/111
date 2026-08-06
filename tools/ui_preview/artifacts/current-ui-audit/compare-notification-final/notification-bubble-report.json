@@ -1,0 +1,21 @@
+{
+  "layer": "notification-bubble",
+  "passed": true,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\vue-notification-bubble-current.png",
+  "actual": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\lvgl-notification-bubble-final.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 40,
+    "y": 20,
+    "width": 330,
+    "height": 88
+  },
+  "channel_tolerance": 40,
+  "max_mismatch_ratio": 0.5,
+  "mismatch_pixels": 2358,
+  "compared_pixels": 29040,
+  "mismatch_ratio": 0.08119834710743802,
+  "mean_absolute_error": 12.096958218549128,
+  "max_channel_difference": 238,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\compare-notification-final\\notification-bubble-diff.png"
+}

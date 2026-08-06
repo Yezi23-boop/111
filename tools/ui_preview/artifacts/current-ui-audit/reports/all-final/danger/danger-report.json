@@ -1,0 +1,21 @@
+﻿{
+    "layer":  "danger",
+    "passed":  true,
+    "reference":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\lvgl-danger-v2.png",
+    "actual":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\vue-danger-final.png",
+    "canvas":  "410x502",
+    "crop":  {
+                 "x":  0,
+                 "y":  0,
+                 "width":  410,
+                 "height":  502
+             },
+    "channel_tolerance":  40,
+    "max_mismatch_ratio":  0.5,
+    "mismatch_pixels":  13738,
+    "compared_pixels":  205820,
+    "mismatch_ratio":  0.066747643572053247,
+    "mean_absolute_error":  11.554824604022933,
+    "max_channel_difference":  255,
+    "diff_image":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\current-ui-audit\\reports\\all-final\\danger\\danger-diff.png"
+}

@@ -1,0 +1,21 @@
+{
+  "layer": "track-card",
+  "passed": true,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\vue-static-orbit-v2.png",
+  "actual": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\lvgl-static-orbit-v1.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 40,
+    "y": 78,
+    "width": 330,
+    "height": 132
+  },
+  "channel_tolerance": 8,
+  "max_mismatch_ratio": 0.99,
+  "mismatch_pixels": 7486,
+  "compared_pixels": 43560,
+  "mismatch_ratio": 0.17185491276400366,
+  "mean_absolute_error": 13.040687174778084,
+  "max_channel_difference": 217,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\comparison-static-v1\\track-card-diff.png"
+}

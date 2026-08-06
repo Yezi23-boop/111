@@ -1,0 +1,21 @@
+{
+  "layer": "static-orbit-full",
+  "passed": true,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\vue-static-orbit-v2.png",
+  "actual": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\lvgl-static-orbit-v2.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 0,
+    "y": 0,
+    "width": 410,
+    "height": 502
+  },
+  "channel_tolerance": 8,
+  "max_mismatch_ratio": 0.99,
+  "mismatch_pixels": 40354,
+  "compared_pixels": 205820,
+  "mismatch_ratio": 0.19606452239821204,
+  "mean_absolute_error": 8.37601787970071,
+  "max_channel_difference": 224,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\comparison-static-v2\\static-orbit-full-diff.png"
+}

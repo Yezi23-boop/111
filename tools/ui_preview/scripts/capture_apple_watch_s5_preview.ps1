@@ -6,16 +6,23 @@ param(
     [switch]$OpenHermesDetail,
     [switch]$OpenAi,
     [switch]$OpenMusic,
+    [switch]$OpenMusicPicker,
     [switch]$OpenMusicCatalog,
+    [switch]$OpenMusicAccount,
     [switch]$OpenDropdown,
+    [switch]$OpenWifi,
     [switch]$OpenCalendar,
+    [switch]$OpenWallpaper,
     [switch]$OpenOta,
     [switch]$OpenFunction,
+    [switch]$OpenFunctionInitial,
     [switch]$OpenDanger,
     [switch]$OpenGames,
     [switch]$OpenGame2048,
     [switch]$OpenGameFlappy,
-    [switch]$OpenGameDino
+    [switch]$OpenGameDino,
+    [switch]$OpenNotificationBubble,
+    [switch]$FreezeAnimations
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,6 +44,9 @@ if (-not (Test-Path $outDir)) {
 }
 
 $captureArgs = @("--capture", $OutputPath)
+if ($FreezeAnimations) {
+    $captureArgs = @("--freeze-animations") + $captureArgs
+}
 if ($OpenHermes) {
     $captureArgs = @("--open-hermes") + $captureArgs
 } elseif ($OpenHermesInbox) {
@@ -45,16 +55,26 @@ if ($OpenHermes) {
     $captureArgs = @("--open-hermes-detail") + $captureArgs
 } elseif ($OpenAi) {
     $captureArgs = @("--open-ai") + $captureArgs
+} elseif ($OpenMusicPicker) {
+    $captureArgs = @("--open-music-picker") + $captureArgs
 } elseif ($OpenMusicCatalog) {
     $captureArgs = @("--open-music-catalog") + $captureArgs
+} elseif ($OpenMusicAccount) {
+    $captureArgs = @("--open-music-account") + $captureArgs
 } elseif ($OpenMusic) {
     $captureArgs = @("--open-music") + $captureArgs
 } elseif ($OpenDropdown) {
     $captureArgs = @("--open-dropdown") + $captureArgs
+    } elseif ($OpenWifi) {
+        $captureArgs = @("--open-wifi") + $captureArgs
     } elseif ($OpenCalendar) {
         $captureArgs = @("--open-calendar") + $captureArgs
+    } elseif ($OpenWallpaper) {
+        $captureArgs = @("--open-wallpaper") + $captureArgs
     } elseif ($OpenOta) {
         $captureArgs = @("--open-ota") + $captureArgs
+    } elseif ($OpenFunctionInitial) {
+        $captureArgs = @("--open-function-initial") + $captureArgs
     } elseif ($OpenFunction) {
         $captureArgs = @("--open-function") + $captureArgs
     } elseif ($OpenDanger) {
@@ -67,6 +87,8 @@ if ($OpenHermes) {
     $captureArgs = @("--open-game-flappy") + $captureArgs
 } elseif ($OpenGameDino) {
     $captureArgs = @("--open-game-dino") + $captureArgs
+} elseif ($OpenNotificationBubble) {
+    $captureArgs = @("--open-notification-bubble") + $captureArgs
 }
 
 & $ExePath @captureArgs
@@ -80,6 +102,9 @@ if (-not (Test-Path $OutputPath)) {
 
 # 截图进程会自行退出；重新拉起一个独立预览窗口，避免 exe 被截图进程占用。
 $runArgs = @()
+if ($FreezeAnimations) {
+    $runArgs += "--freeze-animations"
+}
 if ($OpenHermes) {
     $runArgs += "--open-hermes"
 } elseif ($OpenHermesInbox) {
@@ -88,16 +113,26 @@ if ($OpenHermes) {
     $runArgs += "--open-hermes-detail"
 } elseif ($OpenAi) {
     $runArgs += "--open-ai"
+} elseif ($OpenMusicPicker) {
+    $runArgs += "--open-music-picker"
 } elseif ($OpenMusicCatalog) {
     $runArgs += "--open-music-catalog"
+} elseif ($OpenMusicAccount) {
+    $runArgs += "--open-music-account"
 } elseif ($OpenMusic) {
     $runArgs += "--open-music"
 } elseif ($OpenDropdown) {
     $runArgs += "--open-dropdown"
+    } elseif ($OpenWifi) {
+        $runArgs += "--open-wifi"
     } elseif ($OpenCalendar) {
         $runArgs += "--open-calendar"
+    } elseif ($OpenWallpaper) {
+        $runArgs += "--open-wallpaper"
     } elseif ($OpenOta) {
         $runArgs += "--open-ota"
+    } elseif ($OpenFunctionInitial) {
+        $runArgs += "--open-function-initial"
     } elseif ($OpenFunction) {
         $runArgs += "--open-function"
     } elseif ($OpenDanger) {
@@ -110,6 +145,8 @@ if ($OpenHermes) {
     $runArgs += "--open-game-flappy"
 } elseif ($OpenGameDino) {
     $runArgs += "--open-game-dino"
+} elseif ($OpenNotificationBubble) {
+    $runArgs += "--open-notification-bubble"
 }
 $commandLine = "`"$ExePath`""
 if ($runArgs.Count -gt 0) {

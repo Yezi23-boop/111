@@ -7,22 +7,16 @@ import { ref } from 'vue'
 const emit = defineEmits(['back'])
 const pressing = ref(false)
 
-const badge = ref({ text: '已联网', cls: 'ok' }) // ok | err | warn
-
 const MESSAGES = [
-  { kind: 'ai', text: '你好,我是小智。有什么可以帮你?' },
-  { kind: 'user', text: '帮我定一个明早 8 点的闹钟' },
-  { kind: 'ai', text: '好的,已设置明早 08:00 的闹钟。需要我同时提醒你带伞吗?(今天有雨)' },
+  { kind: 'user', text: '你好, 小智!' },
+  { kind: 'ai', text: '你好! 我是小智, 你的个人 AI 语音助手. 很高兴为你服务.' },
+  { kind: 'user', text: '今天天气怎么样?' },
+  { kind: 'ai', text: '今天北京天气晴朗, 气温 18 到 28 度, 非常适合户外出行. 建议注意防晒.' },
 ]
 </script>
 
 <template>
   <div class="ai-chat panel">
-    <!-- 顶部:返回 + 标题 + 状态徽章(controller 动态管理) -->
-    <button class="ai-back" @click="emit('back')">‹</button>
-    <div class="ai-title">小智</div>
-    <div class="ai-badge" :class="badge.cls">{{ badge.text }}</div>
-
     <!-- 聊天卡片区 -->
     <div class="ai-card">
       <div class="ai-scroll">
