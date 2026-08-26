@@ -499,7 +499,7 @@ git diff --check
 
 ## 意外与发现
 
-- `watch-device-board-layering-review.md` 的 IMU 描述已与当前 active plan/代码出现漂移：当前代码方向为 `imu_service -> imu_sensor -> qmi8658c`，目录整理必须以当前 active plan 和 source tests 为准。
+- 设备/板层审查（已蒸馏进 `hardware-capability-gap-map.md`）的 IMU 描述曾与当前 active plan/代码出现漂移：当前代码方向为 `imu_service -> imu_sensor -> qmi8658c`，目录整理必须以当前 active plan 和 source tests 为准。
 - `main/ui/agent_preview` 的 mock 导致 layering warning 噪声；迁出后可让 UI/generated 检查更严格。
 - `memory_watch_dev_endpoint_local.h` 是敏感本地开发入口；迁移时不得读取或输出内容。
 - `watch_endpoint_service` 虽与 Memory Watch endpoint 配置同域，但语义应保持中性，避免 danger alert 等未来非 Hermes 能力被迫依赖 Hermes 命名。
