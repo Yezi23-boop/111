@@ -5,10 +5,10 @@ title: AI Memory Watch / Hermes V2.8 WSS 预连接与 Run Events 进度反馈
 summary: 让 Hermes 页面提前建立前台 WSS，并把 Direct Hermes Run Events 归一化为安全的手表进度阶段。
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-07-30-ai-memory-watch-hermes-v2.8-wss-preconnect-run-events-plan.md, server/watch_voice_endpoint/app.py, server/watch_voice_endpoint/run_events.py, server/watch_voice_endpoint/session_repo.py, main/services/memory_watch/memory_watch_service.c, main/services/memory_watch/memory_watch_ws_client.cc, main/ui/custom/memory_watch_controller.c
+owners: docs/context/plans/completed/2026-07-30-ai-memory-watch-hermes-v2.8-wss-preconnect-run-events-plan.md, server/watch_voice_endpoint/app.py, server/watch_voice_endpoint/run_events.py, server/watch_voice_endpoint/session_repo.py, main/services/memory_watch/memory_watch_service.c, main/services/memory_watch/memory_watch_ws_client.cc, main/ui/custom/memory_watch_controller.c
 evidence_level: design
-status: active
-last_reviewed: 2026-07-30
+status: completed
+last_reviewed: 2026-08-06
 triggers: ai-memory-watch, hermes, wss, run-events, sse, task-progress
 ---
 

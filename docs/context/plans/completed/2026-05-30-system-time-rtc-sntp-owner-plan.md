@@ -2,8 +2,8 @@
 id: system-time-rtc-sntp-owner-plan-20260530
 tags: plan, active, watch, rtc, pcf85063atl, sntp, system-time, official-chat
 summary: 统一系统时间 owner 计划，固定 PCF85063ATL RTC、SNTP、official_chat TLS 前授时和旧 get_time 迁移的分层边界与执行步骤。
-status: active
-last_reviewed: 2026-05-30
+status: completed
+last_reviewed: 2026-08-06
 memory_type: project_plan
 scope: repo
 owners: components/pcf85063atl, components/system_time, main/services/time/system_time_service.c, main/services/official_chat_service.c, components/official_chat, main/services/weather/weather_service.c

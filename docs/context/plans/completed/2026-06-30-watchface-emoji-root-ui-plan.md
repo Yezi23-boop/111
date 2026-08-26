@@ -5,10 +5,10 @@ summary: 表情表盘根首页重执行计划：代码已回退，后续从干�
 last_reviewed: 2026-07-01
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-06-30-watchface-emoji-root-ui-plan.md, main/ui/custom, tools/ui_preview, scripts/watchface, sdcard/watchface, components/sd_card
+owners: docs/context/plans/completed/2026-06-30-watchface-emoji-root-ui-plan.md, main/ui/custom, tools/ui_preview, scripts/watchface, sdcard/watchface, components/sd_card
 triggers: 表盘, watchface, 根首页, 屏幕亮起, 表情包, Hermes 联动, 动画, GIF 分帧, resources, LittleFS, SD卡, RGB565, RGB565A, PSRAM image cache
 evidence_level: design
-status: active
+status: completed
 ---
 
 # 表情表盘根首页重执行计划

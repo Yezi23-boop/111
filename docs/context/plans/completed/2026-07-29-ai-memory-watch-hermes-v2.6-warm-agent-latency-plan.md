@@ -5,11 +5,11 @@ summary: 已完成 Hermes 0.19 延迟基线与回滚取证；/v1/runs warm Agent
 last_reviewed: 2026-07-29
 memory_type: task
 scope: task
-owners: docs/context/plans/active/2026-07-29-ai-memory-watch-hermes-v2.6-warm-agent-latency-plan.md, server/watch_voice_endpoint/deploy/Dockerfile.hermes.cloud
+owners: docs/context/plans/completed/2026-07-29-ai-memory-watch-hermes-v2.6-warm-agent-latency-plan.md, server/watch_voice_endpoint/deploy/Dockerfile.hermes.cloud
 triggers: Hermes warm Agent, Hermes API Server latency, watch-001 run latency, /v1/runs, Gateway Relay
 evidence_level: design
-status: active
-superseded_by: docs/context/plans/active/2026-07-29-ai-memory-watch-hermes-v2.7-gateway-relay-watch-connector-plan.md
+status: completed
+superseded_by: docs/context/plans/completed/2026-07-29-ai-memory-watch-hermes-v2.7-gateway-relay-watch-connector-plan.md
 ---
 
 # AI Memory Watch / Hermes V2.6 Warm Agent 延迟优化计划（已暂停）

@@ -8,7 +8,7 @@ scope: repo
 owners: main/features/mini_games, main/ui/custom, main/ui/generated/events_init.c, main/ui/lvgl_task.c, main/app
 triggers: 2048, mini_games, Game入口, 小游戏执行计划, 物理按键, LVGL游戏页
 evidence_level: design
-status: active
+status: completed
 ---
 
 # 2048 小游戏执行计划
