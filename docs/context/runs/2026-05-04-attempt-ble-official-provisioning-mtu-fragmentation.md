@@ -7,7 +7,7 @@ garden_status: keep-evidence
 garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
-owners: C:/Users/ye/Desktop/eps32_ble, docs/context/knowledge/project/wechat-miniapp-official-ble-provisioning.md, docs/context/knowledge/project/ble-provisioning-miniapp-write-fragmentation.md
+owners: C:/Users/ye/Desktop/eps32_ble, docs/context/knowledge/project/ble-provisioning-wechat-miniapp.md
 triggers: BLE provisioning MTU protobuf prov-scan fragmentation
 evidence_level: observed
 route_area: "BLE miniapp provisioning evidence"
@@ -31,8 +31,7 @@ route_area: "BLE miniapp provisioning evidence"
 
 - 修改过的文件或 owner：
 - C:/Users/ye/Desktop/eps32_ble
-- docs/context/knowledge/project/wechat-miniapp-official-ble-provisioning.md
-- docs/context/knowledge/project/ble-provisioning-miniapp-write-fragmentation.md
+- docs/context/knowledge/project/ble-provisioning-wechat-miniapp.md
 - 执行的命令或动作：
 - 对齐官方 proto-ver / prov-session / prov-scan / prov-config protocomm BLE client
 - 小程序侧增加 wx.setBLEMTU() 协商和发送前 payload 上限保护
