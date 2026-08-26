@@ -2,7 +2,7 @@
 id: hardware-capability-gap-map
 tags: project, hardware, gap, rtc, imu, power, roadmap, qmi8658c, wom
 summary: 当前板级硬件已经接入的能力与仍未闭环的中断、唤醒和产品链路摘要。
-last_reviewed: 2026-06-04
+last_reviewed: 2026-08-06
 memory_type: semantic
 scope: repo
 owners: components/axp2101, components/pcf85063atl, components/qmi8658c, main/app/board_power.c, main/app/board_imu.c, main/services/power/wakeup_evidence_service.c, main/services/sensors/imu_service.c
@@ -60,3 +60,13 @@ evidence_level: observed
 
 - 本文用于规划和排障优先级；“已接入”只表示代码与部分板级证据存在，不代表所有中断、sleep 或产品体验均已验收。
 - QMI8658C 的详细稳定事实和 INT1 排查顺序见 `docs/context/knowledge/esp32-s3/qmi8658c-minimal-probe.md`。
+
+## 设备/板层未闭环项（2026-07-07 审查蒸馏）
+
+- P1 IMU 接缝：文档链路 `imu_service -> board_imu -> qmi8658c`，实现仍为 `imu_service` 直接构造 bus/probe/config；下轮 IMU 整改时收敛到 `board_imu` 或窄 board adapter。
+- P1 QMI8658C 默认地址：`qmi8658c_init()` 仍保留默认 7-bit 地址路径，多板型会与 board facts 冲突；后续 internalize，新代码从 `board_imu` 地址进入。
+- P1 AXP2101 写权限：`axp2101_read_snapshot()` 受控写 ADC channel，非纯 getter；写接口 allowlist 当前只允许 ADC enable + IRQ clear，rail 控制走显式 `axp2101_set_rail_enabled()`。
+- P2 DS2413 马达：`board_ds2413_motor` 保持通路/开/关/短 pulse primitive，震动节奏只在 `features/alerts/haptic_alert_player`。
+- P2 共享总线公共面：`i2c_manager.h` 与 display/touch header 暴露 raw handle；source test 禁止 UI/service 直接拿 bus handle，board constants 与 raw handle API 中期拆分。
+- 整改顺序：先补 source test/allowlist 检查 → 收敛 IMU 接缝 → 明确 AXP2101 写权限 → 管住共享总线 → 保持马达边界。
+- 验证口径：`imu_service.c` 不再直接 include `qmi8658c.h`；`main/ui` 不 include 设备层头文件；`components/*` 不反向 include `main/app`、`main/services`、`main/ui`。
