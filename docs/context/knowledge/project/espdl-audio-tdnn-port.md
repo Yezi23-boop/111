@@ -1,8 +1,8 @@
 ---
 id: espdl-audio-tdnn-port
 tags: audio, esp-dl, danger-detection, tdnn
-summary: "AudioClassification-Pytorch 到 ESP32-S3 esp-dl 的首版最小链路结论：TDNN + Fbank + TAP，训练侧 3D 特征输入，导出侧使用等价 2D wrapper 避免 ESP-PPQ 1D BN 风险。"
-last_reviewed: 2026-06-24
+summary: "AudioClassification-Pytorch 到 ESP32-S3 esp-dl 的首版最小链路结论：TDNN + Fbank + TAP，训练侧 3D 特征输入，导出侧使用等价 2D wrapper 避免 ESP-PPQ 1D BN 风险。当前 active 为 V59 softdistill（运行阈值 0.90）。"
+last_reviewed: 2026-08-06
 memory_type: semantic
 scope: repo
 owners: components/espdl_inference, components/traffic_inference, main/features/danger_detection/danger_detection_service.c
@@ -13,6 +13,17 @@ evidence_level: observed
 # ESP-DL 音频 TDNN 移植结论
 
 外部训练仓库位于 `D:\esp32S3\AudioClassification-Pytorch`。首版推荐链路为 `TDNN + Fbank + TAP`，固定 16 kHz mono、3 秒整窗，训练侧输入 `[1,298,40]`。
+
+## 当前状态速览（2026-08 依据文末 2026-06-24 记录）
+
+- 主工程 active 模型：`edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl`（V59 softdistill），类别顺序 `non_danger / danger`。
+- **运行阈值 0.90**。注意区分 `runtime_threshold`（主工程固件实际运行值）与 `eval_threshold`（PC/样板工程评估值）；历史 V3.3 曾把评估 0.40 与运行 0.80 混谈，后续禁止再混。
+- 接入只替换 active `.espdl` 与 rodata 符号，**不改变** `danger_detection_service` 的连续窗口（2 连窗确认/3 连窗清除/2s hold/cooldown）和 active danger 边界。
+- 板端状态：V59 样板工程 `Model::test()` 已过；主工程 `idf.py build` 已过；**主工程板端 app-flash/monitor 与启动期 `Model::test()` 日志待补**。
+- 版本判断先看训练仓库 `models/espdl_registry/model_release_table.md`（`board_verified/` 为已上板回退锚点，`in_progress/` 不得直接覆盖 active）。
+- active danger 边界：主线只认 `siren / horn / alarm`；`glass_break / crash / impact` 只属于 extended challenger，不得静默并入 active 主线。
+
+## 首版链路与对齐工具（2026-04-30）
 
 ESP-PPQ 1.2.10 可解析并导出 `.espdl`，但原始 TDNN 的 `Conv1d + BatchNorm1d` 图在量化时存在通道维转换风险。当前导出脚本 `tools/espdl/export_tdnn_for_espdl.py` 默认将模型等价改写为 ESP-DL 友好的 2D 图，导出输入为 NCHW `[1,1,298,40]`，板端 ESP-DL 运行时按 NHWC 暴露为 `[1,298,40,1]`，并已用 UrbanSound8K 的真实 Fbank `.npy` 特征做 32 步校准。
 
@@ -28,6 +39,8 @@ Fbank 对齐工具已补齐：`tools/espdl/dump_reference_fbank.py` 可生成训
 
 2026-05-01 继续做 4 条真实样本批量测试时发现量化校准顺序问题：`dataset/features` 按类别子目录排序，而旧导出命令 `calib_steps=32` 只会取类别 0 的前 32 条。`tools/espdl/export_tdnn_for_espdl.py` 已改为按父目录轮询交错校准特征，并用 `calib_steps=320` 重导出 `.espdl`。重导出后板端结果：外部 `sample_00_esc_siren` 仍为 `children_playing(2), 0.5265`；UrbanSound8K `sample_01_us8k_car_horn` 为 `gun_shot(6), 0.9840`；`sample_02_us8k_gun_shot` 为 `gun_shot(6), 0.7758`；`sample_03_us8k_siren` 为 `siren(8), 0.9998`。说明量化校准漂移已明显改善，但当前训练模型本身仍混淆部分 car_horn/gun_shot。
 
+## 多分类 TDNN 试验（2026-05-01，已被二分类取代）
+
 2026-05-01 按“排除 gun_shot，测试准确率 0.90+”做 9 类训练实验。新增 `dataset/*_no_gunshot.txt` 与 `dataset/label_list_no_gunshot.txt`，过滤原始类别 6，并将原类别 7/8/9 重映射为 6/7/8。首个 128-channel TDNN best accuracy 为 `0.8726`；256-channel 实验 best 为 `0.8833`；最终 `configs/espdl/training/tdnn/tdnn_espdl_urbansound8k_no_gunshot_acc90_gpu.yml` 使用 `channels=512`、`embd_dim=192`、`dropout=0.25`、`label_smoothing=0.08`、`AdamW`、`batch_size=256`，GPU 训练 best epoch 76，测试准确率 `0.9241`。对应导出目录为 `models/training_runs/espdl_export/tdnn_urbansound8k_no_gunshot_acc90_gpu_20260501`，`.espdl` 文件约 `2,349,648` 字节，本地估算 two-buffer activation 约 `301,056` 字节、initializer 约 `2,323,436` 字节。该模型精度达标但显著大于首版 128-channel 模型，接入前必须板端实测 `get_memory_info()` 和推理耗时。
 
 9 类高精度模型的 4 条样本 PC 侧快速检查：外部 `esp32_siren/1-31482-A-42.wav` 为 `children_playing(2), 0.2981`；UrbanSound8K `100648-1-0-0.wav` 仍不是 car_horn，而是 `dog_bark(3), 0.7968`；原 gun_shot 样本因为类别被移除，被分到 `dog_bark(3), 0.4578`；UrbanSound8K siren 样本为 `siren(7), 0.9311`。因此 9 类实验解决了整体测试准确率门槛，但没有解决外部 siren 和特定 car_horn 样本的产品语义问题。
@@ -41,6 +54,8 @@ Fbank 对齐工具已补齐：`tools/espdl/dump_reference_fbank.py` 可生成训
 512-channel 版本真机实测可作为上限参考：`.espdl` `2,349,648` 字节，`total internal=5,892 B`、`total psram=2,640,776 B`、`total flash=2,349,632 B`，单次推理约 `10,700 ms`。结论是精度可达 `0.9241`，但推理耗时和 PSRAM 占用都不适合当前首版部署。
 
 截至 2026-05-01 的模型取舍：`384-channel` 准确率最高（`0.9297`）但板端约 `6.14s`；`192-channel` 准确率过线（`0.9141`）且板端约 `1.51s`，是更适合继续嵌入式联调的候选；`256-channel` 准确率 `0.9185`、耗时约 `2.86s`，处在中间但优势不明显。若必须接近 `0.95`，需要换更强结构、更多数据/增强或重新定义标签，而不是继续单纯放大当前 TDNN。
+
+## 二分类 TDNN-192 与 locked baseline（2026-05-02）
 
 2026-05-02 按产品目标改为 `danger / non_danger` 二分类，`gun_shot` 继续排除，danger 只包含 UrbanSound8K 原始 `car_horn` 与 `siren`。新增 `tools/espdl/make_danger_binary_lists.py`，输出自然分布列表和训练用 balanced 列表；新增 `configs/espdl/training/tdnn/tdnn_espdl_danger_binary_192.yml` 与 `tools/espdl/eval_danger_binary_metrics.py`。训练使用 `dataset/train_list_features_danger_binary_balanced.txt`，测试使用自然分布 `dataset/test_list_features_danger_binary.txt`。GPU 训练 best epoch 64，训练日志 best accuracy `0.97433`；指标脚本在 best checkpoint 上得到：阈值 `0.50` 时 `accuracy=0.971292`、`danger_recall=0.865672`、`danger_precision=0.95082`、`false_positive_rate=0.008547`；阈值 `0.20` 时 `accuracy=0.950957`、`danger_recall=0.947761`、`false_positive_rate=0.048433`；阈值 `0.15` 时 `accuracy=0.942584`、`danger_recall=0.970149`、`false_positive_rate=0.062678`。危险报警首版更适合用阈值 `0.20`，后续按现场误报接受度微调。
 
@@ -64,6 +79,8 @@ Fbank 对齐工具已补齐：`tools/espdl/dump_reference_fbank.py` 可生成训
 
 当前可用版本已冻结为 `edge_danger_tdnn192_fbank1s_int8_v20260502`。版本清单位于 `configs/espdl/model_versions/edge_danger_tdnn192_fbank1s_int8_v20260502.json`，说明文档位于 `docs/espdl/model_versions/edge_danger_tdnn192_fbank1s_int8_v20260502.md`。active `.espdl` 与 versioned snapshot 的 SHA256 均为 `1B6E503DF47C16DAD80F64D8E7E35B31D1F7D6E9F43A40DE557977BDA3446501`。后续更大 RAM 模型、UrbanSound8K 混训模型或阈值实验必须新增 version_id，不得覆盖该 locked baseline。
 
+## Teacher-Student 数据管线（2026-05-02 起）
+
 后续路线已覆盖为 teacher-student 数据闭环，主计划文档为 `docs/espdl/guides/danger_sound_roadmap.md`。核心原则：AST + PaSST 只作为电脑端离线 teacher 给 1 秒窗口打 top-k、筛 hard negative 和 weak/hard positive；YAMNet/PANNs 仅保留为快速 baseline 或可选对照，不再作为主线依赖；人工只复核最关键边界窗口；ESP32-S3 只部署小模型 student 的 INT8 `.espdl`。公开数据不再机械按文件标签全量加入，必须窗口级 manifest 化，记录 `ast_topk`、`passt_topk`、`ast_danger_score`、`passt_danger_score`、`teacher_agreement`、`baseline_student_danger_prob`、`bucket`、`quality` 和 `manual_checked`。首个新实验应为 `edge_mix_teacher_tdnn192_fbank1s_int8_v202605xx`，只改数据不改模型，用于验证 hard negative 是否降低 UrbanSound8K/开放城市声误报；若数据收益明确，再训练 `edge_mix_teacher_dstcn_small_fbank1s_int8_v202605xx`，用全 Conv2D 形式的 DS-TCN-small INT8 挑战 TDNN locked baseline。
 
 2026-05-02 复查 teacher-student 路线后补充硬门禁：teacher 标签不得直接作为 ground truth；公开数据 `60/40` 只是首轮起点，若 edge 真实集指标变差必须降低公开数据占比；所有公开数据必须以 1 秒窗口为最小标注单位，并按 `split_group` 分组切分，禁止同源窗口跨 train/test。第一轮混训固定 TDNN-192、1 秒 Fbank 和 INT8 导出路径，只改变数据列表与采样权重；新模型必须同时满足 edge 指标不低于 locked baseline、public hard negative FPR 明显下降、`Model::test()` 通过和板端资源实测后，才允许考虑替换 active 模型。
@@ -84,6 +101,8 @@ PaSST 通过 `hear21passt` 在 1 秒窗口上会提示输入时间长度与原�
 
 随后已将 mixed `.espdl` 临时复制为部署样板 active 模型并烧录 COM3。`idf.py build` 通过，app bin 为 `0x15fa60`，`idf.py flash` 成功。pyserial 采集 `monitor_mixed_candidate_20260502.log` 显示：`Model::test() Test Pass`；模型内存 `total internal=5892 B`、`total psram=405352 B`、`total flash=379200 B`，其中 `variable psram=40016 B`、`parameter_copy psram=360992 B`；Fbank 约 `33.12 ms`，ESP-DL 推理约 `464.63 ms`。三条嵌入样本均判对：background danger_prob `0.0876`，horn `0.9933`，siren `0.9638`，阈值为 `0.35`。该候选已从“未板测”升级为“样板工程板测通过”，但尚未接入 `D:\esp32S3\111` 主工程危险识别路径；locked baseline 仍作为回滚安全版本保留。
 
+## Challenger 演进（2026-05-02 ~ 05-11）
+
 2026-05-02 同日开始执行 `DS-TCN-small` challenger。新增 `macls/models/dstcn_small.py`、`configs/espdl/training/dstcn/dstcn_small_espdl_edge_mix_teacher_1s.yml`，直接复用 mixed teacher 数据集 `dataset/edge_mix_teacher_tdnn192_fbank1s_int8_v20260502`。该 student 结构采用 `Conv2D + DSConv2D + temporal dilation(1/2/4/8) + GAP + FC`，参数量仅 `26220`。GPU 训练 best accuracy `0.98438`；edge-only 测试集上阈值 `0.35` 时 `accuracy=0.984733`、`danger_recall=0.975309`、`danger_precision=1.0`、`false_positive_rate=0.0`，在保持召回不变的情况下优于 mixed TDNN 的 `FPR=0.04`。
 
 为让 Conv2D student 也能走同一套 ESP-DL 链路，`tools/espdl/export_tdnn_for_espdl.py` 已泛化为通用分类模型导出脚本：TDNN 继续用旧 2D wrapper；非 TDNN 模型新增 `EspdlFriendly4DWrapper`，把训练侧 `[1,98,40]` 包装成导出侧 `[1,1,98,40]`。`edge_mix_teacher_dstcn_small_1s_int8_v20260502` 的导出产物为 `70560` 字节，SHA256 `DC6A57BE860BFCE164111CA628113D6F0CCD410A30CC64ED5FB46E7AC8D077BB`；wrapper 一致性 `max_abs_diff=0.0`。需要注意，这版 `.espdl` 的输入 dtype 是 `FLOAT`、shape 是 `NCHW [1,1,98,40]`，而不是旧 TDNN 的 `INT8 NHWC [1,98,40,1]`。
@@ -97,6 +116,8 @@ PaSST 通过 `hear21passt` 在 1 秒窗口上会提示输入时间长度与原�
 2026-05-03 随后已把这条“纯 INT8 输入”路线真正打通。做法不是改 student，也不是重训，而是在 `tools/espdl/export_tdnn_for_espdl.py` 中改为：先用 `espdl_quantize_torch(..., skip_export=True)` 取回量化后的 PPQ 图，再把图入口从 `FLOAT input -> Squeeze -> Unsqueeze -> Quantized Conv` 收紧为 `Unsqueeze` 的量化输入变量，删除前置 `Squeeze/Unsqueeze`，最后手动调用 exporter 导出 `.espdl`。同时新增 `tools/espdl/check_espdl_input_contract.py` 作为导出检查器，要求 `.info` 中图输入必须为 `INT8`，且入口前几个算子中不再出现 `QuantizeLinear`。新版本为 `edge_mix_teacher_dstcn_small_1s_int8input_v20260503`：`.espdl` 从 `70560 B` 降到 `56656 B`，`.info` 显示输入已变为 `INT8 [1,98,40,1], exponent=-3`，输出仍为 `INT8 [1,2], exponent=-5`。样板工程重新 build/flash/monitor 后，`Model::test() Test Pass`，日志显示 `input=int8 exp=-3, output=int8 exp=-5`；模型内存 `total internal=10192 B`、`total psram=261488 B`、`total flash=56640 B`，其中 `variable psram=227360 B`、`parameter_copy psram=27328 B`；Fbank 约 `33.19 ms`，ESP-DL 推理约 `61.52 ms`。与 FLOAT 输入的 `V3` 相比，这版是当前最贴近 ESP32-S3 官方推荐输入路径的 deploy candidate：flash 更小、infer 更快，但 PSRAM 略有上升，因此后续在 `D:/esp32S3/111` 主工程并行接入时仍要继续盯内存布局漂移。
 
 2026-05-03 继续训练并验证 `DS-CNN-tiny` 纯卷积 challenger，目标是让主体尽量只保留 `Conv2D / DepthwiseConv2D / Pool / FC`。新增 `macls/models/dscnn_tiny.py` 与 `configs/espdl/training/dscnn/dscnn_tiny_espdl_edge_mix_teacher_1s.yml`，复用 mixed teacher 数据集和 1 秒 Fbank。该模型参数量仅 `3962`，结构为 `Conv2D stem -> 4 个 DSConv2D block -> GlobalAveragePool -> FC`，没有 residual `Add` 和 temporal dilation block。GPU 训练 best accuracy `0.98958`；edge-only 测试在阈值 `0.40` 时 `accuracy=0.992366`、`danger_recall=0.987654`、`danger_precision=1.0`、`FPR=0.0`。导出版本为 `edge_mix_teacher_dscnn_tiny_1s_int8input_v20260503`，`.espdl` `22384 B`，SHA256 `FB7BF741D69CE55F78620776EC139E07AFC7BF95D0F45CE2B73884DC62273385`，`.info` 确认为 `INT8 [1,98,40,1], exponent=-3` 输入、`INT8 [1,2], exponent=-5` 输出，入口前缀为 `Conv -> Conv -> Conv -> AveragePool`，无 `QuantizeLinear`。样板工程已将阈值调到 `0.40` 并重新 build/flash/monitor，`Model::test() Test Pass`；模型内存 `total internal=5644 B`、`total psram=137416 B`、`total flash=22368 B`，Fbank 约 `33.29 ms`，ESP-DL 推理约 `61.77 ms`。结论：DS-CNN-tiny 明显降低 `.espdl`、flash 和 PSRAM，但没有明显快过 V3.2；它是“更小、更纯、更省内存”的候选，不是“更快”的候选。主工程接入时建议 V3.2 与 V3.3 并行 A/B，重点比较真实连续窗口的误报、漏报与稳定性。
+
+## 主工程接入与运行口径（2026-05-03 起）
 
 2026-05-03 主工程 `D:\esp32S3\111` 的音频资源归属已开始收口：`components/audio_codec` 不再只是简单 init/deinit 包装，而是作为唯一 codec owner 增加生命周期引用计数和 input/output 独占 session。`espdl_audio_runtime` 与旧 `traffic_inference_realtime` 在读麦克风前必须分别申请 `AUDIO_CODEC_OWNER_ESPDL_INFERENCE` / `AUDIO_CODEC_OWNER_TRAFFIC_INFERENCE` 的 input session，退出时释放 session，再释放生命周期引用。这样危险识别、旧 Edge Impulse 调试链路、播放/语音链路后续可以通过同一层仲裁 I2S RX/TX，避免某个 runtime stop 时误 `audio_codec_deinit()` 拆掉全局音频硬件。该改动已通过源码回归测试和 `idf.py build`，后续若接入播放 owner，应继续复用 `audio_codec_acquire_output()`，不要在业务层直接反初始化 codec。
 
@@ -117,6 +138,8 @@ PaSST 通过 `hear21passt` 在 1 秒窗口上会提示输入时间长度与原�
 同日已把训练仓库的模型管理扩展成完整发布登记：`models/espdl_registry/board_verified/` 统一登记 6 个已样板工程或板端实测版本，包括 locked TDNN baseline、mixed TDNN、DS-TCN FLOAT/INT8 input、DS-TCN lightaug 和当前主工程 active 对应的 DS-CNN-tiny V3.3；`models/espdl_registry/in_progress/` 登记 2 个未上板 V3.4 候选。总表为 `models/espdl_registry/model_release_table.md`，后续判断“能否替换 active”时先看该表，不要只看训练日志或聊天记录。
 
 模型管理中已显式拆分 `eval_threshold` 与 `runtime_threshold`：前者属于 PC/样板工程评估指标，后者只表示当前主工程固件实际运行值。当前 V3.3 的历史评估阈值仍可记录为 `0.40`，但主工程人声误报后实际运行阈值是 `0.80`，以后不要把这两个值混为一个“模型阈值”。
+
+## 当前 active：V59 softdistill（2026-06-24）
 
 2026-06-24 按用户要求将主工程 active ESP-DL 单模型从 V3.4 T90 sharp 切到 V59 softdistill：
 `edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl`。V59 源自训练仓库 registry：
