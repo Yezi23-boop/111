@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,12 @@ configure_utf8_stdio()
 TOKEN_RE = re.compile(r"[A-Za-z0-9_\-\u4e00-\u9fff]+")
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_REPO_PATH_RE = re.compile(r"^(docs/context/|[A-Za-z]:[\\/]|main/|components/|server/|scripts/|tests/|tools/)")
+
+
+def looks_like_repo_path(value: str) -> bool:
+    """判断 owners 字段中的条目是否是仓库路径，避免对描述性文字做存在性检查。"""
+    return bool(_REPO_PATH_RE.match(value.strip()))
 
 SCOPE_MIXED = "mixed"
 SCOPE_KNOWLEDGE = "knowledge"
@@ -442,6 +450,20 @@ def score_document(
     if lifecycle_score is None:
         return None
 
+    # 派生新鲜度：owners 指向的仓库路径已失效（代码重构/文件删除）的卡可能已漂移，轻微降权。
+    # 时间不直接参与：稳定事实卡天然老旧，mtime 旧不等于过期。
+    owner_dead_count = 0
+    for owner in str(meta.get("owners", "")).split(","):
+        owner = owner.strip()
+        if not owner or not looks_like_repo_path(owner):
+            continue
+        owner_path = Path(owner)
+        if not owner_path.is_absolute():
+            owner_path = project_root / owner_path
+        if not owner_path.exists():
+            owner_dead_count += 1
+    derived_freshness_score = -4 * owner_dead_count
+
     score = (
         lexical_score
         + path_bonus(rel_path)
@@ -456,6 +478,7 @@ def score_document(
             query=query,
             terms=terms,
         )
+        + derived_freshness_score
     )
     if score <= 0:
         return None
@@ -480,6 +503,35 @@ def score_document(
 
 
 def load_index(index_path: Path) -> dict[str, Any]:
+    # 读时自愈：索引是派生状态，若缺失或比 docs/context 里任一 md 旧，先自动重建，
+    # 避免「当前性查询」跑在过期快照上。删除文件不会触发重建（mtime 比较看不到），
+    # 但 score_document 会跳过已不存在的文件，等价于查询时已排除。
+    index_path = Path(index_path).resolve()
+    # index 位于 <root>/docs/context/index/context-index.json：
+    # parents[1] = docs/context（扫描范围），parents[3] = 项目根（重建脚本路径基准）。
+    docs_root = index_path.parents[1]
+    project_root = index_path.parents[3]
+
+    rebuild_needed = not index_path.exists()
+    if not rebuild_needed:
+        index_mtime = index_path.stat().st_mtime
+        newest = 0.0
+        for md in docs_root.rglob("*.md"):
+            try:
+                newest = max(newest, md.stat().st_mtime)
+            except OSError:
+                continue
+        rebuild_needed = newest > index_mtime
+
+    if rebuild_needed:
+        reason = "索引缺失" if not index_path.exists() else "索引过期"
+        build_script = project_root / "scripts" / "context" / "build_index.py"
+        print(f"[{reason}] 自动重建索引: {build_script.name}", flush=True)
+        subprocess.run(
+            [sys.executable, str(build_script), "--project-root", str(project_root)],
+            check=False,
+        )
+
     return json.loads(index_path.read_text(encoding="utf-8"))
 
 
