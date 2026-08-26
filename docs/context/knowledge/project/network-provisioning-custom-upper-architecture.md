@@ -177,18 +177,11 @@ route_area: "Network and provisioning"
 
 ## 删除旧 `wifi_provision` 的执行入口
 
-- 删除旧组件时，不要再从历史 BLE/AP 设计卡倒推当前代码。
-- 应优先参考：
-  - `docs/context/knowledge/project/wifi-provision-removal-migration-checklist.md`
-- 这张迁移清单已经把：
-  - 旧公网接口到新组件的替代映射
-  - 当前真实直接依赖点
-  - 删除顺序
-  - 风险与验证
-    单独收口，后续以该卡为准推进。
+- 旧 `wifi_provision` 组件已删除，迁移完成；旧接口到新组件的替代映射与删除顺序已由当时迁移记录收口，不再单独维护迁移清单。
+- 删除旧组件时，不要再从历史 BLE/AP 设计卡倒推当前代码，应以本卡和 `ble-provisioning-wechat-miniapp.md` 为准。
 
 ## 和旧上下文的关系
 
-- 旧 `ble-provisioning-ui-toggle-behavior.md`、`wifi-management-ui-behavior.md` 仍可作为“当前 UI 语义演进历史”的参考。
+- 旧 `ble-provisioning-ui-toggle-behavior.md`、`wifi-management-ui-behavior.md` 的 UI 语义已并入 `ble-provisioning-wechat-miniapp.md` 与 `wifi-management-ui-behavior.md`，仍可作为“当前 UI 语义演进历史”的参考。
 - 旧 `wifi_provision` 相关 spec / plan / 知识卡，在当前代码基线下都应按“历史方案”理解。
 - 但凡涉及“长期网络底座如何分层”的问题，应优先以本卡为准，而不是继续把旧 `wifi_provision` 视为长期正式架构。

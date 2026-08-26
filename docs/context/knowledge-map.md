@@ -30,8 +30,6 @@
 - `knowledge/project/hardware-capability-gap-map.md`
 - `knowledge/project/storage-and-provisioning-paths.md`
 - `knowledge/project/embedded-c-cpp-engineering-rules.md`
-- `knowledge/project/embedded-framework-mentor-skill.md`
-- `knowledge/project/teaching-milestones.md`
 - `knowledge/project/gui-guider-visual-editor-runtime-boundary.md`
 - `knowledge/project/runtime-owner-contract.md`
 
@@ -47,12 +45,11 @@
 - `knowledge/project/network-provisioning-custom-upper-architecture.md`
 - `knowledge/project/wifi-management-ui-behavior.md`
 - `knowledge/project/storage-and-provisioning-paths.md`
-- `knowledge/project/softap-provisioning-placeholder-api-limit.md`
-- `knowledge/project/wifi-provision-removal-migration-checklist.md`
+- `knowledge/project/softap-captive-portal-auto-popup.md`
+- `knowledge/project/ble-provisioning-wechat-miniapp.md`
 
 ## AI 与 official_chat
 
-- `knowledge/project/official-chat-config-completeness-audit.md`
 - `knowledge/project/official-chat-ota-tls-time-bootstrap.md`
 - `knowledge/project/ai-ui-entry-network-guidance.md`
 
@@ -65,8 +62,7 @@
 - `knowledge/project/hearing-assist-danger-alert-firmware-mapping.md`
 - `knowledge/project/espdl-audio-tdnn-port.md`
 - `knowledge/project/danger-signal-detection-port.md`
-- `knowledge/project/audio-horn-like-segment-extraction.md`
-- `knowledge/project/audio-low-activity-filter-script.md`
+- `knowledge/project/audio-sample-extraction-scripts.md`
 
 ## 运行记录与计划
 

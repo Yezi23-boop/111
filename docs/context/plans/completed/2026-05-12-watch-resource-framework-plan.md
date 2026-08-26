@@ -30,7 +30,7 @@ evidence_level: design
 ## 当前依据
 
 - `low-power-management-baseline.md`：当前已落地 `Power Observe / UI Idle-Dim / Scene-based Wi-Fi PS`，但还没有统一 `power_policy`。
-- `watch-low-power-management-architecture.md`：推荐按 `Active -> Idle-Dim -> Standby -> Deep Sleep / Power Off` 分阶段推进，不直接深睡。
+- `low-power-framework-architecture.md`：推荐按 `Active -> Idle-Dim -> Standby -> Deep Sleep / Power Off` 分阶段推进，不直接深睡。
 - `display-touch-audio-bus-map.md`：显示、触摸、音频和控制面 I2C/I2S/QSPI 已有明确硬件 owner。
 - `display-render-touch-transfer-pipeline.md`：`audio + sd + wifi + lvgl` 并发会造成内部 DMA/内存压力，资源框架必须考虑并发预算。
 - `hearing-assist-danger-alert-firmware-mapping.md`：危险识别应从页面生命周期转向系统级后台服务，`danger_detection_service` 负责状态机，`audio_codec` 负责麦克风 session。
