@@ -8,7 +8,6 @@ scope: project
 owners: server/watch_relay_connector, docs/context/plans/active/2026-07-29-ai-memory-watch-hermes-v2.7-gateway-relay-watch-connector-plan.md
 triggers: Hermes Relay handshake timeout, reply_to missing, Gateway Relay wire trace, Watch Relay Connector POC
 evidence_level: observed
-status: active
 ---
 
 # Hermes Gateway Relay 阶段 0 Wire Trace

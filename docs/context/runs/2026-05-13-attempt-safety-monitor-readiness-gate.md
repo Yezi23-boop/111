@@ -7,7 +7,6 @@ garden_status: keep-evidence
 garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: main/services/startup_readiness.c, main/services/startup_readiness.h, main/services/background_service_manager.c, main/ui/lvgl_task.c, main/app/app_main.c, docs/context/plans/completed/2026-05-12-apple-watch-like-boot-flow-plan.md
 triggers: ui_first_frame_ready readiness gate background_service_manager Safety Monitor 安全监听

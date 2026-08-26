@@ -8,7 +8,6 @@ scope: evidence
 owners: docs/context/runs/2026-06-27-attempt-hermes-v24-sync-client-psram-buffer.md
 triggers: memory_watch_voice_client_sync, watch sync, PSRAM response buffer, V2.4 thin client
 evidence_level: observed
-status: active
 ---
 
 # Hermes V2.4 Sync Client PSRAM Buffer Attempt

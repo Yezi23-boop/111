@@ -5,7 +5,6 @@ summary: Watch Runtime Resource Gate 阶段 6 的板端自动高压回归：新�
 last_reviewed: 2026-06-29
 memory_type: episodic
 scope: task
-status: active
 result: partial
 owners: main/services/runtime_resource_gate_board_test.c, main/services/runtime_resource_gate_board_test.h, main/app/app_main.c, main/Kconfig.projbuild, tests/test_runtime_resource_gate_board_test_source.py
 triggers: runtime resource gate board stress, COM3, BLE fail closed, PSRAM stack, internal stack, background HTTPS quiet window

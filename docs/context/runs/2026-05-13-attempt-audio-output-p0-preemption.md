@@ -3,7 +3,6 @@ id: attempt-audio-output-p0-preemption-20260513
 tags: run, watch, resource-management, audio, p0-alert, safety-monitor
 summary: audio-output-p0-preemption；结果：success。
 result: success
-status: active
 last_reviewed: 2026-05-13
 memory_type: episodic
 scope: repo

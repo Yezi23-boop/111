@@ -8,7 +8,6 @@ scope: project
 owners: server/watch_voice_endpoint, docs/context/runs
 triggers: Hermes memory pressure, SSH banner timeout, watch 502, autossh backoff, relay watchdog
 evidence_level: observed
-status: active
 ---
 
 # Hermes 云端内存与 Relay 自愈加固

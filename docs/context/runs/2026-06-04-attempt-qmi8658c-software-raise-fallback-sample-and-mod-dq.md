@@ -5,7 +5,6 @@ summary: QMI8658C MoD/sDA 根因定位与 Rev A 原始六轴软件抬腕降级�
 last_reviewed: 2026-06-04
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: components/qmi8658c, main/app/board_imu.c, main/app/board_imu.h, main/services/imu_service.c
 triggers: QMI8658C STATUS0 sDA, CTRL9 0x0C, Motion on Demand, Rev A raw motion

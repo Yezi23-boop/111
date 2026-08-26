@@ -5,7 +5,6 @@ summary: resource-policy-maintenance-window；结果：partial。
 last_reviewed: 2026-05-13
 memory_type: episodic
 scope: task
-status: active
 result: partial
 owners: main/services/power_policy.c, main/services/power_policy.h, tests/test_power_integration_source.py, docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md
 triggers: MAINTENANCE maintenance_window power_policy Safety Monitor

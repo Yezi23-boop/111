@@ -8,7 +8,6 @@ scope: project
 owners: main/CMakeLists.txt, main/services, main/features, main/ui, tools/ui_preview, scripts/context/check_layering.py
 triggers: watch directory reorg, services owner folders, memory watch directory, weather service, ui preview
 evidence_level: observed
-status: active
 ---
 
 # Watch Code Directory Reorg 执行记录

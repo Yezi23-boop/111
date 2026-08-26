@@ -5,7 +5,6 @@ summary: Watch Runtime Resource Gate 阶段 3-5：Hermes 前台接入强前台 g
 last_reviewed: 2026-06-29
 memory_type: episodic
 scope: task
-status: active
 result: partial
 owners: main/services/memory_watch_service.c, main/services/background_https_gate.c, main/services/background_https_gate.h, main/services/memory_watch_voice_client.c, main/features/weather/hptts.c, main/ui/custom/main_dropdown_controller.c
 triggers: Hermes foreground owner, background HTTPS gate, BLE quiet retry, Runtime Resource Gate, ESP-DL yield, Safety Monitor

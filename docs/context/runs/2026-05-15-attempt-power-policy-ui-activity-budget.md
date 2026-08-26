@@ -3,7 +3,6 @@ id: 2026-05-15-attempt-power-policy-ui-activity-budget
 tags: [run, watch, resource-management, power-policy, ui-refresh-policy, idle-dim]
 summary: power_policy 只读消费 ui_refresh_policy activity snapshot，将普通运行态预算细分为 ACTIVE / IDLE_DIM。
 result: success
-status: active
 last_reviewed: 2026-05-15
 memory_type: episodic
 scope: repo

@@ -1,7 +1,6 @@
 ---
 id: attempt-2026-05-16-rtc-pmic-wakeup-evidence-loop
 date: 2026-05-16
-status: active
 result: partial
 summary: 首次接入 PCF85063ATL countdown timer 与 wakeup_evidence_service，用运行态日志闭环 RTC_INT(GPIO39) 和 AXP2101 IRQ bank，暂不进入 ESP sleep。
 last_reviewed: 2026-05-16

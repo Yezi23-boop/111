@@ -5,7 +5,6 @@ summary: 收紧 Fall 2s CNN 事件触发入口，禁止 jerk 单独触发事件�
 last_reviewed: 2026-07-19
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: main/services/sensors/imu_service.c, components/fall_detection_inference/include/fall_model_runner.h, docs/context/plans/active/FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN.md
 triggers: fall small wrist rotation false trigger, jerk trigger, FALL_MODEL_THRESHOLD_DEFAULT 0.60

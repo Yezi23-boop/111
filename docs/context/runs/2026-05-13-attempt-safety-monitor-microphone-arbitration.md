@@ -5,7 +5,6 @@ summary: safety-monitor-microphone-arbitration；结果：partial。
 last_reviewed: 2026-05-13
 memory_type: episodic
 scope: task
-status: active
 result: partial
 owners: main/services/background_service_manager.c, main/services/background_service_manager.h, main/features/audio/audio_app.c, components/audio_codec, main/ui/custom/danger_detection_controller.c, tests/test_audio_codec_port_source.py, tests/test_safety_monitor_session_source.py, tests/test_danger_detection_controller_source.py, docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md
 triggers: foreground_audio_active audio_recorder Safety Monitor resource_blocked 麦克风 仲裁

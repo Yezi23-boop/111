@@ -5,7 +5,6 @@ summary: music-lvgl-back-screen-watchdog；结果：partial。
 last_reviewed: 2026-08-02
 memory_type: episodic
 scope: task
-status: active
 result: partial
 owners: main/ui/custom/music_controller.c, tests/test_music_ui_source.py
 triggers: lv_obj_update_layout, IDLE1 task watchdog

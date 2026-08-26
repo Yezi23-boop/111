@@ -1,7 +1,6 @@
 ---
 id: attempt-2026-06-01-standby-power-time-v1-board-validation
 date: 2026-06-01
-status: active
 result: partial
 summary: 子代理复查 P0/P1 修复后，上板验证 STANDBY 第一版、system_time 启动摘要、SNTP 写回和 Wi-Fi 预算消费；低电量真实触发与触摸退出 STANDBY 未在无人条件下验证。
 last_reviewed: 2026-06-01

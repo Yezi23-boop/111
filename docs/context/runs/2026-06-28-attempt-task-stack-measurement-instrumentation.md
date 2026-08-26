@@ -5,7 +5,6 @@ summary: 为任务栈与内存占用实测建立观测能力：新增全任务�
 last_reviewed: 2026-06-28
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: components/z_print_esp32, main/ui/lvgl_task.c
 triggers: stack high water mark, task stack measurement, printf_esp32, cpu_monitor_task, resource baseline, RAM

@@ -7,7 +7,6 @@ garden_status: keep-evidence
 garden_reviewed: 2026-05-16
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: main/services/power_policy.c, main/services/power_policy.h, main/services/background_service_manager.c, main/services/background_service_manager.h, main/services/safety_monitor_session.c, main/services/safety_monitor_session.h, main/app/app_main.c, main/ui/custom/danger_detection_controller.c, docs/context/plans/completed/2026-05-12-watch-resource-framework-plan.md
 triggers: power_policy background_service_manager 危险识别 后台系统能力

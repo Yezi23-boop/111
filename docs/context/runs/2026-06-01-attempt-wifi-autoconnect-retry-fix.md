@@ -2,7 +2,6 @@
 id: attempt-2026-06-01-wifi-autoconnect-retry-fix
 title: Wi-Fi 上电 latest 自动连接重试修复验证
 date: 2026-06-01
-status: active
 result: success
 summary: 修复并验证上电 latest Wi-Fi 首次失败后不再被 suppress 窗口吞掉，断连进入自动重试；最终正常固件已刷回并验证自动重试后进入 SERVICE_READY。
 last_reviewed: 2026-06-01

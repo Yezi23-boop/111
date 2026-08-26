@@ -3,7 +3,6 @@ id: 2026-05-15-attempt-official-chat-output-session
 tags: [run, official-chat, audio, resource-management, output-session]
 summary: official_chat 输出播放接入 audio_codec output session，补齐框架复查发现的播放 owner 缺口。
 result: success
-status: active
 last_reviewed: 2026-05-15
 memory_type: episodic
 scope: repo

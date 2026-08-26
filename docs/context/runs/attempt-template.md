@@ -5,7 +5,6 @@ summary: agent 做过什么修改和尝试的记录模板，重点记录已改�
 last_reviewed: 2026-06-07
 memory_type: episodic
 scope: task
-status: active
 result: success | partial | failed | abandoned | superseded
 owners: docs/context/runs, scripts/context/log_attempt.py
 triggers: attempt-log, anti-repeat, tried, failed, repeated-action, agent, 做过什么, 修改, 尝试, 避免重复

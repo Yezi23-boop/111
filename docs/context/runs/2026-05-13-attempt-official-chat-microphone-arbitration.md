@@ -3,7 +3,6 @@ id: 2026-05-13-attempt-official-chat-microphone-arbitration
 tags: [run, official-chat, audio, resource-management, safety-monitor]
 summary: official_chat 接入 audio_codec input session 仲裁，进入前台时通知后台管理器暂停 Safety Monitor，adapter 用 OFFICIAL_CHAT owner 申请/释放麦克风。
 result: success
-status: active
 last_reviewed: 2026-05-15
 memory_type: episodic
 scope: repo

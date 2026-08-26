@@ -5,7 +5,6 @@ summary: music-opus-md-decoder-stack-overflow；结果：partial。
 last_reviewed: 2026-08-03
 memory_type: episodic
 scope: task
-status: active
 result: partial
 owners: main/services/music/music_stream_player.cc, tests/test_music_service_source.py
 triggers: micro-decoder md_decoder stack overflow Opus music_stream_player

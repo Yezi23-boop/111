@@ -1,7 +1,6 @@
 ---
 id: attempt-2026-06-01-low-power-framework-dry-run-board-validation
 date: 2026-06-01
-status: active
 result: partial
 summary: 上板验证低功耗框架 Phase 1/3：power_budget 在 ACTIVE/STANDBY 下发布 sleep 字段，sleep_coordinator 默认 DRY_RUN，STANDBY 后 LIGHT_ALLOWED 但不进入真实 sleep。
 last_reviewed: 2026-06-01

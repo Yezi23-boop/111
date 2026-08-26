@@ -5,7 +5,6 @@ summary: Watch runtime resource gate 阶段 1：新增强前台独占 gate 最�
 last_reviewed: 2026-06-29
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: main/services/foreground_runtime_gate.c, main/services/foreground_runtime_gate.h, main/CMakeLists.txt, tests/test_foreground_runtime_gate_source.py
 triggers: foreground_runtime_gate, runtime resource gate, Hermes, BLE, ESP-DL, strong foreground owner, quiet window

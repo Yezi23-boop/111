@@ -6,7 +6,6 @@ created: 2026-06-30
 last_reviewed: 2026-06-30
 owners: components/official_chat, sdkconfig, tests
 evidence_level: observed
-status: active
 ---
 
 # official_chat 去除本地 SR loader 尝试记录

@@ -5,7 +5,6 @@ summary: AI Memory Watch / Hermes V2.1 ESP32 WebSocket 客户端编译闭环，�
 last_reviewed: 2026-06-27
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: docs/context/runs
 triggers: attempt-log, hermes websocket client, memory_watch_ws_client, static volatile, inbox pending, idf build

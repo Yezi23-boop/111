@@ -5,7 +5,6 @@ summary: sdkconfig Wi-Fi/NimBLE 缓冲区瘦身与无用 BLE Service 关闭，�
 last_reviewed: 2026-06-29
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: sdkconfig
 triggers: sdkconfig, Wi-Fi TX buffer, NimBLE MSYS2, ACL, EVT, BLE service, internal RAM, BLE presence

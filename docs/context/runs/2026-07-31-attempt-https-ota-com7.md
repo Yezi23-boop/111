@@ -5,7 +5,6 @@ summary: 远端 HTTPS OTA 弱网续传与 COM7 双槽闭环；结果：success�
 last_reviewed: 2026-07-31
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: main/services/ota/ota_transport.c; main/services/ota/ota_board_test.c; I2C owner task stacks
 triggers: 远端 HTTPS OTA 弱网续传与 COM7 双槽闭环

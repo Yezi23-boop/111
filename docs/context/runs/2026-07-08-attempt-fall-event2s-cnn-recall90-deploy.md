@@ -5,7 +5,6 @@ summary: 部署 Fall 2s/6ch CNN recall90 调试模型，并把固件事件窗口
 last_reviewed: 2026-07-08
 memory_type: episodic
 scope: task
-status: active
 result: partial
 owners: components/fall_detection_inference, main/services/fall_detection_service.c, main/services/imu_service.h, docs/context/plans/active/FALL_DETECTION_V1_111_DEPLOYMENT_DESIGN.md
 triggers: fall event2s cnn recall90 deploy, weda_v3_event2s_6ch_cnn_c24_k3_pool10_e500_recall90

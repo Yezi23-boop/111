@@ -5,7 +5,6 @@ summary: 修复网络时间同步任务创建失败 pdFAIL、Hermes收件箱UI�
 last_reviewed: 2026-06-25
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: docs/context/runs
 triggers: attempt-log, hermes, inbox, sntp, freertos, psram, spinlock, create network time sync task failed

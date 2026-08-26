@@ -1,7 +1,6 @@
 ---
 id: attempt-2026-06-04-qmi8658c-int1-gpio21-schematic-board-evidence
 date: 2026-06-04
-status: active
 result: resolved_with_software_fallback
 summary: 视觉复核原理图并完成 COM3 确定性板测，确认当前样板 QMI INT1 到 GPIO21 物理通路浮空/开路；修复 Rev A CTRL9 握手，并为正式 service 增加 20 ms WoM 轮询降级。
 last_reviewed: 2026-06-04

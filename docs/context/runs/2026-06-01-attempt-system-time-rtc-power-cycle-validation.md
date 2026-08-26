@@ -1,7 +1,6 @@
 ---
 id: attempt-2026-06-01-system-time-rtc-power-cycle-validation
 date: 2026-06-01
-status: active
 result: success
 summary: 上板验证 system_time 的 RTC bootstrap、SNTP 写回 RTC，以及真实断电重启后的 RTC 保持。
 last_reviewed: 2026-06-01

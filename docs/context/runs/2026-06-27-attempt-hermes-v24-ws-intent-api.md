@@ -8,7 +8,6 @@ scope: evidence
 owners: docs/context/runs/2026-06-27-attempt-hermes-v24-ws-intent-api.md
 triggers: memory_watch_ws_client, websocket turn api, ws event kind, thin client
 evidence_level: observed
-status: active
 ---
 
 # Hermes V2.4 WS Intent API Attempt

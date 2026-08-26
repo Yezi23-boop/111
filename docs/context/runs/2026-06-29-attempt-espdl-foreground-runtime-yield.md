@@ -5,7 +5,6 @@ summary: Watch Runtime Resource Gate 阶段 2：Safety Monitor 在强前台 owne
 last_reviewed: 2026-06-29
 memory_type: episodic
 scope: task
-status: active
 result: partial
 owners: main/services/background_service_manager.c, main/services/background_service_manager.h, main/ui/custom/danger_detection_controller.c, tests/test_safety_monitor_session_source.py
 triggers: ESP-DL yield, Safety Monitor foreground runtime block, Hermes foreground, BLE foreground, foreground_runtime_gate

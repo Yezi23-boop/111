@@ -3,7 +3,6 @@ id: 2026-05-15-attempt-ui-refresh-policy-activity-snapshot
 tags: [run, watch, resource-management, ui, power-policy, ui-refresh-policy]
 summary: 为 ui_refresh_policy 增加只读 activity snapshot，先发布 UI 活跃度事实，不让 power_policy 接管 UI 刷新链路。
 result: success
-status: active
 last_reviewed: 2026-05-15
 memory_type: episodic
 scope: repo

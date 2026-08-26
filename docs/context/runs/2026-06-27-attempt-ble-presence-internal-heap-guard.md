@@ -5,7 +5,6 @@ summary: 记录点击主界面 Bluetooth 后 BLE controller 因 internal heap �
 last_reviewed: 2026-06-27
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: components/ble_presence, components/network_manager
 triggers: BLE_INIT Malloc failed, emi.c, Bluetooth button, ble_presence, internal heap, NimBLE

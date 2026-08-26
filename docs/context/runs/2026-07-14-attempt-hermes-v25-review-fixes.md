@@ -8,7 +8,6 @@ scope: project
 owners: server/watch_voice_endpoint, main/services/memory_watch_service.c, main/services/memory_watch_ws_client.cc, docs/context/plans/active/2026-07-14-ai-memory-watch-hermes-v2.5-conversation-reliability-plan.md
 triggers: Hermes V2.5 review fixes, request_accepted, session replay, runtime readiness, private exposure POST, non-root watch endpoint
 evidence_level: observed
-status: active
 ---
 
 # AI Memory Watch / Hermes V2.5 审查修复记录

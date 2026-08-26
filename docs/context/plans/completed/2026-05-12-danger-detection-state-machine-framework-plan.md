@@ -8,7 +8,7 @@ scope: task
 owners: main/features/danger_detection/danger_detection_service.c, main/features/danger_detection/danger_detection_service.h
 triggers: danger-detection, hearing-assist, state-machine, espdl, alerting, cooldown
 evidence_level: design
-status: active
+status: completed
 ---
 
 # 危险识别状态机框架完善计划

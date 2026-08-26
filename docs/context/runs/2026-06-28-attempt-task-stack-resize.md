@@ -5,7 +5,6 @@ summary: 基于冷启动+高压场景栈实测，扩栈 mw_health/mw_conv 修复
 last_reviewed: 2026-06-28
 memory_type: episodic
 scope: task
-status: active
 result: success
 owners: main/services/memory_watch_service.c, main/services/official_chat_service.c, components/network_manager/src/network_manager.c, main/services/network_service.c, main/services/power_service.c, main/app/app_main.c
 triggers: stack resize, stack overflow, mw_health, mw_conv, mw_upload, official_chat_s, network_mgr, network_service, power_service, time, internal RAM
