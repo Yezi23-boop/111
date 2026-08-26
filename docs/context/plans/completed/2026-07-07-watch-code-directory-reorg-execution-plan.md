@@ -445,7 +445,7 @@ idf.py build
 
 - 更新 `docs/context/knowledge/project/main-directory-map.md`。
 - 更新 `docs/context/knowledge/project/layering-boundary-map.md` 中实际目录映射。
-- 更新 `docs/context/knowledge/project/watch-interface-config-layering-review.md` 中已完成项或 superseded 说明。
+- 更新 `docs/context/knowledge/project/layering-boundary-map.md`（原 watch-interface-config-layering-review 已蒸馏并入）中已完成项或 superseded 说明。
 - 明确以下目录第一版只文档化，不移动：
 
 ```text

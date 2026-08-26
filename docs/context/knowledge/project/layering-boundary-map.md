@@ -2,7 +2,7 @@
 id: layering-boundary-map
 tags: project, architecture, layering, boundary, owner, esp32-s3
 summary: 记录当前仓库推荐采用的 App/UI、Service、Manager/Domain、Driver Adapter、Vendor/SDK 分层边界，以及 UI/Service/Manager/Adapter 的调用红线和越界检查重点。
-last_reviewed: 2026-07-14
+last_reviewed: 2026-08-06
 memory_type: semantic
 scope: repo
 owners: main/app, main/services, main/features, main/ui, components
@@ -139,3 +139,12 @@ main/ui/custom
 - 普通检查只报告风险，不阻断；需要 CI 或强门禁时再加 `--strict`。
 - 出现疑似越层时，先判断是否是 generated/debug/test/临时观测代码，再决定是否重构。
 - 已知例外会单独列为 `known_exception_count`，用于保留历史债务可见性，但避免 agent 重复把已记录边界当成新问题。
+
+## 接口/配置审查未闭环项（2026-07-07 审查蒸馏）
+
+- 配置入口 owner 已明确：Wi-Fi 凭据 `network_credentials` NVS、BLE 偏好 `ble_control`、默认 transport `network_manager`、SoftAP 门户 `ap_portal_adapter`、Memory Watch endpoint NVS、weather/IMU 已收敛。未闭环风险：`network_manager_get_status()` 读路径会触发凭据保存/清理；BLE UI 点击路径执行 gate/quiet/retry；SoftAP 门户承接 Memory Watch 配置 schema（记录为过渡例外或拆 portal extension）。
+- P0：tracked `sdkconfig` 不得保留真实 `CONFIG_MEMORY_WATCH_DEFAULT_DEVICE_TOKEN`（已进入的按泄露处理并轮换）；`server/watch_voice_endpoint/watch_contract.v1.json` 未覆盖 `/v1/watch/ws` 与 `/v1/watch/sync` 当前主路径，需扩展或新增 V2 contract 并用 source test 锁定 route/字段/枚举/超时。
+- P1：`network_manager_get_status()` 非纯快照（会推进状态、保存/清理凭据）→ 新增纯 `network_manager_get_snapshot(out)`，状态推进只留 manager task、adapter event callback 和显式 command；主界面 BLE enable 的 gate/quiet/retry 应从 UI 路径移到 network owner task，UI 只提交 intent。
+- P2：`network_service` 兼容面偏宽（冻结新增产品动作 API）；`memory_watch_service` public API 偏宽（冻结新增，内部拆文件，`copy_endpoint_config()` 视为敏感接口）；`ap_portal_adapter.h`/`co5300_panel.h`/`i2c_manager.h` 泄漏 SDK/raw handle（source test + allowlist）；`main` 大 component 编译期隔离不足（先补检查，中期 PRIV_REQUIRES/allowlist，不一次性大拆）；`lvgl_port -> ui_refresh_policy_notify_touch()` 反向通知（过渡例外，后续改 input activity callback 注册）。
+- 检查工具补齐：`check_layering.py` 应新增 generated 禁 include service/feature/driver、UI 禁直调 driver adapter（allowlist）、service 禁直调设备层 raw API（diagnostic 例外登记）、components 禁反向引用 main、public header SDK 泄漏扫描、CMake REQUIRES 扫描、preview mock 单独分类。
+- 整改顺序：先清 P0（token + contract）→ 收敛网络 getter 与 BLE UI 重路径 → 扩展检查工具 → 明确 SoftAP 配置写入边界 → 中期结构债（memory_watch 拆文件、public header 收窄）。
