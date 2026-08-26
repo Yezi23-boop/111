@@ -1,7 +1,7 @@
 ---
 id: hermes-multi-agent-architecture
 tags: project, architecture, hermes, ai-memory-watch, conversation, websocket, async-reply, inbox-polling, v2.1, v2.2
-summary: AI Memory Watch / Hermes 固件侧会话架构（V2.1/V2.2 起落地，现行锚点）：前台 Hermes 对话走 WebSocket，离页 pending 改用 HTTP conversation polling；收件箱走独立低频 HTTP 轮询；server conversation 为断线补发真相源，ESP32 只缓存最近 5 轮用于显示；多入口、多设备不在 V2.1/V3 范围。服务端 Relay 路由演进（V2.7/V2.9）见对应 completed 计划。
+summary: AI Memory Watch / Hermes 固件侧会话架构锚点（V2.1/V2.2 起落地）：前台对话走 WebSocket，离页 pending 用 HTTP conversation polling；收件箱走独立低频 HTTP 轮询；server conversation 是断线补发真相源，ESP32 只缓存最近 5 轮；Relay 演进见 V2.7/V2.9 completed 计划。
 last_reviewed: 2026-06-27
 memory_type: project_knowledge
 scope: repo
