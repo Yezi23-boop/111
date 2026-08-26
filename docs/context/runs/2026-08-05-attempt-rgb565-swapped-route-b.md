@@ -15,7 +15,7 @@ garden_reviewed: 2026-08-05
 
 ## 背景
 
-`docs/context/knowledge/project/lvgl-display-tuning-log.md` 记录过：LVGL 9.3 升级后显示异常排查期间，"把显示格式改成 `RGB565_SWAPPED` 并移除 flush swap" 后现象更糟，因此仓库长期维持 `RGB565 + flush 手动 swap`。
+历史调参记录（原 `lvgl-display-tuning-log.md`，已蒸馏进 `display-render-touch-transfer-pipeline.md`）记载：LVGL 9.3 升级后显示异常排查期间，"把显示格式改成 `RGB565_SWAPPED` 并移除 flush swap" 后现象更糟，因此仓库长期维持 `RGB565 + flush 手动 swap`。
 
 但那次实验是**双变量叠加**：换格式 + 删 swap 同时做，且背景是 LVGL 9.3 的圆角/绿条纹异常排查，无法单独归咎于 `RGB565_SWAPPED` 配置本身。2026-08-05 在 LVGL 9.5、显示正常的基线上重做干净对照。
 

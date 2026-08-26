@@ -86,7 +86,7 @@ queries:
     query: "CO5300 亮度路径"
     expected_top3:
       - docs/context/knowledge/project/display-render-touch-transfer-pipeline.md
-      - docs/context/knowledge/project/lvgl-display-tuning-log.md
+      - docs/context/knowledge/project/co5300-screen-layout-safe-zone.md
 
   - id: network-owner-split
     query: "network_manager network_provisioning_adapter ap_portal_adapter 分工 owner"

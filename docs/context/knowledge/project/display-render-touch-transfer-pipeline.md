@@ -2,7 +2,7 @@
 id: display-render-touch-transfer-pipeline
 tags: project, lvgl, display, touch, co5300, ft5x06, qspi, dma, rendering
 summary: 记录当前仓库从 LVGL 渲染、CO5300 QSPI 传输到 FT5x06 触摸输入的完整链路，以及与 DMA 内存压力相关的典型故障模式。
-last_reviewed: 2026-04-08
+last_reviewed: 2026-08-06
 memory_type: semantic
 scope: repo
 owners: components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/ui/lvgl_task.c
@@ -21,7 +21,7 @@ route_area: "Display and touch"
   - `CO5300` 屏幕刷新与 `QSPI/DMA` 传输链
   - `FT5x06` 触摸输入链
 - 本文同时记录 `LVGL 9.2.2 -> 9.3.0` 升级后实际暴露出的显示异常排查结论。
-- 若需要查看每轮调参的时间线和用户真机反馈，请优先配合阅读 [lvgl-display-tuning-log.md](/D:/esp32S3/111/docs/context/knowledge/project/lvgl-display-tuning-log.md)。
+- 每轮调参的时间线历史已蒸馏收敛进本文末「十~十三」节；更早的逐轮实验记录可查 git 历史（原 `lvgl-display-tuning-log.md`）。
 
 ## 一、启动链路
 
@@ -374,3 +374,31 @@ route_area: "Display and touch"
 - `圆角元素出问题` 不等于 `圆角算法出问题`，很多时候只是它们更容易暴露 flush/传输异常。
 - `关闭 chunk` 不一定更稳，在资源紧张时反而可能最先触发 `priv TX buffer` 失败。
 - 对这块屏来说，稳定刷新更重要的是“传输节奏受控”，而不是单纯“块越大越快”。
+
+## 十、帧率预算与真实目标（2026-08 蒸馏自调参日志）
+
+- 屏幕 `410 x 502`、`RGB565` 每帧 `410 * 502 * 2 = 411,640` 字节；全屏 60 FPS 需 `~24.7 MB/s`。
+- `CO5300` QSPI 真实上限按 `50MHz` 收敛，理论裸带宽 `50MHz * 4 / 8 = 25 MB/s`，几乎没有命令/窗口/同步余量。
+- 因此“全屏稳定 60 FPS”不是当前架构下的现实目标；目标是**局部交互高帧率 + 主观顺滑**（减少滑动切割感、减少每帧块数）。
+- `PCLK` 从 `50MHz` 降到 `40MHz` 后绿色条纹未明显减少，说明“单纯时钟太快”不是主因。
+
+## 十一、当前分支代码现状（2026-08 核对源码）
+
+- `components/lvgl_port/lv_port_config.h`：`LV_PORT_FIXED_CHUNK_LINES1/2 = 512`、`LV_PORT_FIXED_CHUNK_LINES = 10`、`LV_PORT_BYTE_SWAP_ENABLE = 0`。
+- `components/lvgl_port/lv_port_display.c`：仍维护双 `bounce buffer`（`heap_caps_malloc(..., MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)`，大小 = `410 * 10` 行）；外部 PSRAM `px_map` 在 `byte_size <= s_bounce_buf_size` 时先拷进 bounce buffer 再发送。
+- 路线 B 当前成立：`RGB565_SWAPPED` + `BYTE_SWAP_ENABLE=0`（flush 不手工 swap）。
+- 历史注意：旧 `codex/bluetooth` 分支曾删除 BOUNCE 双路径、只留 px_map 直发；**该记录已过时，不代表当前分支**。判断以本卡和源码为准。
+
+## 十二、BLE 配网期 UI 降载保护（2026-08 核对源码）
+
+- 触发证据：官方 BLE provisioning 真机日志在建链（`mtu=256`）后连续出现 `setup_dma_priv_buffer()` 与 `Display flush failed: ESP_ERR_NO_MEM`，而小程序 `proto-ver / security0 / prov-scan` 已通——问题是 BLE/Wi-Fi scan 与显示 flush 抢内部 DMA 内存。
+- 落地（`main/ui/ui_refresh_policy.c`）：节流模式拆为 `NORMAL / PROVISIONING` 两层，与交互状态 `ACTIVE / STANDBY / FORCE_ACTIVE` 正交：
+  - PROVISIONING 下活跃态最小唤醒间隔抬到 `80ms`、STANDBY 态抬到 `500ms`；
+  - 亮度仍只跟交互状态走，配网期间 `30s` 无触摸仍会渐暗；
+  - UI 轮询改用无锁 `network_manager_get_state_cached()`，不再抢 `network_manager` 互斥锁。
+- 若真机仍持续 `ESP_ERR_NO_MEM`，依次排查：Wi-Fi 管理页额外高频刷新、配网期后台 UI 驱动源、是否需恢复更强 bounce buffer 路径。
+
+## 十三、后续调参纪律（2026-08 蒸馏自调参日志）
+
+- 新实验记录必须写清：改了哪几个宏/函数、用户真机现象（不是“感觉更好/更差”）、是定位开关还是准备长期保留的默认配置。
+- 实验失败两轮以上就回到最小复现，不要同时改 `chunk`、`PCLK`、`TE`、`color format` 多个变量。
