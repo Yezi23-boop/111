@@ -8,6 +8,7 @@ scope: task
 owners: docs/context/plans/completed
 triggers: completed-plan, archive, retrospective
 evidence_level: design
+status: active
 ---
 
 # Completed Plans 目录说明

@@ -8,6 +8,7 @@ scope: board
 owners: components/lvgl_port, components/co5300_panel, components/touch_ft5x06, main/ui/lvgl_task.c
 triggers: lvgl, porting, baseline
 evidence_level: observed
+status: active
 ---
 
 # 基础点亮流程

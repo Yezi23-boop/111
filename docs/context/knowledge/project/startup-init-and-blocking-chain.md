@@ -8,6 +8,7 @@ scope: repo
 owners: main/app/app_main.c, main/app/hardware_init.c, main/services/network/network_service.c, main/services/power/power_service.c
 triggers: startup, init, and, blocking, chain
 evidence_level: observed
+status: active
 ---
 
 # 启动与阻塞链路

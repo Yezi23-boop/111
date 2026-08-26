@@ -11,6 +11,7 @@ owners: C:/Users/ye/Desktop/eps32_ble, docs/context/knowledge/project/ble-provis
 triggers: BLE provisioning MTU protobuf prov-scan fragmentation
 evidence_level: observed
 route_area: "BLE miniapp provisioning evidence"
+status: active
 ---
 
 # Attempt Log: ble-official-provisioning-mtu-fragmentation

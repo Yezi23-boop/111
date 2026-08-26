@@ -9,6 +9,7 @@ owners: main/services/official_chat_service.c, main/services/network/network_ser
 triggers: official, chat, ota, tls, time, bootstrap, 时间, 授时, 迁移
 evidence_level: observed
 route_area: "Official Chat"
+status: active
 ---
 
 # official_chat OTA TLS 首次授时约束

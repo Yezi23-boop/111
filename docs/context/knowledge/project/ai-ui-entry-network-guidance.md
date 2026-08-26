@@ -8,6 +8,7 @@ scope: repo
 owners: main/ui/custom/ai_ui_controller.c, main/ui/custom/ai_chat_view.c, main/services/network/network_service.c
 triggers: ai, ui, entry, network, guidance
 evidence_level: observed
+status: active
 ---
 
 # AI 页面入口与未联网引导

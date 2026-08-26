@@ -8,6 +8,7 @@ scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c
 triggers: axp2101, power, component, design
 evidence_level: design
+status: active
 ---
 
 # AXP2101 电源管理组件设计

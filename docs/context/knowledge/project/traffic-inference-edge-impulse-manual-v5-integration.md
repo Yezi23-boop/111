@@ -8,6 +8,7 @@ scope: repo
 owners: components/traffic_inference, main/features/danger_detection/danger_detection_service.c
 triggers: traffic, inference, edge, impulse, manual, v5, integration
 evidence_level: observed
+status: active
 ---
 
 # traffic_inference Edge Impulse 模型接入

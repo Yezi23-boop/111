@@ -8,6 +8,7 @@ scope: repo
 owners: AGENTS.md, docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md
 triggers: embedded, c, cpp, engineering, rules
 evidence_level: design
+status: active
 ---
 # ESP32/MCU 嵌入式 C/C++ 工程规则
 

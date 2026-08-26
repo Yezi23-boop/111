@@ -8,6 +8,7 @@ scope: board
 owners: components/touch_ft5x06, components/lvgl_port
 triggers: ft3168, shared, i2c, baseline
 evidence_level: observed
+status: active
 ---
 
 # FT3168 共享 I2C 基线

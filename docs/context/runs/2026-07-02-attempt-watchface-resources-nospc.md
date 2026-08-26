@@ -8,6 +8,7 @@ scope: task
 owners: resources, scripts/watchface, docs/context/plans/active/2026-06-30-watchface-emoji-root-ui-plan.md
 triggers: LFS_ERR_NOSPC, resources.bin, resources/watchface, LittleFS, 表情表盘
 evidence_level: observed
+status: active
 ---
 
 # 表情资源撑爆 LittleFS 修复记录

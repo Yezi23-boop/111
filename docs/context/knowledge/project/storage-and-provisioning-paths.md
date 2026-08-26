@@ -8,6 +8,7 @@ scope: repo
 owners: components/sd_card/sd_manager.c, components/ap_portal_adapter/web, components/network_provisioning_adapter
 triggers: storage, provisioning, paths, network_manager, network_provisioning_adapter, ap_portal_adapter
 evidence_level: observed
+status: active
 ---
 
 # 存储与配网路径

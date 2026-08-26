@@ -8,6 +8,7 @@ scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c, main/ui/ui_refresh_policy.c
 triggers: low, power, management, baseline
 evidence_level: observed
+status: active
 ---
 
 # 当前项目低功耗管理基线

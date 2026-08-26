@@ -8,6 +8,7 @@ scope: repo
 owners: main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, components/espdl_inference
 triggers: parameter, default, threshold, vibration, cooldown, sensitivity
 evidence_level: design
+status: active
 ---
 
 # 听障危险提醒参数与默认值建议表

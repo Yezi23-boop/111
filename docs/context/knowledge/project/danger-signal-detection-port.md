@@ -8,6 +8,7 @@ scope: repo
 owners: components/traffic_inference, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c
 triggers: danger, signal, detection, port
 evidence_level: observed
+status: active
 ---
 
 # 危险信号识别移植

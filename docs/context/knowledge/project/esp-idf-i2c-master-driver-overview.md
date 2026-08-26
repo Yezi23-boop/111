@@ -8,6 +8,7 @@ scope: repo
 owners: components/i2c_manager, tests/test_i2c_master_bus_sdkconfig.py
 triggers: esp, idf, i2c, master, driver, overview
 evidence_level: observed
+status: active
 ---
 
 # ESP-IDF 新版 I2C master 驱动概览
@@ -83,7 +84,7 @@ evidence_level: observed
 
 - 官方示例：`D:/esp-idf/v5.5.3/esp-idf/examples/peripherals/i2c/i2c_basic/main/i2c_basic_example_main.c`
 - 官方头文件：`D:/esp-idf/v5.5.3/esp-idf/components/esp_driver_i2c/include/driver/i2c_master.h`
-- 仓库迁移说明：`docs/context/knowledge/project/i2c-manager-master-bus-migration.md`
+- 仓库迁移说明：见本文末尾「i2c-manager-master-bus-migration」小节（2026-08-06 并入）
 
 ## i2c-manager-master-bus-migration
 

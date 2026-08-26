@@ -8,6 +8,7 @@ scope: repo
 owners: components/espdl_inference, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c
 triggers: hearing, assist, danger, alert, system, architecture
 evidence_level: design
+status: active
 ---
 
 # 听障危险提醒系统架构草案

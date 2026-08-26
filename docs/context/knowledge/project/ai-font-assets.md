@@ -8,6 +8,7 @@ scope: repo
 owners: main/ui/custom/ui_font_assets.c, main/ui/custom/cbin_font_bridge.c, scripts/build_ai_font_assets.py
 triggers: ai, hermes, font, assets
 evidence_level: observed
+status: active
 ---
 
 # AI/Hermes 动态字体资源链

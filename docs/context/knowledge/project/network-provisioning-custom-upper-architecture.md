@@ -9,6 +9,7 @@ owners: components/network_manager, components/network_provisioning_adapter, com
 triggers: network-manager, network_provisioning_adapter, ap_portal_adapter, owner, architecture, 分工
 evidence_level: observed
 route_area: "Network and provisioning"
+status: active
 ---
 
 # 官方 provisioning + 自定义上层网络架构

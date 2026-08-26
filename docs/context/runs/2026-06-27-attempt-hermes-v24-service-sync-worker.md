@@ -8,6 +8,7 @@ scope: evidence
 owners: docs/context/runs/2026-06-27-attempt-hermes-v24-service-sync-worker.md
 triggers: memory_watch_service, foreground_reconcile, pending sync, conversation worker, server session
 evidence_level: observed
+status: active
 ---
 
 # Hermes V2.4 Service Sync Worker Attempt

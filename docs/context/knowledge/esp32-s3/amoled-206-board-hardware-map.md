@@ -8,6 +8,7 @@ scope: board
 owners: components/co5300_panel, components/touch_ft5x06, components/audio_codec, components/axp2101
 triggers: amoled, 206, board, hardware, map
 evidence_level: observed
+status: active
 ---
 
 # 板级器件与关键网络映射

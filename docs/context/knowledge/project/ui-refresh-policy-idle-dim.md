@@ -8,6 +8,7 @@ scope: repo
 owners: main/ui/ui_refresh_policy.c, components/co5300_panel, main/ui/lvgl_task.c
 triggers: ui, refresh, policy, idle, dim, standby
 evidence_level: observed
+status: active
 ---
 
 # UI 运行态 STANDBY 与刷新策略

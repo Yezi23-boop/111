@@ -8,6 +8,7 @@ scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c
 triggers: power, wakeup, control, map
 evidence_level: observed
+status: active
 ---
 
 # 电源与唤醒控制图

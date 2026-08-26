@@ -8,6 +8,7 @@ scope: board
 owners: docs/context/knowledge/esp32-s3/pcf85063atl-minimal-probe.md
 triggers: pcf85063atl, minimal, probe
 evidence_level: observed
+status: active
 ---
 
 # PCF85063ATL 最小探测

@@ -8,6 +8,7 @@ scope: repo
 owners: scripts/context, docs/context
 triggers: procedure, playbook, workflow, debug
 evidence_level: design
+status: active
 ---
 
 # Procedures 目录说明

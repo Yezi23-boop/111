@@ -8,6 +8,7 @@ scope: component
 owners: main/ui/custom/wifi_management_controller.c, main/ui/custom/main_dropdown_controller.c
 triggers: wifi-management, wifi-ui, 二次进入, crash, lifecycle, controller
 evidence_level: observed
+status: active
 ---
 
 # Wi-Fi 管理 UI 行为

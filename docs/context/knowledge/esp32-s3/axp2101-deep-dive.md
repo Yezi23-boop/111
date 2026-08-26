@@ -8,6 +8,7 @@ scope: board
 owners: components/axp2101, main/app/board_power.c
 triggers: axp2101, deep, dive
 evidence_level: observed
+status: active
 ---
 
 # AXP2101 深度梳理

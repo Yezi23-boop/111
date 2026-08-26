@@ -11,6 +11,7 @@ owners: components/ap_portal_adapter/src/ap_portal_adapter.c, components/ap_port
 triggers: SoftAP captive portal prov-session prov-config auto popup
 evidence_level: observed
 route_area: "SoftAP portal evidence"
+status: active
 ---
 
 # Attempt Log: softap-captive-portal-official-provisioning

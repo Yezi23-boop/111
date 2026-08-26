@@ -8,6 +8,7 @@ scope: project
 owners: server/watch_voice_endpoint, main/services/memory_watch_service.c, docs/context/plans/active/2026-07-14-ai-memory-watch-hermes-v2.5-conversation-reliability-plan.md
 triggers: Hermes V2.5, conversation reliability, hermes run recovery, watch session interrupted, internal inbox auth, websocket metrics
 evidence_level: observed
+status: active
 ---
 
 # AI Memory Watch / Hermes V2.5 对话可靠性执行记录

@@ -8,6 +8,7 @@ scope: task
 owners: docs/context/plans/active
 triggers: plan-template, execplan, long-task
 evidence_level: design
+status: active
 ---
 
 # 计划模板

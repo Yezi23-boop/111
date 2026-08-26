@@ -8,6 +8,7 @@ scope: repo
 owners: main/app, main/services, main/features, main/ui, components
 triggers: layering, boundary, architecture, owner, app, service, manager, adapter, vendor, 分层, 架构, 越界
 evidence_level: observed
+status: active
 ---
 
 # 当前项目分层边界地图

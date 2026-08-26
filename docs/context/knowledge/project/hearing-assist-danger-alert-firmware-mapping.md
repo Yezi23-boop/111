@@ -9,6 +9,7 @@ owners: main/features/danger_detection/danger_detection_service.c, main/features
 triggers: firmware-mapping, danger-detection, app_alert_manager, espdl_runtime, threshold, cooldown, module-mapping
 evidence_level: observed
 route_area: "Hearing assist / danger alerts"
+status: active
 ---
 
 # 听障危险提醒设计参数到当前固件实现的映射

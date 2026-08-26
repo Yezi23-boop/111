@@ -8,6 +8,7 @@ scope: task
 owners: components/sd_card/sd_manager.c, components/sd_card/sd_manager.h, tests/test_sd_manager_source.py
 triggers: sd_manager, SD 卡, /sdcard, watchface rawanim, fopen, fread, fwrite, stat
 evidence_level: observed
+status: active
 ---
 
 # SD manager 文件 API 补齐记录

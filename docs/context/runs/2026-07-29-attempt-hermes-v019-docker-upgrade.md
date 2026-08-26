@@ -8,6 +8,7 @@ scope: project
 owners: server/watch_voice_endpoint/compose.cloud.yml, server/watch_voice_endpoint/deploy/Dockerfile.hermes.cloud, docs/context/runs
 triggers: Hermes v0.19.0 upgrade, Docker Hub timeout, registry mirror, unexpected EOF, watch endpoint offline
 evidence_level: observed
+status: active
 ---
 
 # Hermes 0.19.0 云端 Docker 升级

@@ -8,6 +8,7 @@ scope: repo
 owners: main/services/official_chat_service.c, components/official_chat, components/network_manager
 triggers: official, chat, mqtt, shutdown, lwip, mutex, crash
 evidence_level: observed
+status: active
 ---
 
 # official_chat MQTT 停机触发 lwIP mutex 断言

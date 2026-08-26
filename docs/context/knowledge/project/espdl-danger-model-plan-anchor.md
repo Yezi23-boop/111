@@ -9,6 +9,7 @@ owners: components/espdl_inference, main/features/danger_detection/danger_detect
 triggers: espdl, danger, model, integration, active-model, registry
 evidence_level: observed
 route_area: "ESP-DL danger model"
+status: active
 ---
 
 # ESP-DL 危险声音模型接入锚点

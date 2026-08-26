@@ -8,6 +8,7 @@ scope: repo
 owners: components/lvgl_port, components/co5300_panel, components/touch_ft5x06, components/audio_codec
 triggers: display, touch, audio, bus, map
 evidence_level: observed
+status: active
 ---
 
 # 显示、触摸、音频与总线映射

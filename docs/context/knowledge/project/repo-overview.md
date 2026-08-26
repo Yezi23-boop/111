@@ -8,6 +8,7 @@ scope: repo
 owners: main/app/app_main.c, main/services/network/network_service.c, components/network_manager
 triggers: repo-overview, startup, owner, architecture, network-manager, provisioning
 evidence_level: observed
+status: active
 ---
 
 # 当前仓库概览

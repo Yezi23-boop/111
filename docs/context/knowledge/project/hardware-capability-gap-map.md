@@ -8,6 +8,7 @@ scope: repo
 owners: components/axp2101, components/pcf85063atl, components/qmi8658c, main/app/board_power.c, main/app/board_imu.c, main/services/power/wakeup_evidence_service.c, main/services/sensors/imu_service.c
 triggers: hardware, capability, gap, map, qmi8658c, gpio21, rtc-int, axp-irq
 evidence_level: observed
+status: active
 ---
 
 # 硬件能力缺口图

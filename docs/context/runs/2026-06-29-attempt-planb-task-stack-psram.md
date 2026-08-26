@@ -5,6 +5,7 @@ summary: 方案 B：将 9 个非 Flash/NVS/ISR 关键路径的任务栈从 Inter
 last_reviewed: 2026-06-29
 memory_type: task
 scope: attempt
+status: active
 ---
 
 # Attempt: 方案 B — 任务栈迁 PSRAM 释放 Internal RAM

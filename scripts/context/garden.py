@@ -298,11 +298,20 @@ def check_file(
     # last_reviewed 反映当时状态，不作为园艺警告（与 CHANGELOG 历史引用规则一致）。
     is_history_layer = rel_path.startswith(("plans/completed/", "runs/"))
 
+    # 必填只保留生命周期最小集：status（生命周期门）与 last_reviewed（新鲜度门）。
+    # 其余字段（memory_type/scope/owners/triggers/evidence_level）只作提示，
+    # 有助检索但不强制，降低写入仪式感，避免 agent 因元数据负担跳过写入。
+    if not is_history_layer:
+        for key in ("status", "last_reviewed"):
+            value = str(meta.get(key, "")).strip()
+            if not value:
+                warnings.append(f"{rel_path}: 缺少必填字段 `{key}`")
+
     if not is_history_layer:
         for key in RECOMMENDED_FIELDS:
             value = str(meta.get(key, "")).strip()
             if not value:
-                warnings.append(f"{rel_path}: 缺少推荐字段 `{key}`")
+                notes.append(f"{rel_path}: 建议补充字段 `{key}`（检索增强，非必填）")
 
     owners_value = str(meta.get("owners", "")).strip()
     for owner in split_csv_like(owners_value):

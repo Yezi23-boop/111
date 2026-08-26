@@ -8,6 +8,7 @@ scope: board
 owners: components/audio_codec, main/services/audio_diag/audio_mic_test_service.c
 triggers: audio, codec, address, clock, baseline
 evidence_level: observed
+status: active
 ---
 
 # 音频 Codec 地址与时钟基线

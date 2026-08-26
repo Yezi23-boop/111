@@ -8,6 +8,7 @@ scope: repo
 owners: main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, main/ui/custom/danger_detection_controller.c
 triggers: hearing, assist, alert, state machine, notification, vibration, cooldown
 evidence_level: design
+status: active
 ---
 
 # 听障危险提醒状态机与提醒策略草案

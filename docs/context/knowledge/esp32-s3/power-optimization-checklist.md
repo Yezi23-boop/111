@@ -8,6 +8,7 @@ scope: board
 owners: components/axp2101, main/services/power/power_service.c, main/ui/ui_refresh_policy.c
 triggers: power, optimization, checklist
 evidence_level: design
+status: active
 ---
 
 # 待机电流优化清单

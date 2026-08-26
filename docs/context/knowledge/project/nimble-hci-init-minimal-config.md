@@ -8,6 +8,7 @@ scope: repo
 owners: components/network_provisioning_adapter, components/ble_control
 triggers: nimble, hci, init, minimal, config
 evidence_level: observed
+status: active
 ---
 
 # NimBLE HCI 初始化最小配置

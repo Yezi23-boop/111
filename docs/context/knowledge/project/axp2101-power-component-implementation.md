@@ -9,6 +9,7 @@ owners: components/axp2101, main/app/board_power.c, main/services/power/power_se
 triggers: axp2101, board_power, power_service, owner, snapshot
 evidence_level: observed
 route_area: "Power / PMIC"
+status: active
 ---
 
 # AXP2101 电源组件实现落点

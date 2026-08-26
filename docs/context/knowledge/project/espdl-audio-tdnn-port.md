@@ -8,6 +8,7 @@ scope: repo
 owners: components/espdl_inference, components/traffic_inference, main/features/danger_detection/danger_detection_service.c
 triggers: espdl, audio, tdnn, port
 evidence_level: observed
+status: active
 ---
 
 # ESP-DL 音频 TDNN 移植结论

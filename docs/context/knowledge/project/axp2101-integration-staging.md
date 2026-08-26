@@ -8,6 +8,7 @@ scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c
 triggers: axp2101, integration, staging
 evidence_level: observed
+status: active
 ---
 
 # AXP2101 接入分层与阶段建议

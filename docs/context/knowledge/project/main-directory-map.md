@@ -8,6 +8,7 @@ scope: repo
 owners: main/app/app_main.c, main/app/hardware_init.c, main/services, main/features, main/ui
 triggers: main, directory, map
 evidence_level: observed
+status: active
 ---
 
 # main 目录分层地图

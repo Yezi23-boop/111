@@ -8,6 +8,7 @@ scope: repo
 owners: docs/context
 triggers: run, validation, monitor, board-test, agent, 修改, 尝试, 避免重复, 做过什么
 evidence_level: design
+status: active
 ---
 
 # Runs 目录说明

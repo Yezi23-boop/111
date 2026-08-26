@@ -8,6 +8,7 @@ scope: project
 owners: server/watch_voice_endpoint, docs/context/runs
 triggers: Hermes 阿里云部署, Docker Hub timeout, mem0 lazy install, server_timeout, cloudflared token permission
 evidence_level: observed
+status: active
 ---
 
 # AI Memory Watch / Hermes 阿里云部署验证

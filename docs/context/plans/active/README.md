@@ -8,6 +8,7 @@ scope: task
 owners: docs/context/plans/active
 triggers: plan, execplan, milestone, long-task
 evidence_level: design
+status: active
 ---
 
 # Active Plans 目录说明

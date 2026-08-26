@@ -6,6 +6,7 @@ created: 2026-07-29
 last_reviewed: 2026-07-29
 owners: main/services/memory_watch/memory_watch_service.c, main/ui/custom/memory_watch_controller.c, main/ui/custom/watch_notification_center.c
 evidence_level: verified
+status: active
 ---
 
 # Memory Watch / Notification PSRAM Cache 迁移

@@ -8,6 +8,7 @@ scope: repo
 owners: components/pcf85063atl, components/axp2101, main/services/power/wakeup_evidence_service.c
 triggers: rtc, pmic, wakeup, evidence, rtc_int, axp_irq, pcf85063atl
 evidence_level: source
+status: active
 ---
 
 # RTC/PMIC 唤醒证据闭环

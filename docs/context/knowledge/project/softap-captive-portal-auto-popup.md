@@ -8,6 +8,7 @@ scope: component
 owners: components/ap_portal_adapter/src/ap_portal_adapter.c, components/network_manager/src/network_manager.c
 triggers: softap, captive-portal, auto-popup, ap-portal, provisioning
 evidence_level: observed
+status: active
 ---
 
 # SoftAP 自动弹页壳层边界

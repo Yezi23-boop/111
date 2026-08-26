@@ -8,6 +8,7 @@ scope: repo
 owners: main/ui/custom/ui_chinese_fonts.h, main/ui/custom/fonts, scripts/lvgl_fonts, tools/lvgl_fonts, resources/fonts
 triggers: lvgl, chinese, fonts, ui_chinese_fonts, binfont, resources
 evidence_level: observed
+status: active
 ---
 
 # LVGL 中文 UI 字体链路

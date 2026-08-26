@@ -8,6 +8,7 @@ scope: task
 owners: docs/context/runs
 triggers: run-template, validation, board-test, monitor
 evidence_level: design
+status: active
 ---
 
 # 运行记录模板

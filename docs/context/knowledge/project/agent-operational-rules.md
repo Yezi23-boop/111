@@ -8,6 +8,7 @@ scope: repo
 owners: AGENTS.md, docs/context/knowledge/project/agent-operational-rules.md
 triggers: agent, operational, rules
 evidence_level: design
+status: active
 ---
 
 # Agent 执行型详细规则

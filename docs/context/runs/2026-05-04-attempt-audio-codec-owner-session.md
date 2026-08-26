@@ -9,6 +9,7 @@ owners: components/audio_codec/audio_codec.c, components/audio_codec/include/aud
 triggers: audio_codec owner session input output lifecycle stop teardown
 evidence_level: observed
 route_area: "Audio sessions"
+status: active
 ---
 
 # Attempt Log: audio-codec-owner-session

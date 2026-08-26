@@ -8,6 +8,7 @@ scope: repo
 owners: AGENTS.md, docs/context/knowledge/project/project-profile.md
 triggers: profile, entrypoint, repo-state, startup, owner, 当前正式启动链路, 当前真实 owner, 入口, 项目画像, 仓库画像
 evidence_level: observed
+status: active
 ---
 
 # 项目画像

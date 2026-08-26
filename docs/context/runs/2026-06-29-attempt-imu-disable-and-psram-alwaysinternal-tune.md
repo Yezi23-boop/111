@@ -8,6 +8,7 @@ scope: task
 owners: docs/context/runs
 triggers: imu-disable, psram, alwaysinternal, internal-ram, sdkconfig-change
 evidence_level: observed
+status: active
 ---
 
 # 运行记录：IMU 关闭 + PSRAM ALWAYSINTERNAL 调优
