@@ -50,6 +50,14 @@ status: active
 
 `CHANGELOG.md` 是时间线记录：历史条目引用的已删除/已合并/已重命名路径是当时快照，不作为死链阻断项，也不要求回改历史条目；死链检查只针对 `knowledge/`、`plans/active/`、`procedures/`、`INDEX.agent.md` 等活文档。
 
+## 合并/蒸馏/删除卡的标准流程
+
+- 合并或蒸馏前：先跑引用集扫描（grep 被改卡名），把所有入向引用与卡改动放进同一个提交，禁止留下死链。
+- 删除前验证覆盖：声称「镜像卡」或「已被替代」的卡，必须逐张确认替代来源（skill、新卡、git 历史）确实覆盖其事实，再删。
+- 改动 golden 锚定卡、或删除被 `query-golden.yaml` 期望的卡：必须在同一提交里更新 golden yaml，并重跑 `uv run python scripts/context/eval_query.py` 全绿后才算完成。
+- 卡片之间矛盾时：以固件源码为准裁决，把结论写回卡内；不要凭卡片新旧自行取舍。
+- 新卡与被实质修改的卡必须带 `status`，并更新 `last_reviewed` 为当天；`runs/`、`plans/completed/`、`CHANGELOG.md` 是时间线快照，garden 对其豁免园艺警告。
+
 `handoffs/current-task.md` 已退场，不再维护。跨会话接手状态优先写到对应 `plans/active/` 的 `Progress / Decision Log / Validation / Next Step`；失败路线、特殊证据、可复用排查结论写入 `runs/`；稳定事实、长期 owner 或架构边界再进入 `knowledge/`。不得写真实 key/token，也不要把 `CHANGELOG.md` 复述成任务状态。
 
 失败路线、特殊证据、可复用排查结论写入 `runs/`；稳定事实、长期 owner 或架构边界再进入 `knowledge/`。

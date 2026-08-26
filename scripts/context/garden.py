@@ -294,14 +294,19 @@ def check_file(
         warnings.append(f"{rel_path}: 缺少 frontmatter，无法做园艺检查")
         return warnings, notes, candidates
 
-    for key in RECOMMENDED_FIELDS:
-        value = str(meta.get(key, "")).strip()
-        if not value:
-            warnings.append(f"{rel_path}: 缺少推荐字段 `{key}`")
+    # 历史层（plans/completed 与 runs）是时间线快照：推荐字段、owner 路径与
+    # last_reviewed 反映当时状态，不作为园艺警告（与 CHANGELOG 历史引用规则一致）。
+    is_history_layer = rel_path.startswith(("plans/completed/", "runs/"))
+
+    if not is_history_layer:
+        for key in RECOMMENDED_FIELDS:
+            value = str(meta.get(key, "")).strip()
+            if not value:
+                warnings.append(f"{rel_path}: 缺少推荐字段 `{key}`")
 
     owners_value = str(meta.get("owners", "")).strip()
     for owner in split_csv_like(owners_value):
-        if not looks_like_repo_path(owner):
+        if not looks_like_repo_path(owner) or is_history_layer:
             continue
         owner_path = (project_root / owner).resolve()
         if not owner_path.exists():
@@ -317,7 +322,7 @@ def check_file(
 
     age_days = -1
     last_reviewed = str(meta.get("last_reviewed", "")).strip()
-    if last_reviewed:
+    if last_reviewed and not is_history_layer:
         try:
             reviewed_at = datetime.strptime(last_reviewed, "%Y-%m-%d")
             age_days = (datetime.utcnow() - reviewed_at).days
@@ -330,7 +335,8 @@ def check_file(
         except ValueError:
             warnings.append(f"{rel_path}: `last_reviewed` 日期格式非法")
 
-    warnings.extend(check_required_sections(rel_path, body))
+    if not is_history_layer:
+        warnings.extend(check_required_sections(rel_path, body))
 
     status = str(meta.get("status", "active")).strip().lower() or "active"
     superseded_by = str(meta.get("superseded_by", "")).strip()
@@ -338,7 +344,7 @@ def check_file(
     looks_retired = any(hint.lower() in summary_text for hint in RETIRED_HINTS)
     garden_review_current = garden_review_is_current(meta, rel_path, max_age_days, warnings)
 
-    if status not in LIFECYCLE_STATUSES:
+    if not is_history_layer and status not in LIFECYCLE_STATUSES:
         warnings.append(
             f"{rel_path}: `status` 建议使用 {', '.join(LIFECYCLE_STATUSES)}"
         )
