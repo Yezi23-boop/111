@@ -93,17 +93,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## ESP-IDF / 构建 / 硬件红线
 
-- 默认使用 `FreeRTOS` 思路组织任务、同步和资源访问；详细 IDF 环境、build/flash/monitor 流程见 `docs/context/knowledge/project/agent-operational-rules.md`。
-- 新功能或整体系统骨架设计时，优先用 `FreeRTOS` 搭出清晰的运行时结构：用 task 表达长期执行单元，用 queue / task notification 表达事件流，用 event group 表达 readiness 或组合状态，用 software timer 表达周期性调度，用 mutex / semaphore / critical section 表达共享资源保护；这样便于观察、调度和解释整个系统的运行。
-- 用户正在学习 `FreeRTOS`：涉及任务通信、跨上下文事件、超时等待、互斥保护、状态通知或资源仲裁时，默认把合适的 `FreeRTOS` 原语作为第一选择（如 queue、event group、task notification、mutex、semaphore、critical section），避免用裸 `volatile`、临时轮询或自造 flag 协议替代同步语义。
-- 如果某处没有使用 `FreeRTOS` 原语，必须能说清楚原因，例如同一线程内纯局部状态、已有 owner 提供更高层同步 API、或第三方组件已有固定同步模型；不能只是为了少写代码而绕开 `FreeRTOS`。
-- 新增或重构相关代码时，默认用简短说明解释选择该 `FreeRTOS` 原语的原因、它解决的并发问题，以及对应的操作系统概念，帮助用户把代码和 `FreeRTOS` 学习对应起来。
-- 需要 ESP-IDF shell 时，当前机器优先确认 `D:\esp-idf\v5.5.3\esp-idf\export.ps1`；若不存在，先检查 `$env:IDF_PATH\export.ps1`，再搜索本机 `export.ps1`。
-- 不要假设仓库根目录 `D:\esp32S3\111\export.ps1` 或 `D:\esp32S3\esp-idf\export.ps1` 存在；只有确认实际 `export.ps1` 路径可用后，才执行 `idf.py build` 或其他 `idf.py` 构建动作；修改过 `sdkconfig` 时必须先 `idf.py fullclean` 再 `idf.py build`。
-- 常规 C/C++ 代码、UI 逻辑或业务 service 改动在 `idf.py build` 通过后，默认使用 `idf.py -p <PORT> app-flash`；不得把 `idf.py flash` 作为默认烧录命令，因为它会按 `build/flasher_args.json` 写入多个分区。
-- 当前板端烧录至少预留 2 分钟（120 秒）；不要在此时间预算耗尽前将烧录过程判定为超时，完整 `flash` 或大镜像流程需要留出更长余量。
-- 如需串口验证，优先 `app-flash` 后再限时采集 `monitor` / 串口日志，避免默认 `idf.py flash monitor``monitor` 窗口一分钟
-- 串口验证必须优先使用 `scripts/board/agent_serial_monitor.ps1` 或 `scripts/board/agent_serial_monitor.py`；除非该工具不可用或本轮已明确失败并记录原因，不得直接调用裸 `idf.py monitor`，也不得用 `Start-Process` 后台启动 monitor。
+- 默认用 `FreeRTOS` 原语（task / queue / task notification / event group / software timer / mutex / semaphore / critical section）组织任务、同步与资源访问；不用时必须能说清原因，新增代码时用简短说明解释所选原语解决的并发问题。用户正在学习 FreeRTOS，涉及并发/同步的教学场景默认以这些原语为第一选择。
+- IDF 环境、build/flash/monitor 完整流程与引脚约束见 `docs/context/knowledge/project/agent-operational-rules.md`。三条硬底线：① `idf.py build` 通过后默认 `idf.py -p <PORT> app-flash`，禁止默认 `idf.py flash`；② 改过 `sdkconfig` 必须先 `idf.py fullclean` 再 build；③ 串口验证用 `scripts/board/agent_serial_monitor.ps1|.py`，禁止裸 `idf.py monitor`；板端烧录至少预留 2 分钟。
 - 修改 `GPIO` / `I2C` / `SPI` / `UART` / `I2S` / `LCD` / `Touch` / `Wi-Fi` / `BLE` 前，必须先确认引脚定义、初始化顺序、时钟或带宽约束，以及错误恢复路径。
 - 测试 `Light Sleep` / `Deep Sleep` / 外部唤醒源前，必须先写清楚唤醒源、观测口、兜底唤醒和恢复步骤；测试代码默认关闭，禁止随开机自动进入 sleep。依赖 USB 串口/JTAG 观测时，不得把测试结果当作可靠闭环，应优先准备外部 UART 日志或手动 BOOT/RST 恢复路径。
 - 不要在没有证据的情况下删除已有 `reset`、`delay`、power-on sequence 或初始化命令序列。
@@ -147,21 +138,15 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 嵌入式 C/C++ 代码生成默认规范
 
-本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码。
+本仓库默认按 ESP32 / MCU 平台嵌入式 C/C++ 工程规范生成、评审和重构代码，完整条款见 `docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md`。默认基线：
 
-- 新增或修改代码优先满足分层清晰、单一职责、接口明确、错误路径可验证；避免超出当前需求的抽象、配置项、兼容层和防御式包装。
-- 结构体嵌套最好不要超过三层；超过三层时优先拆成命名子结构、独立 owner 数据或访问函数，避免调用方深链读取/修改状态。
-- 默认按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；新能力优先落到现有 owner，必要时新增窄 service/session，不新增大而全管理器。
-- 跨任务命令、状态、等待和资源仲裁优先使用 FreeRTOS 原语：queue、task notification、event group、mutex/critical section；避免裸 `volatile`、临时轮询或自造 flag 协议。
+- 按 `App/UI -> Service -> Manager/Domain -> Driver Adapter -> Vendor/SDK` 判断 owner 与调用方向；新能力优先落到现有 owner，必要时新增窄 service/session，不新增大而全管理器。
+- 跨任务命令、状态、等待和资源仲裁优先 FreeRTOS 原语（queue、task notification、event group、mutex/critical section）；避免裸 `volatile`、临时轮询或自造 flag 协议。
 - 板级事实由 `main/app/board_*` 或现有 board owner 持有；GPIO、总线地址、片选、传感器轴向、硬件阈值不得长期散落在 service 或 driver 中。
 - 资源受限路径优先静态分配或受控分配；区分 task stack、internal RAM、PSRAM、DMA-capable memory 和长期缓存，不把大对象默认放到任务栈。
-- 必要的输入、返回值和超时要检查；不要为假设场景堆叠复杂兜底、重试、状态机或包装层。
-- 防护代码只覆盖真实可能发生、代价明确且当前层负责处理的失败；不要为假设中的极端场景堆叠保护、重试、状态机、兼容分支或包装层。能通过调用前置条件、owner 边界、build 失败或简单返回值检查解决的问题，不升级成复杂保护机制。
-- Build 是代码改动的默认验证；测试只用于保护 build 看不出的重要约定，不能因为改了代码就默认新增或扩展测试。
-- 算法或 AI 相关实现默认拆分为预处理、推理、后处理和模型配置，避免把阈值、量化参数、模型 I/O 和业务逻辑混写。
-- 代码风格向 Google Code Style 靠拢，但不为新规则大面积重排无关旧代码。
-- 新增模块、跨 owner 改动或明显重构前，先给出简短文件划分和模块职责；窄 bugfix 或局部补测试不需要额外扩写方案。
-- 详细条款见 `docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md`。
+- 防护代码只覆盖真实可能发生、代价明确且当前层负责处理的失败；Build 是代码改动的默认验证，测试只保护 build 看不出的重要约定。
+- 算法或 AI 实现默认拆分为预处理、推理、后处理和模型配置，避免阈值、量化参数、模型 I/O 和业务逻辑混写。
+- 新增模块、跨 owner 改动或明显重构前，先给出简短文件划分和模块职责；代码风格向 Google Code Style 靠拢，但不为新规则大面积重排无关旧代码。
 
 ## 状态发布与 UI 读取原则（默认生效）
 
@@ -171,35 +156,17 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 模拟器预览与截图交付原则（默认生效）
 
-### Vue → LVGL → 真机 UI 开发门禁
-
-- 新页面、明显视觉重构、参考图复刻，或用户明确要求“像素级复刻”时，必须使用仓库 Skill `vue-lvgl-pixel-ui`；窄范围逻辑修复、纯文案修改和不影响布局的 Bugfix 不强制重走完整流程。
-- Vue 是视觉基准。用户确认 Vue 设计定稿前，不得进入正式 LVGL 复刻；定稿后不得为了迁就当前 LVGL 实现而静默修改 Vue 基准。
-- Vue 与 LVGL 截图必须使用相同的 `410×502` 画布、测试数据、页面状态、裁剪区域和缩放比例。
-- LVGL 复刻必须按背景、布局、素材、文字、控件状态和交互状态分层截图对比，不能只凭整页肉眼判断。
-- Agent 应在每个层级内自主执行“截图 → 对比 → 调整 → 再截图”，直到达到 Skill 规定的验收阈值；只在设计定稿、层级验收、host 整页验收和真机验收门禁请求用户确认。
-- LVGL host 未达到验收标准且未经用户确认前，不得进入上板阶段；host 仅作为中间验证环境，最终交付以真实手表验收为准。
-
-- Host 预览工具统一位于 `tools/ui_preview/`；板端正式 UI 仍位于 `main/ui/generated` 与 `main/ui/custom`，不要把 host mock 或构建产物放回 `main/ui`。
-- 当执行了修改 UI 布局、样式或交互的任务，并在后台重新编译运行了 host 模拟器（如 `agent_preview_host.exe`）时，**必须强制**额外执行一次截图脚本（如 `capture_apple_watch_s5_preview.ps1`），并将生成的截图作为绝对路径图片（`![预览图](/绝对路径/截图.png)`）附带在当次对话的回答中。
-- 严禁仅在后台静默启动模拟器进程而不提供截图。因为后台进程唤起的 GUI 窗口极易失去焦点、被编辑器遮挡，或因对话上下文截断而意外闪退。必须用稳定可见的截图作为 UI 修改的闭环交付证据。
+- 新页面、明显视觉重构、参考图复刻或“像素级复刻”任务，必须走仓库 Skill `vue-lvgl-pixel-ui`（Vue 定稿 → LVGL 复刻 → 分层截图对比 → host 验收 → 真机验收）；Vue 是视觉基准，不得为迁就 LVGL 实现静默修改 Vue 基准。窄范围逻辑修复、纯文案修改和不影响布局的 Bugfix 不强制重走完整流程。
+- Host 预览工具位于 `tools/ui_preview/`；host 只是中间验证环境，host 未过验收且未经用户确认前不得上板，最终交付以真实手表验收为准。
+- 修改了 UI 布局/样式/交互并在后台编译运行了 host 模拟器时，**必须**执行截图脚本（如 `capture_apple_watch_s5_preview.ps1`），并把截图作为绝对路径图片（`![预览图](/绝对路径/截图.png)`）附在当次回答中；严禁静默启动模拟器不提供截图。
 
 ## 代码注释规范（默认生效）
 
-- 适用于所有新增或修改的 `C/C++` 代码。
-- 注释优先解释“为什么这样做”“受什么约束”“改掉会有什么风险”，不要逐行翻译代码。
-- 新增/修改公开接口或非显然函数时补中文 `Doxygen`，实现内部说明优先使用 `//`。
-- 关键变量、共享状态、协议常量、超时、阈值、缓冲区大小等必须解释用途、单位、来源或边界。
-- 禁止无信息量注释，如“设置标志位”“调用初始化函数”“计数器加一”“进入循环”。
-- 禁止无说明保留被注释掉的旧代码、临时 workaround 或特殊初始化顺序。
-- 当任务目标是补注释或仅提升代码可读性时，默认只处理注释；若注释仍无法解决可读性问题，必须先获得用户明确允许，才可做最小重构。
-- 详细注释风格见 `docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md`。
-
-兼容边界：
-
-- 该规范不覆盖更高优先级的 system / developer 指令。
-- 该规范不会替代现有上下文库流程。
-- 该规范主要约束后续新增或修改代码，不要求一次性重构全部历史代码。
+- 适用于所有新增或修改的 `C/C++` 代码；注释解释“为什么这样做/受什么约束/改动风险”，不逐行翻译代码。
+- 新增/修改公开接口或非显然函数补中文 `Doxygen`，实现内部优先 `//`；关键变量、共享状态、协议常量、超时、阈值、缓冲区大小解释用途、单位、来源或边界。
+- 禁止无信息量注释（如“设置标志位”）、禁止无说明保留被注释掉的旧代码或临时 workaround。
+- 只补注释的任务默认只动注释；需动代码先获用户明确允许。详细风格见 `docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md` 与 `.agents/skills/embedded-c-cpp-comment-style`。
+- 兼容边界：不覆盖更高优先级的 system / developer 指令，不替代上下文库流程，不要求一次性重构全部历史代码。
 
 ## 当前项目专项规则触发条件（限定作用域）
 
@@ -214,26 +181,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## 当前项目专项规则（仅在触发时生效）
 
 - 显示/触摸、音频/存储、配网/联网、手表/屏幕路线的详细默认实践，统一以 `docs/context/knowledge/project/agent-operational-rules.md` 为准。
-- **CO5300 屏幕安全区（LVGL 布局硬性约束）**：屏幕物理尺寸 410×502，圆角矩形，四角有物理遮罩。新增或修改任何 `lv_obj_set_pos` / `lv_obj_set_size` 时，必须满足：
-  - 左边缘：`x ≥ 40`（x=24/25/28/30 均已实测被圆角截断，不够）
-  - 右边缘：`x + width ≤ 370`（即从 x=40 起最大宽度 330px）
-  - 上边缘：`y ≥ 20`
-  - 下边缘：`y + height ≤ 480`
-  - 例外：全屏背景图（410×502）、全宽居中文本（width=410 + text_align=center）、游戏引擎内相对于 stage 容器的局部坐标，不受此约束。
-  - 两列并排卡片标准布局：每列宽 160px，左列 x=40，右列 x=210，右边缘恰好 370。
-  - 详细实测数据见 `docs/context/knowledge/project/co5300-screen-layout-safe-zone.md`。
-
-- **LVGL 中文字体规则（项目级）**：当任务涉及 `lv_font_*`、`ui_chinese_fonts`、`main/ui/custom/fonts`、中文 UI 文案或动态中文文本时，必须使用项目级 Skill `D:\esp32S3\111\.agents\skills\lvgl-chinese-ui-fonts\SKILL.md`；不得修改或依赖用户级同名 Skill。
-  - 动态歌名、歌手名、通知正文和其他运行时中文文本必须使用通用 `common_5500` 字符集及项目已有 16px/22px 字号；缺字时必须扩充通用字符集并重新生成，禁止用页面小子集掩盖缺字。
-  - 固定文案的大字号字体必须按实际使用点生成页面子集，禁止无证据恢复整套 3500 字全库。
-  - 普通 LVGL UI 不得新增字体 fallback 链；`xiaozhi` 和 Hermes 的专用运行时字库按各自 owner 维护。
-
-- 命中 hearing-assist / danger reminder / ESP-DL 危险提醒任务时，产品边界、状态机、参数口径和当前固件归属统一以这 4 张卡为准：
-  - `docs/context/knowledge/project/hearing-assist-danger-alert-system-architecture.md`
-  - `docs/context/knowledge/project/hearing-assist-danger-alert-state-machine-and-notification-policy.md`
-  - `docs/context/knowledge/project/hearing-assist-danger-alert-parameter-defaults-table.md`
-  - `docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md`
-- 该产品线 active danger 默认只认 `siren / horn / alarm`；`glass_break / crash / impact` 默认只保留在 challenger / 扩展实验，不得静默并入 active 主线。
-- 涉及该产品线实现时，默认由 `danger_detection_service` 负责公共状态机与连续证据融合，`app_alert_manager` 负责提醒编排，`danger_detection_controller` 只负责页面展示；不要再把专页生命周期当作长期功能 owner。
+- **CO5300 屏幕安全区（LVGL 布局硬性约束）**：新增或修改任何 `lv_obj_set_pos` / `lv_obj_set_size` 必须满足：左 `x ≥ 40`、右 `x + width ≤ 370`、上 `y ≥ 20`、下 `y + height ≤ 480`。例外：全屏背景图（410×502）、全宽居中文本（width=410 + text_align=center）、游戏引擎 stage 局部坐标。两列卡片每列 160px：左 x=40、右 x=210。详见 `docs/context/knowledge/project/co5300-screen-layout-safe-zone.md`。
+- **LVGL 中文字体规则（项目级）**：涉及 `lv_font_*`、`ui_chinese_fonts`、`main/ui/custom/fonts`、中文 UI 文案或动态中文文本时，必须使用项目级 Skill `.agents/skills/lvgl-chinese-ui-fonts/SKILL.md`，不得修改或依赖用户级同名 Skill。动态中文文本用通用 `common_5500` 16/22px，缺字扩充通用字符集；固定文案大字号按使用点生成页面子集；普通 UI 不新增字体 fallback 链。
+- **危险识别产品线**：产品边界、状态机、参数口径、固件归属统一以 4 张卡为准：`hearing-assist-danger-alert-system-architecture` / `state-machine-and-notification-policy` / `parameter-defaults-table` / `firmware-mapping`（均在 `docs/context/knowledge/project/`）。active danger 只认 `siren / horn / alarm`；`glass_break / crash / impact` 只留在 challenger，不得静默并入主线。`danger_detection_service` 管状态机与连续证据融合，`app_alert_manager` 管提醒编排，`danger_detection_controller` 只管页面展示。
 - 先稳定再优化，先可观测再调优；先输出证据（日志、编译结果、关键指标）再下结论。`git` 提交信息和新增/修改代码注释优先使用中文，接口名、协议字段名、库名等不可翻译标识符保留英文。
   </INSTRUCTIONS>
