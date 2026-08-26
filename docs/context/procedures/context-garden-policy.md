@@ -48,6 +48,8 @@ status: active
 
 完成一个可提交的小闭环后，默认先更新对应 `plans/active/` 里的进度、验证状态和下一步。`CHANGELOG.md` 只记录后续有检索价值的摘要，例如关键验证、协议、owner、安全边界、门禁或后续 agent 必须知道的结论；不要把 `CHANGELOG.md` 当作普通命令流水账。
 
+`CHANGELOG.md` 是时间线记录：历史条目引用的已删除/已合并/已重命名路径是当时快照，不作为死链阻断项，也不要求回改历史条目；死链检查只针对 `knowledge/`、`plans/active/`、`procedures/`、`INDEX.agent.md` 等活文档。
+
 `handoffs/current-task.md` 已退场，不再维护。跨会话接手状态优先写到对应 `plans/active/` 的 `Progress / Decision Log / Validation / Next Step`；失败路线、特殊证据、可复用排查结论写入 `runs/`；稳定事实、长期 owner 或架构边界再进入 `knowledge/`。不得写真实 key/token，也不要把 `CHANGELOG.md` 复述成任务状态。
 
 失败路线、特殊证据、可复用排查结论写入 `runs/`；稳定事实、长期 owner 或架构边界再进入 `knowledge/`。
