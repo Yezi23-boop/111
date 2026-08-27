@@ -3,7 +3,6 @@ build/
 build_onenet_*/
 build-font-migration/
 sdkconfig.old
-.agents
 .codegraph/
 board_logs/
 # 组件管理器下载的依赖项（不应提交到版本控制）
