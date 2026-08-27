@@ -141,6 +141,23 @@ REQUIRED_SECTIONS_BY_MATCH = (
     ),
 )
 
+# 现有计划多使用中文标题或自定义变体，按等价标题别名匹配，避免把「有章节、只是命名不同」报成缺章节。
+REQUIRED_SECTION_ALIASES = {
+    "## Purpose / Big Picture": ("## Purpose / Big Picture", "## 目的", "## 目标"),
+    "## Scope / Non-Goals": ("## Scope / Non-Goals", "## 范围与非目标", "## 边界", "## 目标与边界", "## 接入边界与非目标"),
+    "## Progress": ("## Progress", "## 进度"),
+    "## Decision Log": ("## Decision Log", "## 决策记录", "## 固定架构决策", "## 参考 NetEaseMusic-MCP 的取舍"),
+    "## Validation and Acceptance": ("## Validation and Acceptance", "## 验证与验收", "## 测试计划"),
+    "## Idempotence and Recovery": ("## Idempotence and Recovery", "## 幂等与恢复", "## 安全与回退"),
+    "## Next Step": ("## Next Step", "## 下一步", "## 当前下一步", "## 下一步建议", "## 下一步最小动作"),
+    "## 背景": ("## 背景",),
+    "## 环境": ("## 环境",),
+    "## 操作": ("## 操作",),
+    "## 观测": ("## 观测",),
+    "## 结论": ("## 结论",),
+    "## 未验证风险": ("## 未验证风险",),
+}
+
 REQUIRED_SECTIONS_BY_EXACT = {}
 
 LIKELY_PATH_PREFIXES = (
@@ -258,13 +275,14 @@ def check_required_sections(rel_path: str, body: str) -> list[str]:
     else:
         for match_text, match_required in REQUIRED_SECTIONS_BY_MATCH:
             if match_text in rel_path:
-                if rel_path.endswith("README.md"):
+                if rel_path.endswith(("README.md", "plan-template.md", "run-template.md", "attempt-template.md")):
                     continue
                 required = match_required
                 break
 
     for heading in required:
-        if heading not in body:
+        aliases = REQUIRED_SECTION_ALIASES.get(heading, (heading,))
+        if not any(alias in body for alias in aliases):
             warnings.append(f"{rel_path}: 缺少推荐章节 `{heading}`")
 
     return warnings

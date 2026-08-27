@@ -2,13 +2,13 @@
 id: danger-sample-sd-closed-loop-plan
 tags: context, plans, execplan, danger-detection, espdl, sd-card, model-loop
 summary: 危险识别样本 SD 卡缓存与后续上传闭环执行计划。
-last_reviewed: 2026-07-04
+last_reviewed: 2026-08-07
 memory_type: task
 scope: task
 owners: main/features/danger_detection/danger_sample_recorder.c, components/espdl_inference/include/espdl_audio_runtime.h, components/espdl_inference/espdl_audio_runtime.cpp, main/features/danger_detection/danger_detection_service.c, main/services/memory_watch/watch_endpoint_service.c, server/watch_voice_endpoint/app.py
 triggers: danger sample recorder, SD 卡, /sdcard/danger_samples, 模型闭环, Alerting 样本, ESP-DL 音频缓存
 evidence_level: design
-status: active
+status: completed
 ---
 
 # 危险样本 SD 卡缓存与模型闭环执行计划

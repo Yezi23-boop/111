@@ -2,8 +2,8 @@
 id: axp2101-rail-control-evidence-plan-20260707
 tags: plan, active, axp2101, pmic, power-rail, low-power, runtime-save, board-power
 summary: 梳理 AXP2101 电源轨控制外设断电的安全推进路线：先只读输出状态与板级映射，再选择低风险外设做显式 opt-in 断电实验。
-status: active
-last_reviewed: 2026-07-07
+status: completed
+last_reviewed: 2026-08-07
 memory_type: project_plan
 scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power/power_policy.c, main/services/power/sleep_coordinator.c

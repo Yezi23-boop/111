@@ -2,8 +2,8 @@
 id: light-allowed-runtime-save-plan-20260707
 tags: plan, active, watch, low-power, standby, light-allowed, runtime-save, lvgl, power-policy
 summary: 将 LIGHT_ALLOWED 收敛为运行态深省电候选：30 秒 STANDBY 保持现有基础省电，5 分钟无交互后只新增 LVGL 进一步降频，不进入 ESP Light Sleep，不断 Wi-Fi 或 PMIC 主电源轨。
-status: active
-last_reviewed: 2026-07-07
+status: completed
+last_reviewed: 2026-08-07
 memory_type: project_plan
 scope: repo
 owners: main/ui/ui_refresh_policy.c, main/services/power/power_policy.c, main/services/network/network_service.c, main/services/power/sleep_coordinator.c, main/services/runtime/safety_monitor_policy.c
