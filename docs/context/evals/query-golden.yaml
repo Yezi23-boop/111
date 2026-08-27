@@ -99,3 +99,58 @@ queries:
     expected_top5:
       - docs/context/runs/README.md
       - docs/context/runs/attempt-template.md
+
+  # ---- 2026-08-07 扩面：覆盖域路由/当前模型/错误码等高频模式（期望值按实测排序固化）----
+
+  - id: danger-alert-domain
+    query: "危险识别 状态机 siren horn alarm"
+    expected_top1: docs/context/knowledge/project/espdl-audio-tdnn-port.md
+    expected_top3:
+      - docs/context/knowledge/project/espdl-audio-tdnn-port.md
+      - docs/context/knowledge/project/hearing-assist-danger-alert-state-machine-and-notification-policy.md
+
+  - id: current-danger-model
+    query: "V59 softdistill active 阈值 危险模型"
+    expected_top1: docs/context/knowledge/project/espdl-audio-tdnn-port.md
+    expected_top3:
+      - docs/context/knowledge/project/espdl-audio-tdnn-port.md
+      - docs/context/knowledge/project/hearing-assist-danger-alert-firmware-mapping.md
+      - docs/context/knowledge/project/espdl-danger-model-plan-anchor.md
+
+  - id: ble-wechat-miniapp
+    query: "微信小程序 BLE 配网 notify 分片"
+    expected_top1: docs/context/knowledge/project/ble-provisioning-wechat-miniapp.md
+    expected_top3:
+      - docs/context/knowledge/project/ble-provisioning-wechat-miniapp.md
+
+  - id: low-power-framework
+    query: "低功耗 power_budget sleep 框架"
+    expected_top1: docs/context/knowledge/project/low-power-framework-architecture.md
+    expected_top3:
+      - docs/context/knowledge/project/low-power-framework-architecture.md
+
+  - id: chinese-fonts-common5500
+    query: "中文字体 common_5500 16px 22px"
+    expected_top1: docs/context/knowledge/project/lvgl-chinese-ui-binfonts.md
+    expected_top3:
+      - docs/context/knowledge/project/lvgl-chinese-ui-binfonts.md
+
+  - id: qmi8658c-board-evidence
+    query: "QMI8658C GPIO21 INT1 中断"
+    expected_top1: docs/context/knowledge/esp32-s3/qmi8658c-minimal-probe.md
+    expected_top3:
+      - docs/context/knowledge/esp32-s3/qmi8658c-minimal-probe.md
+
+  - id: error-no-mem-runs
+    query: "ESP_ERR_NO_MEM DMA"
+    scope: runs
+    expected_top1: docs/context/runs/2026-06-27-attempt-ble-presence-internal-heap-guard.md
+    expected_top3:
+      - docs/context/runs/2026-06-27-attempt-ble-presence-internal-heap-guard.md
+
+  - id: owner-query-audio
+    query: "音频 owner audio_codec session"
+    expected_top1: docs/context/knowledge/project/runtime-owner-contract.md
+    expected_top3:
+      - docs/context/knowledge/project/runtime-owner-contract.md
+      - docs/context/knowledge/project/owner-snapshot-lifecycle-freertos-contract.md
