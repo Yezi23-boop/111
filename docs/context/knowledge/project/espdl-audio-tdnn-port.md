@@ -20,7 +20,7 @@ status: active
 - 主工程 active 模型：`edge_mix_teacher_dscnn_medium_v59_v54_anchor_softdistill_t90_20260608.espdl`（V59 softdistill），类别顺序 `non_danger / danger`。
 - **运行阈值 0.90**。注意区分 `runtime_threshold`（主工程固件实际运行值）与 `eval_threshold`（PC/样板工程评估值）；历史 V3.3 曾把评估 0.40 与运行 0.80 混谈，后续禁止再混。
 - 接入只替换 active `.espdl` 与 rodata 符号，**不改变** `danger_detection_service` 的连续窗口（2 连窗确认/3 连窗清除/2s hold/cooldown）和 active danger 边界。
-- 板端状态：V59 样板工程 `Model::test()` 已过；主工程 `idf.py build` 已过；**主工程板端 app-flash/monitor 与启动期 `Model::test()` 日志待补**。
+- 板端状态：V59 样板工程 `Model::test()` 已过；主工程 `idf.py build` 已过；**主工程板端 app-flash/monitor 与启动期 `Model::test()` 日志待补**。该待办归固件任务：下次危险识别板测时顺带闭环（app-flash + agent_serial_monitor 采集启动期 `Model::test()` 日志），不为补文档单独烧板。
 - 版本判断先看训练仓库 `models/espdl_registry/model_release_table.md`（`board_verified/` 为已上板回退锚点，`in_progress/` 不得直接覆盖 active）。
 - active danger 边界：主线只认 `siren / horn / alarm`；`glass_break / crash / impact` 只属于 extended challenger，不得静默并入 active 主线。
 
