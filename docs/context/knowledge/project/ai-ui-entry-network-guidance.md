@@ -1,8 +1,8 @@
 ---
 id: ai-ui-entry-network-guidance
 tags: [project, ui, official-chat, lvgl, gui-guider, network-service]
-summary: 记录当前仓库在替换 GUI Guider 新导出层并升级到 LVGL 9.3 后，如何保持主菜单 AI 图标继续跳转到 hand-written AI 页面，以及当前 AI 页面布局与联网引导方案。
-last_reviewed: 2026-04-17
+summary: 记录当前仓库在替换 GUI Guider 新导出层并升级到 LVGL 9.5 后，如何保持主菜单 AI 图标继续跳转到手写 AI 页面，以及当前 AI 页面布局与联网引导方案。
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: main/ui/custom/ai_ui_controller.c, main/ui/custom/ai_chat_view.c, main/services/network/network_service.c
@@ -116,12 +116,12 @@ status: active
 
 - GUI Guider 新导出层可以整体替换，但 AI 业务桥接继续放在 `main/ui/custom`，这样后续再次导出 UI 时只需要重补很少的桥接点。
 - `events_init.c` 中把 AI 图标事件重新指向 `ai_ui_open()`，是当前最小、最可回退的做法。
-- 升级到 LVGL 9.3 后，GUI Guider 新导出层与运行时字体链的版本方向终于一致，不再需要维持 9.2.2 时期那套长期兼容假设。
+- 升级到 LVGL 9.5 后，GUI Guider 新导出层与运行时字体链的版本方向一致，不再需要维持 9.2.2/9.3 时期那套长期兼容假设。
 - 当前文档中若再看到 `ai_experiment_ui.c` 或 `main_ai_chat_experiment.c`，应视为历史背景，而不是当前仓库有效入口。
 
 ## 后续建议
 
 - 下一步优先做真机验证，确认新 generated 层下主菜单、时间页、壁纸页和 AI 入口都正常。
-- 继续确认 AI 页面中文、聊天区滚动和运行时字体链在 `LVGL 9.3.0` 下的真实表现。
+- 继续确认 AI 页面中文、聊天区滚动和运行时字体链在 `LVGL 9.5.0` 下的真实表现。
 - 再下一步处理离开 AI 页面后的 `leave_foreground` 和音频 owner 行为边界，避免与音乐播放器等功能冲突。
 - 字体资源链的当前状态见 [`ai-font-assets`](./ai-font-assets.md)。

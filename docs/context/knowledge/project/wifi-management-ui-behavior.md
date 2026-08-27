@@ -2,7 +2,7 @@
 id: wifi-management-ui-behavior
 tags: [project, wifi, ui, provisioning, ble, softap, network-manager]
 summary: 记录主界面 Wi-Fi / Bluetooth 图标，以及全屏 Wi-Fi 管理页在当前仓库中的真实行为边界。
-last_reviewed: 2026-04-25
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: component
 owners: main/ui/custom/wifi_management_controller.c, main/ui/custom/main_dropdown_controller.c

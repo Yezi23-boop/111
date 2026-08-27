@@ -2,7 +2,7 @@
 id: softap-captive-portal-auto-popup
 tags: [project, wifi, softap, captive-portal, ap-portal, provisioning]
 summary: 记录当前仓库 SoftAP 自动弹页能力的真实归属边界：官方 `prov-*` endpoint 负责真实配网，自动弹页由 `ap_portal_adapter` 外挂的 DNS 劫持、404 redirect 与 DHCP Option 114 壳层提供。
-last_reviewed: 2026-04-24
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: component
 owners: components/ap_portal_adapter/src/ap_portal_adapter.c, components/network_manager/src/network_manager.c

@@ -2,7 +2,7 @@
 id: gui-guider-visual-editor-runtime-boundary
 tags: project, ui, lvgl, gui-guider, architecture, runtime-boundary
 summary: 固定 GUI Guider 在当前仓库里的边界：它是视觉主编辑器和 intent 入口生成器，不是 UI runtime、导航总线、资源 owner 或产品状态机。
-last_reviewed: 2026-05-16
+last_reviewed: 2026-08-07
 memory_type: project_knowledge
 scope: repo
 owners: main/ui, main/ui/generated, main/ui/custom, main/ui/lvgl_task.c, main/features/alerts, components/lvgl_port

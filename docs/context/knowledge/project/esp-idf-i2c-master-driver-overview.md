@@ -2,7 +2,7 @@
 id: esp-idf-i2c-master-driver-overview
 tags: project, esp-idf, i2c, driver, esp32-s3
 summary: ESP-IDF 5.3+ 新版 I2C master bus 驱动的对象模型、常用 API 与共享总线注意事项。
-last_reviewed: 2026-04-10
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/i2c_manager, tests/test_i2c_master_bus_sdkconfig.py

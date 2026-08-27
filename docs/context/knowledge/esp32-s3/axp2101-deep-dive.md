@@ -2,7 +2,7 @@
 id: axp2101-deep-dive
 tags: esp32-s3, axp2101, pmic, battery, charger, irq, power
 summary: AXP2101 在当前 ESP32-S3 手表板上的功能块、关键寄存器组、状态机与接入边界梳理。
-last_reviewed: 2026-04-09
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: board
 owners: components/axp2101, main/app/board_power.c

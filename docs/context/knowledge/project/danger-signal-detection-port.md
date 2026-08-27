@@ -2,7 +2,7 @@
 id: danger-signal-detection-port
 tags: project, audio, traffic-inference, lvgl, alert, esp32-s3
 summary: 记录危险音频识别移植、option_6 页面生命周期、统一提醒链路和资源释放边界。
-last_reviewed: 2026-04-08
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/traffic_inference, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c

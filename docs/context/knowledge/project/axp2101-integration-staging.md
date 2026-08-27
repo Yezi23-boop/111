@@ -2,7 +2,7 @@
 id: axp2101-integration-staging
 tags: project, axp2101, pmic, power, i2c
 summary: 当前仓库接入 AXP2101 的推荐分层、最小只读阶段和后续放权边界。
-last_reviewed: 2026-04-09
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c

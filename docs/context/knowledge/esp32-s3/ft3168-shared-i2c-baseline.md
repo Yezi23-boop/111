@@ -2,7 +2,7 @@
 id: ft3168-shared-i2c-baseline
 tags: esp32-s3, ft3168, touch, i2c, shared-bus, lvgl
 summary: FT3168 在当前项目共享 I2C 总线下的通信上限、休眠约束和上电时序基线。
-last_reviewed: 2026-03-11
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: board
 owners: components/touch_ft5x06, components/lvgl_port

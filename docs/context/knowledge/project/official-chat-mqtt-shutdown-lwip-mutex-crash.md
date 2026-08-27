@@ -2,7 +2,7 @@
 id: official-chat-mqtt-shutdown-lwip-mutex-crash
 tags: [project, official-chat, mqtt, lwip, shutdown, esp32s3]
 summary: 记录 official_chat 在 MQTT 模式下离开 AI 页面时，`esp_mqtt_client_destroy()` 命中 `sys_mutex_lock` 断言的根因与最小修复策略。
-last_reviewed: 2026-04-01
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: main/services/official_chat_service.c, components/official_chat, components/network_manager
@@ -36,7 +36,7 @@ status: active
 
 ## 关键代码证据
 
-- `D:\esp32S3\111\main\official_chat_service.c`
+- `main/services/official_chat_service.c`（正文原引用的 `main/official_chat_service.c` 是目录重构前旧路径）
   - 退出页时的服务停机逻辑原先仅把 `connecting / listening / speaking` 视为“需要等静默”的状态。
 - `D:\esp32S3\111\components\official_chat\protocols\mqtt_protocol.cc`
   - `StopMqttClientLocked()` 原先直接 `esp_mqtt_client_stop()` 后立刻 `esp_mqtt_client_destroy()`，没有先显式请求 disconnect，也没有等待 `MQTT_EVENT_DISCONNECTED`。

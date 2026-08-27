@@ -2,7 +2,7 @@
 id: traffic-inference-edge-impulse-manual-v5-integration
 tags: [project, audio, traffic-inference, edge-impulse, esp32s3]
 summary: 记录当前仓库 Edge Impulse traffic_inference 模型目录选择；`manual_v5` 提供 SDK，`manual_v7_1s` 提供当前编译模型。
-last_reviewed: 2026-05-12
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/traffic_inference, main/features/danger_detection/danger_detection_service.c

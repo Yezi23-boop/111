@@ -2,7 +2,7 @@
 id: context-plans-active-readme
 tags: context, plans, task-memory
 summary: 说明 active plans 目录用于维护进行中的复杂任务执行计划和活文档进度。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-08-07
 memory_type: task
 scope: task
 owners: docs/context/plans/active

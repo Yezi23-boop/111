@@ -2,7 +2,7 @@
 id: context-procedures-readme
 tags: context, procedures, workflow
 summary: 说明 procedures 目录用于沉淀可重复执行的标准流程、排查顺序和操作套路。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-08-07
 memory_type: procedural
 scope: repo
 owners: scripts/context, docs/context

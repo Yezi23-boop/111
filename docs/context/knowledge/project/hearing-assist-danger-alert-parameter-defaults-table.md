@@ -2,7 +2,7 @@
 id: hearing-assist-danger-alert-parameter-defaults-table
 tags: project, product, hearing-assist, danger-detection, parameters, defaults, notification
 summary: 面向听障用户的手表端危险提醒功能参数与默认值建议表，统一收敛产品常量、规则固定数值可调项、可调默认值，以及用户可配置项。
-last_reviewed: 2026-05-05
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, components/espdl_inference

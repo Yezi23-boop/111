@@ -2,7 +2,7 @@
 id: pcf85063atl-minimal-probe
 tags: esp32-s3, rtc, pcf85063atl, i2c, probe, wakeup
 summary: PCF85063ATL 在当前板上的最小探测地址、用途边界和接入顺序摘要。
-last_reviewed: 2026-04-09
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: board
 owners: docs/context/knowledge/esp32-s3/pcf85063atl-minimal-probe.md

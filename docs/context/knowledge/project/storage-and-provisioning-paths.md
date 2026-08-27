@@ -2,7 +2,7 @@
 id: storage-and-provisioning-paths
 tags: project, storage, sd, spiffs, wifi, provisioning, html
 summary: 当前仓库的存储路径、SD 总线选择和 AP 配网页面嵌入方式摘要。
-last_reviewed: 2026-04-25
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/sd_card/sd_manager.c, components/ap_portal_adapter/web, components/network_provisioning_adapter

@@ -2,7 +2,7 @@
 id: network-provisioning-custom-upper-architecture
 tags: [project, architecture, wifi, provisioning, ble, softap, esp-idf]
 summary: 记录当前仓库向“官方 network_provisioning + 自定义上层网络架构”迁移的长期方向、组件分层与当前落地边界。
-last_reviewed: 2026-04-25
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/network_manager, components/network_provisioning_adapter, components/ap_portal_adapter, main/services/network/network_service.c

@@ -2,7 +2,7 @@
 id: axp2101-power-component-design
 tags: project, axp2101, power, pmic, design, rtc
 summary: 当前手表项目接入 AXP2101 新电源管理组件的分层设计、接口草案、初始化时序、阶段边界与验证闭环。
-last_reviewed: 2026-04-10
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/axp2101, main/app/board_power.c, main/services/power/power_service.c

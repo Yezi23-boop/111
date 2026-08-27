@@ -2,7 +2,7 @@
 id: hearing-assist-danger-alert-firmware-mapping
 tags: project, hearing-assist, danger-detection, firmware, mapping, esp-dl, alerts
 summary: 将听障危险提醒设计参数映射到当前固件实现，明确各参数的归属模块、当前代码行为、实现状态与和目标架构的差距。
-last_reviewed: 2026-05-25
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c, components/espdl_inference, main/ui/custom/danger_detection_controller.c

@@ -2,7 +2,7 @@
 id: context-plan-template
 tags: context, plans, template, execplan
 summary: 复杂任务执行计划模板，适用于跨文件、多轮验证或跨会话推进的工作。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-08-07
 memory_type: task
 scope: task
 owners: docs/context/plans/active

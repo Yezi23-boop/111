@@ -2,7 +2,7 @@
 id: agent-operational-rules
 tags: [project, agent, workflow, esp-idf, flash, monitor, hardware, ui, lvgl]
 summary: 当前仓库面向 agent 的执行型详细规则，覆盖 IDF 环境、build/flash/monitor、硬件安全边界、UI 状态读取原则和项目专项默认实践。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-08-07
 memory_type: procedural
 scope: repo
 owners: AGENTS.md, docs/context/knowledge/project/agent-operational-rules.md

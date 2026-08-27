@@ -2,7 +2,7 @@
 id: hearing-assist-danger-alert-system-architecture
 tags: project, product, architecture, hearing-assist, danger-detection, audio, esp-dl
 summary: 面向听障用户的手表端危险声音提醒功能长期架构草案，固定产品目标、系统分层、主线 danger 定义、非目标和演进路线，避免后续讨论被当前模型或特征实现绑死。
-last_reviewed: 2026-05-04
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/espdl_inference, main/features/danger_detection/danger_detection_service.c, main/features/alerts/app_alert_manager.c

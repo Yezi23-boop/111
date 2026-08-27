@@ -2,7 +2,7 @@
 id: nimble-hci-init-minimal-config
 tags: [project, ble, provisioning, nimble, esp32-s3, sdkconfig]
 summary: 记录 ESP32-S3 板端在单击进入 BLE 后出现 `hci inits failed / nimble host init failed` 时，当前仓库采用的最小 NimBLE peripheral 配置收敛方案，以及 `sdkconfig.defaults` 中无效 BTDM 键的处理。
-last_reviewed: 2026-04-03
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: components/network_provisioning_adapter, components/ble_control

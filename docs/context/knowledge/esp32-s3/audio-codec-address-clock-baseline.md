@@ -2,7 +2,7 @@
 id: audio-codec-address-clock-baseline
 tags: esp32-s3, audio, codec, es8311, es7210, i2c, i2s, clock
 summary: ES8311 与 ES7210 在当前项目中的地址编码、时钟能力和代码映射基线。
-last_reviewed: 2026-03-11
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: board
 owners: components/audio_codec, main/services/audio_diag/audio_mic_test_service.c

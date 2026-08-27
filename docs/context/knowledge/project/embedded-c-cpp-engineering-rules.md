@@ -2,7 +2,7 @@
 id: embedded-c-cpp-engineering-rules
 tags: project, rules, esp32, mcu, embedded, c-cpp
 summary: 本仓库默认采用的 ESP32/MCU 嵌入式 C/C++ 工程规则，覆盖 App/UI、Service、Manager/Domain、Driver Adapter、Vendor/SDK 分层、接口、复杂度、资源、安全和算法/AI 模块边界。
-last_reviewed: 2026-05-05
+last_reviewed: 2026-08-07
 memory_type: procedural
 scope: repo
 owners: AGENTS.md, docs/context/knowledge/project/embedded-c-cpp-engineering-rules.md

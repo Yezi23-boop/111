@@ -2,7 +2,7 @@
 id: startup-init-and-blocking-chain
 tags: project, startup, init, wifi, blocking, lvgl, audio
 summary: 当前仓库从上电到 UI 启动的初始化顺序、后台联网分工和首启风险摘要。
-last_reviewed: 2026-04-25
+last_reviewed: 2026-08-07
 memory_type: semantic
 scope: repo
 owners: main/app/app_main.c, main/app/hardware_init.c, main/services/network/network_service.c, main/services/power/power_service.c
