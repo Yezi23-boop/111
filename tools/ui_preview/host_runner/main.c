@@ -40,7 +40,6 @@ typedef struct {
     bool open_hermes_detail;
     bool open_ai;
     bool open_music;
-    bool open_music_picker;
     bool open_music_catalog;
     bool open_music_account;
     bool open_dropdown;
@@ -56,7 +55,6 @@ typedef struct {
     bool open_notification_bubble;
     bool dump_wallpaper_layout;
     bool dump_function_layout;
-    bool freeze_animations;
     const char *capture_path;
 } preview_args_t;
 
@@ -162,10 +160,6 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         {
             args.open_music = true;
         }
-        else if (strcmp(argv[i], "--open-music-picker") == 0)
-        {
-            args.open_music_picker = true;
-        }
         else if (strcmp(argv[i], "--open-music-catalog") == 0)
         {
             args.open_music_catalog = true;
@@ -229,10 +223,6 @@ static preview_args_t preview_parse_args(int argc, char **argv)
         else if (strcmp(argv[i], "--dump-wallpaper-layout") == 0)
         {
             args.dump_wallpaper_layout = true;
-        }
-        else if (strcmp(argv[i], "--freeze-animations") == 0)
-        {
-            args.freeze_animations = true;
         }
         else if (strcmp(argv[i], "--dump-function-layout") == 0)
         {
@@ -380,10 +370,6 @@ int main(int argc, char **argv)
     {
         ai_ui_open();
     }
-    else if (args.open_music_picker)
-    {
-        music_controller_preview_open_source_picker();
-    }
     else if (args.open_music_catalog)
     {
         music_controller_preview_open_catalog();
@@ -441,11 +427,6 @@ int main(int argc, char **argv)
     else if (args.open_game_index != 0)
     {
         mini_games_controller_open_preview_game(args.open_game_index);
-    }
-
-    if (args.freeze_animations && args.open_music)
-    {
-        music_controller_preview_freeze_orbit();
     }
 
     uint32_t last_tick = SDL_GetTicks();

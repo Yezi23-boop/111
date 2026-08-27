@@ -1,0 +1,21 @@
+{
+  "layer": "music-clean-catalog",
+  "passed": false,
+  "reference": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\vue-clean-rollback-catalog.png",
+  "actual": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\lvgl-clean-rollback-catalog.png",
+  "canvas": "410x502",
+  "crop": {
+    "x": 0,
+    "y": 0,
+    "width": 410,
+    "height": 502
+  },
+  "channel_tolerance": 8,
+  "max_mismatch_ratio": 0.005,
+  "mismatch_pixels": 48898,
+  "compared_pixels": 205820,
+  "mismatch_ratio": 0.23757652317559033,
+  "mean_absolute_error": 10.177541865060086,
+  "max_channel_difference": 224,
+  "diff_image": "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\comparison-clean-rollback-catalog\\music-clean-catalog-diff.png"
+}

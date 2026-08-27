@@ -6,7 +6,6 @@ param(
     [switch]$OpenHermesDetail,
     [switch]$OpenAi,
     [switch]$OpenMusic,
-    [switch]$OpenMusicPicker,
     [switch]$OpenMusicCatalog,
     [switch]$OpenMusicAccount,
     [switch]$OpenDropdown,
@@ -21,8 +20,7 @@ param(
     [switch]$OpenGame2048,
     [switch]$OpenGameFlappy,
     [switch]$OpenGameDino,
-    [switch]$OpenNotificationBubble,
-    [switch]$FreezeAnimations
+    [switch]$OpenNotificationBubble
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,9 +42,6 @@ if (-not (Test-Path $outDir)) {
 }
 
 $captureArgs = @("--capture", $OutputPath)
-if ($FreezeAnimations) {
-    $captureArgs = @("--freeze-animations") + $captureArgs
-}
 if ($OpenHermes) {
     $captureArgs = @("--open-hermes") + $captureArgs
 } elseif ($OpenHermesInbox) {
@@ -55,8 +50,6 @@ if ($OpenHermes) {
     $captureArgs = @("--open-hermes-detail") + $captureArgs
 } elseif ($OpenAi) {
     $captureArgs = @("--open-ai") + $captureArgs
-} elseif ($OpenMusicPicker) {
-    $captureArgs = @("--open-music-picker") + $captureArgs
 } elseif ($OpenMusicCatalog) {
     $captureArgs = @("--open-music-catalog") + $captureArgs
 } elseif ($OpenMusicAccount) {
@@ -102,9 +95,6 @@ if (-not (Test-Path $OutputPath)) {
 
 # 截图进程会自行退出；重新拉起一个独立预览窗口，避免 exe 被截图进程占用。
 $runArgs = @()
-if ($FreezeAnimations) {
-    $runArgs += "--freeze-animations"
-}
 if ($OpenHermes) {
     $runArgs += "--open-hermes"
 } elseif ($OpenHermesInbox) {
@@ -113,8 +103,6 @@ if ($OpenHermes) {
     $runArgs += "--open-hermes-detail"
 } elseif ($OpenAi) {
     $runArgs += "--open-ai"
-} elseif ($OpenMusicPicker) {
-    $runArgs += "--open-music-picker"
 } elseif ($OpenMusicCatalog) {
     $runArgs += "--open-music-catalog"
 } elseif ($OpenMusicAccount) {

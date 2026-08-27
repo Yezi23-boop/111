@@ -1,0 +1,21 @@
+﻿{
+    "layer":  "music-static-main",
+    "passed":  false,
+    "reference":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\vue-static-rollback-main.png",
+    "actual":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\lvgl-static-rollback-main.png",
+    "canvas":  "410x502",
+    "crop":  {
+                 "x":  0,
+                 "y":  0,
+                 "width":  410,
+                 "height":  502
+             },
+    "channel_tolerance":  8,
+    "max_mismatch_ratio":  0.005,
+    "mismatch_pixels":  27848,
+    "compared_pixels":  205820,
+    "mismatch_ratio":  0.13530269167233505,
+    "mean_absolute_error":  7.6637093900819488,
+    "max_channel_difference":  228,
+    "diff_image":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\comparison-static-rollback-main\\music-static-main-diff.png"
+}

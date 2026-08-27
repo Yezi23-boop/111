@@ -1,0 +1,21 @@
+﻿{
+    "layer":  "music-static-picker",
+    "passed":  false,
+    "reference":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\vue-static-rollback-picker.png",
+    "actual":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\lvgl-static-rollback-picker.png",
+    "canvas":  "410x502",
+    "crop":  {
+                 "x":  0,
+                 "y":  0,
+                 "width":  410,
+                 "height":  502
+             },
+    "channel_tolerance":  8,
+    "max_mismatch_ratio":  0.005,
+    "mismatch_pixels":  62842,
+    "compared_pixels":  205820,
+    "mismatch_ratio":  0.30532504129822174,
+    "mean_absolute_error":  9.8038723156155871,
+    "max_channel_difference":  221,
+    "diff_image":  "D:\\esp32S3\\111\\tools\\ui_preview\\artifacts\\music\\comparison-static-rollback-picker\\music-static-picker-diff.png"
+}

@@ -38,9 +38,6 @@ static const lv_point_precise_t kMusicModePoints[] = {
     {9, 8},
 };
 
-/* Orbit 只使用可由 LVGL 直接绘制的圆弧和点；动画阶段旋转这两个 layer。 */
-static const lv_color_t kMusicOrbitColor = LV_COLOR_MAKE(158, 203, 178);
-
 extern const lv_image_dsc_t _music_artwork_RGB565A8_104x104;
 
 /** UI 仅缓存最近三批目录数据；曲目正文放在 PSRAM。 */
@@ -78,13 +75,6 @@ struct music_view
     lv_obj_t *account_status;
     lv_obj_t *qr_canvas;
     lv_obj_t *track_panel;
-    lv_obj_t *track_activate_button;
-    lv_obj_t *orbit_outer_layer;
-    lv_obj_t *orbit_outer_arc;
-    lv_obj_t *orbit_outer_dot;
-    lv_obj_t *orbit_inner_layer;
-    lv_obj_t *orbit_inner_arc;
-    lv_obj_t *orbit_inner_dot;
     lv_obj_t *previous_button;
     lv_obj_t *next_button;
     uint8_t *qr_buffer;
@@ -92,8 +82,6 @@ struct music_view
     lv_obj_t *toggle_label;
     lv_obj_t *mode_button;
     lv_obj_t *mode_label;
-    lv_obj_t *source_picker_panel;
-    lv_obj_t *source_picker_title;
     music_view_source_context_t source_context[4];
     music_view_track_context_t track_context[MUSIC_VIEW_CATALOG_CACHE_CAPACITY];
     music_service_catalog_track_t *catalog_tracks;
@@ -106,7 +94,6 @@ struct music_view
     music_view_config_t config;
     bool catalog_visible;
     bool account_visible;
-    bool source_picker_visible;
     bool catalog_snapshot_applied;
     bool catalog_load_pending;
     bool playing;
@@ -309,146 +296,11 @@ static lv_obj_t *music_view_icon_button(lv_obj_t *parent, lv_coord_t x,
     return button;
 }
 
-static lv_obj_t *music_view_orbit_layer(lv_obj_t *parent, lv_coord_t x,
-                                        lv_coord_t y, lv_coord_t width,
-                                        lv_coord_t height, lv_coord_t dot_x,
-                                        lv_coord_t dot_y, lv_coord_t dot_size,
-                                        lv_value_precise_t start_angle,
-                                        lv_value_precise_t end_angle,
-                                        lv_obj_t **arc_out,
-                                        lv_obj_t **dot_out)
-{
-    lv_obj_t *layer = lv_obj_create(parent);
-    lv_obj_set_size(layer, width, height);
-    lv_obj_set_pos(layer, x, y);
-    lv_obj_set_style_bg_opa(layer, LV_OPA_TRANSP,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(layer, 0,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(layer, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_clear_flag(layer, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_transform_pivot_x(layer, width / 2,
-                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_transform_pivot_y(layer, height / 2,
-                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_transform_scale_y(layer, 159,
-                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_transform_rotation(layer, -130,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    lv_obj_t *arc = lv_arc_create(layer);
-    lv_obj_set_size(arc, width, height);
-    lv_obj_set_pos(arc, 0, 0);
-    lv_arc_set_bg_angles(arc, 0, 360);
-    lv_arc_set_angles(arc, start_angle, end_angle);
-    lv_obj_set_style_arc_width(arc, 0, LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(arc, 2, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(arc, kMusicOrbitColor, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_opa(arc, (lv_opa_t)190, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
-    lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *dot = lv_obj_create(layer);
-    lv_obj_set_size(dot, dot_size, dot_size);
-    lv_obj_set_pos(dot, dot_x, dot_y);
-    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(dot, lv_color_hex(0xb5efd0),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(dot, (lv_opa_t)210,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(dot, 0,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(dot, 6,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_opa(dot, (lv_opa_t)70,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_color(dot, lv_color_hex(0xb5efd0),
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-
-    if (arc_out != NULL)
-    {
-        *arc_out = arc;
-    }
-    if (dot_out != NULL)
-    {
-        *dot_out = dot;
-    }
-    return layer;
-}
-
-static void music_view_set_transport_style(music_view_t *view, bool polished)
-{
-    if (view == NULL)
-    {
-        return;
-    }
-
-    const lv_obj_t *secondary[] = {view->previous_button, view->next_button};
-    for (size_t i = 0U; i < sizeof(secondary) / sizeof(secondary[0]); ++i)
-    {
-        lv_obj_t *button = (lv_obj_t *)secondary[i];
-        lv_obj_set_style_bg_opa(button, polished ? LV_OPA_TRANSP : LV_OPA_70,
-                                 LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_border_width(button, polished ? 0 : 1,
-                                      LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_border_opa(button, polished ? LV_OPA_TRANSP
-                                                     : (lv_opa_t)36,
-                                    LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_shadow_width(button, 0,
-                                      LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-
-    lv_obj_set_style_border_width(view->toggle_button, polished ? 0 : 1,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(view->toggle_button,
-                                polished ? LV_OPA_TRANSP : (lv_opa_t)36,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(view->toggle_button, polished ? 18 : 0,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_opa(view->toggle_button,
-                                polished ? (lv_opa_t)45 : LV_OPA_TRANSP,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_color(view->toggle_button, lv_color_hex(0x8edaB1),
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_spread(view->toggle_button, polished ? 3 : 0,
-                                   LV_PART_MAIN | LV_STATE_DEFAULT);
-}
-
-static void music_view_orbit_rotation_cb(void *obj, int32_t rotation)
-{
-    lv_obj_set_style_transform_rotation((lv_obj_t *)obj, rotation,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-}
-
-static void music_view_start_orbit_animation(lv_obj_t *layer,
-                                             int32_t end_rotation,
-                                             uint32_t duration)
-{
-    lv_anim_t animation;
-    lv_anim_init(&animation);
-    lv_anim_set_var(&animation, layer);
-    lv_anim_set_values(&animation, -130, end_rotation);
-    lv_anim_set_duration(&animation, duration);
-    lv_anim_set_repeat_count(&animation, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&animation, lv_anim_path_linear);
-    lv_anim_set_exec_cb(&animation, music_view_orbit_rotation_cb);
-    lv_anim_start(&animation);
-}
-
 static void music_view_back_event(lv_event_t *event)
 {
     music_view_t *view = (music_view_t *)lv_event_get_user_data(event);
     if (view == NULL)
     {
-        return;
-    }
-    if (view->source_picker_visible)
-    {
-        music_view_show_sources(view);
         return;
     }
     if (view->catalog_visible && view->config.catalog_back_cb != NULL)
@@ -542,64 +394,6 @@ static void music_view_next_event(lv_event_t *event)
     {
         view->config.next_cb(view->config.user_data);
     }
-}
-
-static void music_view_show_source_picker(music_view_t *view)
-{
-    if (view == NULL || view->source_picker_panel == NULL)
-    {
-        return;
-    }
-
-    view->source_picker_visible = true;
-    view->catalog_visible = false;
-    view->account_visible = false;
-    lv_obj_add_flag(view->orbit_outer_layer, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->orbit_inner_layer, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->previous_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->toggle_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->next_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->mode_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->track_activate_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(view->source_picker_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(view->source_picker_panel);
-
-    lv_label_set_text(view->source_picker_title, "选择歌单");
-    for (size_t i = 0U; i < 4U; ++i)
-    {
-        lv_obj_t *button = view->source_buttons[i];
-        lv_obj_set_size(button, 142, 72);
-        lv_obj_set_pos(button, (lv_coord_t)(58 + (i % 2U) * 152),
-                       (lv_coord_t)(280 + (i / 2U) * 82));
-        lv_obj_set_style_radius(button, 16,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_bg_opa(button, (lv_opa_t)195,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_border_width(button, 1,
-                                      LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_border_opa(button, (lv_opa_t)70,
-                                    LV_PART_MAIN | LV_STATE_DEFAULT);
-
-        /* Vue 选择层没有来源卡片的左侧装饰线，箭头按 72px 卡片垂直居中。 */
-        lv_obj_t *accent = lv_obj_get_child(button, 1);
-        if (accent != NULL)
-        {
-            lv_obj_add_flag(accent, LV_OBJ_FLAG_HIDDEN);
-        }
-        lv_obj_t *chevron = lv_obj_get_child(button, 2);
-        if (chevron != NULL)
-        {
-            lv_obj_set_pos(chevron, 121, 30);
-        }
-        lv_obj_remove_flag(button, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(button);
-    }
-}
-
-static void music_view_track_panel_event(lv_event_t *event)
-{
-    music_view_t *view = (music_view_t *)lv_event_get_user_data(event);
-    music_view_show_source_picker(view);
 }
 
 static void music_view_mode_event(lv_event_t *event)
@@ -905,13 +699,6 @@ music_view_t *music_view_create(const music_view_config_t *config)
         lv_obj_add_flag(view->qr_canvas, LV_OBJ_FLAG_HIDDEN);
     }
 
-    view->orbit_outer_layer = music_view_orbit_layer(
-        view->screen, 40, 167, 330, 313, 162, 20, 5, 216, 84,
-        &view->orbit_outer_arc, &view->orbit_outer_dot);
-    view->orbit_inner_layer = music_view_orbit_layer(
-        view->screen, 72, 199, 266, 266, 131, 23, 4, 22, 210,
-        &view->orbit_inner_arc, &view->orbit_inner_dot);
-
     view->track_panel = lv_obj_create(view->screen);
     lv_obj_set_size(view->track_panel, 330, 132);
     lv_obj_set_pos(view->track_panel, 40, 78);
@@ -990,23 +777,6 @@ music_view_t *music_view_create(const music_view_config_t *config)
     music_view_text_style(view->state_label, lv_color_hex(0xb5efd0),
                           &lv_font_montserrat_lxgw_music_ui_12_4);
 
-    view->track_activate_button = lv_btn_create(view->track_panel);
-    lv_obj_set_size(view->track_activate_button, 330, 132);
-    lv_obj_set_pos(view->track_activate_button, 0, 0);
-    lv_obj_set_style_radius(view->track_activate_button, 24,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(view->track_activate_button, LV_OPA_TRANSP,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(view->track_activate_button, 0,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(view->track_activate_button, 0,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(view->track_activate_button, 0,
-                             LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_clear_flag(view->track_activate_button, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(view->track_activate_button,
-                        music_view_track_panel_event, LV_EVENT_CLICKED, view);
-
     view->section_kicker = lv_label_create(view->screen);
     lv_label_set_text(view->section_kicker, "EXPLORE");
     lv_obj_set_pos(view->section_kicker, 40, 306);
@@ -1034,45 +804,6 @@ music_view_t *music_view_create(const music_view_config_t *config)
         lv_obj_add_event_cb(view->source_buttons[i], music_view_source_event,
                             LV_EVENT_CLICKED, &view->source_context[i]);
     }
-
-    view->source_picker_panel = lv_obj_create(view->screen);
-    lv_obj_set_size(view->source_picker_panel, 330, 236);
-    lv_obj_set_pos(view->source_picker_panel, 40, 224);
-    music_view_panel_style(view->source_picker_panel, lv_color_hex(0x1b2a27));
-    lv_obj_set_style_bg_grad_color(view->source_picker_panel,
-                                   lv_color_hex(0x0b1615),
-                                   LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_dir(view->source_picker_panel, LV_GRAD_DIR_VER,
-                                 LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(view->source_picker_panel, (lv_opa_t)250,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(view->source_picker_panel, 24,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(view->source_picker_panel,
-                                  lv_color_hex(0xb5efd0),
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(view->source_picker_panel, (lv_opa_t)92,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(view->source_picker_panel, 20,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_opa(view->source_picker_panel, (lv_opa_t)70,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_color(view->source_picker_panel,
-                                  lv_color_hex(0x000000),
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(view->source_picker_panel, 0,
-                             LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_clear_flag(view->source_picker_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    view->source_picker_title = lv_label_create(view->source_picker_panel);
-    lv_label_set_text(view->source_picker_title, "选择歌单");
-    music_view_text_style(view->source_picker_title, lv_color_hex(0xeff5f0),
-                          &lv_font_montserrat_lxgw_music_ui_20_4);
-    lv_obj_set_pos(view->source_picker_title, 18, 18);
-    lv_obj_set_size(view->source_picker_title, 240, 24);
-    lv_obj_set_style_text_align(view->source_picker_title, LV_TEXT_ALIGN_LEFT,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_add_flag(view->source_picker_panel, LV_OBJ_FLAG_HIDDEN);
 
     view->catalog_list = lv_obj_create(view->screen);
     lv_obj_set_size(view->catalog_list, 330, 202);
@@ -1155,32 +886,20 @@ music_view_t *music_view_create(const music_view_config_t *config)
                                                view);
     lv_obj_add_event_cb(view->next_button, music_view_next_event,
                         LV_EVENT_CLICKED, view);
-    music_view_set_transport_style(view, false);
-
-    view->mode_button = music_view_button(view->screen, "列表循环", 149, 438,
-                                          112, 34);
-    lv_obj_set_style_radius(view->mode_button, 11,
+    view->mode_button = music_view_button(view->screen, "列表循环", 246, 306,
+                                          124, 32);
+    lv_obj_set_style_radius(view->mode_button, 16,
                             LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(view->mode_button, lv_color_hex(0x0f1917),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(view->mode_button, (lv_opa_t)235,
+    lv_obj_set_style_bg_opa(view->mode_button, LV_OPA_30,
                             LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(view->mode_button, 0,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(view->mode_button, 0,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
     view->mode_label = lv_obj_get_child(view->mode_button, 0);
-    lv_obj_align(view->mode_label, LV_ALIGN_LEFT_MID, 32, 0);
-    lv_obj_set_size(view->mode_label, 68, 20);
+    lv_obj_align(view->mode_label, LV_ALIGN_LEFT_MID, 48, 0);
+    lv_obj_set_size(view->mode_label, 94, 20);
     lv_obj_set_style_text_font(view->mode_label,
                                &lv_font_montserrat_lxgw_music_ui_12_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(view->mode_label, LV_TEXT_ALIGN_LEFT,
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(view->mode_label, lv_color_hex(0xc6d7ce),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(view->mode_label, (lv_opa_t)194,
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_label_set_long_mode(view->mode_label, LV_LABEL_LONG_DOT);
 
     lv_obj_t *mode_line = lv_line_create(view->mode_button);
@@ -1188,30 +907,10 @@ music_view_t *music_view_create(const music_view_config_t *config)
                        sizeof(kMusicModePoints) /
                            sizeof(kMusicModePoints[0]));
     lv_obj_set_size(mode_line, 14, 12);
-    lv_obj_set_pos(mode_line, 12, 11);
-    music_view_line_style(mode_line, lv_color_hex(0x97d3b4), (lv_opa_t)190, 1);
-    lv_obj_set_style_text_opa(mode_line, LV_OPA_TRANSP,
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(mode_line, lv_color_hex(0x97d3b4),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_t *mode_underline = lv_obj_create(view->mode_button);
-    lv_obj_set_size(mode_underline, 76, 1);
-    lv_obj_set_pos(mode_underline, 18, 33);
-    lv_obj_set_style_radius(mode_underline, 1,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(mode_underline, lv_color_hex(0x91cdad),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(mode_underline, (lv_opa_t)168,
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(mode_underline, 0,
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_clear_flag(mode_underline,
-                      LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_pos(mode_line, 27, 10);
+    music_view_line_style(mode_line, lv_color_hex(0x9eaea6), LV_OPA_90, 1);
     lv_obj_add_event_cb(view->mode_button, music_view_mode_event,
                         LV_EVENT_CLICKED, view);
-
-    music_view_start_orbit_animation(view->orbit_outer_layer, 3470, 9000);
-    music_view_start_orbit_animation(view->orbit_inner_layer, -3730, 7000);
 
     return view;
 }
@@ -1224,8 +923,6 @@ void music_view_destroy(music_view_t *view)
     }
     if (view->screen != NULL)
     {
-        lv_anim_delete(view->orbit_outer_layer, NULL);
-        lv_anim_delete(view->orbit_inner_layer, NULL);
         lv_obj_del(view->screen);
     }
     heap_caps_free(view->qr_buffer);
@@ -1259,13 +956,6 @@ void music_view_apply_snapshot(music_view_t *view,
                               view->playing ? lv_color_hex(0xb5efd0)
                                             : lv_color_hex(0x66736d),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(
-        view->track_panel,
-        view->playing ? lv_color_hex(0xb5efd0) : lv_color_hex(0xdef4e8),
-        LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(view->track_panel,
-                                view->playing ? (lv_opa_t)82 : (lv_opa_t)36,
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_label_set_text(view->mode_label, music_view_mode_text(snapshot->mode));
     lv_obj_invalidate(view->toggle_button);
 }
@@ -1281,11 +971,6 @@ void music_view_show_catalog_loading(music_view_t *view, const char *source_id)
              source_id != NULL ? source_id : "");
     view->catalog_visible = true;
     view->account_visible = false;
-    view->source_picker_visible = false;
-    lv_obj_add_flag(view->orbit_outer_layer, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->orbit_inner_layer, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->track_activate_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->source_picker_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view->track_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view->state_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view->previous_button, LV_OBJ_FLAG_HIDDEN);
@@ -1297,7 +982,6 @@ void music_view_show_catalog_loading(music_view_t *view, const char *source_id)
     lv_obj_set_size(view->toggle_button, 54, 54);
     lv_obj_set_pos(view->next_button, 324, 217);
     lv_obj_set_size(view->next_button, 46, 46);
-    music_view_set_transport_style(view, false);
     lv_obj_remove_flag(view->account_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view->account_status, LV_OBJ_FLAG_HIDDEN);
     if (view->qr_canvas != NULL)
@@ -1307,16 +991,6 @@ void music_view_show_catalog_loading(music_view_t *view, const char *source_id)
     music_view_set_track_layout(view, true);
     for (size_t i = 0; i < 4U; ++i)
     {
-        lv_obj_t *accent = lv_obj_get_child(view->source_buttons[i], 1);
-        if (accent != NULL)
-        {
-            lv_obj_remove_flag(accent, LV_OBJ_FLAG_HIDDEN);
-        }
-        lv_obj_t *chevron = lv_obj_get_child(view->source_buttons[i], 2);
-        if (chevron != NULL)
-        {
-            lv_obj_set_pos(chevron, 133, 22);
-        }
         lv_obj_add_flag(view->source_buttons[i], LV_OBJ_FLAG_HIDDEN);
     }
     lv_label_set_text(view->section_kicker, "COLLECTION");
@@ -1346,20 +1020,17 @@ void music_view_show_sources(music_view_t *view)
     }
     view->catalog_visible = false;
     view->account_visible = false;
-    view->source_picker_visible = false;
-    lv_obj_remove_flag(view->orbit_outer_layer, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(view->orbit_inner_layer, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view->track_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view->state_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view->previous_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view->toggle_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view->next_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(view->previous_button, 40, 310);
-    lv_obj_set_size(view->previous_button, 44, 44);
-    lv_obj_set_pos(view->toggle_button, 173, 300);
-    lv_obj_set_pos(view->next_button, 326, 310);
-    lv_obj_set_size(view->next_button, 44, 44);
-    music_view_set_transport_style(view, true);
+    lv_obj_set_pos(view->previous_button, 40, 229);
+    lv_obj_set_size(view->previous_button, 54, 54);
+    lv_obj_set_pos(view->toggle_button, 173, 224);
+    lv_obj_set_size(view->toggle_button, 64, 64);
+    lv_obj_set_pos(view->next_button, 316, 229);
+    lv_obj_set_size(view->next_button, 54, 54);
     lv_obj_remove_flag(view->account_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view->account_status, LV_OBJ_FLAG_HIDDEN);
     if (view->qr_canvas != NULL)
@@ -1367,62 +1038,25 @@ void music_view_show_sources(music_view_t *view)
         lv_obj_add_flag(view->qr_canvas, LV_OBJ_FLAG_HIDDEN);
     }
     music_view_set_track_layout(view, false);
-    lv_obj_set_size(view->track_activate_button, 330, 132);
-    lv_obj_remove_flag(view->track_activate_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->source_picker_panel, LV_OBJ_FLAG_HIDDEN);
     for (size_t i = 0; i < 4U; ++i)
     {
-        lv_obj_t *accent = lv_obj_get_child(view->source_buttons[i], 1);
-        if (accent != NULL)
-        {
-            lv_obj_remove_flag(accent, LV_OBJ_FLAG_HIDDEN);
-        }
-        lv_obj_t *chevron = lv_obj_get_child(view->source_buttons[i], 2);
-        if (chevron != NULL)
-        {
-            lv_obj_set_pos(chevron, 133, 22);
-        }
-        lv_obj_add_flag(view->source_buttons[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(view->source_buttons[i], LV_OBJ_FLAG_HIDDEN);
     }
     lv_label_set_text(view->section_kicker, "EXPLORE");
     lv_obj_set_pos(view->section_kicker, 40, 306);
-    lv_obj_add_flag(view->section_kicker, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(view->section_kicker, LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(view->section_label, "音乐来源");
     lv_obj_set_pos(view->section_label, 40, 319);
     lv_obj_set_size(view->section_label, 170, 20);
     lv_obj_set_style_text_font(view->section_label,
                                &lv_font_montserrat_lxgw_music_ui_20_4,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_add_flag(view->section_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(view->section_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view->catalog_list, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(view->mode_button, 149, 438);
-    lv_obj_set_size(view->mode_button, 112, 34);
+    lv_obj_set_pos(view->mode_button, 246, 306);
+    lv_obj_set_size(view->mode_button, 124, 32);
     lv_obj_remove_flag(view->mode_button, LV_OBJ_FLAG_HIDDEN);
 }
-
-#ifdef AGENT_PREVIEW_HOST
-void music_view_preview_open_source_picker(music_view_t *view)
-{
-    if (view != NULL && view->track_activate_button != NULL)
-    {
-        lv_obj_send_event(view->track_activate_button, LV_EVENT_CLICKED, NULL);
-    }
-}
-
-void music_view_preview_freeze_orbit(music_view_t *view)
-{
-    if (view == NULL)
-    {
-        return;
-    }
-    lv_anim_delete(view->orbit_outer_layer, NULL);
-    lv_anim_delete(view->orbit_inner_layer, NULL);
-    lv_obj_set_style_transform_rotation(view->orbit_outer_layer, -130,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_transform_rotation(view->orbit_inner_layer, -130,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-}
-#endif
 
 void music_view_show_account_loading(music_view_t *view)
 {
@@ -1432,12 +1066,7 @@ void music_view_show_account_loading(music_view_t *view)
     }
     view->account_visible = true;
     view->catalog_visible = false;
-    view->source_picker_visible = false;
-    lv_obj_add_flag(view->orbit_outer_layer, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->orbit_inner_layer, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view->track_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->track_activate_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view->source_picker_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view->state_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view->previous_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view->next_button, LV_OBJ_FLAG_HIDDEN);

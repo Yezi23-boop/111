@@ -69,14 +69,6 @@ void music_view_apply_account(
     music_view_t *view, const music_service_account_snapshot_t *account,
     const uint8_t *qr_data, uint16_t qr_size, size_t qr_bytes);
 
-#ifdef AGENT_PREVIEW_HOST
-/** @brief Host 预览专用：触发当前播放卡的歌单选择层。 */
-void music_view_preview_open_source_picker(music_view_t *view);
-
-/** @brief Host 预览专用：冻结 Orbit 轨道到 LVGL 的初始静态姿态。 */
-void music_view_preview_freeze_orbit(music_view_t *view);
-#endif
-
 #ifdef __cplusplus
 }
 #endif

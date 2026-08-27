@@ -4,6 +4,15 @@ import TopBar from '../../components/TopBar.vue'
 
 const emit = defineEmits(['back'])
 
+// 21×21 演示二维码格,后续接入真实登录码时只替换数据源。
+const QR_CELLS = Array.from({ length: 21 * 21 }, (_, i) => {
+  const r = Math.floor(i / 21)
+  const c = i % 21
+  const corner = (r < 7 && c < 7) || (r < 7 && c > 13) || (r > 13 && c < 7)
+  if (corner) return i % 17 !== 0 && i % 23 !== 0
+  return i % 3 === 0
+})
+
 </script>
 
 <template>

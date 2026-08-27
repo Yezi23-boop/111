@@ -46,36 +46,26 @@ const FUNC_META = {
   ota: { icon: '⇩', name: '系统维护' },
 }
 
-// `?fx=1` 仅用于演示全屏模糊与多层列表阴影，不改变正常音乐原型。
 const query = new URLSearchParams(window.location.search)
 // 聊天中复制链接时，末尾的中英文标点可能被带进 query 参数。
 const routeScreen = (query.get('screen') || '').replace(/[，,。；;！？!?]+$/, '')
-const visualFxDemo = query.get('fx') === '1'
-const freezeAnimations = query.get('freeze') === '1'
-const visualFxCatalogDemo = visualFxDemo && query.get('screen') === 'catalog'
-const visualPolishDemo = query.get('polish') === '1'
-const visualPolishCatalogDemo = visualPolishDemo && query.get('screen') === 'catalog'
+const staticMusicPreview = query.get('polish') === '1'
 const previewScreens = new Set([
   'hermes', 'ai', 'danger', 'games', 'calendar', 'wallpaper', 'ota', 'wifi',
-  'music', 'music-picker', 'music-catalog', 'music-account', 'notifications',
+  'music', 'music-catalog', 'music-account', 'notifications',
   'hermes-inbox', 'hermes-detail',
   'game-2048', 'game-flappy', 'game-dino',
   'notification-bubble',
 ])
-const musicPickerPreview = routeScreen === 'music-picker' || query.get('picker') === '1'
 // 显式 screen 是交互/截图入口，优先于 polish；polish 只决定音乐页的视觉方案。
 const screen = ref(
-  visualFxCatalogDemo || visualPolishCatalogDemo
-    ? 'music-catalog'
-    : routeScreen === 'function' || routeScreen === 'dropdown'
+  routeScreen === 'function' || routeScreen === 'dropdown'
       ? 'home'
-      : routeScreen === 'music-picker'
-        ? 'music'
-        : previewScreens.has(routeScreen)
-          ? routeScreen
-          : visualFxDemo || visualPolishDemo
-            ? 'music'
-            : 'home',
+      : previewScreens.has(routeScreen)
+        ? routeScreen
+        : staticMusicPreview
+          ? 'music'
+          : 'home',
 ) // home | hermes | ai | danger | games | calendar | wallpaper | ota | wifi | music...
 const showFunction = ref(routeScreen === 'function') // 主屏 tileview:表盘页 <-> 功能页
 const dropdownOpen = ref(routeScreen === 'dropdown')
@@ -262,10 +252,6 @@ function stepMusicTrack(step) {
     <!-- ===== 功能全屏页:音乐(已 Vue 化) ===== -->
     <template v-else-if="screen === 'music'">
       <SourcesView
-        :visual-fx-demo="visualFxDemo"
-        :visual-polish-demo="visualPolishDemo || screen === 'music'"
-        :freeze-animations="freezeAnimations"
-        :initial-picker-open="musicPickerPreview"
         :playing="musicPlaying"
         :mode-text="musicModeText()"
         :track-name="musicTrack()[0]"
@@ -281,8 +267,6 @@ function stepMusicTrack(step) {
     </template>
     <template v-else-if="screen === 'music-catalog'">
       <CatalogView
-        :visual-fx-demo="visualFxDemo"
-        :visual-polish-demo="visualPolishDemo"
         :source="musicSource"
         :playing="musicPlaying"
         :track-name="musicTrack()[0]"
