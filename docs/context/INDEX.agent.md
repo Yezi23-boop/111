@@ -54,7 +54,7 @@ uv run python scripts/context/validate_context.py --level light --q "<task keywo
 
 1. Run light retrieval:
    `uv run python scripts/context/validate_context.py --level light --q "<module file error symptom>" --brief`
-   *(Fallback Strategy: If the python script fails due to environment issues, DO NOT give up. Immediately fallback to using `grep_search` to query keywords in `docs/context/`.)*
+   *(grep 检索与 light 查询并列可用：当前性/生命周期判断以 light 为准；纯关键词定位直接用 grep_search 搜 `docs/context/`。If the python script fails due to environment issues, DO NOT give up — fall back to grep_search immediately.)*
 2. Read the brief pack first.
 3. If `runs/` hits, decide whether to reuse, avoid, or extend the previous attempt.
 4. Open only the top matched source Markdown needed for evidence.
